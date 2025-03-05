@@ -101,28 +101,32 @@ void iLuxPlayerState_DefaultBase::OnMapLeave(cLuxMap *apMap)
 
 void iLuxPlayerState_DefaultBase::Update(float afTimeStep)
 {
-	/////////////////////////////////////////
-	// Get the entity currently in focus
-	cCamera *pCam = mpPlayer->GetCamera();
+	// Disable other forms of interaction if the Physgun is out.
+	if (mpPlayer->GetCurrentState() != eLuxPlayerState_PhysGun)
+	{
+		/////////////////////////////////////////
+		// Get the entity currently in focus
+		cCamera *pCam = mpPlayer->GetCamera();
 
-	gpBase->mpMapHelper->GetClosestEntity(	pCam->GetPosition(), pCam->GetForward(), 20.0f, 
+		gpBase->mpMapHelper->GetClosestEntity(	pCam->GetPosition(), pCam->GetForward(), 20.0f, 
 											&mfFocusDistance,&mpBodyInFocus,&mpEntityInFocus);
-	mvFocusPos = pCam->GetPosition() + pCam->GetForward()*mfFocusDistance;
+		mvFocusPos = pCam->GetPosition() + pCam->GetForward()*mfFocusDistance;
 
-	AddOutlineObjects(mpBodyInFocus,mpEntityInFocus, mvFocusPos);
+		AddOutlineObjects(mpBodyInFocus,mpEntityInFocus, mvFocusPos);
 
-	//For other classes to use focused
-	mpPlayer->SetEntityInFocus(mpEntityInFocus);
-	mpPlayer->SetBodyInFocus(mpBodyInFocus);
-	mpPlayer->SetCurrentFocusDistance(mfFocusDistance);
+		//For other classes to use focused
+		mpPlayer->SetEntityInFocus(mpEntityInFocus);
+		mpPlayer->SetBodyInFocus(mpBodyInFocus);
+		mpPlayer->SetCurrentFocusDistance(mfFocusDistance);
 
-	if(mpEntityInFocus && CanInteractWithEntity())
-		mpPlayer->SetFocusText(mpEntityInFocus->GetFocusText());
-	else
-		mpPlayer->SetFocusText(_W(""));
+		if(mpEntityInFocus && CanInteractWithEntity())
+			mpPlayer->SetFocusText(mpEntityInFocus->GetFocusText());
+		else
+			mpPlayer->SetFocusText(_W(""));
 
-	//update implemented class
-	ImplementedUpdate(afTimeStep);
+		//update implemented class
+		ImplementedUpdate(afTimeStep);
+	}
 }
 
 void iLuxPlayerState_DefaultBase::PostUpdate(float afTimeStep)

@@ -106,6 +106,7 @@ static cLuxAction gvLuxActions[] =
 	cLuxAction("Rotate",eLuxAction_Rotate,		true, eLuxActionCategory_Action),
 	cLuxAction("Holster",eLuxAction_Holster,	false, eLuxActionCategory_Action),
 	cLuxAction("Lantern",eLuxAction_Lantern,	true, eLuxActionCategory_Action),
+	cLuxAction("PhysGun",eLuxAction_PhysGun,	true, eLuxActionCategory_Action),
 
 	cLuxAction("Run",eLuxAction_Run,			true, eLuxActionCategory_Movement),
 	cLuxAction("Crouch",eLuxAction_Crouch,		true, eLuxActionCategory_Movement),
@@ -211,6 +212,7 @@ static cLuxInput gvLuxInputs[] =
 	cLuxInput("Keyboard", eKey_R, eLuxAction_Rotate),
 	cLuxInput("Keyboard", eKey_H, eLuxAction_Holster),
 	cLuxInput("Keyboard", eKey_F, eLuxAction_Lantern),
+	cLuxInput("Keyboard", eKey_G, eLuxAction_PhysGun),
 	
 	cLuxInput("Keyboard", eKey_LeftShift, eLuxAction_Run),
 	cLuxInput("Keyboard", eKey_LeftCtrl, eLuxAction_Crouch),
@@ -1091,6 +1093,9 @@ void cLuxInputHandler::UpdateGamePlayerInput()
 	if(mpInput->BecameTriggerd(eLuxAction_Lantern))	mpPlayer->DoAction(eLuxPlayerAction_Lantern ,true);
 	if(mpInput->WasTriggerd(eLuxAction_Lantern))	mpPlayer->DoAction(eLuxPlayerAction_Lantern, false);
 
+	//PhysGun
+	if(mpInput->BecameTriggerd(eLuxAction_PhysGun)) mpPlayer->DoAction(eLuxPlayerAction_PhysGun, true);
+	if(mpInput->WasTriggerd(eLuxAction_PhysGun))	mpPlayer->DoAction(eLuxPlayerAction_PhysGun, false);
 
 	//Scroll
 	if(mpInput->BecameTriggerd(eLuxAction_ScrollUp))	mpPlayer->Scroll(1.0f);

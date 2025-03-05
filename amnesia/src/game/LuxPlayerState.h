@@ -123,6 +123,9 @@ public:
 
 	void SetPreviousState(eLuxPlayerState aState) { mPreviousState = aState; }
 
+	virtual void SetPhysGunEntity(cMeshEntity* apMeshEntity) {}
+	virtual void SetPhysGunDebug(bool abDebug) {}
+
 	/////////////////////////////////
 	//Save data stuff
 	virtual bool IsSaved()=0;
@@ -139,6 +142,7 @@ protected:
 	cGuiGfxElement* mpDefaultCrosshairGfx;
 	cGuiGfxElement* mpSimpleInteractCrosshairGfx;
 	std::vector<cGuiGfxElement*> mvFocusCrosshairGfx;
+	cGuiGfxElement* mpPhysGunCrosshairGfx;
 
 	eLuxPlayerState mPreviousState;
 };

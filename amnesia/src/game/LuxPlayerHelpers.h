@@ -427,6 +427,25 @@ private:
 
 //----------------------------------------------
 
+class cLuxPlayerPhysGun : public iLuxPlayerHelper
+{
+public:
+	cLuxPlayerPhysGun(cLuxPlayer *apPlayer);
+	~cLuxPlayerPhysGun();
+
+	void Reset();
+
+	void SetActive(bool abX, bool abUseEffects, bool abCheckForPhysGun = true);
+	bool IsActive() { return mbActive; }
+
+private:
+	tString msTurnOnSound;
+	tString msTurnOffSound;
+	bool mbActive;
+};
+
+//----------------------------------------------
+
 class cLuxPlayerDeath : public iLuxPlayerHelper
 {
 public:

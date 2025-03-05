@@ -165,6 +165,7 @@
     <ClCompile Include="LuxEnemy_ManPig.cpp" />
     <ClCompile Include="LuxHelpFuncs.cpp" />
     <ClCompile Include="LuxMainMenu_StartGame.cpp" />
+    <ClCompile Include="LuxPlayerState_PhysGun.cpp" />
     <ClCompile Include="LuxTypes.cpp" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="StdAfx.cpp" />
@@ -273,9 +274,11 @@
     <ClInclude Include="LuxBasePersonal.h" />
     <ClInclude Include="LuxConfigHandler.h" />
     <ClInclude Include="LuxEnemy_ManPig.h" />
+    <ClInclude Include="LuxHandObject_PhysGun.h" />
     <ClInclude Include="LuxHelpFuncs.h" />
     <ClInclude Include="LuxIdleBehavior_ManPig.h" />
     <ClInclude Include="LuxMainMenu_StartGame.h" />
+    <ClInclude Include="LuxPlayerState_PhysGun.h" />
     <ClInclude Include="LuxTypes.h" />
     <ClInclude Include="StdAfx.h" />
     <ClInclude Include="LuxKeyEntry.h" />

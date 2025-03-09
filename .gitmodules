@@ -1,3 +1,0 @@
-[submodule "HPL2/dependencies/openal-soft"]
-	path = HPL2/dependencies/openal-soft
-	url = https://github.com/kcat/openal-soft.git

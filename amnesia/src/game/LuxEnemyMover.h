@@ -87,6 +87,7 @@ public:
 	bool GetStuckCounterIsAtMax(){ return mfStuckCounter >= mfMaxStuckCounter;}
 	void ResetStuckCounter(){ mfStuckCounter =0; }
 
+	void SetGrabbed(bool abX) { mbGrabbed = abX; }
 	
 	//////////////////////
 	//Data
@@ -112,6 +113,7 @@ private:
 	///////////////////
 	// Variables
 	bool mbTurning;
+	bool mbGrabbed;
 	float mfTurnGoalAngle;
 	float mfTurnSpeed;
 	float mfTurnBreakAcc;

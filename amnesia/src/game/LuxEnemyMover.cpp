@@ -199,7 +199,7 @@ void cLuxEnemyMover::UpdateStuckCounter(float afTimeStep)
 
 void cLuxEnemyMover::UpdateTurning(float afTimeStep)
 {
-	if(mbTurning==false) return;
+	if(mbTurning==false || mbGrabbed) return;
 
 	//////////////////////////////
 	//Get distance to goal angle

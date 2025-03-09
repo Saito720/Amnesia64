@@ -25,9 +25,7 @@
 
 #include "LuxHandObject_Melee.h"
 #include "LuxHandObject_LightSource.h"
-#include "LuxHandObject_PhysGun.h"
 
-#include "LuxPlayerState.h"
 
 /////////////////////////////////////////////////////////////////////////
 // CONSTRUCTORS
@@ -410,9 +408,6 @@ void cLuxPlayerHands::SetCurrentHandObject(iLuxHandObject *apObject)
 		PlayAnim(mpCurrentHandObject->GetAnimHolster(),false);
 		
 		mHandState = eLuxHandsState_Holster;
-
-		if (mpCurrentHandObject->GetName() == "phys_gun")
-			mpPlayer->ChangeState(eLuxPlayerState_Normal);
 	}
 	////////////////////////
 	// Draw directly
@@ -500,15 +495,6 @@ void cLuxPlayerHands::CreateAndAttachHandObject(cLuxMap *apMap, iLuxHandObject *
 		}
 				
 		pBone->AddEntity(pMeshEntity);
-
-		if (apHandObject->GetName() == "phys_gun")
-		{
-			mvCurrentHandOffset = mvHandOffset;
-			mpPlayer->ChangeState(eLuxPlayerState_PhysGun);
-			mpPlayer->GetCurrentStateData()->SetPhysGunEntity(pMeshEntity);
-		}
-		else
-			mvCurrentHandOffset = (0);
 	}
 	apHandObject->SetSetEntitiesVisible(true);
 
@@ -571,7 +557,6 @@ void cLuxPlayerHands::UpdatePlayerHandsPos(float afTimeStep)
 	cVector3f vUp = pCam->GetUp();
 	cVector3f vFwd = pCam->GetForward();
 
-	vHandPosAdd -= mvCurrentHandOffset;
 	vHandPosAdd = vRight * vHandPosAdd.x + vUp * vHandPosAdd.y + vFwd * vHandPosAdd.z;
 
 	mtxHands.SetTranslation(pCam->GetPosition() - vHandPosAdd *mfPosAddMul);
@@ -644,15 +629,6 @@ iLuxHandObject* cLuxPlayerHands::LoadHandObject(const tString& asName)
 		return NULL;	
 	}
 
-	// Get PhysGun specific settings
-	if (aType == eLuxHandObjectType_PhysGun)
-	{
-		// Grab hand offset from file
-		mvHandOffset = pSettingsElem->GetAttributeVector3f("HandsOffsetPos", 0);
-		if (mvHandOffset == 0)
-			Warning("No hand offset found for PhysGun!\n");
-	}
-
 	//Load the settings
 	pObject->LoadSettings(pSettingsElem);
 
@@ -674,7 +650,6 @@ iLuxHandObject* cLuxPlayerHands::CreateObjectFromType(const tString& asName, eLu
 	case eLuxHandObjectType_Melee:			return hplNew(cLuxHandObject_Melee, (asName, this));
 	//case eLuxHandObjectType_Ranged:			return NULL;
 	case eLuxHandObjectType_LightSource:	return hplNew(cLuxHandObject_LightSource, (asName, this));
-	case eLuxHandObjectType_PhysGun:		return hplNew(cLuxHandObject_PhysGun, (asName, this));
 	}
 
 	Error("HandObject '%s' of type %d could not be created! Type is not implemented in code!",asName.c_str(), aType);
@@ -691,7 +666,6 @@ eLuxHandObjectType cLuxPlayerHands::ToHandObjectType(const tString& asType)
 	if(sLowType == "melee") return eLuxHandObjectType_Melee;
 	if(sLowType == "ranged") return eLuxHandObjectType_Ranged;
 	if(sLowType == "lightsource") return eLuxHandObjectType_LightSource;
-	if(sLowType == "physgun") return eLuxHandObjectType_PhysGun;
 
 	Error("Hand object of type '%s' does not exist!", asType.c_str());
 	return eLuxHandObjectType_LastEnum;

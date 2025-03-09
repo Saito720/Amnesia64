@@ -1848,62 +1848,6 @@ void cLuxPlayerLantern::SetDisabled(bool abX)
 
 //-----------------------------------------------------------------------
 
-//////////////////////////////////////////////////////////////////////////
-// PLAYER PHYSGUN
-//////////////////////////////////////////////////////////////////////////
-
-//-----------------------------------------------------------------------
-
-cLuxPlayerPhysGun::cLuxPlayerPhysGun(cLuxPlayer* apPlayer) : iLuxPlayerHelper(apPlayer, "LuxPlayerPhysGun")
-{
-	msTurnOnSound = gpBase->mpGameCfg->GetString("Player_PhysGun", "TurnOnSound", "");
-	msTurnOffSound = gpBase->mpGameCfg->GetString("Player_PhysGun", "TurnOffSound", "");
-}
-
-cLuxPlayerPhysGun::~cLuxPlayerPhysGun() {}
-
-//-----------------------------------------------------------------------
-
-void cLuxPlayerPhysGun::Reset()
-{
-	mbActive = false;
-}
-
-//-----------------------------------------------------------------------
-
-void cLuxPlayerPhysGun::SetActive(bool abX, bool abUseEffects, bool abCheckForPhysGun)
-{
-	if (mbActive == abX) return;
-
-	/////////////////
-	// Check if the player has the physgun item
-	if (abCheckForPhysGun && gpBase->mpInventory->HasItemOfType(eLuxItemType_PhysGun) == false)
-	{
-		gpBase->mpHintHandler->Add("PhysGunNoItem", kTranslate("Hints", "PhysGunNoItem"), 0);
-		return;
-	}
-
-	/////////////////
-	// Turn on / off
-	mbActive = abX;
-	if (mbActive)
-	{
-		if (abUseEffects) gpBase->mpHelpFuncs->PlayGuiSoundData(msTurnOnSound, eSoundEntryType_Gui);
-	}
-	else
-	{
-		if (abUseEffects) gpBase->mpHelpFuncs->PlayGuiSoundData(msTurnOffSound, eSoundEntryType_Gui);
-	}
-
-	/////////////////
-	// Hand
-	if (mbActive)
-		mpPlayer->GetHands()->SetActiveHandObject("phys_gun");
-	else
-		mpPlayer->GetHands()->SetActiveHandObject("");
-}
-
-//-----------------------------------------------------------------------
 
 //////////////////////////////////////////////////////////////////////////
 // PLAYER DEATH

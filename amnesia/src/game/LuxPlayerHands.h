@@ -105,7 +105,7 @@ public:
 	const tString& GetCurrentAnimation(){ return msCurrentAnim; }
 	cMeshEntity *GetHandsEntity(){ return mpHandsEntity;}
 
-
+    
 public://Only used by hand object
 	float mfHandObjectChargeCount;
 	int mlHandObjectState;
@@ -143,10 +143,6 @@ private:
 
 	eLuxHandsState mHandState;
 	tString msCurrentAnim;
-
-	// Used to store the PhysGun hand offset.
-	cVector3f mvHandOffset;
-	cVector3f mvCurrentHandOffset;
 };
 
 //----------------------------------------------

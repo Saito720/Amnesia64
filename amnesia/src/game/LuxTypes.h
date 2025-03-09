@@ -199,7 +199,6 @@ enum eLuxItemType
 	eLuxItemType_Note,
 	eLuxItemType_Diary,
 	eLuxItemType_Lantern,
-	eLuxItemType_PhysGun,
 	eLuxItemType_Health,
 	eLuxItemType_Sanity,
 	eLuxItemType_LampOil,
@@ -264,7 +263,6 @@ enum eLuxHandObjectType
 	eLuxHandObjectType_Ranged,
 
 	eLuxHandObjectType_LightSource,
-	eLuxHandObjectType_PhysGun,
 
     eLuxHandObjectType_LastEnum,
 };
@@ -305,7 +303,6 @@ enum eLuxPlayerState
 	eLuxPlayerState_InteractWheel,
 	eLuxPlayerState_InteractSlide,
 	eLuxPlayerState_Ladder,
-	eLuxPlayerState_PhysGun,
 
 	eLuxPlayerState_LastEnum
 };
@@ -420,7 +417,6 @@ enum eLuxAction
 	eLuxAction_Rotate,
 	eLuxAction_Holster,
 	eLuxAction_Lantern,
-	eLuxAction_PhysGun,
 	
 	eLuxAction_Run,
 	eLuxAction_Jump,
@@ -451,7 +447,6 @@ enum eLuxPlayerAction
 	eLuxPlayerAction_Ignite,
 	eLuxPlayerAction_Holster,
 	eLuxPlayerAction_Lantern,
-	eLuxPlayerAction_PhysGun,
 
 	eLuxPlayerAction_LastEnum
 };

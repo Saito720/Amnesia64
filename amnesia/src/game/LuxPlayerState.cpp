@@ -79,8 +79,6 @@ iLuxPlayerState::iLuxPlayerState(cLuxPlayer *apPlayer, eLuxPlayerState aType)
 	cGui *pGui = gpBase->mpEngine->GetGui();
 	mpDefaultCrosshairGfx = pGui->CreateGfxImage("hud_crosshair_default.tga",eGuiMaterial_Alpha);
 	mpSimpleInteractCrosshairGfx = pGui->CreateGfxImage("hud_crosshair_active.tga",eGuiMaterial_Alpha);
-	if (mType == eLuxPlayerState_PhysGun)
-		mpPhysGunCrosshairGfx = pGui->CreateGfxImage("hud_crosshair_physgun.tga",eGuiMaterial_Alpha);
 	
 	mPreviousState = eLuxPlayerState_LastEnum;
 }

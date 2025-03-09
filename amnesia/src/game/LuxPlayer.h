@@ -35,7 +35,6 @@ class cLuxPlayerHudEffect;
 class cLuxPlayerLean;
 class cLuxPlayerDeath;
 class cLuxPlayerLantern;
-class cLuxPlayerPhysGun;
 class cLuxPlayerSanity;
 class cLuxPlayerLookAt;
 class cLuxPlayerFlashback;
@@ -279,7 +278,6 @@ public:
 	cLuxPlayerInDarkness *GetHelperInDarkness(){ return mpHelperInDarkness;}
 	cLuxPlayerHudEffect *GetHelperHudEffect(){ return mpHudEffect;}
 	cLuxPlayerLantern *GetHelperLantern(){ return mpLantern;}
-	cLuxPlayerPhysGun *GetHelperPhysGun(){ return mpPhysGun;}
 	cLuxPlayerSanity *GetHelperSanity(){ return mpSanity; }
 	cLuxPlayerLookAt *GetHelperLookAt(){ return mpLookAt; }
 	cLuxPlayerDeath *GetHelperDeath(){ return mpDeath; }
@@ -438,7 +436,6 @@ private:
 	cLuxPlayerLightLevel *mpHelperLightLevel;
 	cLuxPlayerInDarkness *mpHelperInDarkness;
 	cLuxPlayerLantern *mpLantern;
-	cLuxPlayerPhysGun *mpPhysGun;
 	cLuxPlayerHudEffect *mpHudEffect;
 	cLuxPlayerLean *mpLean;
 	cLuxPlayerDeath *mpDeath;

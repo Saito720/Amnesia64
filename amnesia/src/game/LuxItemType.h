@@ -132,20 +132,6 @@ private:
 
 //----------------------------------------------
 
-class cLuxItemType_PhysGun : public iLuxItemType
-{
-public:
-	cLuxItemType_PhysGun();
-
-	bool BeforeAddItem(cLuxInventory_Item* apItem);
-	void OnUse(cLuxInventory_Item* apItem, int alSlotIndex);
-	tWString GetDisplayedNameAdd(cLuxInventory_Item* apItem);
-
-private:
-};
-
-//----------------------------------------------
-
 class cLuxItemType_Health : public iLuxItemType
 {
 public:	

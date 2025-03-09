@@ -280,44 +280,6 @@ tWString cLuxItemType_Lantern::GetDisplayedNameAdd(cLuxInventory_Item *apItem)
 //-----------------------------------------------------------------------
 
 //////////////////////////////////////////////////////////////////////////
-// PHYSGUN
-//////////////////////////////////////////////////////////////////////////
-
-//-----------------------------------------------------------------------
-
-cLuxItemType_PhysGun::cLuxItemType_PhysGun() : iLuxItemType("PhysGun", eLuxItemType_PhysGun) {}
-
-//-----------------------------------------------------------------------
-
-bool cLuxItemType_PhysGun::BeforeAddItem(cLuxInventory_Item* apItem)
-{
-	ProgLog(eLuxProgressLogLevel_Medium, "Picked up Physgun");
-
-	gpBase->mpHintHandler->Add("PickPhysGun", kTranslate("Hints", "PickPhysGun"), 0);
-
-	return false;
-}
-
-//-----------------------------------------------------------------------
-
-void cLuxItemType_PhysGun::OnUse(cLuxInventory_Item* apItem, int alSlotIndex)
-{
-	cLuxPlayerPhysGun* pPhysGun = gpBase->mpPlayer->GetHelperPhysGun();
-	pPhysGun->SetActive(!pPhysGun->IsActive(), true);
-}
-
-//-----------------------------------------------------------------------
-
-tWString cLuxItemType_PhysGun::GetDisplayedNameAdd(cLuxInventory_Item* apItem)
-{
-	cLuxPlayerPhysGun* pPhysGun = gpBase->mpPlayer->GetHelperPhysGun();
-	tWString sStr = pPhysGun->IsActive() ? kTranslate("Inventory", "PhysGunOn") : kTranslate("Inventory", "PhysGunOff");
-	return _W(" (") + sStr + _W(")");
-}
-
-//-----------------------------------------------------------------------
-
-//////////////////////////////////////////////////////////////////////////
 // HEALTH
 //////////////////////////////////////////////////////////////////////////
 

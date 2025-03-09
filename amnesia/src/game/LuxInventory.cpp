@@ -92,7 +92,6 @@ cLuxInventory::cLuxInventory() : iLuxUpdateable("LuxInventory")
 	mvItemTypes[eLuxItemType_Sanity] = hplNew( cLuxItemType_Sanity, ());
 	mvItemTypes[eLuxItemType_LampOil] = hplNew( cLuxItemType_LampOil, ());
 	mvItemTypes[eLuxItemType_Tinderbox] = hplNew( cLuxItemType_Tinderbox, ());
-	mvItemTypes[eLuxItemType_PhysGun] = hplNew(cLuxItemType_PhysGun, ());
 
 	mfPickedUpAt = -1;
 	mbPickedObjectMoved = false;

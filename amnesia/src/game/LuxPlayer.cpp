@@ -35,7 +35,6 @@
 #include "LuxPlayerState_InteractLever.h"
 #include "LuxPlayerState_InteractWheel.h"
 #include "LuxPlayerState_Ladder.h"
-#include "LuxPlayerState_PhysGun.h"
 #include "LuxHintHandler.h"
 #include "LuxEffectHandler.h"
 
@@ -123,7 +122,6 @@ cLuxPlayer::cLuxPlayer() : iLuxUpdateable("LuxPlayer"), iLuxCollideCallbackConta
 	mvStates[eLuxPlayerState_InteractLever] = hplNew( cLuxPlayerState_InteractLever, (this) );
 	mvStates[eLuxPlayerState_InteractWheel] = hplNew( cLuxPlayerState_InteractWheel, (this) );
 	mvStates[eLuxPlayerState_Ladder] = hplNew( cLuxPlayerState_Ladder, (this) );
-	mvStates[eLuxPlayerState_PhysGun] = hplNew( cLuxPlayerState_PhysGun, (this) );
 
 	//////////////////////////////////
 	// Create move states
@@ -163,9 +161,6 @@ cLuxPlayer::cLuxPlayer() : iLuxUpdateable("LuxPlayer"), iLuxCollideCallbackConta
 
 	mpLantern = hplNew( cLuxPlayerLantern, (this) );
 	mvHelpers.push_back(mpLantern);
-
-	mpPhysGun = hplNew( cLuxPlayerPhysGun, (this));
-	mvHelpers.push_back(mpPhysGun);
 
 	mpSanity = hplNew( cLuxPlayerSanity, (this) );
 	mvHelpers.push_back(mpSanity);
@@ -741,11 +736,11 @@ void cLuxPlayer::DoAction(eLuxPlayerAction aAction, bool abPressed)
 {
 	if(mvStates[mState]->OnDoAction(aAction, abPressed))
 	{
-		// Additional check to make sure only one hand object is active.
-		if (aAction == eLuxPlayerAction_Lantern && abPressed && !mpPhysGun->IsActive())
+		if(aAction== eLuxPlayerAction_Lantern && abPressed)
+		{
 			mpLantern->SetActive(!mpLantern->IsActive(), true);
-		else if (aAction == eLuxPlayerAction_PhysGun && abPressed && !mpLantern->IsActive())
-			mpPhysGun->SetActive(!mpPhysGun->IsActive(), true);
+		}
+
 	}
 }
 

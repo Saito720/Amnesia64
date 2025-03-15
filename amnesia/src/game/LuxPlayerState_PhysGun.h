@@ -17,23 +17,19 @@ public:
 	bool BeforeIntersect(iPhysicsBody* pBody);
 	bool OnIntersect(iPhysicsBody* pBody, cPhysicsRayParams* apParams);
 
-	bool GetIntersected() { return mbIntersected; }
+	bool GetIntersected() const { return mbIntersected; }
 	const cVector3f& GetPos() { return mvPos; }
 
 	iPhysicsBody* GetBody() { return mpBody; }
-	iLuxEnemy* GetEnemy() { return mpEnemy; }
-
-	bool Grabbed() { return mbGrabbed; }
-	bool IsEnemy() { return mbIsEnemy; }
+	bool IsEnemy() const { return mbIsEnemy; }
 
 private:
-	cVector3f mvPos;
 	bool mbIntersected;
-	bool mbGrabbed;
-	bool mbIsEnemy;
 	float mfClosestT;
+	cVector3f mvPos;
 	iPhysicsBody* mpBody;
-	iLuxEnemy* mpEnemy;
+	bool mbIsEnemy;
+	
 	cLuxPlayerState_PhysGun* mpPhysGun;
 };
 
@@ -50,6 +46,7 @@ public:
 	void OnLeaveState(eLuxPlayerState aNewState);
 
 	void OnGrab();
+	void OnRelease();
 
 	void Update(float afTimeStep);
 	void PostUpdate(float afTimeStep);
@@ -66,17 +63,14 @@ public:
 	float DrawDebug(cGuiSet* apSet, iFontData* apFont, float afStartY) { return afStartY; };
 
 	void RenderSolid(cRendererCallbackFunctions* apFunctions);
-	void DrawDebugRay(cRendererCallbackFunctions* apFunctions, cVector3f avStart, cVector3f avEnd);
-
-	void SetPhysGunEntity(cMeshEntity* apMeshEntity) { mpMeshEntity = apMeshEntity; }
-	void SetPhysGunDebug(bool abDebug) { mbDebug = abDebug; }
+	void DrawPhysBeam(cRendererCallbackFunctions* apFunctions, cVector3f avStart, cVector3f avEnd, float afStepSize = 0, float afCurvatureFactor = 0.5f, float afBeamWidth = 0.025f);
+	void DrawDebugRay(cRendererCallbackFunctions* apFunctions, cVector3f avStart, cVector3f avEnd, float afStepSize = 0, float afCurvatureFactor = 0.5f);
 
 	std::vector<cVector3f> QuadraticBezier(cVector3f avStart, cVector3f avEnd, float afStepSize, float afCurvatureFactor);
+	cVector3f Interpolate(const cVector3f& avFrom, const cVector3f& avTo, float afPercent) { return avFrom + (avTo - avFrom) * afPercent; }
 
-	cVector3f Interpolate(const cVector3f& avFrom, const cVector3f& avTo, float afPercent)
-	{
-		return avFrom + (avTo - avFrom) * afPercent;
-	}
+	void SetPhysGunEntity(cMeshEntity* apMeshEntity) { mpPhysgunEntity = apMeshEntity; }
+	void SetPhysGunDebug(bool abDebug) { mbDebug = abDebug; }
 
 	/////////////////////////////////
 	// Save data stuff
@@ -84,30 +78,37 @@ public:
 	iLuxPlayerState_SaveData* CreateSaveData() { return NULL; }
 
 private:
+	// Pointers
+	cLuxPhysGunRayCallback* mpRayCallback;
+	cMeshEntity* mpPhysgunEntity;
+	iPhysicsBody* mpBody;
+	iLuxEnemy* mpEnemy;
+	cMaterial* mpMaterial;
+	iVertexBuffer* mpVtxBuffer;
+
+	// Interaction Specific
+	bool mbInteracting;
 	cVector3f mvGrabPos;
 	cVector3f mvGrabLocalPos;
 	cVector3f mvLocalBodyOffset;
-	bool mbInteracting;
-	bool mbDebug;
-	cCamera* mpCam;
-	cMeshEntity* mpMeshEntity;
-	iPhysicsBody* mpCurrentBody;
-	iPhysicsWorld* mpPhysicsWorld;
-	cLuxPhysGunRayCallback* mpRayCallback;
-	cVector2f mvCrossSize;
-	cVector3f mvCrossPos;
-
+	cMatrixf m_mtxBodyRotation;
+	float mfGrabDepth;
+	float mfEnemyYaw;
 	float mfMaxForce;
 	float mfMaxTorque;
 	float mfMaxAngularSpeed;
+	float mfUvOffset;
 
-	cMatrixf m_mtxBodyRotation;
-	float mfEnemyYaw;
-
+	// PID
 	cPidController<cVector3f> mForcePid;
 	cPidController<cVector3f> mSpeedTorquePid;
 
-	float mfGrabDepth;
+	// Crosshair
+	cVector2f mvCrossSize;
+	cVector3f mvCrossPos;
+
+	// Debug
+	bool mbDebug;
 };
 
 #endif // LUX_PLAYER_STATE_PHYSGUN_H

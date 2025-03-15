@@ -354,6 +354,7 @@ void iLuxEnemyLoader::AfterLoad(cXmlElement *apRootElem, const cMatrixf &a_mtxTr
 	pMap->AddEntity(pEnemy);
 
 	pEnemy->SetActive(mbActive);
+	pEnemy->SetIsActive(mbActive);
 
 	///////////////////////////////
 	// Instance vars
@@ -2267,6 +2268,7 @@ void iLuxEnemy::OnSetActive(bool abX)
 	}
 	
 	OnSetActiveEnemySpecific(abX);
+	mbIsActive = abX;
 }
 
 //-----------------------------------------------------------------------

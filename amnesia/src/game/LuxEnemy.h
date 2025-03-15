@@ -490,6 +490,9 @@ public:
 
 	float GetInLanternLightCount(){ return mfInLanternLightCount;}
 
+	void SetIsActive(bool abIsActive) { mbIsActive = abIsActive; }
+	bool IsActive() { return mbActive; }
+
 	//////////////////////
 	//Callbacks
 	virtual bool InRangeOfFood(iPhysicsBody *apFoodBody);
@@ -615,6 +618,8 @@ protected:
 	float mfHealth;
 	bool mbCausesSanityDecrease;
 	bool mbCausesSanityDecreaseAsDefault;
+
+	bool mbIsActive;
 
 	eLuxEnemyState mCurrentState;
 	eLuxEnemyState mNextState;

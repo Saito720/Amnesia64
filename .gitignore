@@ -7,6 +7,13 @@
 *.rsuser
 *.suo
 *.user
+!amnesia/src/game/Lux.vcxproj.user
+!HPL2/tools/editors/leveleditor/LevelEditor.vcxproj.user
+!HPL2/tools/editors/materialeditor/MaterialEditor.vcxproj.user
+!HPL2/tools/editors/modeleditor/ModelEditor.vcxproj.user
+!HPL2/tools/editors/particleeditor/ParticleEditor.vcxproj.user
+!HPL2/tools/mapview/MapView.vcxproj.user
+!HPL2/tools/modelview/ModelView.vcxproj.user
 *.userosscache
 *.sln.docstates
 

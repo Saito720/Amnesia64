@@ -63,10 +63,9 @@ public:
 	float DrawDebug(cGuiSet* apSet, iFontData* apFont, float afStartY) { return afStartY; };
 
 	void RenderSolid(cRendererCallbackFunctions* apFunctions);
-	void DrawPhysBeam(cRendererCallbackFunctions* apFunctions, cVector3f avStart, cVector3f avEnd, float afStepSize = 0, float afCurvatureFactor = 0.5f, float afBeamWidth = 0.025f);
-	void DrawDebugRay(cRendererCallbackFunctions* apFunctions, cVector3f avStart, cVector3f avEnd, float afStepSize = 0, float afCurvatureFactor = 0.5f);
+	void DrawPhysBeam(cRendererCallbackFunctions* apFunctions, cVector3f avStart, cVector3f avEnd, float afBeamWidth = 0.025f, float afCurvatureFactor = 0.5f);
 
-	std::vector<cVector3f> QuadraticBezier(cVector3f avStart, cVector3f avEnd, float afStepSize, float afCurvatureFactor);
+	std::vector<cVector3f> QuadraticBezier(cVector3f avStart, cVector3f avEnd, float afCurvatureFactor);
 	cVector3f Interpolate(const cVector3f& avFrom, const cVector3f& avTo, float afPercent) { return avFrom + (avTo - avFrom) * afPercent; }
 
 	void SetPhysGunEntity(cMeshEntity* apMeshEntity) { mpPhysgunEntity = apMeshEntity; }
@@ -83,7 +82,8 @@ private:
 	cMeshEntity* mpPhysgunEntity;
 	iPhysicsBody* mpBody;
 	iLuxEnemy* mpEnemy;
-	cMaterial* mpMaterial;
+	cMaterial* mpBeamMat;
+	cMaterial* mpBeamActiveMat;
 	iVertexBuffer* mpVtxBuffer;
 
 	// Interaction Specific
@@ -97,7 +97,10 @@ private:
 	float mfMaxForce;
 	float mfMaxTorque;
 	float mfMaxAngularSpeed;
+	float mfMaxDistance;
 	float mfUvOffset;
+	float mfBeamStepSize;
+	int mlMaxStepCount;
 
 	// PID
 	cPidController<cVector3f> mForcePid;

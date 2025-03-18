@@ -12,9 +12,13 @@
 cLuxPlayerState_PhysGun::cLuxPlayerState_PhysGun(cLuxPlayer* apPlayer) : iLuxPlayerState_Interact(apPlayer, eLuxPlayerState_PhysGun)
 {
 	// Grab settings from game config
-	mfMaxForce = gpBase->mpGameCfg->GetFloat("Player_Interaction", "PhysGunMaxForce", 0);
-	mfMaxTorque = gpBase->mpGameCfg->GetFloat("Player_Interaction", "PhysGunMaxTorque", 0);
-	mfMaxAngularSpeed = gpBase->mpGameCfg->GetFloat("Player_Interaction", "PhysGunMaxAngularSpeed", 0);
+	mfMaxForce = gpBase->mpGameCfg->GetFloat("Physgun", "PhysgunMaxForce", 0);
+	mfMaxTorque = gpBase->mpGameCfg->GetFloat("Physgun", "PhysgunMaxTorque", 0);
+	mfMaxAngularSpeed = gpBase->mpGameCfg->GetFloat("Physgun", "PhysgunMaxAngularSpeed", 0);
+	mfMaxDistance = gpBase->mpGameCfg->GetFloat("Physgun", "PhysgunMaxDistance", 0);
+
+	mfBeamStepSize = 0.25f;
+	mlMaxStepCount = mfMaxDistance / mfBeamStepSize;
 
 	// Define PID parameters
 	mForcePid.SetErrorNum(20);
@@ -37,42 +41,47 @@ cLuxPlayerState_PhysGun::cLuxPlayerState_PhysGun(cLuxPlayer* apPlayer) : iLuxPla
 		mvCrossPos = cVector3f(vPos.x, vPos.y, 1);
 	}
 
-	iLowLevelGraphics* pLowLevelGraphics = gpBase->mpEngine->GetGraphics()->GetLowLevel();
-	mpVtxBuffer = pLowLevelGraphics->CreateVertexBuffer(eVertexBufferType_Hardware, eVertexBufferDrawType_Tri, eVertexBufferUsageType_Stream, 8 * 100, 12 * 100);
-	mpVtxBuffer->CreateElementArray(eVertexBufferElement_Position, eVertexBufferElementFormat_Float, 4);
-	mpVtxBuffer->CreateElementArray(eVertexBufferElement_Normal, eVertexBufferElementFormat_Float, 3);
-	mpVtxBuffer->CreateElementArray(eVertexBufferElement_Color0, eVertexBufferElementFormat_Float, 4);
-	mpVtxBuffer->CreateElementArray(eVertexBufferElement_Texture0, eVertexBufferElementFormat_Float, 3);
-
-	for (int i = 0; i < 100; ++i)
+	if (mlMaxStepCount >= 2)
 	{
-		for (int j = 0; j < 4; j++)
+		iLowLevelGraphics* pLowLevelGraphics = gpBase->mpEngine->GetGraphics()->GetLowLevel();
+		mpVtxBuffer = pLowLevelGraphics->CreateVertexBuffer(eVertexBufferType_Hardware, eVertexBufferDrawType_Tri, eVertexBufferUsageType_Stream, 8 * mlMaxStepCount, 12 * mlMaxStepCount);
+		mpVtxBuffer->CreateElementArray(eVertexBufferElement_Position, eVertexBufferElementFormat_Float, 4);
+		mpVtxBuffer->CreateElementArray(eVertexBufferElement_Normal, eVertexBufferElementFormat_Float, 3);
+		mpVtxBuffer->CreateElementArray(eVertexBufferElement_Color0, eVertexBufferElementFormat_Float, 4);
+		mpVtxBuffer->CreateElementArray(eVertexBufferElement_Texture0, eVertexBufferElementFormat_Float, 3);
+
+		for (int i = 0; i < mlMaxStepCount; ++i)
 		{
-			for (int k = 0; k < 2; k++)
+			for (int j = 0; j < 4; j++)
 			{
-				mpVtxBuffer->AddVertexVec3f(eVertexBufferElement_Position, 0);
-				mpVtxBuffer->AddVertexColor(eVertexBufferElement_Color0, cColor(1, 1, 1, 1));
-				mpVtxBuffer->AddVertexVec3f(eVertexBufferElement_Texture0, 0);
-				mpVtxBuffer->AddVertexVec3f(eVertexBufferElement_Normal, cVector3f(0, 0, 1));
+				for (int k = 0; k < 2; k++)
+				{
+					mpVtxBuffer->AddVertexVec3f(eVertexBufferElement_Position, 0);
+					mpVtxBuffer->AddVertexColor(eVertexBufferElement_Color0, cColor(1));
+					mpVtxBuffer->AddVertexVec3f(eVertexBufferElement_Texture0, 0);
+					mpVtxBuffer->AddVertexVec3f(eVertexBufferElement_Normal, cVector3f(0, 0, 1));
+				}
 			}
+
+			mpVtxBuffer->AddIndex((i * 8) + 0);
+			mpVtxBuffer->AddIndex((i * 8) + 2);
+			mpVtxBuffer->AddIndex((i * 8) + 4);
+			mpVtxBuffer->AddIndex((i * 8) + 4);
+			mpVtxBuffer->AddIndex((i * 8) + 6);
+			mpVtxBuffer->AddIndex((i * 8) + 0);
+			mpVtxBuffer->AddIndex((i * 8) + 1);
+			mpVtxBuffer->AddIndex((i * 8) + 3);
+			mpVtxBuffer->AddIndex((i * 8) + 5);
+			mpVtxBuffer->AddIndex((i * 8) + 5);
+			mpVtxBuffer->AddIndex((i * 8) + 7);
+			mpVtxBuffer->AddIndex((i * 8) + 1);
 		}
 
-		mpVtxBuffer->AddIndex((i * 8) + 0);
-		mpVtxBuffer->AddIndex((i * 8) + 2);
-		mpVtxBuffer->AddIndex((i * 8) + 4);
-		mpVtxBuffer->AddIndex((i * 8) + 4);
-		mpVtxBuffer->AddIndex((i * 8) + 6);
-		mpVtxBuffer->AddIndex((i * 8) + 0);
-		mpVtxBuffer->AddIndex((i * 8) + 1);
-		mpVtxBuffer->AddIndex((i * 8) + 3);
-		mpVtxBuffer->AddIndex((i * 8) + 5);
-		mpVtxBuffer->AddIndex((i * 8) + 5);
-		mpVtxBuffer->AddIndex((i * 8) + 7);
-		mpVtxBuffer->AddIndex((i * 8) + 1);
+		mpVtxBuffer->Compile(eVertexCompileFlag_CreateTangents);
 	}
 
-	mpVtxBuffer->Compile(eVertexCompileFlag_CreateTangents);
-	mpMaterial = gpBase->mpEngine->GetResources()->GetMaterialManager()->CreateMaterial("physbeam_active");
+	mpBeamMat = gpBase->mpEngine->GetResources()->GetMaterialManager()->CreateMaterial("physbeam");
+	mpBeamActiveMat = gpBase->mpEngine->GetResources()->GetMaterialManager()->CreateMaterial("physbeam_active");
 
 	// Create RayCallback
 	mpRayCallback = hplNew(cLuxPhysGunRayCallback, (this));
@@ -276,7 +285,18 @@ void cLuxPlayerState_PhysGun::OnRelease()
 void cLuxPlayerState_PhysGun::OnScroll(float afAmount)
 {
 	if (mbInteracting)
-		mfGrabDepth += afAmount;
+	{
+		if (mfMaxDistance == -1)
+		{
+			mfGrabDepth += afAmount;
+			return;
+		}
+
+		if (mfGrabDepth + afAmount > mfMaxDistance)
+			mfGrabDepth = mfMaxDistance;
+		else
+			mfGrabDepth += afAmount;
+	}
 }
 
 bool cLuxPlayerState_PhysGun::OnAddYaw(float afAmount)
@@ -329,7 +349,7 @@ void cLuxPlayerState_PhysGun::RenderSolid(cRendererCallbackFunctions* apFunction
 			// Ray cast start and end points
 			cCamera* pCam = gpBase->mpPlayer->GetCamera();
 			cVector3f vStart = pCam->GetPosition();
-			cVector3f vEnd = vStart + pCam->GetForward() * 100;
+			cVector3f vEnd = vStart + pCam->GetForward() * (mfMaxDistance == -1 ? 9999 : mfMaxDistance);
 
 			// Reset the ray callback and cast a new ray
 			mpRayCallback->Reset();
@@ -350,21 +370,8 @@ void cLuxPlayerState_PhysGun::RenderSolid(cRendererCallbackFunctions* apFunction
 				vRayEnd = cMath::MatrixMul(mpBody->GetLocalMatrix(), mvGrabLocalPos);
 			else
 				vRayEnd = mpRayCallback->GetPos();
-			// Debug drawing
-			if (mbDebug)
-			{
-				if (mpBody)
-				{
-					if (mpEnemy)
-					{
-						DrawPhysBeam(apFunctions, vRayStart, mpBody->GetCharacterBody()->GetPosition());
-						return;
-					}
-						DrawPhysBeam(apFunctions, vRayStart, vRayEnd, 0.25, 0.5f, 0.1f);
-				}
-				else
-					DrawPhysBeam(apFunctions, vRayStart, vRayEnd);
-			}
+
+			DrawPhysBeam(apFunctions, vRayStart, vRayEnd, 0.025f);
 		}
 	}
 }
@@ -384,133 +391,154 @@ static inline void SetVec4(float* apPos, const cVector3f& aPos)
 	apPos[3] = 1;
 }
 
-void cLuxPlayerState_PhysGun::DrawPhysBeam(cRendererCallbackFunctions* apFunctions, cVector3f avStart, cVector3f avEnd, float afStepSize, float afCurvatureFactor, float afBeamWidth)
+void cLuxPlayerState_PhysGun::DrawPhysBeam(cRendererCallbackFunctions* apFunctions, cVector3f avStart, cVector3f avEnd, float afBeamWidth, float afCurvatureFactor)
 {
 	float* pPosArray = mpVtxBuffer->GetFloatArray(eVertexBufferElement_Position);
 	float* pNrmArray = mpVtxBuffer->GetFloatArray(eVertexBufferElement_Normal);
 	float* pUvArray = mpVtxBuffer->GetFloatArray(eVertexBufferElement_Texture0);
+	float fRandWidth = cMath::RandRectf(0, 0.4);
 
-	if (afStepSize > 0)
+	if (mlMaxStepCount >= 2 && mpBody && !mpEnemy)
 	{
-		float fDistance = cMath::Vector3Dist(avStart, avEnd);
-		if (fDistance != 0)
+		if (cMath::Vector3Dist(avStart, avEnd) / (mfBeamStepSize * 2) >= 1.0f)
 		{
-			if (fDistance / (afStepSize * 2) >= 1.0f)
+			std::vector<cVector3f> vBezierPoints = QuadraticBezier(avStart, avEnd, afCurvatureFactor);
+			if (vBezierPoints.size() - 1 > mlMaxStepCount)
+				vBezierPoints.resize(mlMaxStepCount + 1);
+			size_t PointCount = vBezierPoints.size();
+
+			cVector3f vPrevPoint = avStart;
+			vBezierPoints[PointCount - 1] = avEnd;
+			for (int i = 1; i < PointCount; ++i)
 			{
-				std::vector<cVector3f> vBezierPoints = QuadraticBezier(avStart, avEnd, afStepSize, afCurvatureFactor);
-				size_t PointCount = vBezierPoints.size();
+				cVector3f vDir = cMath::Vector3Normalize(vBezierPoints[i] - vPrevPoint);
+				cVector3f vCamPos = gpBase->mpPlayer->GetCamera()->GetPosition();
+				cVector3f vToCam = cMath::Vector3Normalize(vCamPos - vPrevPoint);
+				cVector3f vRight = cMath::Vector3Normalize(cMath::Vector3Cross(vDir, vToCam));
+				cVector3f vOffset = vRight * (afBeamWidth / 2.0f);
 
-				cVector3f vPrevPoint = avStart;
-				vBezierPoints[PointCount - 1] = avEnd;
-				for (int i = 1; i < PointCount; ++i)
+				cVector3f vCoords[4] = { cVector3f(vPrevPoint + vOffset),
+											cVector3f(vPrevPoint - vOffset),
+											cVector3f(vBezierPoints[i] - vOffset),
+											cVector3f(vBezierPoints[i] + vOffset) };
+
+				cVector3f vNormal = cMath::Vector3Normalize(cMath::Vector3Cross(cVector3f(vCoords[1] - vCoords[0]),
+																				cVector3f(vCoords[2] - vCoords[0])));
+
+				cVector3f vTexCoords[4] = { cVector3f(1 - fRandWidth,mfUvOffset,0),
+											cVector3f(-1 + fRandWidth,mfUvOffset,0),
+											cVector3f(-1 + fRandWidth,mfUvOffset - 0.75,0),
+											cVector3f(1 - fRandWidth,mfUvOffset - 0.75,0) };
+
+				mfUvOffset = mfUvOffset >= 2.0f ? mfUvOffset = 0.25f : mfUvOffset += 0.25f;
+
+				for (int j = 0; j < 4; j++)
 				{
-					cVector3f vDir = cMath::Vector3Normalize(vBezierPoints[i] - vPrevPoint);
-					cVector3f vCamPos = gpBase->mpPlayer->GetCamera()->GetPosition();
-					cVector3f vToCam = cMath::Vector3Normalize(vCamPos - vPrevPoint);
-					cVector3f vRight = cMath::Vector3Normalize(cMath::Vector3Cross(vDir, vToCam));
-					cVector3f vOffset = vRight * (afBeamWidth / 2.0f);
-
-					cVector3f vCoords[4] = { cVector3f(vPrevPoint + vOffset),
-											 cVector3f(vPrevPoint - vOffset),
-											 cVector3f(vBezierPoints[i] - vOffset),
-											 cVector3f(vBezierPoints[i] + vOffset) };
-
-					cVector3f vTexCoords[4] = { cVector3f(1,mfUvOffset,0),
-												cVector3f(-1,mfUvOffset,0),
-												cVector3f(-1,mfUvOffset - 2,0),
-												cVector3f(1,mfUvOffset - 2,0) };
-
-					cVector3f vEdge1 = vCoords[1] - vCoords[0];
-					cVector3f vEdge2 = vCoords[2] - vCoords[0];
-					cVector3f vNormal = cMath::Vector3Normalize(cMath::Vector3Cross(vEdge1, vEdge2));
-
-					for (int j = 0; j < 4; j++)
+					for (int k = 0; k < 2; k++)
 					{
-						for (int k = 0; k < 2; k++)
-						{
-							int vertexIndex = j * 2 + k;
-							SetVec4(&pPosArray[vertexIndex * 4], vCoords[j]);
-							SetVec3(&pNrmArray[vertexIndex * 3], vNormal);
-							SetVec3(&pUvArray[vertexIndex * 3], (k == 0 ? (vTexCoords[j] + cVector2f(1, 1)) / 2 : (vTexCoords[3 - j] + cVector2f(1, 1)) / 2));
-						}
+						int vertexIndex = j * 2 + k;
+						SetVec4(&pPosArray[vertexIndex * 4], vCoords[j]);
+						SetVec3(&pNrmArray[vertexIndex * 3], vNormal);
+						SetVec3(&pUvArray[vertexIndex * 3], k == 0 ? (vTexCoords[j] + cVector2f(1, 1)) / 2 : (vTexCoords[3 - j] + cVector2f(1, 1)) / 2);
 					}
-
-					pPosArray += 4 * 8;
-					pNrmArray += 3 * 8;
-					pUvArray += 3 * 8;
-
-					vPrevPoint = vBezierPoints[i];
 				}
-				mpVtxBuffer->SetElementNum((PointCount - 1) * 12);
-				mpVtxBuffer->UpdateData(eVertexElementFlag_Position | eVertexElementFlag_Normal | eVertexElementFlag_Texture0, false);
+
+				pPosArray += 4 * 8;
+				pNrmArray += 3 * 8;
+				pUvArray += 3 * 8;
+
+				vPrevPoint = vBezierPoints[i];
+			}
+
+			mpVtxBuffer->SetElementNum((static_cast<int>(PointCount) - 1) * 12);
+			mpVtxBuffer->UpdateData(eVertexElementFlag_Position | eVertexElementFlag_Normal | eVertexElementFlag_Texture0, false);
+			if (!mbDebug)
+			{
 				apFunctions->SetProgram(NULL);
-				apFunctions->SetDepthTest(mpMaterial->GetDepthTest());
-				apFunctions->SetBlendMode(mpMaterial->GetBlendMode());
-				apFunctions->SetAlphaMode(mpMaterial->GetAlphaMode());
-				apFunctions->SetTexture(0, mpMaterial->GetTexture(eMaterialTexture_Diffuse));
+				apFunctions->SetDepthTest(mpBeamActiveMat->GetDepthTest());
+				apFunctions->SetBlendMode(mpBeamActiveMat->GetBlendMode());
+				apFunctions->SetAlphaMode(mpBeamActiveMat->GetAlphaMode());
+				apFunctions->SetTexture(0, mpBeamActiveMat->GetTexture(eMaterialTexture_Diffuse));
 				apFunctions->SetVertexBuffer(mpVtxBuffer);
 				apFunctions->DrawCurrent();
-
-				if (mfUvOffset >= 2.0f)
-					mfUvOffset = 0.05f;
-				else
-					mfUvOffset += 0.05f;
-				return;
 			}
-		}
-	}
-	cVector3f vDir = cMath::Vector3Normalize(avEnd - avStart);
-	cVector3f vCamPos = gpBase->mpPlayer->GetCamera()->GetPosition();
-	cVector3f vToCam = cMath::Vector3Normalize(vCamPos - avStart);
-	cVector3f vRight = cMath::Vector3Normalize(cMath::Vector3Cross(vDir, vToCam));
-	cVector3f vOffset = vRight * (afBeamWidth / 2.0f);
-
-	tVertexVec vBeamQuad[4]; vBeamQuad[0].resize(4);
-	vBeamQuad[0][0].pos = avStart + vOffset;
-	vBeamQuad[0][1].pos = avStart - vOffset;
-	vBeamQuad[0][2].pos = avEnd - vOffset;
-	vBeamQuad[0][3].pos = avEnd + vOffset;
-
-	apFunctions->GetLowLevelGfx()->DrawQuad(vBeamQuad[0], cColor(0, 0, 1));
-}
-
-void cLuxPlayerState_PhysGun::DrawDebugRay(cRendererCallbackFunctions* apFunctions, cVector3f avStart, cVector3f avEnd, float afStepSize, float afCurvatureFactor)
-{
-	if (afStepSize > 0)
-	{
-		float fDistance = cMath::Vector3Dist(avStart, avEnd);
-		if (fDistance != 0)
-		{
-			if (fDistance / (afStepSize * 2) >= 1.0f)
+			else
 			{
-				std::vector<cVector3f> vBezierPoints = QuadraticBezier(avStart, avEnd, afStepSize, afCurvatureFactor);
-				size_t PointCount = vBezierPoints.size();
-
+				apFunctions->DrawWireFrame(mpVtxBuffer, cColor(0, 1, 0));
 				apFunctions->GetLowLevelGfx()->DrawSphere(avStart, 0.05f, cColor(1, 0, 0));
 				apFunctions->GetLowLevelGfx()->DrawSphere(avEnd, 0.05f, cColor(1, 0, 0));
 
 				cVector3f vPrevPoint = avStart;
 				for (int i = 1; i < PointCount - 1; ++i)
 				{
-					apFunctions->GetLowLevelGfx()->DrawSphere(vBezierPoints[i], 0.025f, cColor(0, 1, 0));
-					apFunctions->GetLowLevelGfx()->DrawLine(vPrevPoint, vBezierPoints[i], cColor(1, 1, 1));
+					apFunctions->GetLowLevelGfx()->DrawSphere(vBezierPoints[i], 0.005f, cColor(1, 1, 0));
+					apFunctions->GetLowLevelGfx()->DrawLine(vPrevPoint, vBezierPoints[i], cColor(1));
 					vPrevPoint = vBezierPoints[i];
 				}
-				apFunctions->GetLowLevelGfx()->DrawLine(vPrevPoint, avEnd, cColor(1, 1, 1));
-				return;
+
+				apFunctions->GetLowLevelGfx()->DrawLine(vPrevPoint, avEnd, cColor(1));
 			}
 		}
 	}
-	apFunctions->GetLowLevelGfx()->DrawSphere(avStart, 0.05f, cColor(1, 0, 0));
-	apFunctions->GetLowLevelGfx()->DrawSphere(avEnd, 0.05f, cColor(1, 0, 0));
-	apFunctions->GetLowLevelGfx()->DrawLine(avStart, avEnd, cColor(1, 1, 1));
+	else
+	{
+		cVector3f vDir = cMath::Vector3Normalize(avEnd - avStart);
+		cVector3f vCamPos = gpBase->mpPlayer->GetCamera()->GetPosition();
+		cVector3f vToCam = cMath::Vector3Normalize(vCamPos - avStart);
+		cVector3f vRight = cMath::Vector3Normalize(cMath::Vector3Cross(vDir, vToCam));
+		cVector3f vOffset = vRight * (afBeamWidth * 2.0f);
+
+		cVector3f vCoords[4] = { cVector3f(avStart + vOffset),
+									cVector3f(avStart - vOffset),
+									cVector3f(avEnd - vOffset),
+									cVector3f(avEnd + vOffset) };
+
+		cVector3f vNormal = cMath::Vector3Normalize(cMath::Vector3Cross(cVector3f(vCoords[1] - vCoords[0]),
+																		cVector3f(vCoords[2] - vCoords[0])));
+
+		float fDistance = cMath::Vector3Dist(avStart, avEnd);
+		cVector3f vTexCoords[4] = { cVector3f(-1,mfUvOffset,0),
+									cVector3f(1,mfUvOffset,0),
+									cVector3f(1,mfUvOffset + (fDistance / 2),0),
+									cVector3f(-1,mfUvOffset + (fDistance / 2),0) };
+
+		//mfUvOffset = mfUvOffset >= 2.0f ? mfUvOffset = 0.1f : mfUvOffset += 0.1f;
+
+		for (int i = 0; i < 4; i++)
+		{
+			for (int j = 0; j < 2; j++)
+			{
+				int vertexIndex = i * 2 + j;
+				SetVec4(&pPosArray[vertexIndex * 4], vCoords[i]);
+				SetVec3(&pNrmArray[vertexIndex * 3], vNormal);
+				SetVec3(&pUvArray[vertexIndex * 3], (vTexCoords[i] + cVector2f(1, 1)) / 2);
+			}
+		}
+
+		mpVtxBuffer->SetElementNum(12);
+		mpVtxBuffer->UpdateData(eVertexElementFlag_Position | eVertexElementFlag_Normal | eVertexElementFlag_Texture0, false);
+		if (!mbDebug)
+		{
+			apFunctions->SetProgram(NULL);
+			apFunctions->SetDepthTest(mpBeamMat->GetDepthTest());
+			apFunctions->SetBlendMode(mpBeamMat->GetBlendMode());
+			apFunctions->SetAlphaMode(mpBeamMat->GetAlphaMode());
+			apFunctions->SetTexture(0, mpBeamMat->GetTexture(eMaterialTexture_Diffuse));
+			apFunctions->SetVertexBuffer(mpVtxBuffer);
+			apFunctions->DrawCurrent();
+		}
+		else
+		{
+			apFunctions->DrawWireFrame(mpVtxBuffer, cColor(0, 1, 0));
+			apFunctions->GetLowLevelGfx()->DrawSphere(avStart, 0.05f, cColor(1, 0, 0));
+			apFunctions->GetLowLevelGfx()->DrawSphere(avEnd, 0.05f, cColor(1, 0, 0));
+			apFunctions->GetLowLevelGfx()->DrawLine(avStart, avEnd, cColor(1, 1, 1));
+		}
+	}
 }
 
-std::vector<cVector3f> cLuxPlayerState_PhysGun::QuadraticBezier(cVector3f avStart, cVector3f avEnd, float afStepSize, float afCurvatureFactor)
+std::vector<cVector3f> cLuxPlayerState_PhysGun::QuadraticBezier(cVector3f avStart, cVector3f avEnd, float afCurvatureFactor)
 {
-	if (afStepSize <= 0)
-		FatalError("Tried to create curve with invalid step size!\n");
-
 	cVector3f vCamPos = gpBase->mpPlayer->GetCamera()->GetPosition();
 	cVector3f vCamForward = cMath::Vector3Normalize(gpBase->mpPlayer->GetCamera()->GetForward());
 
@@ -521,7 +549,7 @@ std::vector<cVector3f> cLuxPlayerState_PhysGun::QuadraticBezier(cVector3f avStar
 	cVector3f vControlPoint = vMid - vLateral * afCurvatureFactor;
 
 	std::vector<cVector3f> vBezierPoints;
-	float fStep = afStepSize / cMath::Vector3Dist(avStart, avEnd);
+	float fStep = mfBeamStepSize / cMath::Vector3Dist(avStart, avEnd);
 	for (float t = 0; t <= 1.0f; t += fStep)
 	{
 		cVector3f vA = Interpolate(avStart, vControlPoint, t);

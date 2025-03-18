@@ -1,6 +1,6 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.30503.244
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35913.81 d17.13
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Lux", "amnesia\src\game\Lux.vcxproj", "{451CAACC-25B3-465C-A42E-658B8883406E}"
 EndProject
@@ -41,6 +41,8 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MapView", "HPL2\tools\mapview\MapView.vcxproj", "{E464A8DA-E7E0-45BC-B46A-42991283992E}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ModelView", "HPL2\tools\modelview\ModelView.vcxproj", "{CF2C5DD0-D7F9-47E2-9B83-E93387B6F4E8}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LuxServer", "HPL2\tools\luxserver\LuxServer.vcxproj", "{BF9A4B92-C0B8-4689-9A5A-C863A66CB0E0}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -210,6 +212,14 @@ Global
 		{CF2C5DD0-D7F9-47E2-9B83-E93387B6F4E8}.Release|x64.Build.0 = Release|x64
 		{CF2C5DD0-D7F9-47E2-9B83-E93387B6F4E8}.Release|x86.ActiveCfg = Release|Win32
 		{CF2C5DD0-D7F9-47E2-9B83-E93387B6F4E8}.Release|x86.Build.0 = Release|Win32
+		{BF9A4B92-C0B8-4689-9A5A-C863A66CB0E0}.Debug|x64.ActiveCfg = Debug|x64
+		{BF9A4B92-C0B8-4689-9A5A-C863A66CB0E0}.Debug|x64.Build.0 = Debug|x64
+		{BF9A4B92-C0B8-4689-9A5A-C863A66CB0E0}.Debug|x86.ActiveCfg = Debug|Win32
+		{BF9A4B92-C0B8-4689-9A5A-C863A66CB0E0}.Debug|x86.Build.0 = Debug|Win32
+		{BF9A4B92-C0B8-4689-9A5A-C863A66CB0E0}.Release|x64.ActiveCfg = Release|x64
+		{BF9A4B92-C0B8-4689-9A5A-C863A66CB0E0}.Release|x64.Build.0 = Release|x64
+		{BF9A4B92-C0B8-4689-9A5A-C863A66CB0E0}.Release|x86.ActiveCfg = Release|Win32
+		{BF9A4B92-C0B8-4689-9A5A-C863A66CB0E0}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

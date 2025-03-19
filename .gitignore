@@ -26,10 +26,8 @@ mono_crash.*
 
 # Build results
 [Dd]ebug/
-!HPL2/dependencies/lib/Win64/Debug/
 [Dd]ebugPublic/
 [Rr]elease/
-!HPL2/dependencies/lib/Win64/Release/
 [Rr]eleases/
 x64/
 x86/
@@ -40,6 +38,17 @@ bld/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
+
+# lib Debug folders
+!HPL2/dependencies/lib/openal-soft/Win64/Debug/
+!HPL2/dependencies/lib/yojimbo/Win32/Debug/
+!HPL2/dependencies/lib/yojimbo/Win64/Debug/
+
+# lib Release folders
+!HPL2/dependencies/lib/openal/Win32/Release/
+!HPL2/dependencies/lib/openal-soft/Win64/Release/
+!HPL2/dependencies/lib/yojimbo/Win32/Release/
+!HPL2/dependencies/lib/yojimbo/Win64/Release/
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/
@@ -84,7 +93,6 @@ StyleCopReport.xml
 *.iobj
 *.pch
 *.pdb
-!HPL2/dependencies/lib/Win64/Debug/OpenAL32.pdb
 *.ipdb
 *.pgc
 *.pgd
@@ -103,6 +111,23 @@ StyleCopReport.xml
 *.pidb
 *.svclog
 *.scc
+
+# openal-soft Win64 Debug
+!HPL2/dependencies/lib/openal-soft/Win64/Debug/OpenAL32.pdb
+
+# yojimbo Win32 Debug
+!HPL2/dependencies/lib/yojimbo/Win32/Debug/netcode.pdb
+!HPL2/dependencies/lib/yojimbo/Win32/Debug/reliable.pdb
+!HPL2/dependencies/lib/yojimbo/Win32/Debug/sodium-builtin.pdb
+!HPL2/dependencies/lib/yojimbo/Win32/Debug/tlsf.pdb
+!HPL2/dependencies/lib/yojimbo/Win32/Debug/yojimbo.pdb
+
+# yojimbo Win64 Debug
+!HPL2/dependencies/lib/yojimbo/Win64/Debug/netcode.pdb
+!HPL2/dependencies/lib/yojimbo/Win64/Debug/reliable.pdb
+!HPL2/dependencies/lib/yojimbo/Win64/Debug/sodium-builtin.pdb
+!HPL2/dependencies/lib/yojimbo/Win64/Debug/tlsf.pdb
+!HPL2/dependencies/lib/yojimbo/Win64/Debug/yojimbo.pdb
 
 # Chutzpah Test files
 _Chutzpah*

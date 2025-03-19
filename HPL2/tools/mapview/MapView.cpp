@@ -1104,7 +1104,7 @@ public:
 		cVector2f vSize = cVector2f(250, 740);
 		vGroupSize.x = vSize.x - 20;
 		cVector3f vPos = cVector3f(pSet->GetVirtualSize().x - vSize.x - 10, 10, 0);
-		mpOptionWindow = pSet->CreateWidgetWindow(0,vPos,vSize,_W("ModelView Toolbar") );
+		mpOptionWindow = pSet->CreateWidgetWindow(0,vPos,vSize,_W("MapView Toolbar") );
 
 		vSize = cVector2f(vSize.x-30, 18);
 		vPos = cVector3f(10, 30, 0.1f);

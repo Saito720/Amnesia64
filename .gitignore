@@ -8,6 +8,7 @@
 *.suo
 *.user
 !amnesia/src/game/Lux.vcxproj.user
+!HPL2/tools/luxserver/LuxServer.vcxproj.user
 !HPL2/tools/editors/leveleditor/LevelEditor.vcxproj.user
 !HPL2/tools/editors/materialeditor/MaterialEditor.vcxproj.user
 !HPL2/tools/editors/modeleditor/ModelEditor.vcxproj.user

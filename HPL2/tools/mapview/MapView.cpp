@@ -433,18 +433,21 @@ public:
 		{
 			iPhysicsWorld *pPhysicsWorld = mpWorld->GetPhysicsWorld();
 
-			cPhysicsBodyIterator bodyIt = pPhysicsWorld->GetBodyIterator();
-
-			cCamera *pCam = gpSimpleCamera->GetCamera();
-			
-			while(bodyIt.HasNext())
+			if (pPhysicsWorld)
 			{
-				iPhysicsBody *pBody = bodyIt.Next();
-				if(pCam->GetFrustum()->CollideBoundingVolume(pBody->GetBoundingVolume())== eCollision_Outside) continue; //Frustum test for some extra speed!				
+				cPhysicsBodyIterator bodyIt = pPhysicsWorld->GetBodyIterator();
 
-				cColor col = pBody->GetCollide() ? cColor(1,1) : cColor(1,0,1,1);
-				
-				pBody->RenderDebugGeometry(apFunctions->GetLowLevelGfx(),col);
+				cCamera* pCam = gpSimpleCamera->GetCamera();
+
+				while (bodyIt.HasNext())
+				{
+					iPhysicsBody* pBody = bodyIt.Next();
+					if (pCam->GetFrustum()->CollideBoundingVolume(pBody->GetBoundingVolume()) == eCollision_Outside) continue; //Frustum test for some extra speed!				
+
+					cColor col = pBody->GetCollide() ? cColor(1, 1) : cColor(1, 0, 1, 1);
+
+					pBody->RenderDebugGeometry(apFunctions->GetLowLevelGfx(), col);
+				}
 			}
 		}
 
@@ -1514,6 +1517,8 @@ public:
 
 	bool ChangeAmbientActive(iWidget* apWidget,const cGuiMessageData& aData)
 	{
+		if (!mpAmbientBox) return false;
+
 		mpAmbientBox->SetVisible(aData.mlVal == 1);
 
 		return true;
@@ -1522,6 +1527,8 @@ public:
 		
 	bool ChangeAmbientColor(iWidget* apWidget,const cGuiMessageData& aData)
 	{
+		if (!mpAmbientBox) return false;
+
 		mpAmbientBox->SetDiffuseColor(cColor( ((float)aData.mlVal) / 255.0f, 1.0f ));
 		return true;
 	}

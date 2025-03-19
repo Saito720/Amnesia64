@@ -24,6 +24,7 @@
     <ProjectGuid>{451caacc-25b3-465c-a42e-658b8883406e}</ProjectGuid>
     <RootNamespace>Lux</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>LuxClient</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">

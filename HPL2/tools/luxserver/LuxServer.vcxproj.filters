@@ -17,12 +17,18 @@
     <ClCompile Include="..\..\tests\Common\SimpleCamera.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="LuxServer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="MapView.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\..\tests\Common\SimpleCamera.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\amnesia\src\game\LuxShared.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

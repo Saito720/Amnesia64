@@ -106,6 +106,7 @@ namespace hpl {
 
 	void cPhysics::DestroyWorld(iPhysicsWorld* apWorld)
 	{
+		return;
 		STLFindAndDelete(mlstWorlds, apWorld);
 	}
 

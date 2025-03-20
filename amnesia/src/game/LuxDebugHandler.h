@@ -193,6 +193,8 @@ private:
 
 	tLuxDebugMessageList mlstMessages;
 	int mlTempCount;
+
+	tColorVec mvRandColor;
 };
 
 //----------------------------------------------

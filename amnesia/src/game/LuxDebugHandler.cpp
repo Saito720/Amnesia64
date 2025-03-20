@@ -650,7 +650,17 @@ void cLuxDebugHandler::RenderSolid(cRendererCallbackFunctions* apFunctions)
 
 	if(mbDrawPhysics)
 	{
-		gpBase->mpMapHandler->GetCurrentMap()->GetPhysicsWorld()->RenderDebugGeometry(apFunctions->GetLowLevelGfx(), cColor(0.5f));
+		int lColIndex = 0;
+		cPhysicsWorldIterator worldIt = gpBase->mpEngine->GetPhysics()->GetWorldIterator();
+		while (worldIt.HasNext())
+		{
+			if (lColIndex - 1 > mvRandColor.size())
+				mvRandColor.push_back(cMath::RandRectColor(0, 1));
+
+			iPhysicsWorld* pWorld = worldIt.Next();
+			pWorld->RenderDebugGeometry(apFunctions->GetLowLevelGfx(), mvRandColor[lColIndex]);
+			lColIndex++;
+		}
 	}
 }
 

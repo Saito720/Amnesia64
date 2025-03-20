@@ -41,6 +41,8 @@ namespace hpl {
 	typedef std::list<iPhysicsWorld*> tPhysicsWorldList;
 	typedef tPhysicsWorldList::iterator tPhysicsWorldListIt;
 
+	typedef cSTLIterator<iPhysicsWorld*, tPhysicsWorldList, tPhysicsWorldListIt> cPhysicsWorldIterator;
+
 	typedef std::map<tString, cSurfaceData*> tSurfaceDataMap;
 	typedef tSurfaceDataMap::iterator tSurfaceDataMapIt;
 
@@ -90,6 +92,7 @@ namespace hpl {
 		bool CanPlayImpact();
 		void AddImpact();
 
+		cPhysicsWorldIterator GetWorldIterator() { return cPhysicsWorldIterator(&mlstWorlds); }
 		cSurfaceDataIterator GetSurfaceDataIterator() { return cSurfaceDataIterator(&m_mapSurfaceData); }
 
 		void SetDebugLog(bool abX){ mbLog = abX;}

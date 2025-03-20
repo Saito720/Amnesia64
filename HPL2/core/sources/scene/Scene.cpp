@@ -334,6 +334,21 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
+	cWorld* cScene::GetWorld(const int alIndex)
+	{
+		tWorldListIt it = mlstWorlds.begin();
+		int i = 0;
+		for (;it != mlstWorlds.end();it++)
+		{
+			if (i == alIndex) return *it;
+			i++;
+		}
+
+		return NULL;
+	}
+
+	//-----------------------------------------------------------------------
+
 	void cScene::DestroyWorld(cWorld* apWorld)
 	{
 		STLFindAndDelete(mlstWorlds,apWorld);

@@ -101,9 +101,11 @@ namespace hpl {
 
 		cWorld* LoadWorld(const tString& asFile, tWorldLoadFlag aFlags);
 		cWorld* CreateWorld(const tString& asName);
+		cWorld* GetWorld(const int alIndex);
 		void DestroyWorld(cWorld* apWorld);
 		bool WorldExists(cWorld* apWorld);
 		
+		tWorldList& GetWorldList() { return mlstWorlds; }
 		
 	private:
 		void Render3DGui(cViewport* apViewPort,cFrustum *apFrustum,float afTimeStep);

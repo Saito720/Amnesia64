@@ -761,7 +761,7 @@ public:
 
 		if(mpWorld)
 		{ 
-			gpEngine->GetScene()->DestroyWorld(mpWorld);
+			//gpEngine->GetScene()->DestroyWorld(mpWorld);
 			mpWorld = NULL;
 			mpPhysicsWorld = NULL;
 			gvStartPostions.clear();
@@ -854,6 +854,8 @@ public:
 			mpWorld->SetSkyBox(pSkyBox,true);
 			mpWorld->SetSkyBoxActive(true);
 		}
+
+		mbMustUpdateWorldList = true;
 		
 		//////////////////////////////////
 		//Debug output
@@ -868,12 +870,58 @@ public:
 			Log(" '%s' Material: '%s'\n", pBody->GetName().c_str(), pBody->GetMaterial()->GetName().c_str());
 		}
 		
-		
 		return;
         iRenderableContainer *pContainer = mpWorld->GetRenderableContainer(eWorldContainerType_Static);
 		Log("\nCONTAINER DATA START:\n");
 		OutputContainerContentsRec(pContainer->GetRoot(),0);
 		Log("CONTAINER DATA END!\n");
+	}
+
+	void SetCurrentWorld(const int alIndex)
+	{
+		cWorld* newWorld = gpEngine->GetScene()->GetWorld(alIndex);
+		if (newWorld == NULL) return;
+		if (newWorld == mpWorld) return;
+
+		mpWorld = NULL;
+		mpPhysicsWorld = NULL;
+
+		mlWorldIndex = alIndex;
+		mpWorld = newWorld;
+
+		mpPhysicsWorld = mpWorld->GetPhysicsWorld();
+
+		//Ambient
+		mpAmbientBox = NULL;
+		mpAmbientBox = static_cast<cLightBox*> (mpWorld->GetLight("AmbientBoxLight"));
+		if (mpAmbientBox == NULL)
+		{
+			mpAmbientBox = mpWorld->CreateLightBox("AmbientBoxLight");
+			mpAmbientBox->SetSize(cVector3f(1000, 1000, 1000));
+			mpAmbientBox->SetDiffuseColor(cColor(0.5f, 0));
+			mpAmbientBox->SetBlendFunc(eLightBoxBlendFunc_Add);
+			mpAmbientBox->SetVisible(false);
+			mpAmbientBox->SetBoxLightPrio(1);
+		}
+
+		//////////////////////////////////
+		//Node container
+		gpNodeContainer = mpWorld->CreateAINodeContainer(gsNodeCont_Name, "Default", gvNodeCont_BodySize, gbNodeCont_NodeAtCenter,
+			glNodeCont_MinEdges, glNodeCont_MaxEdges,
+			gfNodeCont_MaxEdgeDistance, gfNodeCont_MaxHeight);
+		
+		//////////////////////////////////
+		//Set to viewport
+		gpSimpleCamera->GetViewport()->SetWorld(mpWorld);
+		renderCallback.mpWorld = mpWorld;
+		testRenderCallback.mpWorld = mpWorld;
+
+		mpCheckAmbientActive->SetChecked(mpAmbientBox->IsVisible());
+		mpSliderAmbientColor->SetValue((int)(mpAmbientBox->GetDiffuseColor().r * 255.0 + 0.5f));
+
+		//Force  a clearing of render list
+		cRenderList* pRenderList = gpSimpleCamera->GetViewport()->GetRenderSettings()->mpRenderList;
+		pRenderList->Clear();
 	}
 
 	tString GetTab(int alLevel)
@@ -1090,6 +1138,7 @@ public:
 		cWidgetLabel *pLabel = NULL;
 		cWidgetGroup *pGroup = NULL;
 		cWidgetSlider *pSlider = NULL;
+		cWidgetComboBox* pCombo = NULL;
 
 		cGuiSet *pSet = gpSimpleCamera->GetSet();
 
@@ -1116,14 +1165,32 @@ public:
 			vGroupPos = cVector3f(5,10,0.1f);
 			pGroup = pSet->CreateWidgetGroup(vPos,100,_W("Loading"),mpOptionWindow);
 
-			//Load File
-			pButton = pSet->CreateWidgetButton(vGroupPos,vSize,_W("Load Scene"),pGroup);
+			//Load New World
+			pButton = pSet->CreateWidgetButton(vGroupPos,vSize,_W("Load New World"),pGroup);
 			pButton->AddCallback(eGuiMessage_ButtonPressed,this, kGuiCallback(PressLoadWorld));
 			vGroupPos.y += 22;
 
-			//Reload File
-			pButton = pSet->CreateWidgetButton(vGroupPos,vSize,_W("Reload"),pGroup);
-			pButton->AddCallback(eGuiMessage_ButtonPressed,this, kGuiCallback(PressReload));
+			//Current World
+			float labelWidth = 90;
+			vGroupPos.y += 4;
+			pLabel = pSet->CreateWidgetLabel(vGroupPos, vSize, _W("Current World:"), pGroup);
+			vGroupPos.x += labelWidth;
+			vGroupPos.y -= 4;
+			pCombo = pSet->CreateWidgetComboBox(vGroupPos, cVector2f(vSize.x - labelWidth, vSize.y), _W(""), pGroup);
+			pCombo->AddCallback(eGuiMessage_SelectionChange, this, kGuiCallback(ChangeWorld));
+			pCombo->SetCanEdit(false);
+			mpWorldSelector = pCombo;
+			vGroupPos.y += 26;
+			vGroupPos.x -= labelWidth;
+
+			//Reload Current World (TODO)
+			//pButton = pSet->CreateWidgetButton(vGroupPos,vSize,_W("Reload Current World"),pGroup);
+			//pButton->AddCallback(eGuiMessage_ButtonPressed,this, kGuiCallback(PressReload));
+			//vGroupPos.y += 22;
+			
+			//Unload Current World
+			pButton = pSet->CreateWidgetButton(vGroupPos, vSize, _W("Unload Current World"), pGroup);
+			pButton->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(PressUnloadWorld));
 			vGroupPos.y += 22;
 
 			//Group end
@@ -1392,7 +1459,22 @@ public:
 
 	bool PressReload(iWidget* apWidget,const cGuiMessageData& aData)
 	{
-		LoadWorld(gsMapFile, true, true);
+		if (mlWorldIndex <= 1) return true;
+		if (!mpWorld) return true;
+		
+		//TODO
+		tString worldPath = mpWorld->GetName();
+		gpEngine->GetScene()->DestroyWorld(mpWorld);
+		mpWorld = NULL;
+		mpPhysicsWorld = NULL;
+		gvStartPostions.clear();
+
+		gpNodeContainer = NULL;
+
+		//gpEngine->GetScene()->GetWorldList().insert()
+		
+		
+
 		InitGuiAfterLoad();
 
 		return true;
@@ -1412,9 +1494,51 @@ public:
 		LoadWorld(gsMapFile, true, false);  
 		InitGuiAfterLoad();
 
-		return true;		
+		mbMustUpdateWorldList = true;
+		Update(0);
+
+		mlWorldIndex = (int)(gpEngine->GetScene()->GetWorldList().size() - 1);
+		mpWorldSelector->SetSelectedItem(mlWorldIndex, false, false);
+		Log("World index %d", mlWorldIndex);
+
+		return true;
 	}
 	kGuiCallbackFuncEnd(cSimpleUpdate,LoadWorldFromFilePicker)  
+
+	bool ChangeWorld(iWidget* apWidget, const cGuiMessageData& aData)
+	{
+		int selected = mpWorldSelector->GetSelectedItem();
+		if(selected != mlWorldIndex) SetCurrentWorld(selected);
+
+		return true;
+	}
+	kGuiCallbackFuncEnd(cSimpleUpdate, ChangeWorld);
+
+	bool PressUnloadWorld(iWidget* apWidget, const cGuiMessageData& aData)
+	{
+		if (mlWorldIndex <= 1) return true;
+
+		if (mpWorld)
+		{
+			gpEngine->GetScene()->DestroyWorld(mpWorld);
+			mpWorld = NULL;
+			mpPhysicsWorld = NULL;
+			gvStartPostions.clear();
+
+			gpNodeContainer = NULL;
+		}
+
+		if (gpEngine->GetScene()->GetWorldList().size() == mlWorldIndex)
+			mlWorldIndex -= 1;
+		SetCurrentWorld(mlWorldIndex);
+
+		mbMustUpdateWorldList = true;
+		Update(0);
+
+		return true;
+	}
+	kGuiCallbackFuncEnd(cSimpleUpdate, PressUnloadWorld)
+
 
 	//--------------------------------------------------------------
 
@@ -1866,6 +1990,8 @@ public:
 
 	void Update(float afTimeStep)
 	{
+		UpdateWorldList();
+
 		//////////////////////////////////
 		// Input
 		if(gpEngine->GetInput()->BecameTriggerd("MouseMode"))
@@ -1948,6 +2074,34 @@ public:
 
 	//--------------------------------------------------------------
 
+	void UpdateWorldList()
+	{
+		if (mbMustUpdateWorldList == false) return;
+		mbMustUpdateWorldList = false;
+
+		int lSelected = mpWorldSelector->GetSelectedItem();
+
+		mpWorldSelector->ClearItems();
+
+		tWorldList& worlds = gpEngine->GetScene()->GetWorldList();
+		tWorldListIt it = worlds.begin();
+
+		int i = -2;
+		for (;it != worlds.end();++it)
+		{
+			mpWorldSelector->AddItem(cString::ToStringW(i));
+			i++;
+		}
+
+		if (lSelected >= mpWorldSelector->GetItemNum())
+			lSelected = mpWorldSelector->GetItemNum() - 1;
+
+		if (mlWorldIndex == -1) lSelected = 1;
+		mpWorldSelector->SetSelectedItem(lSelected,false,false);
+	}
+
+	//--------------------------------------------------------------
+
 
 	~cSimpleUpdate()
 	{
@@ -1957,6 +2111,8 @@ public:
 public:
 	iLowLevelGraphics* mpLowLevelGraphics;
 	cWorld* mpWorld;
+	int mlWorldIndex = -1;
+	bool mbMustUpdateWorldList = true;
 	
 	cSimpleRenderCallback renderCallback;
 	cTestRenderCallback testRenderCallback;
@@ -1977,6 +2133,7 @@ public:
 
 	cBodyPicker mBodyPicker;
 
+	cWidgetComboBox* mpWorldSelector;
 	cWidgetCheckBox *mpCheckAmbientActive;
 	cWidgetSlider *mpSliderAmbientColor;
 	cWidgetLabel *mpLabelScatterLength;
@@ -2043,9 +2200,9 @@ int hplMain(const tString &asCommandline)
 #endif
 	CreateBaseDirs(vDirs, sPersonalDir);
 
-	SetLogFile(sPersonalDir + PERSONAL_RELATIVEROOT _W("HPL2/mapview.log"));
+	SetLogFile(sPersonalDir + PERSONAL_RELATIVEROOT _W("HPL2/luxserver.log"));
 
-	gpConfig = hplNew( cConfigFile, (sPersonalDir + PERSONAL_RELATIVEROOT _W("HPL2/mapview.cfg") ));
+	gpConfig = hplNew( cConfigFile, (sPersonalDir + PERSONAL_RELATIVEROOT _W("HPL2/luxserver.cfg") ));
 
 	gpConfig->Load();
 	

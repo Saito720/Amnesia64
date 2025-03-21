@@ -27,8 +27,6 @@ using namespace hpl;
 cEngine *gpEngine=NULL;
 cSimpleCamera *gpSimpleCamera=NULL;
 
-tString gsMapFile = "";
-
 cConfigFile *gpConfig=NULL;
 
 cPostEffectComposite *gpPostEffectComp=NULL;
@@ -44,15 +42,36 @@ float gfScatterMaxMaxVal = 0.3f;
 
 cAINodeContainer *gpNodeContainer=NULL;
 
+//Server implementation
+class cSpawnPoint;
+
+typedef std::multimap<tString, cSpawnPoint*> tSpawnPointNameMap;
+typedef tSpawnPointNameMap::iterator tSpawnPointNameMapIt;
+tSpawnPointNameMap g_mapSpawnPointsByName;
+
+typedef std::list<cSpawnPoint*> tSpawnPointList;
+typedef tSpawnPointList::iterator tSpawnPointListIt;
+typedef cSTLIterator<cSpawnPoint*, tSpawnPointList, tSpawnPointListIt> cSpawnPointIterator;
+tSpawnPointList mlstSpawnPoints;
+
+cWidgetTextBox *gpMapTB=NULL;
+cWidgetComboBox *gpSpawnPointCB=NULL;
+tString gsMapFile;
+tString gsMapFolder;
+tString gsSpawnPoint;
+tString gsAddress;
+int glPort;
+
 //--------------------------------------------------------------------------------
 
 bool gbDrawPhysicsDebug = false;
-bool gbDrawOcclusionTextInfo = true;
+bool gbDrawOcclusionTextInfo = false;
 bool gbDrawOcclusionGfxInfo = false;
-bool gbDrawStaticOcclusionGfxInfo = true;
+bool gbDrawStaticOcclusionGfxInfo = false;
 bool gbDrawSepperateObjects = false;
 bool gbDrawContainerDebug = false;
-bool gbDrawSoundDebug = true;
+bool gbDrawSoundDebug = false;
+bool gbDrawSpawnPoint = false;
 bool gbRenderSoundsPlaying= false;
 bool gbRenderPathNodes=false;
 bool gbDrawDynContainerDebug=false;
@@ -112,17 +131,55 @@ public:
 
 //--------------------------------------------------------------------------------
 
+class cSpawnPoint
+{
+	friend class cSimplePlayerStartArea;
+public:
+	cSpawnPoint(const tString& asName)
+	{
+		msName = asName;
+		mvPos = 0;
+	}
+
+	const tString& GetName() { return msName; }
+
+	const cVector3f& GetPosition() { return mvPos; }
+	float GetAngle() { return mfAngle; }
+
+private:
+	tString msName;
+	cVector3f mvPos;
+	float mfAngle;
+};
+
+cSpawnPoint* GetSpawnPointByName(const tString& asName)
+{
+	tSpawnPointNameMapIt it = g_mapSpawnPointsByName.find(asName);
+	if (it == g_mapSpawnPointsByName.end()) return NULL;
+
+	cSpawnPoint* pSpawnPoint = it->second;
+
+	return pSpawnPoint;
+}
+
 class cSimplePlayerStartArea : public iAreaLoader
 {
 public:
-	cSimplePlayerStartArea(const tString& asName) : iAreaLoader(asName)
-	{
+	cSimplePlayerStartArea(const tString& asName) : iAreaLoader(asName) {}
 
-	}
-
-	void Load(const tString &asName, int alID, bool abActive, const cVector3f &avSize, const cMatrixf &a_mtxTransform,cWorld *apWorld)
+	void Load(const tString& asName, int alID, bool abActive, const cVector3f& avSize, const cMatrixf& a_mtxTransform, cWorld* apWorld)
 	{
 		gvStartPostions.push_back(a_mtxTransform.GetTranslation());
+
+		cSpawnPoint* pNode = hplNew(cSpawnPoint, (asName));
+		pNode->mvPos = a_mtxTransform.GetTranslation() + cVector3f(0, 0.05f, 0);
+
+		cVector3f vForward = cMath::MatrixMul(a_mtxTransform.GetRotation(), cVector3f(0, 0, 1));
+
+		pNode->mfAngle = -cMath::GetAngleFromPoints2D(0, cVector2f(vForward.x, vForward.z));
+
+		g_mapSpawnPointsByName.insert(tSpawnPointNameMap::value_type(asName, pNode));
+		mlstSpawnPoints.push_back(pNode);
 	}
 };
 
@@ -473,7 +530,17 @@ public:
 		}
 
 		/////////////////////////////////////////
-		//Draws bounding boxes
+		//Draws spawn point
+		if (gbDrawSpawnPoint && mpWorld)
+		{
+			const cWidgetItem* pItem = gpSpawnPointCB->GetItem(gpSpawnPointCB->GetSelectedItem());
+			if (pItem)
+			{
+				cSpawnPoint* pSpawnPoint = GetSpawnPointByName(cString::To8Char(pItem->GetText()));
+				if (pSpawnPoint)
+					apFunctions->GetLowLevelGfx()->DrawSphere(pSpawnPoint->GetPosition(), 0.5f, cColor(0, 1, 1));
+			}
+		}
    	}
 	
 	void OnPostTranslucentDraw(cRendererCallbackFunctions *apFunctions)
@@ -577,24 +644,17 @@ public:
 		// Create world
 		// TODO: Load world here instead!
 		mpWorld = NULL;
-		if(gsMapFile != "")
-		{
-			LoadWorld(gsMapFile, false, false);
-		}
-		else
-		{
-			mpWorld = gpEngine->GetScene()->CreateWorld("Temp");
-			mpPhysicsWorld = NULL;
+		mpWorld = gpEngine->GetScene()->CreateWorld("Temp");
+		mpPhysicsWorld = NULL;
 			
-			iTexture *pSkyBox = gpEngine->GetResources()->GetTextureManager()->CreateCubeMap("cubemap_evening.dds",false);
-			if(pSkyBox)
-			{
-				mpWorld->SetSkyBox(pSkyBox,true);
-				mpWorld->SetSkyBoxActive(true);
-			}
-
-			mpAmbientBox = NULL;
+		iTexture *pSkyBox = gpEngine->GetResources()->GetTextureManager()->CreateCubeMap("cubemap_evening.dds",false);
+		if(pSkyBox)
+		{
+			mpWorld->SetSkyBox(pSkyBox,true);
+			mpWorld->SetSkyBoxActive(true);
 		}
+
+		mpAmbientBox = NULL;
 				
 		////////////////////////////////
 		// Render callback
@@ -670,6 +730,7 @@ public:
 		//Bloom
 		cPostEffectParams_Bloom bloomParams;
 		gpPostEffectComp->AddPostEffect(pGraphics->CreatePostEffect(&bloomParams), 20);
+		gpPostEffectComp->GetPostEffect(0)->SetActive(false);
 
 		//Image trail
 		/*cPostEffectParams_ImageTrail imageTrailParams;
@@ -765,6 +826,9 @@ public:
 			mpWorld = NULL;
 			mpPhysicsWorld = NULL;
 			gvStartPostions.clear();
+			mlstSpawnPoints.clear();
+			g_mapSpawnPointsByName.clear();
+			gpSpawnPointCB->ClearItems();
 
 			gpNodeContainer=NULL;
 		}
@@ -786,6 +850,28 @@ public:
 
 			mpWorld = gpEngine->GetScene()->LoadWorld(asFileName, lFlags);
 			if(mpWorld == NULL)FatalError("Could not load world '%s'\n", asFileName.c_str());
+
+			int cbIndex = 0;
+			bool cbSet = false;
+			cSpawnPointIterator spawnIt = cSpawnPointIterator(&mlstSpawnPoints);
+			while (spawnIt.HasNext())
+			{
+				cSpawnPoint* pSpawnPoint = spawnIt.Next();
+
+
+				gpSpawnPointCB->AddItem(pSpawnPoint->GetName());
+
+				if (pSpawnPoint->GetName() == gsSpawnPoint)
+				{
+					gpSpawnPointCB->SetSelectedItem(cbIndex);
+					cbSet = true;
+				}
+
+				cbIndex++;
+			}
+
+			if (!cbSet)
+				gpSpawnPointCB->SetSelectedItem(0);
 		}
 		//Dae level (non proper)
 		else if(sExt=="dae")
@@ -1107,27 +1193,44 @@ public:
 		mpOptionWindow = pSet->CreateWidgetWindow(0,vPos,vSize,_W("LuxServer Toolbar") );
 
 		vSize = cVector2f(vSize.x-30, 18);
-		vPos = cVector3f(10, 30, 0.1f);
+		vPos = cVector3f(10, 32, 0.1f);
 
 		///////////////////////////
-		// Loading
+		// Server
 		{
 			//Group
 			vGroupPos = cVector3f(5,10,0.1f);
-			pGroup = pSet->CreateWidgetGroup(vPos,100,_W("Loading"),mpOptionWindow);
+			pGroup = pSet->CreateWidgetGroup(vPos,100,_W("Server"),mpOptionWindow);
 
-			//Load File
-			pButton = pSet->CreateWidgetButton(vGroupPos,vSize,_W("Load Scene"),pGroup);
-			pButton->AddCallback(eGuiMessage_ButtonPressed,this, kGuiCallback(PressLoadWorld));
-			vGroupPos.y += 22;
+			//Map File
+			gpMapTB = pSet->CreateWidgetTextBox(vGroupPos, cVector2f(vSize.x - 22, vSize.y), cString::To16Char(gsMapFile), pGroup);
+			gpMapTB->SetToolTip(_W("Map File"));
+			gpMapTB->SetCanEdit(false);
+			pButton = pSet->CreateWidgetButton(cVector3f(vGroupPos.x + (vSize.x - 20), vGroupPos.y, vGroupPos.z), cVector2f(20), _W("..."), pGroup);
+			pButton->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(PressMapBrowse));
+			vGroupPos.y += 26;
 
-			//Reload File
-			pButton = pSet->CreateWidgetButton(vGroupPos,vSize,_W("Reload"),pGroup);
-			pButton->AddCallback(eGuiMessage_ButtonPressed,this, kGuiCallback(PressReload));
-			vGroupPos.y += 22;
+			//Spawn Point
+			gpSpawnPointCB = pSet->CreateWidgetComboBox(vGroupPos, vSize, cString::To16Char(gsSpawnPoint), pGroup);
+			gpSpawnPointCB->SetCanEdit(false);
+			gpSpawnPointCB->AddCallback(eGuiMessage_SelectionChange, this, kGuiCallback(SpawnPoint_OnSelectionChange));
+			vGroupPos.y += 26;
+
+			//Input Address
+			cWidgetTextBox* pAddressTB = pSet->CreateWidgetTextBox(vGroupPos, vSize, cString::To16Char(gsAddress), pGroup);
+			vGroupPos.y += 26;
+
+			//Input Port
+			cWidgetTextBox* pPortTB = pSet->CreateWidgetTextBox(vGroupPos, vSize, cString::To16Char(cString::ToString(glPort)), pGroup);
+			vGroupPos.y += 26;
+
+			//Start Server
+			pButton = pSet->CreateWidgetButton(vGroupPos,vSize,_W("Start Server"),pGroup);
+			pButton->AddCallback(eGuiMessage_ButtonPressed,this, kGuiCallback(PressStartServer));
+			vGroupPos.y += 26;
 
 			//Group end
-			vGroupSize.y = vGroupPos.y + 15;
+			vGroupSize.y = vGroupPos.y + 2;
 			pGroup->SetSize(vGroupSize);
 			vPos.y += vGroupSize.y + 15;
 		}
@@ -1202,7 +1305,12 @@ public:
 			pCheckBox->SetChecked(gbRenderPathNodes);
 			pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeRenderPathNodes));
 			vGroupPos.y += 22;
-			
+
+			//Draw spawn point
+			pCheckBox = pSet->CreateWidgetCheckBox(vGroupPos, vSize, _W("Draw spawn point"), pGroup);
+			pCheckBox->SetChecked(gbDrawSpawnPoint);
+			pCheckBox->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(ChangeDrawSpawnPoint));
+			vGroupPos.y += 22;
 
 			//Group end
 			vGroupSize.y = vGroupPos.y + 15;
@@ -1376,45 +1484,58 @@ public:
 	
 	//--------------------------------------------------------------
 
-	bool PressLoadWorld(iWidget* apWidget,const cGuiMessageData& aData)
+	bool PressMapBrowse(iWidget* apWidget,const cGuiMessageData& aData)
 	{
 		mvPickedFiles.clear();
 		cGuiSet *pSet = gpSimpleCamera->GetSet();
-		cGuiPopUpFilePicker* pPicker = pSet->CreatePopUpLoadFilePicker(mvPickedFiles,false,msCurrentFilePath,false, this, kGuiCallback(LoadWorldFromFilePicker));
-		pPicker->AddCategory(_W("Scenes"),_W("*.map"));
-		pPicker->AddFilter(0, _W("*.dae"));
-		
-		//pPicker->SetSaveFileDest(_W("maps"));
+		cGuiPopUpFilePicker* pPicker = pSet->CreatePopUpLoadFilePicker(mvPickedFiles,false,msCurrentFilePath,false, this, kGuiCallback(PickMapFromFilePicker));
+		pPicker->AddCategory(_W("Map File"),_W("*.map"));
 
 		return true;
 	}
-	kGuiCallbackFuncEnd(cSimpleUpdate,PressLoadWorld)  
+	kGuiCallbackFuncEnd(cSimpleUpdate,PressMapBrowse)  
 
-	bool PressReload(iWidget* apWidget,const cGuiMessageData& aData)
+	bool PickMapFromFilePicker(iWidget* apWidget,const cGuiMessageData& aData)
 	{
+		if(mvPickedFiles.empty()) return true;
+
+		tWString& sFilePath = mvPickedFiles[0];
+		msCurrentFilePath = cString::GetFilePathW(sFilePath);
+
+		gpEngine->GetResources()->AddResourceDir(msCurrentFilePath, false);
+		gsMapFile = cString::To8Char(cString::GetFileNameW(sFilePath));
+
+		gpMapTB->SetText(cString::To16Char(gsMapFile));
+
+		return true;		
+	}
+	kGuiCallbackFuncEnd(cSimpleUpdate,PickMapFromFilePicker)  
+
+	bool PressStartServer(iWidget* apWidget, const cGuiMessageData& aData)
+	{
+		if(msCurrentFilePath == _W(""))
+			gpEngine->GetResources()->AddResourceDir(cString::GetFilePathW(cString::To16Char(gsMapFolder)), false);
+
 		LoadWorld(gsMapFile, true, true);
 		InitGuiAfterLoad();
 
 		return true;
 	}
-	kGuiCallbackFuncEnd(cSimpleUpdate,PressReload)  
+	kGuiCallbackFuncEnd(cSimpleUpdate, PressStartServer)
 
-	bool LoadWorldFromFilePicker(iWidget* apWidget,const cGuiMessageData& aData)
+	bool SpawnPoint_OnSelectionChange(iWidget* apWidget, const cGuiMessageData& aData)
 	{
-		if(mvPickedFiles.empty()) return true;
+		const cWidgetItem* pItem = gpSpawnPointCB->GetItem(gpSpawnPointCB->GetSelectedItem());
+		if (pItem)
+		{
+			cSpawnPoint* pSpawnPoint = GetSpawnPointByName(cString::To8Char(pItem->GetText()));
+			if (pSpawnPoint)
+				gsSpawnPoint = pSpawnPoint->GetName();
+		}
 
-		tWString& sFilePath = mvPickedFiles[0];
-
-		msCurrentFilePath = cString::GetFilePathW(sFilePath);
-		gpEngine->GetResources()->AddResourceDir(msCurrentFilePath,false);
-
-		gsMapFile = cString::To8Char(cString::GetFileNameW(sFilePath));
-		LoadWorld(gsMapFile, true, false);  
-		InitGuiAfterLoad();
-
-		return true;		
+		return true;
 	}
-	kGuiCallbackFuncEnd(cSimpleUpdate,LoadWorldFromFilePicker)  
+	kGuiCallbackFuncEnd(cSimpleUpdate, SpawnPoint_OnSelectionChange);
 
 	//--------------------------------------------------------------
 
@@ -1493,6 +1614,13 @@ public:
 		return true;
 	}
 	kGuiCallbackFuncEnd(cSimpleUpdate,ChangeRenderPathNodes)
+
+	bool ChangeDrawSpawnPoint(iWidget* apWidget, const cGuiMessageData& aData)
+	{
+		gbDrawSpawnPoint = aData.mlVal == 1;
+		return true;
+	}
+	kGuiCallbackFuncEnd(cSimpleUpdate, ChangeDrawSpawnPoint)
 	
 	//--------------------------------------------------------------
 	
@@ -2043,9 +2171,9 @@ int hplMain(const tString &asCommandline)
 #endif
 	CreateBaseDirs(vDirs, sPersonalDir);
 
-	SetLogFile(sPersonalDir + PERSONAL_RELATIVEROOT _W("HPL2/mapview.log"));
+	SetLogFile(sPersonalDir + PERSONAL_RELATIVEROOT _W("HPL2/LuxServer.log"));
 
-	gpConfig = hplNew( cConfigFile, (sPersonalDir + PERSONAL_RELATIVEROOT _W("HPL2/mapview.cfg") ));
+	gpConfig = hplNew( cConfigFile, (sPersonalDir + PERSONAL_RELATIVEROOT _W("HPL2/LuxServer.cfg") ));
 
 	gpConfig->Load();
 	
@@ -2067,6 +2195,13 @@ int hplMain(const tString &asCommandline)
 	glNodeCont_MaxEdges = gpConfig->GetInt("NodeCont","MaxEdges", 6);
 	gfNodeCont_MaxEdgeDistance = gpConfig->GetFloat("NodeCont_","MaxEdgeDistance", 5.0f);
 	gfNodeCont_MaxHeight = gpConfig->GetFloat("NodeCont","MaxHeight", 0.41f);
+
+	gsMapFile = gpConfig->GetString("Map", "File", "00_rainy_hall.map");
+	gsMapFolder = gpConfig->GetString("Map", "Folder", "maps/main/ch01/");
+	gsSpawnPoint = gpConfig->GetString("Map", "SpawnPoint", "PlayerStartArea_1");
+
+	gsAddress = gpConfig->GetString("Server", "Address", "127.0.0.1");
+	glPort = gpConfig->GetInt("Server", "Port", 40000);
 
 	if(asCommandline != "")
 	{
@@ -2121,6 +2256,13 @@ int hplMain(const tString &asCommandline)
 	gpConfig->SetInt("Screen","Width",vars.mGraphics.mvScreenSize.x);
 	gpConfig->SetInt("Screen","Height",vars.mGraphics.mvScreenSize.y);
 	gpConfig->SetBool("Screen","FullScreen", vars.mGraphics.mbFullscreen);
+
+	gpConfig->SetString("Map", "File", gsMapFile);
+	gpConfig->SetString("Map", "Folder", gsMapFolder);
+	gpConfig->SetString("Map", "SpawnPoint", gsSpawnPoint);
+
+	gpConfig->SetString("Server", "Address", gsAddress);
+	gpConfig->SetInt("Server", "Port", glPort);
 
 	gpConfig->Save();
 	hplDelete(gpConfig);

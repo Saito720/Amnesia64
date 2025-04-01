@@ -57,6 +57,16 @@ private:
 	static iLuxEntity* GetEntity(const tString& asName, eLuxEntityType aType, int alSubType);
 	static iPhysicsBody* GetBodyInEntity(iLuxEntity* apEntity, const tString& asName);
 
+	// Generate
+	static void __stdcall CreateVoxelMap(string& asName, int alX, int alY, int alZ);
+	static void __stdcall DestroyVoxelMap(string& asName);
+	static void __stdcall SetVoxelMapInstancedGeometry(string& asName, string& asType);
+	static void __stdcall DrawVoxelMap(string& asName, bool abDraw);
+	static void __stdcall AttachVoxelMapToEntity(string& asName, string& asEntityName);
+
+	static void __stdcall SetVoxelValue(string& asName, int alX, int alY, int alZ, int alVal);
+	static void __stdcall SetVoxelColor(string& asName, int alX, int alY, int alZ, float afR, float afG, float afB, float afA);
+
 	// Debug
 	static void __stdcall Print(string& asString);
 	static void __stdcall AddDebugMessage(string& asString, bool abCheckForDuplicates);

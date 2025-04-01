@@ -88,6 +88,11 @@ cLuxMap::cLuxMap(const tString& asName)
 	mbDeletingAllWorldEntities = false;
 
 	mbCommentaryIconsActive = false;
+
+	mpCurrentVoxelMap = NULL;
+	mpVoxelMapAttachedEntity = NULL;
+
+	mpLowLevelGraphics = NULL;
 }
 
 //-----------------------------------------------------------------------
@@ -377,6 +382,20 @@ void cLuxMap::OnLeave(bool abRunScript)
 
 void cLuxMap::Update(float afTimeStep)
 {
+	if (mpCurrentVoxelMap && mpVoxelMapAttachedEntity)
+	{
+		if (mpVoxelMapAttachedEntity->GetBodyNum() != 0)
+		{
+			cVector3f vEntityPos = mpVoxelMapAttachedEntity->GetBody(0)->GetWorldPosition();
+			cVector3f vMapSize(mpCurrentVoxelMap->GetSize().x, mpCurrentVoxelMap->GetSize().y, mpCurrentVoxelMap->GetSize().z);
+			cVector3f vVoxelSize = mpCurrentVoxelMap->GetVoxelSize();
+
+			cVector3f vFinalPos = vEntityPos - (vMapSize * vVoxelSize) / 2;
+
+			mpCurrentVoxelMap->SetPosition(vFinalPos);
+		}
+	}
+
 	UpdateCheckCommentaryIconActive(afTimeStep);
     UpdateDissolveEntities(afTimeStep);
 	UpdateTimers(afTimeStep);
@@ -433,6 +452,9 @@ bool cLuxMap::RecompileScript(tString *apOutput)
 
 void cLuxMap::OnRenderSolid(cRendererCallbackFunctions* apFunctions)
 {
+	if (mpCurrentVoxelMap)
+		mpCurrentVoxelMap->DebugRender(apFunctions->GetLowLevelGfx(), cColor(1));
+
 	if(gpBase->mpDebugHandler->GetShowEntityInfo()==false) return;
 
 	tLuxEntityListIt entityIt = mlstEntities.begin();
@@ -578,6 +600,109 @@ void cLuxMap::DestroyAllEntities()
 	mlstStickyAreas.clear();
 
 	mbCommentaryIconsActive = false;//Can reset this since all commentary icons are destroyed
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxMap::AddVoxelMap(string& asName, cVoxelMap* apVoxelMap)
+{
+	if (!GetVoxelMapByName(asName))
+		m_mapVoxelMapsByName.insert(tVoxelMapNameMap::value_type(cString::ToLowerCase(asName), apVoxelMap));
+}
+
+void cLuxMap::RemoveVoxelMap(string& asName)
+{
+	if (cVoxelMap* pVoxelMap = GetVoxelMapByName(asName))
+	{
+		m_mapVoxelMapsByName.erase(cString::ToLowerCase(asName));
+		hplDelete(pVoxelMap);
+	}
+}
+
+void cLuxMap::CreateVoxelVertexBuffer(string& asName, string& asType)
+{
+	if (cVoxelMap* pVoxelMap = GetVoxelMapByName(asName))
+	{
+		if (cString::ToLowerCase(asType) == "sphere")
+		{
+			mpLowLevelGraphics = gpBase->mpEngine->GetGraphics()->GetLowLevel();
+
+			mpVtxBuffer = mpLowLevelGraphics->CreateVertexBuffer(eVertexBufferType_Hardware, eVertexBufferDrawType_Line, eVertexBufferUsageType_Static, 192, 192);
+
+			mpVtxBuffer->CreateElementArray(eVertexBufferElement_Position, eVertexBufferElementFormat_Float, 4);
+			mpVtxBuffer->CreateElementArray(eVertexBufferElement_Color0, eVertexBufferElementFormat_Float, 4);
+
+			int alSegments = 32;
+			float afAngleStep = k2Pif / (float)alSegments;
+			float afRadius = pVoxelMap->GetVoxelSize() / 2;
+
+			//X Circle:
+			for (float a = 0; a < k2Pif; a += afAngleStep)
+			{
+				mpVtxBuffer->AddVertexVec3f(eVertexBufferElement_Position, cVector3f(0, sin(a) * afRadius, cos(a) * afRadius));
+				mpVtxBuffer->AddVertexColor(eVertexBufferElement_Color0, cColor(1));
+				mpVtxBuffer->AddVertexVec3f(eVertexBufferElement_Position, cVector3f(0, sin(a + afAngleStep) * afRadius, cos(a + afAngleStep) * afRadius));
+				mpVtxBuffer->AddVertexColor(eVertexBufferElement_Color0, cColor(1));
+			}
+
+			//Y Circle:
+			for (float a = 0; a < k2Pif; a += afAngleStep)
+			{
+				mpVtxBuffer->AddVertexVec3f(eVertexBufferElement_Position, cVector3f(cos(a) * afRadius, 0, sin(a) * afRadius));
+				mpVtxBuffer->AddVertexColor(eVertexBufferElement_Color0, cColor(1));
+				mpVtxBuffer->AddVertexVec3f(eVertexBufferElement_Position, cVector3f(cos(a + afAngleStep) * afRadius, 0, sin(a + afAngleStep) * afRadius));
+				mpVtxBuffer->AddVertexColor(eVertexBufferElement_Color0, cColor(1));
+			}
+
+			//Z Circle:
+			for (float a = 0; a < k2Pif; a += afAngleStep)
+			{
+				mpVtxBuffer->AddVertexVec3f(eVertexBufferElement_Position, cVector3f(cos(a) * afRadius, sin(a) * afRadius, 0));
+				mpVtxBuffer->AddVertexColor(eVertexBufferElement_Color0, cColor(1));
+				mpVtxBuffer->AddVertexVec3f(eVertexBufferElement_Position, cVector3f(cos(a + afAngleStep) * afRadius, sin(a + afAngleStep) * afRadius, 0));
+				mpVtxBuffer->AddVertexColor(eVertexBufferElement_Color0, cColor(1));
+			}
+
+			for (int i = 0; i < 192; i++)
+			{
+				mpVtxBuffer->AddIndex(i);
+			}
+
+			pVoxelMap->SetVertexBuffer(mpVtxBuffer);
+		}
+	}
+}
+
+void cLuxMap::SetVoxelMapDrawing(string& asName, bool abDraw)
+{
+	if (cVoxelMap* pVoxelMap = GetVoxelMapByName(asName))
+	{
+		if (abDraw)
+			mpCurrentVoxelMap = pVoxelMap;
+		else
+			mpCurrentVoxelMap = NULL;
+	}
+}
+
+void cLuxMap::SetVoxelVal(string& asName, cVector3l avPos, char alVal)
+{
+	if (cVoxelMap* pVoxelMap = GetVoxelMapByName(asName))
+		pVoxelMap->SetVoxel(avPos, alVal);
+}
+
+void cLuxMap::SetVoxelCol(string& asName, cVector3l avPos, const cColor& aCol)
+{
+	if (cVoxelMap* pVoxelMap = GetVoxelMapByName(asName))
+		m_mapVoxelColByPos.insert(tVoxelColPosMap::value_type(avPos, aCol));
+}
+
+void cLuxMap::AttachVoxelMapToEntity(string& asName, string& asEntityName)
+{
+	if (cVoxelMap* pVoxelMap = GetVoxelMapByName(asName))
+	{
+		if (iLuxEntity* pEntity = GetEntityByName(asEntityName))
+			mpVoxelMapAttachedEntity = pEntity;
+	}
 }
 
 //-----------------------------------------------------------------------

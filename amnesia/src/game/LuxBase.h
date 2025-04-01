@@ -241,6 +241,7 @@ public:
 	cLuxCredits *mpCredits;
 	cLuxDemoEnd* mpDemoEnd;
 	iLuxAchievementHandler* mpAchievementHandler;
+	cGenerate* mpGenerate;
 
 	tString msGameName;
 	tWString msErrorMessage;

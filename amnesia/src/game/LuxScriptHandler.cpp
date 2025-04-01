@@ -694,12 +694,86 @@ void cLuxScriptHandler::InitScriptFunctions()
 	AddFunc("float StringToFloat(string&in asString)",(void *)ScriptStringToFloat);
 	AddFunc("bool StringToBool(string&in asString)",(void *)ScriptStringToBool);
 
+	AddFunc("void CreateVoxelMap(string &in asName, int alX, int alY, int alZ)",(void *)CreateVoxelMap);
+	AddFunc("void DestroyVoxelMap(string &in asName)",(void *)DestroyVoxelMap);
+	AddFunc("void SetVoxelMapInstancedGeometry(string &in asName, string &in asType)",(void *)SetVoxelMapInstancedGeometry);
+	AddFunc("void DrawVoxelMap(string &in asName, bool abDraw)",(void *)DrawVoxelMap);
+	AddFunc("void AttachVoxelMapToEntity(string &in asName, string &in asEntityName)",(void *)AttachVoxelMapToEntity);
+
+	AddFunc("void SetVoxelValue(string &in asName, int alX, int alY, int alZ, int alVal)",(void *)SetVoxelValue);
+	AddFunc("void SetVoxelColor(string &in asName, int alX, int alY, int alZ, float afR, float afG, float afB, float afA)",(void *)SetVoxelColor);
 }
 //-----------------------------------------------------------------------
 
 //////////////////////////////////////////////////////////////////////////
 // SCRIPT FUNCTION ENTITY PROPERTIES
 //////////////////////////////////////////////////////////////////////////
+
+//-----------------------------------------------------------------------
+
+void __stdcall cLuxScriptHandler::CreateVoxelMap(string& asName, int alX, int alY, int alZ)
+{
+	cLuxMap* pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if (pMap == NULL) return;
+
+	cVoxelMap* pVoxelMap = gpBase->mpGenerate->CreateVoxelMap(cVector3l(alX, alY, alZ));
+
+	if (pVoxelMap)
+		pMap->AddVoxelMap(asName, pVoxelMap);
+}
+
+void __stdcall cLuxScriptHandler::DestroyVoxelMap(string& asName)
+{
+	cLuxMap* pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if (pMap == NULL) return;
+
+	pMap->RemoveVoxelMap(asName);
+}
+
+void __stdcall cLuxScriptHandler::SetVoxelMapInstancedGeometry(string& asName, string& asType)
+{
+	cLuxMap* pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if (pMap == NULL) return;
+
+	pMap->CreateVoxelVertexBuffer(asName, asType);
+}
+
+void __stdcall cLuxScriptHandler::DrawVoxelMap(string& asName, bool abDraw)
+{
+	cLuxMap* pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if (pMap == NULL) return;
+
+	pMap->SetVoxelMapDrawing(asName, abDraw);
+}
+
+void __stdcall cLuxScriptHandler::AttachVoxelMapToEntity(string& asName, string& asEntityName)
+{
+	cLuxMap* pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if (pMap == NULL) return;
+
+	pMap->AttachVoxelMapToEntity(asName, asEntityName);
+}
+
+void __stdcall cLuxScriptHandler::SetVoxelValue(string& asName, int alX, int alY, int alZ, int alVal)
+{
+	cLuxMap* pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if (pMap == NULL) return;
+
+	cVector3l vPos(alX, alY, alZ);
+
+	pMap->SetVoxelVal(asName, vPos, (char)alVal);
+}
+
+void __stdcall cLuxScriptHandler::SetVoxelColor(string& asName, int alX, int alY, int alZ, float afR, float afG, float afB, float afA)
+{
+	cLuxMap* pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if (pMap == NULL) return;
+
+	cVector3l vPos(alX, alY, alZ);
+	cColor Col(afR, afG, afB, afA);
+
+	pMap->SetVoxelCol(asName, vPos, Col);
+}
 
 //-----------------------------------------------------------------------
 

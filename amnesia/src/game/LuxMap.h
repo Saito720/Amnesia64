@@ -100,6 +100,39 @@ public:
 
 	void CreateEntity(const tString& asName, const tString& asFile, const cMatrixf& a_mtxTransform, const cVector3f& avScale);
 
+	void AddVoxelMap(string& asName, cVoxelMap* apVoxelMap);
+	void RemoveVoxelMap(string& asName);
+	void CreateVoxelVertexBuffer(string& asName, string& asType);
+	void SetVoxelMapDrawing(string& asName, bool abDraw);
+	void AttachVoxelMapToEntity(string& asName, string& asEntityName);
+
+	void SetVoxelVal(string& asName, cVector3l avPos, char alVal);
+	void SetVoxelCol(string& asName, cVector3l avPos, const cColor& aCol);
+
+	cVoxelMap* GetVoxelMapByName(string& asName)
+	{
+		tVoxelMapNameMapIt it = m_mapVoxelMapsByName.find(cString::ToLowerCase(asName));
+
+		if (it == m_mapVoxelMapsByName.end()) return NULL;
+
+		return it->second;
+	}
+
+	cColor GetVoxelColorByPosition(cVector3l avPos)
+	{
+		tVoxelColPosMapIt it = m_mapVoxelColByPos.find(avPos);
+
+		if (it == m_mapVoxelColByPos.end())
+		{
+			return cColor(1);
+		}
+
+		cColor Col = it->second;
+		return Col;
+	}
+
+	iLuxEntity* GetVoxelMapConnectedEntity() { return mpVoxelMapAttachedEntity; }
+
 	/**
 	 * This also destroys timer and light connections
 	 */
@@ -236,6 +269,15 @@ private:
 
 	tLuxScriptVarMap m_mapVars;
 	
+	tVoxelMapNameMap m_mapVoxelMapsByName;
+	cVoxelMap* mpCurrentVoxelMap;
+
+	tVoxelColPosMap m_mapVoxelColByPos;
+	iLuxEntity* mpVoxelMapAttachedEntity;
+
+	iLowLevelGraphics* mpLowLevelGraphics;
+	iVertexBuffer* mpVtxBuffer;
+
 	tLuxEntityNameMap m_mapEntitiesByName;
 	tLuxEntityIDMap m_mapEntitiesByID;
 	tLuxEntityList mlstEntities;

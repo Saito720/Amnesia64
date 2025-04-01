@@ -48,6 +48,8 @@ namespace hpl {
 		const cVector3l& GetSize(){ return mvSize; }
 		void SetSize(const cVector3l& avSize);
 
+		void SetVertexBuffer(iVertexBuffer* apVertexBuffer);
+
 		float GetVoxelSize(){ return mfVoxelSize;}
 		void SetVoxelSize(float afX){ mfVoxelSize = afX;}
 
@@ -65,6 +67,8 @@ namespace hpl {
 
 		float mfVoxelSize;
 		cVector3f mvPosition;
+
+		iVertexBuffer* mpVtxBuffer;
 	};
 
 };

@@ -507,6 +507,14 @@ enum eLuxProgressLogLevel
 
 //----------------------------------------------
 
+typedef std::multimap<tString, cVoxelMap*> tVoxelMapNameMap;
+typedef tVoxelMapNameMap::iterator tVoxelMapNameMapIt;
+
+typedef std::multimap<cVector3l, cColor> tVoxelColPosMap;
+typedef tVoxelColPosMap::iterator tVoxelColPosMapIt;
+
+//----------------------------------------------
+
 class iLuxEntity;
 
 typedef std::multimap<tString,iLuxEntity*> tLuxEntityNameMap;

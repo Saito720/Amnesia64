@@ -20,14 +20,51 @@
 #include "generate/VoxelMap.h"
 
 #include "system/LowLevelSystem.h"
-#include "graphics/LowLevelGraphics.h"
-//#include "../../../amnesia/src/game/LuxDebugHandler.h"
+#include "scene/Scene.h"
+#include "../../../amnesia/src/game/LuxDebugHandler.h"
 #include "../../../amnesia/src/game/LuxMap.h"
 #include "../../../amnesia/src/game/LuxMapHandler.h"
 
 #include <cstring>
 
 namespace hpl {
+
+	//-----------------------------------------------------------------------
+
+	//////////////////////////////////////////////////////////////////////////
+	// RENDER CALLBACK
+	//////////////////////////////////////////////////////////////////////////
+
+	//-----------------------------------------------------------------------
+
+	cVoxelMapDebugRenderCallback::cVoxelMapDebugRenderCallback() {}
+
+	void cVoxelMapDebugRenderCallback::OnPostSolidDraw(cRendererCallbackFunctions* apFunctions)
+	{
+		/* cLuxMap* pMap = gpBase->mpMapHandler->GetCurrentMap();
+
+		for(int z=0; z<mvSize.z; ++z)
+		for(int y=0; y<mvSize.y; ++y)
+		for(int x=0; x<mvSize.x; ++x)
+		{
+			if(mpData[z * mvSize.x*mvSize.y + y * mvSize.x + x]==1)
+			{
+				apLowGfx->DrawSphere(mvPosition + cVector3f((float)x, (float)y, (float)z) * mfVoxelSize + cVector3f(mfVoxelSize / 2), mfVoxelSize / 2, pMap->GetVoxelColorByPosition(cVector3l(x,y,z)));
+			}
+		} */
+
+		if (mpVtxBuffer)
+		{
+			apFunctions->SetProgram(NULL);
+			//apFunctions->SetDepthTest(true);
+			apFunctions->SetVertexBuffer(mpVtxBuffer);
+			apFunctions->DrawCurrent();
+		}
+	}
+
+	void cVoxelMapDebugRenderCallback::OnPostTranslucentDraw(cRendererCallbackFunctions* apFunctions) {}
+
+	//-----------------------------------------------------------------------
 
 	//////////////////////////////////////////////////////////////////////////
 	// CONSTRUCTORS
@@ -42,6 +79,9 @@ namespace hpl {
 
 		mfVoxelSize = 0.1f;
 		mvPosition = 0;
+
+		mbVertexBufferIsSet = false;
+		mbAddRenderCallback = false;
 	}
 
 	//-----------------------------------------------------------------------
@@ -80,26 +120,26 @@ namespace hpl {
 
 	void cVoxelMap::SetVertexBuffer(iVertexBuffer* apVertexBuffer)
 	{
-		mpVtxBuffer = apVertexBuffer;
+		mRenderCallback.mpVtxBuffer = apVertexBuffer;
+		mbVertexBufferIsSet = true;
 	}
 
 	//-----------------------------------------------------------------------
 
-	void cVoxelMap::DebugRender(iLowLevelGraphics *apLowGfx, const cColor &aCol)
+	void cVoxelMap::SetViewport(cViewport* apViewport)
 	{
-		cLuxMap* pMap = gpBase->mpMapHandler->GetCurrentMap();
+		mRenderCallback.mpViewport = apViewport;
+		mbAddRenderCallback = true;
+	}
 
-		for(int z=0; z<mvSize.z; ++z)
-		for(int y=0; y<mvSize.y; ++y)
-		for(int x=0; x<mvSize.x; ++x)
+	//-----------------------------------------------------------------------
+
+	void cVoxelMap::Update(float afTimeStep)
+	{
+		if (mbAddRenderCallback && mbVertexBufferIsSet)
 		{
-			if(mpData[z * mvSize.x*mvSize.y + y * mvSize.x + x]==1)
-			{
-				apLowGfx->DrawSphere(mvPosition + cVector3f((float)x, (float)y, (float)z) * mfVoxelSize + cVector3f(mfVoxelSize / 2), mfVoxelSize / 2, pMap->GetVoxelColorByPosition(cVector3l(x,y,z)));
-			}
+			mRenderCallback.mpViewport->AddRendererCallback(&mRenderCallback);
+			mbAddRenderCallback = false;
 		}
 	}
-
-	//-----------------------------------------------------------------------
-
 }

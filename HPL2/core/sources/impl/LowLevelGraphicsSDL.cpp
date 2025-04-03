@@ -191,6 +191,10 @@ namespace hpl {
 		if(mGpuProgramFormat == eGpuProgramFormat_LastEnum) mGpuProgramFormat = eGpuProgramFormat_GLSL;
 
 		//Set some GL Attributes
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 6);
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+
 		SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER,1);
 
 		SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
@@ -488,6 +492,22 @@ namespace hpl {
 
 
 		//Show some info
+		int major, minor, profileMask;
+		SDL_GL_GetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, &major);
+		SDL_GL_GetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, &minor);
+		SDL_GL_GetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, &profileMask);
+
+		Log("  SDL reported OpenGL context version: %d.%d\n", major, minor);
+		if (profileMask == SDL_GL_CONTEXT_PROFILE_CORE) {
+			Log("  Core profile\n");
+		}
+		else if (profileMask == SDL_GL_CONTEXT_PROFILE_COMPATIBILITY) {
+			Log("  Compatibility profile\n");
+		}
+		else {
+			Log("  Unknown profile\n");
+		}
+
 		Log("  Vendor: %s\n", glGetString(GL_VENDOR));
 		Log("  Renderer: %s\n", glGetString(GL_RENDERER));
 		Log("  Version: %s\n", glGetString(GL_VERSION));

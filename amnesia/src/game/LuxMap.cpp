@@ -452,9 +452,6 @@ bool cLuxMap::RecompileScript(tString *apOutput)
 
 void cLuxMap::OnRenderSolid(cRendererCallbackFunctions* apFunctions)
 {
-	if (mpCurrentVoxelMap)
-		mpCurrentVoxelMap->DebugRender(apFunctions->GetLowLevelGfx(), cColor(1));
-
 	if(gpBase->mpDebugHandler->GetShowEntityInfo()==false) return;
 
 	tLuxEntityListIt entityIt = mlstEntities.begin();
@@ -607,7 +604,10 @@ void cLuxMap::DestroyAllEntities()
 void cLuxMap::AddVoxelMap(string& asName, cVoxelMap* apVoxelMap)
 {
 	if (!GetVoxelMapByName(asName))
+	{
 		m_mapVoxelMapsByName.insert(tVoxelMapNameMap::value_type(cString::ToLowerCase(asName), apVoxelMap));
+		gpBase->mpEngine->GetScene()->AddVoxelMap(apVoxelMap);
+	}
 }
 
 void cLuxMap::RemoveVoxelMap(string& asName)
@@ -667,7 +667,7 @@ void cLuxMap::CreateVoxelVertexBuffer(string& asName, string& asType)
 			{
 				mpVtxBuffer->AddIndex(i);
 			}
-
+			mpVtxBuffer->Compile(0);
 			pVoxelMap->SetVertexBuffer(mpVtxBuffer);
 		}
 	}
@@ -678,7 +678,7 @@ void cLuxMap::SetVoxelMapDrawing(string& asName, bool abDraw)
 	if (cVoxelMap* pVoxelMap = GetVoxelMapByName(asName))
 	{
 		if (abDraw)
-			mpCurrentVoxelMap = pVoxelMap;
+			pVoxelMap->SetViewport(gpBase->mpMapHandler->GetViewport());
 		else
 			mpCurrentVoxelMap = NULL;
 	}

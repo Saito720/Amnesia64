@@ -47,6 +47,8 @@
 
 #include "physics/Physics.h"
 
+#include "generate/VoxelMap.h"
+
 
 namespace hpl {
 
@@ -268,13 +270,21 @@ namespace hpl {
 	{
 		//////////////////////////////////////
 		//Update worlds
-		tWorldListIt it = mlstWorlds.begin();
-		for(; it != mlstWorlds.end(); ++it)
+		tWorldListIt worldIt = mlstWorlds.begin();
+		for(; worldIt != mlstWorlds.end(); ++worldIt)
 		{
-			cWorld *pWorld = *it;
+			cWorld *pWorld = *worldIt;
             if(pWorld->IsActive()) pWorld->Update(afTimeStep);
 		}
 
+		//////////////////////////////////////
+		//Update voxel maps
+		tVoxelMapListIt voxelmapIt = mlstVoxelMaps.begin();
+		for (; voxelmapIt != mlstVoxelMaps.end(); ++voxelmapIt)
+		{
+			cVoxelMap* pVoxelMap = *voxelmapIt;
+			pVoxelMap->Update(afTimeStep);
+		}
 
 		//////////////////////////////////////
 		//Update listener position with current listener, if there is one.

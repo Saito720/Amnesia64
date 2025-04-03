@@ -45,6 +45,7 @@ namespace hpl {
 	class cFrustum;
 	class cUpdater;
 	class cWorld;
+	class cVoxelMap;
 	class cViewport;
 
 	//--------------------------------------------------------------------
@@ -57,6 +58,9 @@ namespace hpl {
 	
 	typedef std::list<cWorld*> tWorldList;
 	typedef tWorldList::iterator tWorldListIt;
+
+	typedef std::list<cVoxelMap*> tVoxelMapList;
+	typedef tVoxelMapList::iterator tVoxelMapListIt;
 
 	//--------------------------------------------------------------------
 
@@ -103,6 +107,14 @@ namespace hpl {
 		cWorld* CreateWorld(const tString& asName);
 		void DestroyWorld(cWorld* apWorld);
 		bool WorldExists(cWorld* apWorld);
+
+		///// VOXEL MAP METHODS ////////////////
+
+		void AddVoxelMap(cVoxelMap* apVoxelMap)
+		{ 
+			if (apVoxelMap)
+				mlstVoxelMaps.push_back(apVoxelMap);
+		}
 		
 		
 	private:
@@ -122,6 +134,7 @@ namespace hpl {
 
         tViewportList mlstViewports;
 		tWorldList mlstWorlds;
+		tVoxelMapList mlstVoxelMaps;
 		tCameraList mlstCameras;
 	};
 

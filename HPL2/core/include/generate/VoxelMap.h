@@ -20,16 +20,29 @@
 #ifndef HPL_VOXEL_MAP_H
 #define HPL_VOXEL_MAP_H
 
-#include "system/SystemTypes.h"
-#include "math/MathTypes.h"
-#include "graphics/GraphicsTypes.h"
 #include "generate/GenerateTypes.h"
+#include "graphics/Renderer.h"
+#include "scene/Viewport.h"
+#include "math/MathTypes.h"
 
 namespace hpl {
 
 	//-------------------------------
 
-	class iLowLevelGraphics;
+	class cRendererCallbackFunctions;
+
+	class cVoxelMapDebugRenderCallback : public iRendererCallback
+	{
+	public:
+		cVoxelMapDebugRenderCallback();
+
+		void OnPostSolidDraw(cRendererCallbackFunctions* apFunctions);
+
+		void OnPostTranslucentDraw(cRendererCallbackFunctions* apFunctions);
+
+		cViewport* mpViewport;
+		iVertexBuffer* mpVtxBuffer;
+	};
 
 	//-------------------------------
 
@@ -49,6 +62,7 @@ namespace hpl {
 		void SetSize(const cVector3l& avSize);
 
 		void SetVertexBuffer(iVertexBuffer* apVertexBuffer);
+		void SetViewport(cViewport* apViewport);
 
 		float GetVoxelSize(){ return mfVoxelSize;}
 		void SetVoxelSize(float afX){ mfVoxelSize = afX;}
@@ -56,9 +70,7 @@ namespace hpl {
 		const cVector3f& GetPosition(){ return mvPosition;}
 		void SetPosition(const cVector3f& avPos){ mvPosition = avPos;}
 
-		/////////////////////////////////
-		// Debug
-		void DebugRender(iLowLevelGraphics *apLowGfx, const cColor &aCol);
+		void Update(float afTimeStep);
 
 	private:
 		unsigned char* mpData;
@@ -68,8 +80,10 @@ namespace hpl {
 		float mfVoxelSize;
 		cVector3f mvPosition;
 
-		iVertexBuffer* mpVtxBuffer;
+		bool mbVertexBufferIsSet;
+		bool mbAddRenderCallback;
+		cVoxelMapDebugRenderCallback mRenderCallback;
 	};
-
 };
+
 #endif // HPL_VOXEL_MAP_H

@@ -241,6 +241,8 @@ namespace hpl {
 		cMeshEntityIterator GetStaticMeshEntityIterator();
 		
 		void DrawMeshBoundingBoxes(const cColor &aColor, bool abStatic);
+
+		cMeshEntity* GetSphere() { return pSphere; };
 		
 		///// LIGHT METHODS ////////////////////
 
@@ -427,6 +429,8 @@ namespace hpl {
 
 		tString msMapName;
 		cColor mAmbientColor;
+
+		cMeshEntity* pSphere;
 	};
 
 };

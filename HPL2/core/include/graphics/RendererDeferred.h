@@ -195,6 +195,9 @@ namespace hpl {
 		void RenderDynamicZTemp();
 		void RenderGbuffer();
 		void RenderSSAO();
+		void RenderSSGI();
+		void RenderSSGIDebugView();
+		void RenderSSGILinearDepth();
 		void RenderEdgeSmooth();
 		void RenderDeferredSkyBox();
 		
@@ -310,10 +313,19 @@ namespace hpl {
 		iGpuProgram *mpEdgeSmooth_UnpackDepthProgram;
 		iGpuProgram *mpEdgeSmooth_RenderProgram;
 
+		// SSGI
+		iTexture *mpSSGILinearDepthTexture;
+		iTexture *mpSSGITexture;
+		iTexture *mpCubemap;
+		iFrameBuffer *mpSSGILinearDepthBuffer;
+		iFrameBuffer *mpSSGIBuffer;
+		iGpuProgram *mpSSGIRenderProgram;
+
 		std::vector<cDeferredLight*> mvTempDeferredLights;
 		std::vector<cDeferredLight*> mvSortedLights[eDeferredLightList_LastEnum];
 
-		iGpuProgram *mpSkyBoxProgram; 
+		iGpuProgram *mpSSGIUnpackDepthProgram;
+		iGpuProgram *mpSkyBoxProgram;
 		iGpuProgram *mpLightStencilProgram;
 		iGpuProgram *mpLightBoxProgram[2];//1=SSAO used, 0=no SSAO
 

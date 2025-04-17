@@ -388,14 +388,7 @@ namespace hpl {
 			pTexture = mpGraphics->GetLowLevel()->CreateTexture(asName,aType,aUsage);
 			pTexture->SetFullPath(sPath);
 			
-			if (asName == "room.dds")
-			{
-				pTexture->SetUseMipMaps(true);
-			}
-			else
-			{
-				pTexture->SetUseMipMaps(abUseMipMaps);
-			}
+			pTexture->SetUseMipMaps(abUseMipMaps);
 			pTexture->SetSizeDownScaleLevel(alTextureSizeLevel);
 			
 			if(pTexture->CreateFromBitmap(pBmp)==false)

@@ -56,10 +56,6 @@
 #include "scene/FogArea.h"
 #include "scene/MeshEntity.h"
 
-// DEBUG
-#include "../../../../amnesia/src/game/LuxDebugHandler.h"
-static bool gbDebugRenderSSGIOnly = false;
-
 #include <algorithm>
 
 namespace hpl {
@@ -169,21 +165,6 @@ namespace hpl {
 	#define kVar_afDepthDiffMul						21
 	#define kVar_afSkipEdgeLimit					22
 
-	// SSGI
-	#define kVar_a_mtxViewMatrix					23
-	#define kVar_a_mtxProjMatrix					24
-	#define kVar_a_mtxInvViewProjMatrix				25
-	#define kVar_avCamPos							26
-	#define kVar_avResolution						27
-	#define kVar_cubeMap							28
-	#define kVar_uSphereRadius						29
-	#define kVar_afTime								30
-
-	#define kVar_a_mtxSphere						31
-	#define kVar_a_mtxInvSphere						32
-
-	#define kVar_avColor							33
-	#define kVar_afRoughness						34
 
 	//////////////////////////////////////////////////////////////////////////
 	// CONSTRUCTORS
@@ -351,8 +332,8 @@ namespace hpl {
 		mpReflectionBuffer->SetTexture2D(0,mpReflectionTexture);
 		mpReflectionBuffer->SetDepthStencilBuffer(mpDepthStencil[1]);
 		mpReflectionBuffer->CompileAndValidate();
-
-
+		
+		
 		////////////////////////////////////
 		//Create Shadow Textures
 		cVector3l vShadowSize[] = {
@@ -617,51 +598,6 @@ namespace hpl {
 				mpSSAORenderProgram->GetVariableAsId("afDepthDiffMul", kVar_afDepthDiffMul);
 				mpSSAORenderProgram->GetVariableAsId("afSkipEdgeLimit", kVar_afSkipEdgeLimit);
 			}
-		}
-
-		////////////////////////////////////
-		//Create SSGI programs and textures
-		cVector2l vSSGISize = mvScreenSize;
-
-		// Textures
-		mpSSGITexture = CreateRenderTexture("SSGI_Output", vSSGISize, ePixelFormat_RGB);
-
-		// Frame Buffers
-		mpSSGIBuffer = mpGraphics->CreateFrameBuffer("SSGI_Buffer");
-		mpSSGIBuffer->SetTexture2D(0, mpSSGITexture);
-
-		if (!mpSSGIBuffer->CompileAndValidate())
-		{
-			Error("Could not create SSGI frame buffer!\n");
-			return false;
-		}
-
-		// Cubemap
-		mpCubemap = mpResources->GetTextureManager()->CreateCubeMap("room.dds", false);
-
-		/////////////////////////////////////
-		// Programs
-		cParserVarContainer programVars;
-
-		//SSGI Rendering
-		mpSSGIRenderProgram = mpGraphics->CreateGpuProgramFromShaders("SSGIRender", "ssgi_render_vtx.glsl", "ssgi_render_frag.glsl", &programVars);
-		if (mpSSGIRenderProgram)
-		{
-			mpSSGIRenderProgram->GetVariableAsId("a_mtxViewMatrix", kVar_a_mtxViewMatrix);
-			mpSSGIRenderProgram->GetVariableAsId("a_mtxProjMatrix", kVar_a_mtxProjMatrix);
-			mpSSGIRenderProgram->GetVariableAsId("a_mtxInvViewProjMatrix", kVar_a_mtxInvViewProjMatrix);
-			mpSSGIRenderProgram->GetVariableAsId("avCamPos", kVar_avCamPos);
-			mpSSGIRenderProgram->GetVariableAsId("avResolution", kVar_avResolution);
-			mpSSGIRenderProgram->GetVariableAsId("afFarPlane", kVar_afFarPlane);
-			mpSSGIRenderProgram->GetVariableAsId("cubeMap", kVar_cubeMap);
-			mpSSGIRenderProgram->GetVariableAsId("u_sphereRadius", kVar_uSphereRadius);
-			mpSSGIRenderProgram->GetVariableAsId("u_time", kVar_afTime);
-
-			mpSSGIRenderProgram->GetVariableAsId("a_mtxSphere", kVar_a_mtxSphere);
-			mpSSGIRenderProgram->GetVariableAsId("a_mtxInvSphere", kVar_a_mtxInvSphere);
-
-			mpSSGIRenderProgram->GetVariableAsId("u_goldColor", kVar_avColor);
-			mpSSGIRenderProgram->GetVariableAsId("u_roughness", kVar_afRoughness);
 		}
 
 		////////////////////////////////////
@@ -981,13 +917,6 @@ namespace hpl {
 
 		RenderIllumination();
 
-		// --- DEBUG SSGI OUTPUT ---
-		if (gbDebugRenderSSGIOnly)
-		{
-			RenderSSGIDebugView();
-			return;
-		}
-
 		RenderFog();
 		RenderFullScreenFog();
 
@@ -1002,11 +931,6 @@ namespace hpl {
 		RenderTranslucent();
 
 		RunCallback(eRendererMessage_PostTranslucent);
-
-		// --- GI Calculation ---
-		if (mpSSGIRenderProgram) {
-			RenderSSGI();
-		}
 
 		if(mbOcclusionTestLargeLights)
 			RetrieveAllLightOcclusionPair(false); //false = we do not stop and wait.
@@ -1033,9 +957,6 @@ namespace hpl {
 		
 		mpLowLevelGraphics->SetClearDepth(1);
 		ClearFrameBuffer(eClearFrameBufferFlag_Depth, true);
-		mpLowLevelGraphics->SetClearColor(cColor(0));
-		mpLowLevelGraphics->SetClearDepth(1);
-		ClearFrameBuffer(eClearFrameBufferFlag_Color | eClearFrameBufferFlag_Depth, true);
 		END_RENDER_PASS();
 	}
 
@@ -1303,72 +1224,6 @@ namespace hpl {
 		/////////////////////////////
 		// Set render states back to normal
 		SetNormalFrustumProjection();
-
-		END_RENDER_PASS();
-	}
-
-	//-----------------------------------------------------------------------
-
-	void cRendererDeferred::RenderSSGI() {
-		if (!mpSSGIRenderProgram || !mpCurrentWorld->GetSphere()) return;
-
-		START_RENDER_PASS(SSGI);
-
-		SetAccumulationBuffer();
-
-		SetDepthTest(false);
-		SetDepthWrite(false);
-		SetBlendMode(eMaterialBlendMode_Alpha);
-		SetChannelMode(eMaterialChannelMode_RGBA);
-
-		SetTexture(0, mpAccumBufferTexture);
-		SetTexture(1, mpCubemap);
-
-		cVector2f vResolution = cVector2f((float)mpSSGITexture->GetWidth(), (float)mpSSGITexture->GetHeight());
-		cMatrixf view = GetCurrentFrustum()->GetViewMatrix();
-		cMatrixf proj = GetCurrentFrustum()->GetProjectionMatrix();
-		cMatrixf vp = cMath::MatrixMul(proj, view);
-		cMatrixf invVP = cMath::MatrixInverse(vp);
-
-		// Sphere
-		cSubMeshEntity* pSphere = mpCurrentWorld->GetSphere()->GetSubMeshEntity(0);
-		cMatrixf& M = pSphere->GetWorldMatrix();
-
-		cVector3f right(M.m[0][0], M.m[0][1], M.m[0][2]);
-		cVector3f up(M.m[1][0], M.m[1][1], M.m[1][2]);
-		cVector3f forward(M.m[2][0], M.m[2][1], M.m[2][2]);
-		cVector3f translate(M.m[0][3], M.m[1][3], M.m[2][3]);
-
-		right = cMath::Vector3Normalize(right);
-		up = cMath::Vector3Normalize(up);
-		forward = cMath::Vector3Normalize(forward);
-
-		cMatrixf M_noscale = cMath::MatrixUnitVectors(right, up, forward, translate);
-		cMatrixf invNoscale = cMath::MatrixInverse(M_noscale);
-
-		//Log("Enitity '%s'. Pos: (%s), Matrix: (%s), Matrix Inverse: (%s)\n", pSphere->GetName().c_str(), pSphere->GetWorldPosition().ToString().c_str(), mtxSphere.ToString().c_str(), mtxInvSphere.ToString().c_str());
-
-		if (mpSSGIRenderProgram)
-		{
-			mpSSGIRenderProgram->SetMatrixf(kVar_a_mtxViewMatrix, view);
-			mpSSGIRenderProgram->SetMatrixf(kVar_a_mtxProjMatrix, proj);
-			mpSSGIRenderProgram->SetMatrixf(kVar_a_mtxInvViewProjMatrix, invVP);
-			mpSSGIRenderProgram->SetVec3f(kVar_avCamPos, GetCurrentFrustum()->GetOrigin());
-			mpSSGIRenderProgram->SetVec2f(kVar_avResolution, vResolution);
-			mpSSGIRenderProgram->SetFloat(kVar_afFarPlane, mfFarPlane);
-			mpSSGIRenderProgram->SetFloat(kVar_uSphereRadius, 1.5f);
-			mpSSGIRenderProgram->SetFloat(kVar_afTime, cPlatform::GetApplicationTime()/5000.0f);
-
-			mpSSGIRenderProgram->SetMatrixf(kVar_a_mtxSphere, M_noscale);
-			mpSSGIRenderProgram->SetMatrixf(kVar_a_mtxInvSphere, invNoscale);
-
-			mpSSGIRenderProgram->SetVec3f(kVar_avColor, cVector3f(1.0f, 0.766f, 0.336f));
-			mpSSGIRenderProgram->SetFloat(kVar_afRoughness, 0.51f);
-		}
-
-		SetProgram(mpSSGIRenderProgram);
-		SetFlatProjection();
-		DrawQuad(0, 1);
 
 		END_RENDER_PASS();
 	}
@@ -3631,39 +3486,6 @@ namespace hpl {
 			DrawQuad(cVector2f(0.5f,0.5f),cVector2f(0.5f,0.5f), 0,mvScreenSizeFloat, true);
 		}
 		
-
-		SetNormalFrustumProjection();
-		END_RENDER_PASS();
-	}
-
-	//-----------------------------------------------------------------------
-
-	void cRendererDeferred::RenderSSGIDebugView()
-	{
-		if (!mpSSGITexture) return;
-
-		START_RENDER_PASS(SSGIDebugView);
-
-		//Pure testing below
-		SetDepthTest(false);
-		SetDepthWrite(false);
-		SetBlendMode(eMaterialBlendMode_None);
-		SetAlphaMode(eMaterialAlphaMode_Solid);
-		SetChannelMode(eMaterialChannelMode_RGBA);
-
-		SetAccumulationBuffer();
-
-		ClearFrameBuffer(eClearFrameBufferFlag_Depth | eClearFrameBufferFlag_Color, false);
-
-		SetFlatProjection();
-		SetProgram(NULL);
-
-		SetTextureRange(NULL, 1);
-		SetTexture(0, mpSSGITexture);
-
-		//gpBase->mpDebugHandler->AddMessage(cString::To16Char("Drawing quad!"), false);
-		cVector2f vSSGISize = cVector2f((float)mpSSGITexture->GetWidth(), (float)mpSSGITexture->GetHeight());
-		DrawQuad(0, 1, 0, vSSGISize, true);
 
 		SetNormalFrustumProjection();
 		END_RENDER_PASS();

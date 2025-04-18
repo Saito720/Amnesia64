@@ -21,6 +21,7 @@
 #define HPL_RENDERER_DEFERRED_H
 
 #include "graphics/Renderer.h"
+#include <GL/glew.h>
 
 namespace hpl {
 
@@ -195,11 +196,9 @@ namespace hpl {
 		void RenderDynamicZTemp();
 		void RenderGbuffer();
 		void RenderSSAO();
-		void RenderSSGI();
-		void RenderSSGIDebugView();
-		void RenderSSGILinearDepth();
 		void RenderEdgeSmooth();
 		void RenderDeferredSkyBox();
+		void RenderNewLighting();
 		
 		void SetupLightsAndRenderQueries();
 		void InitLightRendering();
@@ -240,6 +239,13 @@ namespace hpl {
 		iGpuProgram* SetupProgramAndTextures(cDeferredLight* apLightData, tFlag alExtraFlags);
 		iVertexBuffer* GetLightShape(iLight *apLight, eDeferredShapeQuality aQuality);
 		
+		// Room SSBO
+		void CreateRoomSSBO();
+
+		GLuint  mRoomSSBO_Verts = 0;
+		GLuint  mRoomSSBO_UVs   = 0;
+		GLuint  mRoomSSBO_Idxs  = 0;
+		int     mRoomIndexCount = 0;
 		
 		iVertexBuffer *mpShapeSphere[eDeferredShapeQuality_LastEnum];
 		iVertexBuffer *mpShapePyramid;
@@ -313,18 +319,24 @@ namespace hpl {
 		iGpuProgram *mpEdgeSmooth_UnpackDepthProgram;
 		iGpuProgram *mpEdgeSmooth_RenderProgram;
 
-		// SSGI
-		iTexture *mpSSGILinearDepthTexture;
-		iTexture *mpSSGITexture;
-		iTexture *mpCubemap;
-		iFrameBuffer *mpSSGILinearDepthBuffer;
-		iFrameBuffer *mpSSGIBuffer;
-		iGpuProgram *mpSSGIRenderProgram;
+		// New Lighting
+		iTexture *mpNewLightingTexture;
+		iFrameBuffer *mpNewLightingBuffer;
+		iGpuProgram *mpNewLightingProgram;
+
+		// Room Textures
+		iTexture *mpRoomDiffuseMap;
+		iTexture *mpRoomNormalMap;
+
+		// Room Renderable
+		iRenderable *mpRoomRenderable;
+
+		// Room Vertex Buffer
+		iVertexBuffer* mpRoomVertexBuffer;
 
 		std::vector<cDeferredLight*> mvTempDeferredLights;
 		std::vector<cDeferredLight*> mvSortedLights[eDeferredLightList_LastEnum];
 
-		iGpuProgram *mpSSGIUnpackDepthProgram;
 		iGpuProgram *mpSkyBoxProgram;
 		iGpuProgram *mpLightStencilProgram;
 		iGpuProgram *mpLightBoxProgram[2];//1=SSAO used, 0=no SSAO

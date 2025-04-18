@@ -395,6 +395,7 @@ enum eLuxAction
 	eLuxAction_QuickSave,
 	eLuxAction_QuickLoad,
 	eLuxAction_FastForward,
+	eLuxAction_NewLighting,
 
 	eLuxAction_Inventory,
 	eLuxAction_Journal,

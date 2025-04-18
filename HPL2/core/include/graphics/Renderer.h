@@ -306,6 +306,9 @@ namespace hpl {
 		//Debug
 		tRenderableVec *GetShadowCasterVec(){ return &mvShadowCasters;}
 
+		void SetNewLighting(bool abNewLighting){ mbNewLighting = abNewLighting;};
+		bool GetNewLighting() { return mbNewLighting;};
+
 	protected:
 		/**
 		* In case some intermediate format is used then make sure it is at the correct buffer before ending rendering. 
@@ -490,6 +493,9 @@ namespace hpl {
 		static bool mbParallaxEnabled;
 		static int mlReflectionSizeDiv;
 		static bool mbRefractionEnabled;
+
+		// Debug
+		bool mbNewLighting;
 	};
 
 	//---------------------------------------------

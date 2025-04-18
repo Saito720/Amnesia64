@@ -151,7 +151,7 @@ namespace hpl {
 
 		msFilePath = _W("");
 
-		pSphere = NULL;
+		mpRoomRenderable = NULL;
 	}
 
 	//-----------------------------------------------------------------------
@@ -1313,6 +1313,11 @@ namespace hpl {
 			mpRenderableContainer[eWorldContainerType_Static]->Add(apObject);
 		else
 			mpRenderableContainer[eWorldContainerType_Dynamic]->Add(apObject);
+
+		if(apObject->GetName() == "CombinedObjects0_SubMesh")
+		{
+			mpRoomRenderable = apObject;
+		}
 	}
 	
 	//-----------------------------------------------------------------------
@@ -1370,10 +1375,6 @@ namespace hpl {
 			if(pEntity->IsActive()){
 				//if(pEntity->IsStatic()==false) START_TIMING_EX(pEntity->GetName().c_str(),entity);
 				pEntity->UpdateLogic(afTimeStep);
-				if (pEntity->GetName() == "metal_sphere")
-				{
-					pSphere = pEntity;
-				}
 				//if(bRenderDebug) Log("Enitity '%s'. Pos: (%s), Matrix: (%s)\n", pEntity->GetName().c_str(), pEntity->GetWorldPosition().ToString().c_str(),
 																			//pEntity->GetWorldMatrix().ToString().c_str());
 				//if(pEntity->IsStatic()==false) STOP_TIMING(entity);

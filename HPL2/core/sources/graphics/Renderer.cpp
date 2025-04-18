@@ -440,6 +440,9 @@ namespace hpl {
 		// Create shapes
 		//  Color and Texture because Geforce cards fail without it, no idea why...
 		mpShapeBox = LoadVertexBufferFromMesh("core_box.dae", eVertexElementFlag_Position | eVertexElementFlag_Texture0| eVertexElementFlag_Color0);
+
+		// Debug
+		mbNewLighting = true;
 	}
 
 	//-----------------------------------------------------------------------

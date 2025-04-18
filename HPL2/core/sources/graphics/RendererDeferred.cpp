@@ -58,7 +58,6 @@
 
 // DEBUG
 #include "../../../../amnesia/src/game/LuxDebugHandler.h"
-static bool gbDebugRenderSSGIOnly = false;
 
 #include <algorithm>
 
@@ -169,21 +168,18 @@ namespace hpl {
 	#define kVar_afDepthDiffMul						21
 	#define kVar_afSkipEdgeLimit					22
 
-	// SSGI
-	#define kVar_a_mtxViewMatrix					23
-	#define kVar_a_mtxProjMatrix					24
-	#define kVar_a_mtxInvViewProjMatrix				25
-	#define kVar_avCamPos							26
-	#define kVar_avResolution						27
-	#define kVar_cubeMap							28
-	#define kVar_uSphereRadius						29
-	#define kVar_afTime								30
+	// New Lighting
+	#define kVar_avCamPos							23
+	#define kVar_a_mtxInvViewProj					24
+	#define kVar_alTriCount							25
 
-	#define kVar_a_mtxSphere						31
-	#define kVar_a_mtxInvSphere						32
+	// Light Specific
+	#define kVar_afLightIntensity					26
 
-	#define kVar_avColor							33
-	#define kVar_afRoughness						34
+	// Material Specific
+	#define kVar_afAmbient							27
+	#define kVar_afSpecPower						28
+	#define kVar_afSpecScale						29
 
 	//////////////////////////////////////////////////////////////////////////
 	// CONSTRUCTORS
@@ -619,49 +615,61 @@ namespace hpl {
 			}
 		}
 
-		////////////////////////////////////
-		//Create SSGI programs and textures
-		cVector2l vSSGISize = mvScreenSize;
-
-		// Textures
-		mpSSGITexture = CreateRenderTexture("SSGI_Output", vSSGISize, ePixelFormat_RGB);
-
-		// Frame Buffers
-		mpSSGIBuffer = mpGraphics->CreateFrameBuffer("SSGI_Buffer");
-		mpSSGIBuffer->SetTexture2D(0, mpSSGITexture);
-
-		if (!mpSSGIBuffer->CompileAndValidate())
+		if (GetNewLighting())
 		{
-			Error("Could not create SSGI frame buffer!\n");
-			return false;
-		}
+			////////////////////////////////////
+			//Create programs and textures for new lighting
+			cVector2l vNewLightingSize = mvScreenSize;
 
-		// Cubemap
-		mpCubemap = mpResources->GetTextureManager()->CreateCubeMap("room.dds", false);
+			// Textures
+			mpNewLightingTexture = CreateRenderTexture("New_Lighting_Texture", vNewLightingSize, ePixelFormat_RGB);
 
-		/////////////////////////////////////
-		// Programs
-		cParserVarContainer programVars;
+			// Room textures with mipmaps set to true
+			mpRoomDiffuseMap = mpResources->GetTextureManager()->Create2D("castlebase_room.dds", true);
 
-		//SSGI Rendering
-		mpSSGIRenderProgram = mpGraphics->CreateGpuProgramFromShaders("SSGIRender", "ssgi_render_vtx.glsl", "ssgi_render_frag.glsl", &programVars);
-		if (mpSSGIRenderProgram)
-		{
-			mpSSGIRenderProgram->GetVariableAsId("a_mtxViewMatrix", kVar_a_mtxViewMatrix);
-			mpSSGIRenderProgram->GetVariableAsId("a_mtxProjMatrix", kVar_a_mtxProjMatrix);
-			mpSSGIRenderProgram->GetVariableAsId("a_mtxInvViewProjMatrix", kVar_a_mtxInvViewProjMatrix);
-			mpSSGIRenderProgram->GetVariableAsId("avCamPos", kVar_avCamPos);
-			mpSSGIRenderProgram->GetVariableAsId("avResolution", kVar_avResolution);
-			mpSSGIRenderProgram->GetVariableAsId("afFarPlane", kVar_afFarPlane);
-			mpSSGIRenderProgram->GetVariableAsId("cubeMap", kVar_cubeMap);
-			mpSSGIRenderProgram->GetVariableAsId("u_sphereRadius", kVar_uSphereRadius);
-			mpSSGIRenderProgram->GetVariableAsId("u_time", kVar_afTime);
+			if (!mpRoomDiffuseMap)
+			{
+				Error("Could not load diffuse map for room!\n");
+				return false;
+			}
 
-			mpSSGIRenderProgram->GetVariableAsId("a_mtxSphere", kVar_a_mtxSphere);
-			mpSSGIRenderProgram->GetVariableAsId("a_mtxInvSphere", kVar_a_mtxInvSphere);
+			mpRoomNormalMap = mpResources->GetTextureManager()->Create2D("castlebase_room_nrm.dds", true);
+			if (!mpRoomNormalMap)
+			{
+				Error("Could not load normal map for room!\n");
+				return false;
+			}
 
-			mpSSGIRenderProgram->GetVariableAsId("u_goldColor", kVar_avColor);
-			mpSSGIRenderProgram->GetVariableAsId("u_roughness", kVar_afRoughness);
+			// Frame Buffers
+			mpNewLightingBuffer = mpGraphics->CreateFrameBuffer("New_Lighting_Buffer");
+			mpNewLightingBuffer->SetTexture2D(0, mpNewLightingTexture);
+
+			if (!mpNewLightingBuffer->CompileAndValidate())
+			{
+				Error("Could not create frame buffer for new lighting!\n");
+				return false;
+			}
+
+			/////////////////////////////////////
+			// Programs
+			cParserVarContainer programVars;
+			programVars.Add("UseUv");
+			// New Lighting
+			mpNewLightingProgram = mpGraphics->CreateGpuProgramFromShaders("New_Lighting_Program", "new_lighting_vtx.glsl", "new_lighting_frag.glsl", &programVars);
+			if (mpNewLightingProgram)
+			{
+				mpNewLightingProgram->GetVariableAsId("avCamPos", kVar_avCamPos);
+				mpNewLightingProgram->GetVariableAsId("a_mtxInvViewProj", kVar_a_mtxInvViewProj);
+				mpNewLightingProgram->GetVariableAsId("alTriCount", kVar_alTriCount);
+
+				mpNewLightingProgram->GetVariableAsId("afLightPos", kVar_avLightPos);
+				mpNewLightingProgram->GetVariableAsId("afLightIntensity", kVar_afLightIntensity);
+
+				mpNewLightingProgram->GetVariableAsId("afAmbient", kVar_afAmbient);
+				mpNewLightingProgram->GetVariableAsId("afSpecPower", kVar_afSpecPower);
+				mpNewLightingProgram->GetVariableAsId("afSpecScale", kVar_afSpecScale);
+			}
+			programVars.Clear();
 		}
 
 		////////////////////////////////////
@@ -828,6 +836,18 @@ namespace hpl {
 		mpGraphics->DestroyGpuProgram(mpSkyBoxProgram);
 
 		mpProgramManager->DestroyShadersAndPrograms();
+
+		/////////////////////////
+		// New Lighting Cleanup
+
+		// Textures
+		if (mpNewLightingTexture)    mpGraphics->DestroyTexture(mpNewLightingTexture);
+
+		// Frame Buffers
+		if (mpNewLightingBuffer)     mpGraphics->DestroyFrameBuffer(mpNewLightingBuffer);
+
+		// GPU Programs
+		if (mpNewLightingProgram)    mpGraphics->DestroyGpuProgram(mpNewLightingProgram);
 	}
 
 	//-----------------------------------------------------------------------
@@ -961,6 +981,12 @@ namespace hpl {
 			return;
 		}
 		
+		// --- New Lighting ---
+		if (mpNewLightingProgram && GetNewLighting()) {
+			RenderNewLighting();
+			return;
+		}
+		
 		RenderDecals();
 
 		RunCallback(eRendererMessage_PostGBuffer);
@@ -978,15 +1004,7 @@ namespace hpl {
 		//RenderSSAO();
 		//return;
 
-
 		RenderIllumination();
-
-		// --- DEBUG SSGI OUTPUT ---
-		if (gbDebugRenderSSGIOnly)
-		{
-			RenderSSGIDebugView();
-			return;
-		}
 
 		RenderFog();
 		RenderFullScreenFog();
@@ -1002,11 +1020,6 @@ namespace hpl {
 		RenderTranslucent();
 
 		RunCallback(eRendererMessage_PostTranslucent);
-
-		// --- GI Calculation ---
-		if (mpSSGIRenderProgram) {
-			RenderSSGI();
-		}
 
 		if(mbOcclusionTestLargeLights)
 			RetrieveAllLightOcclusionPair(false); //false = we do not stop and wait.
@@ -1033,9 +1046,6 @@ namespace hpl {
 		
 		mpLowLevelGraphics->SetClearDepth(1);
 		ClearFrameBuffer(eClearFrameBufferFlag_Depth, true);
-		mpLowLevelGraphics->SetClearColor(cColor(0));
-		mpLowLevelGraphics->SetClearDepth(1);
-		ClearFrameBuffer(eClearFrameBufferFlag_Color | eClearFrameBufferFlag_Depth, true);
 		END_RENDER_PASS();
 	}
 
@@ -1309,64 +1319,129 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	void cRendererDeferred::RenderSSGI() {
-		if (!mpSSGIRenderProgram || !mpCurrentWorld->GetSphere()) return;
+	void cRendererDeferred::CreateRoomSSBO()
+	{
+		const int vCount = mpRoomVertexBuffer->GetVertexNum();
+		const int iCount = mpRoomVertexBuffer->GetIndexNum();
 
-		START_RENDER_PASS(SSGI);
+		float* posData = mpRoomVertexBuffer->GetFloatArray(eVertexBufferElement_Position);
+		float* uvData3 = mpRoomVertexBuffer->GetFloatArray(eVertexBufferElement_Texture0);
+		unsigned int* idxData = mpRoomVertexBuffer->GetIndices();
 
-		SetAccumulationBuffer();
+		mRoomIndexCount = iCount;
 
-		SetDepthTest(false);
-		SetDepthWrite(false);
-		SetBlendMode(eMaterialBlendMode_Alpha);
-		SetChannelMode(eMaterialChannelMode_RGBA);
+		// Create positions SSBO (binding 0)
+		glGenBuffers(1, &mRoomSSBO_Verts);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, mRoomSSBO_Verts);
+		glBufferData(GL_SHADER_STORAGE_BUFFER,
+			vCount * 4 * sizeof(float),        // vec4 per vertex
+			posData, GL_STATIC_DRAW);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mRoomSSBO_Verts);
 
-		SetTexture(0, mpAccumBufferTexture);
-		SetTexture(1, mpCubemap);
+		// Create index SSBO (binding 1)
+		glGenBuffers(1, &mRoomSSBO_Idxs);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, mRoomSSBO_Idxs);
+		glBufferData(GL_SHADER_STORAGE_BUFFER,
+			iCount * sizeof(unsigned int),
+			idxData, GL_STATIC_DRAW);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mRoomSSBO_Idxs);
 
-		cVector2f vResolution = cVector2f((float)mpSSGITexture->GetWidth(), (float)mpSSGITexture->GetHeight());
-		cMatrixf view = GetCurrentFrustum()->GetViewMatrix();
-		cMatrixf proj = GetCurrentFrustum()->GetProjectionMatrix();
-		cMatrixf vp = cMath::MatrixMul(proj, view);
-		cMatrixf invVP = cMath::MatrixInverse(vp);
+		// Pack 3‑float UVs -> 2‑float array and upload (binding 2)
+		std::vector<float> uvData2;
+		uvData2.reserve(vCount * 2);
 
-		// Sphere
-		cSubMeshEntity* pSphere = mpCurrentWorld->GetSphere()->GetSubMeshEntity(0);
-		cMatrixf& M = pSphere->GetWorldMatrix();
-
-		cVector3f right(M.m[0][0], M.m[0][1], M.m[0][2]);
-		cVector3f up(M.m[1][0], M.m[1][1], M.m[1][2]);
-		cVector3f forward(M.m[2][0], M.m[2][1], M.m[2][2]);
-		cVector3f translate(M.m[0][3], M.m[1][3], M.m[2][3]);
-
-		right = cMath::Vector3Normalize(right);
-		up = cMath::Vector3Normalize(up);
-		forward = cMath::Vector3Normalize(forward);
-
-		cMatrixf M_noscale = cMath::MatrixUnitVectors(right, up, forward, translate);
-		cMatrixf invNoscale = cMath::MatrixInverse(M_noscale);
-
-		//Log("Enitity '%s'. Pos: (%s), Matrix: (%s), Matrix Inverse: (%s)\n", pSphere->GetName().c_str(), pSphere->GetWorldPosition().ToString().c_str(), mtxSphere.ToString().c_str(), mtxInvSphere.ToString().c_str());
-
-		if (mpSSGIRenderProgram)
+		for (int i = 0; i < vCount; ++i)
 		{
-			mpSSGIRenderProgram->SetMatrixf(kVar_a_mtxViewMatrix, view);
-			mpSSGIRenderProgram->SetMatrixf(kVar_a_mtxProjMatrix, proj);
-			mpSSGIRenderProgram->SetMatrixf(kVar_a_mtxInvViewProjMatrix, invVP);
-			mpSSGIRenderProgram->SetVec3f(kVar_avCamPos, GetCurrentFrustum()->GetOrigin());
-			mpSSGIRenderProgram->SetVec2f(kVar_avResolution, vResolution);
-			mpSSGIRenderProgram->SetFloat(kVar_afFarPlane, mfFarPlane);
-			mpSSGIRenderProgram->SetFloat(kVar_uSphereRadius, 1.5f);
-			mpSSGIRenderProgram->SetFloat(kVar_afTime, cPlatform::GetApplicationTime()/5000.0f);
-
-			mpSSGIRenderProgram->SetMatrixf(kVar_a_mtxSphere, M_noscale);
-			mpSSGIRenderProgram->SetMatrixf(kVar_a_mtxInvSphere, invNoscale);
-
-			mpSSGIRenderProgram->SetVec3f(kVar_avColor, cVector3f(1.0f, 0.766f, 0.336f));
-			mpSSGIRenderProgram->SetFloat(kVar_afRoughness, 0.51f);
+			uvData2.push_back(uvData3[i * 3 + 0]);      // U
+			uvData2.push_back(uvData3[i * 3 + 1]);      // V   (skip W = uvData3[i*3+2])
 		}
 
-		SetProgram(mpSSGIRenderProgram);
+		glGenBuffers(1, &mRoomSSBO_UVs);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, mRoomSSBO_UVs);
+		glBufferData(GL_SHADER_STORAGE_BUFFER,
+			uvData2.size() * sizeof(float),
+			uvData2.data(), GL_STATIC_DRAW);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mRoomSSBO_UVs);
+
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+	}
+
+
+	//-----------------------------------------------------------------------
+
+	void cRendererDeferred::RenderNewLighting()
+	{
+		if (!mpNewLightingProgram) return;
+
+		// Get room renderable
+		mpRoomRenderable = mpCurrentWorld->GetRoomRenderable();
+
+		if (!mpRoomRenderable)
+		{
+			Error("No renderable for room!\n");
+			return;
+		}
+
+		// Get room vertex buffer
+		if (!mpRoomVertexBuffer)
+		{
+			mpRoomVertexBuffer = mpRoomRenderable->GetVertexBuffer();
+
+			if (!mpRoomVertexBuffer)
+			{
+				Error("No vertex buffer for room!\n");
+				return;
+			}
+
+			// Create SSBO
+			CreateRoomSSBO();
+		}
+
+		START_RENDER_PASS(NEW_LIGHTING);
+
+		SetAccumulationBuffer();
+		ClearFrameBuffer(eClearFrameBufferFlag_Color | eClearFrameBufferFlag_Depth, true);
+
+		// Set up rendering variables
+		SetDepthTest(false);
+		SetDepthWrite(false);
+		SetBlendMode(eMaterialBlendMode_None);
+		SetChannelMode(eMaterialChannelMode_RGB);
+
+		SetTexture(0, mpRoomDiffuseMap);
+		SetTexture(1, mpRoomNormalMap);
+
+		// Get the render texture's resolution and the camera's inverse matrix
+		cVector2f vResolution = cVector2f((float)mpNewLightingTexture->GetWidth(), (float)mpNewLightingTexture->GetHeight());
+		cMatrixf mtxView = GetCurrentFrustum()->GetViewMatrix();
+		cMatrixf mtxProj = GetCurrentFrustum()->GetProjectionMatrix();
+		cMatrixf mtxVP = cMath::MatrixMul(mtxProj, mtxView);
+		cMatrixf mtxInvVP = cMath::MatrixInverse(mtxVP);
+
+		// Populate the shader's uniforms
+		if (mpNewLightingProgram)
+		{
+			// Camera position
+			mpNewLightingProgram->SetVec3f(kVar_avCamPos, GetCurrentFrustum()->GetOrigin());
+			// Camera inverse matrix
+			mpNewLightingProgram->SetMatrixf(kVar_a_mtxInvViewProj, mtxInvVP);
+			// Room triangle count
+			mpNewLightingProgram->SetInt(kVar_alTriCount, mRoomIndexCount / 3);
+
+			// Light position
+			mpNewLightingProgram->SetVec3f(kVar_avLightPos, cVector3f(0,3,0));
+			// Light intensity
+			mpNewLightingProgram->SetFloat(kVar_afLightIntensity, 0.75f);
+
+			// Ambient
+			mpNewLightingProgram->SetFloat(kVar_afAmbient, 0.05f);
+			// Specular power
+			mpNewLightingProgram->SetFloat(kVar_afSpecPower, 32.0f);
+			// Specular scale
+			mpNewLightingProgram->SetFloat(kVar_afSpecScale, 0.25f);
+		}
+
+		SetProgram(mpNewLightingProgram);
 		SetFlatProjection();
 		DrawQuad(0, 1);
 
@@ -3638,7 +3713,7 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	void cRendererDeferred::RenderSSGIDebugView()
+	/* void cRendererDeferred::RenderSSGIDebugView()
 	{
 		if (!mpSSGITexture) return;
 
@@ -3667,7 +3742,7 @@ namespace hpl {
 
 		SetNormalFrustumProjection();
 		END_RENDER_PASS();
-	}
+	} */
 
 	//-----------------------------------------------------------------------
 

@@ -356,6 +356,8 @@ namespace hpl {
 		cDummyRenderable* GetDummyRenderableFromUniqueID(int alID);
 		cDummyRenderableIterator GetDummyRenderableIterator();
 
+		cMeshEntity* GetSphere() { return pSphere; };
+
 
 	private:
 		void AddRenderableToContainer(iRenderable *apObject);
@@ -431,6 +433,7 @@ namespace hpl {
 		cColor mAmbientColor;
 
 		iRenderable* mpRoomRenderable;
+		cMeshEntity* pSphere;
 	};
 
 };

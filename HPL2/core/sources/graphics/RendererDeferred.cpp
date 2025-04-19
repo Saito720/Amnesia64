@@ -172,14 +172,16 @@ namespace hpl {
 	#define kVar_avCamPos							23
 	#define kVar_a_mtxInvViewProj					24
 	#define kVar_alTriCount							25
+	#define kVar_alFrame							26
 
 	// Light Specific
-	#define kVar_afLightIntensity					26
+	#define kVar_afLightIntensity					27
+	#define kVar_afLightRadius						28
 
 	// Material Specific
-	#define kVar_afAmbient							27
-	#define kVar_afSpecPower						28
-	#define kVar_afSpecScale						29
+	#define kVar_afAmbient							29
+	#define kVar_afSpecPower						30
+	#define kVar_afSpecScale						31
 
 	//////////////////////////////////////////////////////////////////////////
 	// CONSTRUCTORS
@@ -661,9 +663,12 @@ namespace hpl {
 				mpNewLightingProgram->GetVariableAsId("avCamPos", kVar_avCamPos);
 				mpNewLightingProgram->GetVariableAsId("a_mtxInvViewProj", kVar_a_mtxInvViewProj);
 				mpNewLightingProgram->GetVariableAsId("alTriCount", kVar_alTriCount);
+				mpNewLightingProgram->GetVariableAsId("uFrame", kVar_alFrame);
 
 				mpNewLightingProgram->GetVariableAsId("afLightPos", kVar_avLightPos);
 				mpNewLightingProgram->GetVariableAsId("afLightIntensity", kVar_afLightIntensity);
+				mpNewLightingProgram->GetVariableAsId("afLightRadius", kVar_afLightRadius);
+				mpNewLightingProgram->GetVariableAsId("avLightColor", kVar_avLightColor);
 
 				mpNewLightingProgram->GetVariableAsId("afAmbient", kVar_afAmbient);
 				mpNewLightingProgram->GetVariableAsId("afSpecPower", kVar_afSpecPower);
@@ -1369,9 +1374,11 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
+	static int frameCount = 0;
+
 	void cRendererDeferred::RenderNewLighting()
 	{
-		if (!mpNewLightingProgram) return;
+		if (!mpNewLightingProgram || !mpCurrentWorld->GetSphere()) return;
 
 		// Get room renderable
 		mpRoomRenderable = mpCurrentWorld->GetRoomRenderable();
@@ -1418,6 +1425,10 @@ namespace hpl {
 		cMatrixf mtxVP = cMath::MatrixMul(mtxProj, mtxView);
 		cMatrixf mtxInvVP = cMath::MatrixInverse(mtxVP);
 
+		// Sphere
+		cSubMeshEntity* pSphere = mpCurrentWorld->GetSphere()->GetSubMeshEntity(0);
+		cVector3f vSpherePos = pSphere->GetWorldMatrix().GetTranslation();
+
 		// Populate the shader's uniforms
 		if (mpNewLightingProgram)
 		{
@@ -1427,14 +1438,20 @@ namespace hpl {
 			mpNewLightingProgram->SetMatrixf(kVar_a_mtxInvViewProj, mtxInvVP);
 			// Room triangle count
 			mpNewLightingProgram->SetInt(kVar_alTriCount, mRoomIndexCount / 3);
+			// Frame
+			mpNewLightingProgram->SetInt(kVar_alFrame, frameCount++);
 
 			// Light position
-			mpNewLightingProgram->SetVec3f(kVar_avLightPos, cVector3f(0,3,0));
+			mpNewLightingProgram->SetVec3f(kVar_avLightPos, vSpherePos);
+			// Light Radius
+			mpNewLightingProgram->SetFloat(kVar_afLightRadius, 0.5f);
 			// Light intensity
-			mpNewLightingProgram->SetFloat(kVar_afLightIntensity, 0.75f);
+			mpNewLightingProgram->SetFloat(kVar_afLightIntensity, 32.0f);
+			// Light color
+			mpNewLightingProgram->SetVec3f(kVar_avLightColor, cVector3f(0.325f,0.275f,0.15f));
 
 			// Ambient
-			mpNewLightingProgram->SetFloat(kVar_afAmbient, 0.05f);
+			mpNewLightingProgram->SetFloat(kVar_afAmbient, 0.0f);
 			// Specular power
 			mpNewLightingProgram->SetFloat(kVar_afSpecPower, 32.0f);
 			// Specular scale

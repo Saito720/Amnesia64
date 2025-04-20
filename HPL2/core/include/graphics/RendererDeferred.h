@@ -377,9 +377,13 @@ namespace hpl {
 
 		cudaGraphicsResource* cudaIn;
 		cudaGraphicsResource* cudaOut;
+		cudaGraphicsResource* cudaAlbedo;
+		cudaGraphicsResource* cudaNormal;
 
 		float* d_color;
 		float* d_output;
+		float* d_albedo;
+		float* d_normal;
 	};
 
 	//---------------------------------------------

@@ -216,9 +216,13 @@ namespace hpl {
 
 		cudaIn = nullptr;
 		cudaOut = nullptr;
+		cudaAlbedo = nullptr;
+		cudaNormal = nullptr;
 
 		d_color = nullptr;
 		d_output = nullptr;
+		d_albedo = nullptr;
+		d_normal = nullptr;
 	}
 
 	//-----------------------------------------------------------------------
@@ -245,8 +249,8 @@ namespace hpl {
 		//Create G-Buffer textures
 		for(int i=0; i<mlNumOfGBufferTextures; ++i)
 		{
-			ePixelFormat pixelFormat = mGBufferType == eDeferredGBuffer_32Bit ? ePixelFormat_RGBA : ePixelFormat_RGBA16;
-			//ePixelFormat pixelFormat = ePixelFormat_RGBA16;
+			//ePixelFormat pixelFormat = mGBufferType == eDeferredGBuffer_32Bit ? ePixelFormat_RGBA : ePixelFormat_RGBA16;
+			ePixelFormat pixelFormat = ePixelFormat_RGB32;
 
 			tString sName = "G-BufferTexure"+cString::ToString(i);
 			mpGBufferTexture[0][i] = CreateRenderTexture(sName, mvScreenSize,pixelFormat,eTextureFilter_Nearest);
@@ -693,18 +697,26 @@ namespace hpl {
 
 			cudaMalloc((void**)&d_color, N * sizeof(float));
 			cudaMalloc((void**)&d_output, N * sizeof(float));
+			cudaMalloc((void**)&d_albedo, N * sizeof(float));
+			cudaMalloc((void**)&d_normal, N * sizeof(float));
 
 			mpOIDNFilter = mpOIDNDevice.newFilter("RT");
-			mpOIDNFilter.set("hdr", false);
-			mpOIDNFilter.set("cleanAux", true);
 
 			GLuint texIn = (GLuint)mpNewLightingTexture->GetCurrentLowlevelHandle();
 			GLuint texOut = (GLuint)mpDenoisedTexture->GetCurrentLowlevelHandle();
+			GLuint texAlbedo = (GLuint)mpGBufferTexture[0][0]->GetCurrentLowlevelHandle();
+			GLuint texNormal = (GLuint)mpGBufferTexture[0][1]->GetCurrentLowlevelHandle();
 
 			cudaGraphicsGLRegisterImage(&cudaIn, texIn, GL_TEXTURE_2D,
 				cudaGraphicsRegisterFlagsReadOnly);
 			cudaGraphicsGLRegisterImage(&cudaOut, texOut, GL_TEXTURE_2D,
 				cudaGraphicsRegisterFlagsWriteDiscard);
+			cudaGraphicsGLRegisterImage(&cudaAlbedo, texAlbedo, GL_TEXTURE_2D,
+				cudaGraphicsRegisterFlagsReadOnly);
+			cudaGraphicsGLRegisterImage(&cudaNormal, texNormal, GL_TEXTURE_2D,
+				cudaGraphicsRegisterFlagsReadOnly);
+
+			SetNewLighting(false);
 		}
 
 		////////////////////////////////////
@@ -882,8 +894,14 @@ namespace hpl {
 		// GPU Programs
 		if (mpNewLightingProgram)    mpGraphics->DestroyGpuProgram(mpNewLightingProgram);
 
-		cudaGraphicsUnregisterResource(cudaIn);
-		cudaGraphicsUnregisterResource(cudaOut);
+		if (d_color) cudaFree(d_color);
+		if (d_output) cudaFree(d_output);
+		if (d_albedo) cudaFree(d_albedo);
+		if (d_normal) cudaFree(d_normal);
+		if (cudaIn) cudaGraphicsUnregisterResource(cudaIn);
+		if (cudaOut) cudaGraphicsUnregisterResource(cudaOut);
+		if (cudaAlbedo) cudaGraphicsUnregisterResource(cudaAlbedo);
+		if (cudaNormal) cudaGraphicsUnregisterResource(cudaNormal);
 		mpOIDNFilter.release();
 		mpOIDNDevice.release();
 	}
@@ -1022,6 +1040,7 @@ namespace hpl {
 		// --- New Lighting ---
 		if (mpNewLightingProgram && GetNewLighting()) {
 			RenderNewLighting();
+			//RenderGbufferContent();
 			return;
 		}
 		
@@ -1468,7 +1487,7 @@ namespace hpl {
 			// Room triangle count
 			mpNewLightingProgram->SetInt(kVar_alTriCount, mRoomIndexCount / 3);
 			// Frame
-			mpNewLightingProgram->SetInt(kVar_alFrame, frameCount++);
+			mpNewLightingProgram->SetInt(kVar_alFrame, 1);
 
 			// Light position
 			mpNewLightingProgram->SetVec3f(kVar_avLightPos, vSpherePos);
@@ -1577,8 +1596,56 @@ namespace hpl {
 		}
 		Log("\n");
 
+		cudaGraphicsMapResources(1, &cudaAlbedo, 0);
+		{
+			cudaArray_t arrAlbedo;
+			cudaGraphicsSubResourceGetMappedArray(&arrAlbedo, cudaAlbedo, 0, 0);
+			cudaMemcpy2DFromArray(
+				/*dst=*/    d_albedo,
+				/*dpitch=*/ rowBytes,
+				/*srcArray=*/ arrAlbedo,
+				/*wOffset=*/ 0, /*hOffset=*/ 0,
+				/*width=*/  rowBytes,
+				/*height=*/ H,
+				cudaMemcpyDeviceToDevice
+			);
+		}
+		cudaGraphicsUnmapResources(1, &cudaAlbedo, 0);
+
+		cudaMemcpy(checkValues, d_albedo, sizeof(float) * 12, cudaMemcpyDeviceToHost);
+		Log("Albedo values sample: ");
+		for (int i = 0; i < 10; i += 4) {
+			Log("RGBA(%f, %f, %f, %f) ", checkValues[i], checkValues[i + 1], checkValues[i + 2], checkValues[i + 3]);
+		}
+		Log("\n");
+
+		cudaGraphicsMapResources(1, &cudaNormal, 0);
+		{
+			cudaArray_t arrNormal;
+			cudaGraphicsSubResourceGetMappedArray(&arrNormal, cudaNormal, 0, 0);
+			cudaMemcpy2DFromArray(
+				/*dst=*/    d_normal,
+				/*dpitch=*/ rowBytes,
+				/*srcArray=*/ arrNormal,
+				/*wOffset=*/ 0, /*hOffset=*/ 0,
+				/*width=*/  rowBytes,
+				/*height=*/ H,
+				cudaMemcpyDeviceToDevice
+			);
+		}
+		cudaGraphicsUnmapResources(1, &cudaNormal, 0);
+
+		cudaMemcpy(checkValues, d_normal, sizeof(float) * 12, cudaMemcpyDeviceToHost);
+		Log("Normal values sample: ");
+		for (int i = 0; i < 10; i += 4) {
+			Log("RGBA(%f, %f, %f, %f) ", checkValues[i], checkValues[i + 1], checkValues[i + 2], checkValues[i + 3]);
+		}
+		Log("\n");
+
 		// 2) Run the denoiser on 3‑channel data
 		mpOIDNFilter.setImage("color", d_color, oidn::Format::Float3, W, H, 0, sizeof(float) * 4);
+		mpOIDNFilter.setImage("albedo", d_albedo, oidn::Format::Float3, W, H, 0, sizeof(float) * 4);
+		mpOIDNFilter.setImage("normal", d_normal, oidn::Format::Float3, W, H, 0, sizeof(float) * 4);
 		mpOIDNFilter.setImage("output", d_output, oidn::Format::Float3, W, H, 0, sizeof(float) * 4);
 		mpOIDNFilter.commit();
 		mpOIDNFilter.execute();
@@ -3878,7 +3945,7 @@ namespace hpl {
 
 		SetTextureRange(NULL,1);
 
-		SetTexture(0,GetBufferTexture(0));
+		SetTexture(0, mpGBufferTexture[0][0]);
 		DrawQuad(cVector2f(0,0),cVector2f(0.5f,0.5f), 0,mvScreenSizeFloat, true);
 
 		cVector2f vTexSize = mpNewLightingTexture->GetSizeFloat2D();
@@ -3894,11 +3961,11 @@ namespace hpl {
 		cVector2f vUvPos = vRelPos * vTexSize;
 		cVector2f vUvSize = vRelSize * vTexSize;
 		
-		SetTexture(0, GetBufferTexture(1));
+		SetTexture(0, mpGBufferTexture[0][1]);
 		DrawQuad(cVector2f(0.5f, 0), cVector2f(0.5f, 0.5f), 0, mvScreenSizeFloat, true);
 
-		SetTexture(0, GetBufferTexture(2));
-		DrawQuad(cVector2f(0.5f, 0.5f), cVector2f(0.5f, 0.5f), 0, mvScreenSizeFloat, true);
+		SetTexture(0, mpDenoisedTexture);
+		DrawQuad(cVector2f(0.5f, 0.5f), 0.5f, cVector2f(vUvPos.x, (vTexSize.y - vUvSize.y) - vUvPos.y), cVector2f(vUvPos.x + vUvSize.x, vTexSize.y - vUvPos.y), true);
 
 		SetTexture(0, mpNewLightingTexture);
 		DrawQuad(cVector2f(0.0f, 0.5f), 0.5f, cVector2f(vUvPos.x, (vTexSize.y - vUvSize.y) - vUvPos.y), cVector2f(vUvPos.x + vUvSize.x, vTexSize.y - vUvPos.y), true);

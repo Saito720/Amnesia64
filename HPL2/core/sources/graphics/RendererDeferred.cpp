@@ -213,6 +213,12 @@ namespace hpl {
 		mlMaxBatchLights = 100;
 
 		mbReflectionTextureCleared = false;
+
+		cudaIn = nullptr;
+		cudaOut = nullptr;
+
+		d_color = nullptr;
+		d_output = nullptr;
 	}
 
 	//-----------------------------------------------------------------------
@@ -624,7 +630,8 @@ namespace hpl {
 			cVector2l vNewLightingSize = mvScreenSize;
 
 			// Textures
-			mpNewLightingTexture = CreateRenderTexture("New_Lighting_Texture", vNewLightingSize, ePixelFormat_RGB);
+			mpNewLightingTexture = CreateRenderTexture("New_Lighting_Texture", vNewLightingSize, ePixelFormat_RGB32);
+			mpDenoisedTexture = CreateRenderTexture("Denoised_Texture", vNewLightingSize, ePixelFormat_RGB32);
 
 			// Room textures with mipmaps set to true
 			mpRoomDiffuseMap = mpResources->GetTextureManager()->Create2D("castlebase_room.dds", true);
@@ -675,6 +682,29 @@ namespace hpl {
 				mpNewLightingProgram->GetVariableAsId("afSpecScale", kVar_afSpecScale);
 			}
 			programVars.Clear();
+
+			// OpenImageDenoise
+			mpOIDNDevice = oidn::newDevice(oidn::DeviceType::CUDA);
+			mpOIDNDevice.commit();
+
+			int W = mpNewLightingTexture->GetWidth();
+			int H = mpNewLightingTexture->GetHeight();
+			size_t N = size_t(W) * H * 4;
+
+			cudaMalloc((void**)&d_color, N * sizeof(float));
+			cudaMalloc((void**)&d_output, N * sizeof(float));
+
+			mpOIDNFilter = mpOIDNDevice.newFilter("RT");
+			mpOIDNFilter.set("hdr", false);
+			mpOIDNFilter.set("cleanAux", true);
+
+			GLuint texIn = (GLuint)mpNewLightingTexture->GetCurrentLowlevelHandle();
+			GLuint texOut = (GLuint)mpDenoisedTexture->GetCurrentLowlevelHandle();
+
+			cudaGraphicsGLRegisterImage(&cudaIn, texIn, GL_TEXTURE_2D,
+				cudaGraphicsRegisterFlagsReadOnly);
+			cudaGraphicsGLRegisterImage(&cudaOut, texOut, GL_TEXTURE_2D,
+				cudaGraphicsRegisterFlagsWriteDiscard);
 		}
 
 		////////////////////////////////////
@@ -847,12 +877,15 @@ namespace hpl {
 
 		// Textures
 		if (mpNewLightingTexture)    mpGraphics->DestroyTexture(mpNewLightingTexture);
-
 		// Frame Buffers
 		if (mpNewLightingBuffer)     mpGraphics->DestroyFrameBuffer(mpNewLightingBuffer);
-
 		// GPU Programs
 		if (mpNewLightingProgram)    mpGraphics->DestroyGpuProgram(mpNewLightingProgram);
+
+		cudaGraphicsUnregisterResource(cudaIn);
+		cudaGraphicsUnregisterResource(cudaOut);
+		mpOIDNFilter.release();
+		mpOIDNDevice.release();
 	}
 
 	//-----------------------------------------------------------------------
@@ -1406,9 +1439,6 @@ namespace hpl {
 
 		START_RENDER_PASS(NEW_LIGHTING);
 
-		SetAccumulationBuffer();
-		ClearFrameBuffer(eClearFrameBufferFlag_Color | eClearFrameBufferFlag_Depth, true);
-
 		// Set up rendering variables
 		SetDepthTest(false);
 		SetDepthWrite(false);
@@ -1418,8 +1448,7 @@ namespace hpl {
 		SetTexture(0, mpRoomDiffuseMap);
 		SetTexture(1, mpRoomNormalMap);
 
-		// Get the render texture's resolution and the camera's inverse matrix
-		cVector2f vResolution = cVector2f((float)mpNewLightingTexture->GetWidth(), (float)mpNewLightingTexture->GetHeight());
+		// Get the camera's inverse matrix
 		cMatrixf mtxView = GetCurrentFrustum()->GetViewMatrix();
 		cMatrixf mtxProj = GetCurrentFrustum()->GetProjectionMatrix();
 		cMatrixf mtxVP = cMath::MatrixMul(mtxProj, mtxView);
@@ -1458,10 +1487,148 @@ namespace hpl {
 			mpNewLightingProgram->SetFloat(kVar_afSpecScale, 0.25f);
 		}
 
+		SetFrameBuffer(mpNewLightingBuffer);
+		ClearFrameBuffer(eClearFrameBufferFlag_Color | eClearFrameBufferFlag_Depth, true);
+
 		SetProgram(mpNewLightingProgram);
 		SetFlatProjection();
 		DrawQuad(0, 1);
+		glFinish();
 
+		int W = mpNewLightingTexture->GetWidth();
+		int H = mpNewLightingTexture->GetHeight();
+		size_t N = size_t(W) * H * 4;
+
+		// bytes per tightly‑packed RGB row (4 floats per pixel)
+		size_t rowBytes = size_t(W) * 4 * sizeof(float);
+
+		// LOGGING
+		Log("Texture dimensions: %d x %d\n", W, H);
+		Log("Bytes per pixel: %d\n", GetBytesPerPixel(mpNewLightingTexture->GetPixelFormat()));
+		Log("Row bytes: %d\n", (int)rowBytes);
+		Log("Total allocation size: %d bytes\n", (int)(N * sizeof(float)));
+		Log("Original texture memory size: %d bytes\n", mpNewLightingTexture->GetMemorySize());
+		
+		if (mpNewLightingTexture->GetType() == eTextureType_1D)
+		{
+			Log("Texture type is 1D.\n");
+		}
+		else if (mpNewLightingTexture->GetType() == eTextureType_2D)
+		{
+			Log("Texture type is 2D.\n");
+		}
+		else if (mpNewLightingTexture->GetType() == eTextureType_Rect)
+		{
+			Log("Texture type is Rect.\n");
+		}
+		else if (mpNewLightingTexture->GetType() == eTextureType_CubeMap)
+		{
+			Log("Texture type is CubeMap.\n");
+		}
+		else if (mpNewLightingTexture->GetType() == eTextureType_3D)
+		{
+			Log("Texture type is 3D.\n");
+		}
+		else
+		{
+			Log("Texture type is unknown!\n");
+		}
+		
+		if (mpNewLightingTexture->UsesMipMaps())
+		{
+			Log("Texture uses mipmaps!\n");
+		}
+		else
+		{
+			Log("Texture does not use mipmaps.\n");
+		}
+
+		if (mpNewLightingTexture->IsCompressed())
+		{
+			Log("Texture is compressed!\n");
+		}
+		else
+		{
+			Log("Texture is not compressed.\n");
+		}
+
+		// 1) Map the input texture and copy it row-by-row into d_color
+		cudaGraphicsMapResources(1, &cudaIn, 0);
+		{
+			cudaArray_t arrIn;
+			cudaGraphicsSubResourceGetMappedArray(&arrIn, cudaIn, 0, 0);
+			cudaMemcpy2DFromArray(
+				/*dst=*/    d_color,
+				/*dpitch=*/ rowBytes,
+				/*srcArray=*/ arrIn,
+				/*wOffset=*/ 0, /*hOffset=*/ 0,
+				/*width=*/  rowBytes,
+				/*height=*/ H,
+				cudaMemcpyDeviceToDevice
+			);
+		}
+		cudaGraphicsUnmapResources(1, &cudaIn, 0);
+
+		float checkValues[12];
+		cudaMemcpy(checkValues, d_color, sizeof(float) * 12, cudaMemcpyDeviceToHost);
+		Log("Input values sample: ");
+		for (int i = 0; i < 10; i += 4) {
+			Log("RGBA(%f, %f, %f, %f) ", checkValues[i], checkValues[i + 1], checkValues[i + 2], checkValues[i + 3]);
+		}
+		Log("\n");
+
+		// 2) Run the denoiser on 3‑channel data
+		mpOIDNFilter.setImage("color", d_color, oidn::Format::Float3, W, H, 0, sizeof(float) * 4);
+		mpOIDNFilter.setImage("output", d_output, oidn::Format::Float3, W, H, 0, sizeof(float) * 4);
+		mpOIDNFilter.commit();
+		mpOIDNFilter.execute();
+
+		// 3) Copy the denoised result back into the GL texture, row-by-row
+		cudaGraphicsMapResources(1, &cudaOut, 0);
+		{
+			cudaArray_t arrOut;
+			cudaGraphicsSubResourceGetMappedArray(&arrOut, cudaOut, 0, 0);
+			cudaMemcpy2DToArray(
+				/*dstArray=*/ arrOut,
+				/*dstX=*/     0, /*dstY=*/    0,
+				/*src=*/      d_output,
+				/*spitch=*/   rowBytes,
+				/*width=*/    rowBytes,
+				/*height=*/   H,
+				cudaMemcpyDeviceToDevice
+			);
+		}
+		cudaGraphicsUnmapResources(1, &cudaOut, 0);
+
+		cudaMemcpy(checkValues, d_output, sizeof(float) * 12, cudaMemcpyDeviceToHost);
+		Log("Output values sample: ");
+		for (int i = 0; i < 10; i += 4) {
+			Log("RGBA(%f, %f, %f, %f) ", checkValues[i], checkValues[i + 1], checkValues[i + 2], checkValues[i + 3]);
+		}
+		Log("\n");
+
+		SetAccumulationBuffer();
+		ClearFrameBuffer(eClearFrameBufferFlag_Color | eClearFrameBufferFlag_Depth, true);
+
+		SetProgram(NULL);
+		SetFlatProjection();
+		SetTexture(0, mpDenoisedTexture);
+		SetTextureRange(NULL, 1);
+
+		cVector2f vTexSize = mpDenoisedTexture->GetSizeFloat2D();
+
+		cVector2f vScreenSizeFloat = mpLowLevelGraphics->GetScreenSizeFloat();
+		cRenderTarget* pRenderTarget = GetCurrentRenderTarget();
+		cVector2l vRenderTargetSize = GetRenderTargetSize();
+		cVector2f vViewportSize((float)vRenderTargetSize.x, (float)vRenderTargetSize.y);
+		cVector2f vViewportPos((float)pRenderTarget->mvPos.x, (float)pRenderTarget->mvPos.y);
+		cVector2f vRelPos = vViewportPos / vScreenSizeFloat;
+		cVector2f vRelSize = vViewportSize / vScreenSizeFloat;
+
+		cVector2f vUvPos = vRelPos * vTexSize;
+		cVector2f vUvSize = vRelSize * vTexSize;
+
+		DrawQuad(0,1, cVector2f(vUvPos.x, (vTexSize.y - vUvSize.y) - vUvPos.y), cVector2f(vUvPos.x + vUvSize.x, vTexSize.y - vUvPos.y), true);
 		END_RENDER_PASS();
 	}
 
@@ -3713,53 +3880,32 @@ namespace hpl {
 
 		SetTexture(0,GetBufferTexture(0));
 		DrawQuad(cVector2f(0,0),cVector2f(0.5f,0.5f), 0,mvScreenSizeFloat, true);
-		SetTexture(0,GetBufferTexture(1));
-		DrawQuad(cVector2f(0.5f,0),cVector2f(0.5f,0.5f), 0,mvScreenSizeFloat, true);
-		SetTexture(0,GetBufferTexture(2));
-		DrawQuad(cVector2f(0,0.5f),cVector2f(0.5f,0.5f), 0,mvScreenSizeFloat, true);
-		if(mlNumOfGBufferTextures > 3)
-		{
-			SetTexture(0,GetBufferTexture(3));
-			DrawQuad(cVector2f(0.5f,0.5f),cVector2f(0.5f,0.5f), 0,mvScreenSizeFloat, true);
-		}
+
+		cVector2f vTexSize = mpNewLightingTexture->GetSizeFloat2D();
+
+		cVector2f vScreenSizeFloat = mpLowLevelGraphics->GetScreenSizeFloat();
+		cRenderTarget* pRenderTarget = GetCurrentRenderTarget();
+		cVector2l vRenderTargetSize = GetRenderTargetSize();
+		cVector2f vViewportSize((float)vRenderTargetSize.x, (float)vRenderTargetSize.y);
+		cVector2f vViewportPos((float)pRenderTarget->mvPos.x, (float)pRenderTarget->mvPos.y);
+		cVector2f vRelPos = vViewportPos / vScreenSizeFloat;
+		cVector2f vRelSize = vViewportSize / vScreenSizeFloat;
+
+		cVector2f vUvPos = vRelPos * vTexSize;
+		cVector2f vUvSize = vRelSize * vTexSize;
 		
+		SetTexture(0, GetBufferTexture(1));
+		DrawQuad(cVector2f(0.5f, 0), cVector2f(0.5f, 0.5f), 0, mvScreenSizeFloat, true);
+
+		SetTexture(0, GetBufferTexture(2));
+		DrawQuad(cVector2f(0.5f, 0.5f), cVector2f(0.5f, 0.5f), 0, mvScreenSizeFloat, true);
+
+		SetTexture(0, mpNewLightingTexture);
+		DrawQuad(cVector2f(0.0f, 0.5f), 0.5f, cVector2f(vUvPos.x, (vTexSize.y - vUvSize.y) - vUvPos.y), cVector2f(vUvPos.x + vUvSize.x, vTexSize.y - vUvPos.y), true);
 
 		SetNormalFrustumProjection();
 		END_RENDER_PASS();
 	}
-
-	//-----------------------------------------------------------------------
-
-	/* void cRendererDeferred::RenderSSGIDebugView()
-	{
-		if (!mpSSGITexture) return;
-
-		START_RENDER_PASS(SSGIDebugView);
-
-		//Pure testing below
-		SetDepthTest(false);
-		SetDepthWrite(false);
-		SetBlendMode(eMaterialBlendMode_None);
-		SetAlphaMode(eMaterialAlphaMode_Solid);
-		SetChannelMode(eMaterialChannelMode_RGBA);
-
-		SetAccumulationBuffer();
-
-		ClearFrameBuffer(eClearFrameBufferFlag_Depth | eClearFrameBufferFlag_Color, false);
-
-		SetFlatProjection();
-		SetProgram(NULL);
-
-		SetTextureRange(NULL, 1);
-		SetTexture(0, mpSSGITexture);
-
-		//gpBase->mpDebugHandler->AddMessage(cString::To16Char("Drawing quad!"), false);
-		cVector2f vSSGISize = cVector2f((float)mpSSGITexture->GetWidth(), (float)mpSSGITexture->GetHeight());
-		DrawQuad(0, 1, 0, vSSGISize, true);
-
-		SetNormalFrustumProjection();
-		END_RENDER_PASS();
-	} */
 
 	//-----------------------------------------------------------------------
 

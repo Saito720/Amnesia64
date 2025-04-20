@@ -23,6 +23,10 @@
 #include "graphics/Renderer.h"
 #include <GL/glew.h>
 
+// OpenImageDenoise
+#include <oidn.hpp>
+#include <cuda_gl_interop.h>
+
 namespace hpl {
 
 	//---------------------------------------------
@@ -321,6 +325,7 @@ namespace hpl {
 
 		// New Lighting
 		iTexture *mpNewLightingTexture;
+		iTexture *mpDenoisedTexture;
 		iFrameBuffer *mpNewLightingBuffer;
 		iGpuProgram *mpNewLightingProgram;
 
@@ -366,6 +371,15 @@ namespace hpl {
 		static bool mbDebugRenderFrameBuffers;
 		static bool mbOcclusionTestLargeLights;
 
+		// OpenImageDenoise
+		oidn::DeviceRef mpOIDNDevice;
+		oidn::FilterRef mpOIDNFilter;
+
+		cudaGraphicsResource* cudaIn;
+		cudaGraphicsResource* cudaOut;
+
+		float* d_color;
+		float* d_output;
 	};
 
 	//---------------------------------------------

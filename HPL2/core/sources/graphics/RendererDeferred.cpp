@@ -56,9 +56,6 @@
 #include "scene/FogArea.h"
 #include "scene/MeshEntity.h"
 
-// DEBUG
-#include "../../../../amnesia/src/game/LuxDebugHandler.h"
-
 #include <algorithm>
 
 namespace hpl {
@@ -168,7 +165,7 @@ namespace hpl {
 	#define kVar_afDepthDiffMul						21
 	#define kVar_afSkipEdgeLimit					22
 
-	// New Lighting
+	// New
 	#define kVar_avCamPos							23
 	#define kVar_a_mtxInvViewProj					24
 	#define kVar_alTriCount							25
@@ -177,11 +174,8 @@ namespace hpl {
 	// Light Specific
 	#define kVar_afLightIntensity					27
 	#define kVar_afLightRadius						28
-
-	// Material Specific
 	#define kVar_afAmbient							29
-	#define kVar_afSpecPower						30
-	#define kVar_afSpecScale						31
+
 
 	//////////////////////////////////////////////////////////////////////////
 	// CONSTRUCTORS
@@ -214,15 +208,17 @@ namespace hpl {
 
 		mbReflectionTextureCleared = false;
 
-		cudaIn = nullptr;
-		cudaOut = nullptr;
-		cudaAlbedo = nullptr;
-		cudaNormal = nullptr;
+		////////////////////////////////////
+		// Open Image Denoise
+		mpColor = nullptr;
+		mpOutput = nullptr;
+		mpAlbedo = nullptr;
+		mpNormal = nullptr;
 
-		d_color = nullptr;
-		d_output = nullptr;
-		d_albedo = nullptr;
-		d_normal = nullptr;
+		mpCudaColor = nullptr;
+		mpCudaOutput = nullptr;
+		mpCudaAlbedo = nullptr;
+		mpCudaNormal = nullptr;
 	}
 
 	//-----------------------------------------------------------------------
@@ -250,7 +246,7 @@ namespace hpl {
 		for(int i=0; i<mlNumOfGBufferTextures; ++i)
 		{
 			//ePixelFormat pixelFormat = mGBufferType == eDeferredGBuffer_32Bit ? ePixelFormat_RGBA : ePixelFormat_RGBA16;
-			ePixelFormat pixelFormat = ePixelFormat_RGB32;
+			ePixelFormat pixelFormat = ePixelFormat_RGB32; // Important!
 
 			tString sName = "G-BufferTexure"+cString::ToString(i);
 			mpGBufferTexture[0][i] = CreateRenderTexture(sName, mvScreenSize,pixelFormat,eTextureFilter_Nearest);
@@ -359,8 +355,8 @@ namespace hpl {
 		mpReflectionBuffer->SetTexture2D(0,mpReflectionTexture);
 		mpReflectionBuffer->SetDepthStencilBuffer(mpDepthStencil[1]);
 		mpReflectionBuffer->CompileAndValidate();
-
-
+		
+		
 		////////////////////////////////////
 		//Create Shadow Textures
 		cVector3l vShadowSize[] = {
@@ -627,98 +623,6 @@ namespace hpl {
 			}
 		}
 
-		if (GetNewLighting())
-		{
-			////////////////////////////////////
-			//Create programs and textures for new lighting
-			cVector2l vNewLightingSize = mvScreenSize;
-
-			// Textures
-			mpNewLightingTexture = CreateRenderTexture("New_Lighting_Texture", vNewLightingSize, ePixelFormat_RGB32);
-			mpDenoisedTexture = CreateRenderTexture("Denoised_Texture", vNewLightingSize, ePixelFormat_RGB32);
-
-			// Room textures with mipmaps set to true
-			mpRoomDiffuseMap = mpResources->GetTextureManager()->Create2D("castlebase_room.dds", true);
-
-			if (!mpRoomDiffuseMap)
-			{
-				Error("Could not load diffuse map for room!\n");
-				return false;
-			}
-
-			mpRoomNormalMap = mpResources->GetTextureManager()->Create2D("castlebase_room_nrm.dds", true);
-			if (!mpRoomNormalMap)
-			{
-				Error("Could not load normal map for room!\n");
-				return false;
-			}
-
-			// Frame Buffers
-			mpNewLightingBuffer = mpGraphics->CreateFrameBuffer("New_Lighting_Buffer");
-			mpNewLightingBuffer->SetTexture2D(0, mpNewLightingTexture);
-
-			if (!mpNewLightingBuffer->CompileAndValidate())
-			{
-				Error("Could not create frame buffer for new lighting!\n");
-				return false;
-			}
-
-			/////////////////////////////////////
-			// Programs
-			cParserVarContainer programVars;
-			programVars.Add("UseUv");
-			// New Lighting
-			mpNewLightingProgram = mpGraphics->CreateGpuProgramFromShaders("New_Lighting_Program", "new_lighting_vtx.glsl", "new_lighting_frag.glsl", &programVars);
-			if (mpNewLightingProgram)
-			{
-				mpNewLightingProgram->GetVariableAsId("avCamPos", kVar_avCamPos);
-				mpNewLightingProgram->GetVariableAsId("a_mtxInvViewProj", kVar_a_mtxInvViewProj);
-				mpNewLightingProgram->GetVariableAsId("alTriCount", kVar_alTriCount);
-				mpNewLightingProgram->GetVariableAsId("uFrame", kVar_alFrame);
-
-				mpNewLightingProgram->GetVariableAsId("afLightPos", kVar_avLightPos);
-				mpNewLightingProgram->GetVariableAsId("afLightIntensity", kVar_afLightIntensity);
-				mpNewLightingProgram->GetVariableAsId("afLightRadius", kVar_afLightRadius);
-				mpNewLightingProgram->GetVariableAsId("avLightColor", kVar_avLightColor);
-
-				mpNewLightingProgram->GetVariableAsId("afAmbient", kVar_afAmbient);
-				mpNewLightingProgram->GetVariableAsId("afSpecPower", kVar_afSpecPower);
-				mpNewLightingProgram->GetVariableAsId("afSpecScale", kVar_afSpecScale);
-			}
-			programVars.Clear();
-
-			// OpenImageDenoise
-			mpOIDNDevice = oidn::newDevice(oidn::DeviceType::CUDA);
-			mpOIDNDevice.commit();
-
-			int W = mpNewLightingTexture->GetWidth();
-			int H = mpNewLightingTexture->GetHeight();
-			size_t N = size_t(W) * H * 4;
-
-			cudaMalloc((void**)&d_color, N * sizeof(float));
-			cudaMalloc((void**)&d_output, N * sizeof(float));
-			cudaMalloc((void**)&d_albedo, N * sizeof(float));
-			cudaMalloc((void**)&d_normal, N * sizeof(float));
-
-			mpOIDNFilter = mpOIDNDevice.newFilter("RT");
-
-			GLuint texIn = (GLuint)mpNewLightingTexture->GetCurrentLowlevelHandle();
-			GLuint texOut = (GLuint)mpDenoisedTexture->GetCurrentLowlevelHandle();
-			GLuint texAlbedo = (GLuint)mpGBufferTexture[0][0]->GetCurrentLowlevelHandle();
-			GLuint texNormal = (GLuint)mpGBufferTexture[0][1]->GetCurrentLowlevelHandle();
-
-			cudaGraphicsGLRegisterImage(&cudaIn, texIn, GL_TEXTURE_2D,
-				cudaGraphicsRegisterFlagsReadOnly);
-			cudaGraphicsGLRegisterImage(&cudaOut, texOut, GL_TEXTURE_2D,
-				cudaGraphicsRegisterFlagsWriteDiscard);
-			cudaGraphicsGLRegisterImage(&cudaAlbedo, texAlbedo, GL_TEXTURE_2D,
-				cudaGraphicsRegisterFlagsReadOnly);
-			cudaGraphicsGLRegisterImage(&cudaNormal, texNormal, GL_TEXTURE_2D,
-				cudaGraphicsRegisterFlagsReadOnly);
-
-			SetNewLighting(false);
-		}
-
 		////////////////////////////////////
 		//Create Smooth Edge and textures
 		if(mbEdgeSmoothLoaded && mpLowLevelGraphics->GetCaps(eGraphicCaps_TextureFloat)==0)
@@ -765,6 +669,63 @@ namespace hpl {
 			}
 		}
 
+		if (GetNewLighting())
+		{
+			// Frame Textures
+			mpNewTexture = CreateRenderTexture("New_Texture", mvScreenSize, ePixelFormat_RGB32, eTextureFilter_Nearest, eTextureType_2D);
+			mpDenoisedTexture = CreateRenderTexture("Denoised_Texture", mvScreenSize, ePixelFormat_RGB32, eTextureFilter_Nearest, eTextureType_2D);
+			mpCopyTexture = CreateRenderTexture("Copy_Texture", mvScreenSize, ePixelFormat_RGB32, eTextureFilter_Nearest, eTextureType_2D);
+
+
+			// Diffuse Atlas
+			mpDiffuseAtlas = mpResources->GetTextureManager()->Create2D("diffuse_atlas.dds", true);
+			if (!mpDiffuseAtlas) { FatalError("Could not create diffuse atlas!\n"); }
+
+			// Normal Atlas
+			mpNormalAtlas = mpResources->GetTextureManager()->Create2D("normal_atlas.dds", true);
+			if (!mpNormalAtlas) { FatalError("Could not create normal atlas!\n"); }
+
+
+			// Frame Buffers
+			mpNewBuffer = mpGraphics->CreateFrameBuffer("New_Buffer");
+			mpNewBuffer->SetTexture2D(0, mpNewTexture);
+			if (!mpNewBuffer->CompileAndValidate()) { FatalError("Could not create new frame buffer!\n"); }
+
+			mpCopyBuffer = mpGraphics->CreateFrameBuffer("Copy_Buffer");
+			mpCopyBuffer->SetTexture2D(0, mpCopyTexture);
+			if (!mpCopyBuffer->CompileAndValidate()) { FatalError("Could not create copy frame buffer!\n"); }
+
+
+			/////////////////////////////////////
+			// Programs
+			cParserVarContainer programVars;
+			programVars.Add("UseUv");
+
+			// New Program
+			mpNewProgram = mpGraphics->CreateGpuProgramFromShaders("New_Program", "new_lighting_vtx.glsl", "new_lighting_frag.glsl", &programVars);
+			if (mpNewProgram)
+			{
+				mpNewProgram->GetVariableAsId("avCamPos", kVar_avCamPos);
+				mpNewProgram->GetVariableAsId("a_mtxInvViewProj", kVar_a_mtxInvViewProj);
+				mpNewProgram->GetVariableAsId("alTriCount", kVar_alTriCount);
+				mpNewProgram->GetVariableAsId("uFrame", kVar_alFrame);
+				mpNewProgram->GetVariableAsId("afLightPos", kVar_avLightPos);
+				mpNewProgram->GetVariableAsId("afLightIntensity", kVar_afLightIntensity);
+				mpNewProgram->GetVariableAsId("afLightRadius", kVar_afLightRadius);
+				mpNewProgram->GetVariableAsId("avLightColor", kVar_avLightColor);
+				mpNewProgram->GetVariableAsId("afAmbient", kVar_afAmbient);
+			}
+
+			// Copy Program
+			mpCopyProgram = mpGraphics->CreateGpuProgramFromShaders("Copy_Program", "copy_vtx.glsl", "copy_frag.glsl", &programVars);
+			programVars.Clear();
+
+			// Setup OIDN for denoising
+			SetupOIDN(mpNewTexture->GetSizeInt2D(), mpNewTexture->GetCurrentLowlevelHandle(), mpDenoisedTexture->GetCurrentLowlevelHandle());
+
+			SetNewLighting(false); // Don't render by default
+		}
+
 		////////////////////////////////////
 		//Create light shapes
 		tFlag lVtxFlag = eVertexElementFlag_Position | eVertexElementFlag_Color0 | eVertexElementFlag_Texture0;
@@ -798,6 +759,339 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
+	void cRendererDeferred::SetupOIDN(cVector2l avTextureSize, int alColorHandle, int alOutputHandle)
+	{
+		OidnDevice = oidn::newDevice(oidn::DeviceType::CUDA);	// Create new OIDN device
+		OidnDevice.commit();									// Commit it
+
+		size_t N = size_t(avTextureSize.x) * avTextureSize.y * 4;
+
+		// Allocate CUDA buffers
+		cudaMalloc((void**)&mpColor, N * sizeof(float));
+		cudaMalloc((void**)&mpAlbedo, N * sizeof(float));
+		cudaMalloc((void**)&mpNormal, N * sizeof(float));
+		cudaMalloc((void**)&mpOutput, N * sizeof(float));
+
+		OidnFilter = OidnDevice.newFilter("RT"); // Create new OIDN filter
+		OidnFilter.set("hdr", true);
+
+		GLuint texColor = (GLuint)alColorHandle;										// Noisy Input
+		GLuint texAlbedo = (GLuint)mpGBufferTexture[0][0]->GetCurrentLowlevelHandle();	// GBuffer Albedo
+		GLuint texNormal = (GLuint)mpGBufferTexture[0][1]->GetCurrentLowlevelHandle();	// GBuffer Normal
+		GLuint texOutput = (GLuint)alOutputHandle;										// Denoised Output
+
+		// Register OpenGL images with CUDA
+		cudaGraphicsGLRegisterImage(&mpCudaColor, texColor, GL_TEXTURE_2D,
+			cudaGraphicsRegisterFlagsReadOnly);
+		cudaGraphicsGLRegisterImage(&mpCudaAlbedo, texAlbedo, GL_TEXTURE_2D,
+			cudaGraphicsRegisterFlagsReadOnly);
+		cudaGraphicsGLRegisterImage(&mpCudaNormal, texNormal, GL_TEXTURE_2D,
+			cudaGraphicsRegisterFlagsReadOnly);
+		cudaGraphicsGLRegisterImage(&mpCudaOutput, texOutput, GL_TEXTURE_2D,
+			cudaGraphicsRegisterFlagsWriteDiscard);
+	}
+
+	//-----------------------------------------------------------------------
+
+	static int frameCount = 0;
+	void cRendererDeferred::RenderNew()
+	{
+		if (!mpNewProgram || !mpCurrentWorld->GetSphere()) return;
+
+		// Get room renderable
+		mpRenderable = mpCurrentWorld->GetRoomRenderable();
+
+		if (!mpRenderable)
+		{
+			Error("No renderable!\n");
+			return;
+		}
+
+		// Get room vertex buffer
+		if (!mpVertexBuffer)
+		{
+			mpVertexBuffer = mpRenderable->GetVertexBuffer();
+
+			if (!mpVertexBuffer)
+			{
+				Error("No vertex buffer!\n");
+				return;
+			}
+
+			// Create SSBO
+			CreateSceneSSBO();
+		}
+
+		START_RENDER_PASS(NEW_LIGHTING);
+
+		// Set up rendering variables
+		SetDepthTest(false);
+		SetDepthWrite(false);
+		SetBlendMode(eMaterialBlendMode_None);
+		SetChannelMode(eMaterialChannelMode_RGB);
+
+		SetTexture(0, mpDiffuseAtlas);
+		SetTexture(1, mpNormalAtlas);
+
+		// Get the camera's inverse matrix
+		cMatrixf mtxView = GetCurrentFrustum()->GetViewMatrix();
+		cMatrixf mtxProj = GetCurrentFrustum()->GetProjectionMatrix();
+		cMatrixf mtxVP = cMath::MatrixMul(mtxProj, mtxView);
+		cMatrixf mtxInvVP = cMath::MatrixInverse(mtxVP);
+
+		// Sphere
+		cSubMeshEntity* pSphere = mpCurrentWorld->GetSphere()->GetSubMeshEntity(0);
+		cVector3f vSpherePos = pSphere->GetWorldMatrix().GetTranslation();
+
+		// Camera position
+		mpNewProgram->SetVec3f(kVar_avCamPos, GetCurrentFrustum()->GetOrigin());
+		// Camera inverse matrix
+		mpNewProgram->SetMatrixf(kVar_a_mtxInvViewProj, mtxInvVP);
+		// Room triangle count
+		mpNewProgram->SetInt(kVar_alTriCount, mSceneIndexCount / 3);
+		// Frame
+		mpNewProgram->SetInt(kVar_alFrame, 0);
+
+		// Light position
+		mpNewProgram->SetVec3f(kVar_avLightPos, vSpherePos);
+		// Light Radius
+		mpNewProgram->SetFloat(kVar_afLightRadius, 0.5f);
+		// Light intensity
+		mpNewProgram->SetFloat(kVar_afLightIntensity, 4.0f);
+		// Light color
+		mpNewProgram->SetVec3f(kVar_avLightColor, cVector3f(1.0f, 1.0f, 1.0f));
+
+		// Ambient
+		mpNewProgram->SetFloat(kVar_afAmbient, 0.0f);
+
+		SetFrameBuffer(mpNewBuffer);
+		ClearFrameBuffer(eClearFrameBufferFlag_Color | eClearFrameBufferFlag_Depth, true);
+
+		SetProgram(mpNewProgram);
+		SetFlatProjection();
+		DrawQuad(0, 1);
+
+		int W = mpNewTexture->GetWidth();
+		int H = mpNewTexture->GetHeight();
+		size_t N = size_t(W) * H * 4;
+
+		// bytes per tightly‑packed RGB row (4 floats per pixel)
+		size_t rowBytes = size_t(W) * 4 * sizeof(float);
+
+		// LOGGING
+		Log("Texture dimensions: %d x %d\n", W, H);
+		Log("Bytes per pixel: %d\n", GetBytesPerPixel(mpNewTexture->GetPixelFormat()));
+		Log("Row bytes: %d\n", (int)rowBytes);
+		Log("Total allocation size: %d bytes\n", (int)(N * sizeof(float)));
+
+		if (mpNewTexture->GetType() == eTextureType_1D)
+		{
+			Log("Texture type is 1D.\n");
+		}
+		else if (mpNewTexture->GetType() == eTextureType_2D)
+		{
+			Log("Texture type is 2D.\n");
+		}
+		else if (mpNewTexture->GetType() == eTextureType_Rect)
+		{
+			Log("Texture type is Rect.\n");
+		}
+		else if (mpNewTexture->GetType() == eTextureType_CubeMap)
+		{
+			Log("Texture type is CubeMap.\n");
+		}
+		else if (mpNewTexture->GetType() == eTextureType_3D)
+		{
+			Log("Texture type is 3D.\n");
+		}
+		else
+		{
+			Log("Texture type is unknown!\n");
+		}
+
+		if (mpNewTexture->UsesMipMaps())
+		{
+			Log("Texture uses mipmaps!\n");
+		}
+		else
+		{
+			Log("Texture does not use mipmaps.\n");
+		}
+
+		if (mpNewTexture->IsCompressed())
+		{
+			Log("Texture is compressed!\n");
+		}
+		else
+		{
+			Log("Texture is not compressed.\n");
+		}
+
+		// 1) Map the input texture and copy it row-by-row into d_color
+		cudaGraphicsMapResources(1, &mpCudaColor, 0);
+		{
+			cudaArray_t arrIn;
+			cudaGraphicsSubResourceGetMappedArray(&arrIn, mpCudaColor, 0, 0);
+			cudaMemcpy2DFromArray(
+				/*dst=*/    mpColor,
+				/*dpitch=*/ rowBytes,
+				/*srcArray=*/ arrIn,
+				/*wOffset=*/ 0, /*hOffset=*/ 0,
+				/*width=*/  rowBytes,
+				/*height=*/ H,
+				cudaMemcpyDeviceToDevice
+			);
+		}
+		cudaGraphicsUnmapResources(1, &mpCudaColor, 0);
+
+		float checkValues[12];
+		cudaMemcpy(checkValues, mpColor, sizeof(float) * 12, cudaMemcpyDeviceToHost);
+		Log("Input values sample: ");
+		for (int i = 0; i < 10; i += 4) {
+			Log("RGBA(%f, %f, %f, %f) ", checkValues[i], checkValues[i + 1], checkValues[i + 2], checkValues[i + 3]);
+		}
+		Log("\n");
+
+		cudaGraphicsMapResources(1, &mpCudaAlbedo, 0);
+		{
+			cudaArray_t arrAlbedo;
+			cudaGraphicsSubResourceGetMappedArray(&arrAlbedo, mpCudaAlbedo, 0, 0);
+			cudaMemcpy2DFromArray(
+				/*dst=*/    mpAlbedo,
+				/*dpitch=*/ rowBytes,
+				/*srcArray=*/ arrAlbedo,
+				/*wOffset=*/ 0, /*hOffset=*/ 0,
+				/*width=*/  rowBytes,
+				/*height=*/ H,
+				cudaMemcpyDeviceToDevice
+			);
+		}
+		cudaGraphicsUnmapResources(1, &mpCudaAlbedo, 0);
+
+		cudaMemcpy(checkValues, mpAlbedo, sizeof(float) * 12, cudaMemcpyDeviceToHost);
+		Log("Albedo values sample: ");
+		for (int i = 0; i < 10; i += 4) {
+			Log("RGBA(%f, %f, %f, %f) ", checkValues[i], checkValues[i + 1], checkValues[i + 2], checkValues[i + 3]);
+		}
+		Log("\n");
+
+		cudaGraphicsMapResources(1, &mpCudaNormal, 0);
+		{
+			cudaArray_t arrNormal;
+			cudaGraphicsSubResourceGetMappedArray(&arrNormal, mpCudaNormal, 0, 0);
+			cudaMemcpy2DFromArray(
+				/*dst=*/    mpNormal,
+				/*dpitch=*/ rowBytes,
+				/*srcArray=*/ arrNormal,
+				/*wOffset=*/ 0, /*hOffset=*/ 0,
+				/*width=*/  rowBytes,
+				/*height=*/ H,
+				cudaMemcpyDeviceToDevice
+			);
+		}
+		cudaGraphicsUnmapResources(1, &mpCudaNormal, 0);
+
+		cudaMemcpy(checkValues, mpNormal, sizeof(float) * 12, cudaMemcpyDeviceToHost);
+		Log("Normal values sample: ");
+		for (int i = 0; i < 10; i += 4) {
+			Log("RGBA(%f, %f, %f, %f) ", checkValues[i], checkValues[i + 1], checkValues[i + 2], checkValues[i + 3]);
+		}
+		Log("\n");
+
+		// 2) Run the denoiser on 3‑channel data
+		OidnFilter.setImage("color", mpColor, oidn::Format::Float3, W, H, 0, sizeof(float) * 4);
+		OidnFilter.setImage("albedo", mpAlbedo, oidn::Format::Float3, W, H, 0, sizeof(float) * 4);
+		OidnFilter.setImage("normal", mpNormal, oidn::Format::Float3, W, H, 0, sizeof(float) * 4);
+		OidnFilter.setImage("output", mpOutput, oidn::Format::Float3, W, H, 0, sizeof(float) * 4);
+		OidnFilter.commit();
+		OidnFilter.execute();
+
+		// 3) Copy the denoised result back into the GL texture, row-by-row
+		cudaGraphicsMapResources(1, &mpCudaOutput, 0);
+		{
+			cudaArray_t arrOut;
+			cudaGraphicsSubResourceGetMappedArray(&arrOut, mpCudaOutput, 0, 0);
+			cudaMemcpy2DToArray(
+				/*dstArray=*/ arrOut,
+				/*dstX=*/     0, /*dstY=*/    0,
+				/*src=*/      mpOutput,
+				/*spitch=*/   rowBytes,
+				/*width=*/    rowBytes,
+				/*height=*/   H,
+				cudaMemcpyDeviceToDevice
+			);
+		}
+		cudaGraphicsUnmapResources(1, &mpCudaOutput, 0);
+
+		cudaMemcpy(checkValues, mpOutput, sizeof(float) * 12, cudaMemcpyDeviceToHost);
+		Log("Output values sample: ");
+		for (int i = 0; i < 10; i += 4) {
+			Log("RGBA(%f, %f, %f, %f) ", checkValues[i], checkValues[i + 1], checkValues[i + 2], checkValues[i + 3]);
+		}
+		Log("\n");
+
+		SetAccumulationBuffer();
+		ClearFrameBuffer(eClearFrameBufferFlag_Color | eClearFrameBufferFlag_Depth, true);
+
+		SetProgram(NULL);
+		SetFlatProjection();
+		SetTexture(0, mpDenoisedTexture);
+		SetTextureRange(NULL, 1);
+
+		DrawQuad(0, 1, 0, 1, true);
+		END_RENDER_PASS();
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cRendererDeferred::CreateSceneSSBO()
+	{
+		const int vCount = mpVertexBuffer->GetVertexNum();
+		const int iCount = mpVertexBuffer->GetIndexNum();
+
+		float* posData = mpVertexBuffer->GetFloatArray(eVertexBufferElement_Position);
+		float* uvData3 = mpVertexBuffer->GetFloatArray(eVertexBufferElement_Texture0);
+		unsigned int* idxData = mpVertexBuffer->GetIndices();
+
+		mSceneIndexCount = iCount;
+
+		// Create positions SSBO (binding 0)
+		glGenBuffers(1, &mSceneSSBO_Verts);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, mSceneSSBO_Verts);
+		glBufferData(GL_SHADER_STORAGE_BUFFER,
+			vCount * 4 * sizeof(float),        // vec4 per vertex
+			posData, GL_STATIC_DRAW);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mSceneSSBO_Verts);
+
+		// Create index SSBO (binding 1)
+		glGenBuffers(1, &mSceneSSBO_Idxs);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, mSceneSSBO_Idxs);
+		glBufferData(GL_SHADER_STORAGE_BUFFER,
+			iCount * sizeof(unsigned int),
+			idxData, GL_STATIC_DRAW);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mSceneSSBO_Idxs);
+
+		// Pack 3‑float UVs -> 2‑float array and upload (binding 2)
+		std::vector<float> uvData2;
+		uvData2.reserve(vCount * 2);
+
+		for (int i = 0; i < vCount; ++i)
+		{
+			uvData2.push_back(uvData3[i * 3 + 0]);      // U
+			uvData2.push_back(uvData3[i * 3 + 1]);      // V   (skip W = uvData3[i*3+2])
+		}
+
+		glGenBuffers(1, &mSceneSSBO_UVs);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, mSceneSSBO_UVs);
+		glBufferData(GL_SHADER_STORAGE_BUFFER,
+			uvData2.size() * sizeof(float),
+			uvData2.data(), GL_STATIC_DRAW);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mSceneSSBO_UVs);
+
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+	}
+
+	//-----------------------------------------------------------------------
 	
 	void cRendererDeferred::DestroyData()
 	{
@@ -885,25 +1179,27 @@ namespace hpl {
 		mpProgramManager->DestroyShadersAndPrograms();
 
 		/////////////////////////
-		// New Lighting Cleanup
+		// New Cleanup
+		if (mpNewTexture)	mpGraphics->DestroyTexture(mpNewTexture);
+		if (mpNewBuffer)	mpGraphics->DestroyFrameBuffer(mpNewBuffer);
+		if (mpNewProgram)	mpGraphics->DestroyGpuProgram(mpNewProgram);
 
-		// Textures
-		if (mpNewLightingTexture)    mpGraphics->DestroyTexture(mpNewLightingTexture);
-		// Frame Buffers
-		if (mpNewLightingBuffer)     mpGraphics->DestroyFrameBuffer(mpNewLightingBuffer);
-		// GPU Programs
-		if (mpNewLightingProgram)    mpGraphics->DestroyGpuProgram(mpNewLightingProgram);
+		if (mpCopyTexture)	mpGraphics->DestroyTexture(mpCopyTexture);
+		if (mpCopyBuffer)	mpGraphics->DestroyFrameBuffer(mpCopyBuffer);
+		if (mpCopyProgram)	mpGraphics->DestroyGpuProgram(mpCopyProgram);
 
-		if (d_color) cudaFree(d_color);
-		if (d_output) cudaFree(d_output);
-		if (d_albedo) cudaFree(d_albedo);
-		if (d_normal) cudaFree(d_normal);
-		if (cudaIn) cudaGraphicsUnregisterResource(cudaIn);
-		if (cudaOut) cudaGraphicsUnregisterResource(cudaOut);
-		if (cudaAlbedo) cudaGraphicsUnregisterResource(cudaAlbedo);
-		if (cudaNormal) cudaGraphicsUnregisterResource(cudaNormal);
-		mpOIDNFilter.release();
-		mpOIDNDevice.release();
+		if (mpColor)		cudaFree(mpColor);
+		if (mpAlbedo)		cudaFree(mpAlbedo);
+		if (mpNormal)		cudaFree(mpNormal);
+		if (mpOutput)		cudaFree(mpOutput);
+
+		if (mpCudaColor)	cudaGraphicsUnregisterResource(mpCudaColor);
+		if (mpCudaAlbedo)	cudaGraphicsUnregisterResource(mpCudaAlbedo);
+		if (mpCudaNormal)	cudaGraphicsUnregisterResource(mpCudaNormal);
+		if (mpCudaOutput)	cudaGraphicsUnregisterResource(mpCudaOutput);
+
+		OidnFilter.release();
+		OidnDevice.release();
 	}
 
 	//-----------------------------------------------------------------------
@@ -1036,10 +1332,9 @@ namespace hpl {
 			RenderGbufferContent();
 			return;
 		}
-		
-		// --- New Lighting ---
-		if (mpNewLightingProgram && GetNewLighting()) {
-			RenderNewLighting();
+
+		if (mpNewProgram && GetNewLighting()) {
+			RenderNew();
 			//RenderGbufferContent();
 			return;
 		}
@@ -1371,331 +1666,6 @@ namespace hpl {
 		// Set render states back to normal
 		SetNormalFrustumProjection();
 
-		END_RENDER_PASS();
-	}
-
-	//-----------------------------------------------------------------------
-
-	void cRendererDeferred::CreateRoomSSBO()
-	{
-		const int vCount = mpRoomVertexBuffer->GetVertexNum();
-		const int iCount = mpRoomVertexBuffer->GetIndexNum();
-
-		float* posData = mpRoomVertexBuffer->GetFloatArray(eVertexBufferElement_Position);
-		float* uvData3 = mpRoomVertexBuffer->GetFloatArray(eVertexBufferElement_Texture0);
-		unsigned int* idxData = mpRoomVertexBuffer->GetIndices();
-
-		mRoomIndexCount = iCount;
-
-		// Create positions SSBO (binding 0)
-		glGenBuffers(1, &mRoomSSBO_Verts);
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, mRoomSSBO_Verts);
-		glBufferData(GL_SHADER_STORAGE_BUFFER,
-			vCount * 4 * sizeof(float),        // vec4 per vertex
-			posData, GL_STATIC_DRAW);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, mRoomSSBO_Verts);
-
-		// Create index SSBO (binding 1)
-		glGenBuffers(1, &mRoomSSBO_Idxs);
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, mRoomSSBO_Idxs);
-		glBufferData(GL_SHADER_STORAGE_BUFFER,
-			iCount * sizeof(unsigned int),
-			idxData, GL_STATIC_DRAW);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, mRoomSSBO_Idxs);
-
-		// Pack 3‑float UVs -> 2‑float array and upload (binding 2)
-		std::vector<float> uvData2;
-		uvData2.reserve(vCount * 2);
-
-		for (int i = 0; i < vCount; ++i)
-		{
-			uvData2.push_back(uvData3[i * 3 + 0]);      // U
-			uvData2.push_back(uvData3[i * 3 + 1]);      // V   (skip W = uvData3[i*3+2])
-		}
-
-		glGenBuffers(1, &mRoomSSBO_UVs);
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, mRoomSSBO_UVs);
-		glBufferData(GL_SHADER_STORAGE_BUFFER,
-			uvData2.size() * sizeof(float),
-			uvData2.data(), GL_STATIC_DRAW);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, mRoomSSBO_UVs);
-
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-	}
-
-
-	//-----------------------------------------------------------------------
-
-	static int frameCount = 0;
-
-	void cRendererDeferred::RenderNewLighting()
-	{
-		if (!mpNewLightingProgram || !mpCurrentWorld->GetSphere()) return;
-
-		// Get room renderable
-		mpRoomRenderable = mpCurrentWorld->GetRoomRenderable();
-
-		if (!mpRoomRenderable)
-		{
-			Error("No renderable for room!\n");
-			return;
-		}
-
-		// Get room vertex buffer
-		if (!mpRoomVertexBuffer)
-		{
-			mpRoomVertexBuffer = mpRoomRenderable->GetVertexBuffer();
-
-			if (!mpRoomVertexBuffer)
-			{
-				Error("No vertex buffer for room!\n");
-				return;
-			}
-
-			// Create SSBO
-			CreateRoomSSBO();
-		}
-
-		START_RENDER_PASS(NEW_LIGHTING);
-
-		// Set up rendering variables
-		SetDepthTest(false);
-		SetDepthWrite(false);
-		SetBlendMode(eMaterialBlendMode_None);
-		SetChannelMode(eMaterialChannelMode_RGB);
-
-		SetTexture(0, mpRoomDiffuseMap);
-		SetTexture(1, mpRoomNormalMap);
-
-		// Get the camera's inverse matrix
-		cMatrixf mtxView = GetCurrentFrustum()->GetViewMatrix();
-		cMatrixf mtxProj = GetCurrentFrustum()->GetProjectionMatrix();
-		cMatrixf mtxVP = cMath::MatrixMul(mtxProj, mtxView);
-		cMatrixf mtxInvVP = cMath::MatrixInverse(mtxVP);
-
-		// Sphere
-		cSubMeshEntity* pSphere = mpCurrentWorld->GetSphere()->GetSubMeshEntity(0);
-		cVector3f vSpherePos = pSphere->GetWorldMatrix().GetTranslation();
-
-		// Populate the shader's uniforms
-		if (mpNewLightingProgram)
-		{
-			// Camera position
-			mpNewLightingProgram->SetVec3f(kVar_avCamPos, GetCurrentFrustum()->GetOrigin());
-			// Camera inverse matrix
-			mpNewLightingProgram->SetMatrixf(kVar_a_mtxInvViewProj, mtxInvVP);
-			// Room triangle count
-			mpNewLightingProgram->SetInt(kVar_alTriCount, mRoomIndexCount / 3);
-			// Frame
-			mpNewLightingProgram->SetInt(kVar_alFrame, 1);
-
-			// Light position
-			mpNewLightingProgram->SetVec3f(kVar_avLightPos, vSpherePos);
-			// Light Radius
-			mpNewLightingProgram->SetFloat(kVar_afLightRadius, 0.5f);
-			// Light intensity
-			mpNewLightingProgram->SetFloat(kVar_afLightIntensity, 32.0f);
-			// Light color
-			mpNewLightingProgram->SetVec3f(kVar_avLightColor, cVector3f(0.325f,0.275f,0.15f));
-
-			// Ambient
-			mpNewLightingProgram->SetFloat(kVar_afAmbient, 0.0f);
-			// Specular power
-			mpNewLightingProgram->SetFloat(kVar_afSpecPower, 32.0f);
-			// Specular scale
-			mpNewLightingProgram->SetFloat(kVar_afSpecScale, 0.25f);
-		}
-
-		SetFrameBuffer(mpNewLightingBuffer);
-		ClearFrameBuffer(eClearFrameBufferFlag_Color | eClearFrameBufferFlag_Depth, true);
-
-		SetProgram(mpNewLightingProgram);
-		SetFlatProjection();
-		DrawQuad(0, 1);
-		glFinish();
-
-		int W = mpNewLightingTexture->GetWidth();
-		int H = mpNewLightingTexture->GetHeight();
-		size_t N = size_t(W) * H * 4;
-
-		// bytes per tightly‑packed RGB row (4 floats per pixel)
-		size_t rowBytes = size_t(W) * 4 * sizeof(float);
-
-		// LOGGING
-		Log("Texture dimensions: %d x %d\n", W, H);
-		Log("Bytes per pixel: %d\n", GetBytesPerPixel(mpNewLightingTexture->GetPixelFormat()));
-		Log("Row bytes: %d\n", (int)rowBytes);
-		Log("Total allocation size: %d bytes\n", (int)(N * sizeof(float)));
-		Log("Original texture memory size: %d bytes\n", mpNewLightingTexture->GetMemorySize());
-		
-		if (mpNewLightingTexture->GetType() == eTextureType_1D)
-		{
-			Log("Texture type is 1D.\n");
-		}
-		else if (mpNewLightingTexture->GetType() == eTextureType_2D)
-		{
-			Log("Texture type is 2D.\n");
-		}
-		else if (mpNewLightingTexture->GetType() == eTextureType_Rect)
-		{
-			Log("Texture type is Rect.\n");
-		}
-		else if (mpNewLightingTexture->GetType() == eTextureType_CubeMap)
-		{
-			Log("Texture type is CubeMap.\n");
-		}
-		else if (mpNewLightingTexture->GetType() == eTextureType_3D)
-		{
-			Log("Texture type is 3D.\n");
-		}
-		else
-		{
-			Log("Texture type is unknown!\n");
-		}
-		
-		if (mpNewLightingTexture->UsesMipMaps())
-		{
-			Log("Texture uses mipmaps!\n");
-		}
-		else
-		{
-			Log("Texture does not use mipmaps.\n");
-		}
-
-		if (mpNewLightingTexture->IsCompressed())
-		{
-			Log("Texture is compressed!\n");
-		}
-		else
-		{
-			Log("Texture is not compressed.\n");
-		}
-
-		// 1) Map the input texture and copy it row-by-row into d_color
-		cudaGraphicsMapResources(1, &cudaIn, 0);
-		{
-			cudaArray_t arrIn;
-			cudaGraphicsSubResourceGetMappedArray(&arrIn, cudaIn, 0, 0);
-			cudaMemcpy2DFromArray(
-				/*dst=*/    d_color,
-				/*dpitch=*/ rowBytes,
-				/*srcArray=*/ arrIn,
-				/*wOffset=*/ 0, /*hOffset=*/ 0,
-				/*width=*/  rowBytes,
-				/*height=*/ H,
-				cudaMemcpyDeviceToDevice
-			);
-		}
-		cudaGraphicsUnmapResources(1, &cudaIn, 0);
-
-		float checkValues[12];
-		cudaMemcpy(checkValues, d_color, sizeof(float) * 12, cudaMemcpyDeviceToHost);
-		Log("Input values sample: ");
-		for (int i = 0; i < 10; i += 4) {
-			Log("RGBA(%f, %f, %f, %f) ", checkValues[i], checkValues[i + 1], checkValues[i + 2], checkValues[i + 3]);
-		}
-		Log("\n");
-
-		cudaGraphicsMapResources(1, &cudaAlbedo, 0);
-		{
-			cudaArray_t arrAlbedo;
-			cudaGraphicsSubResourceGetMappedArray(&arrAlbedo, cudaAlbedo, 0, 0);
-			cudaMemcpy2DFromArray(
-				/*dst=*/    d_albedo,
-				/*dpitch=*/ rowBytes,
-				/*srcArray=*/ arrAlbedo,
-				/*wOffset=*/ 0, /*hOffset=*/ 0,
-				/*width=*/  rowBytes,
-				/*height=*/ H,
-				cudaMemcpyDeviceToDevice
-			);
-		}
-		cudaGraphicsUnmapResources(1, &cudaAlbedo, 0);
-
-		cudaMemcpy(checkValues, d_albedo, sizeof(float) * 12, cudaMemcpyDeviceToHost);
-		Log("Albedo values sample: ");
-		for (int i = 0; i < 10; i += 4) {
-			Log("RGBA(%f, %f, %f, %f) ", checkValues[i], checkValues[i + 1], checkValues[i + 2], checkValues[i + 3]);
-		}
-		Log("\n");
-
-		cudaGraphicsMapResources(1, &cudaNormal, 0);
-		{
-			cudaArray_t arrNormal;
-			cudaGraphicsSubResourceGetMappedArray(&arrNormal, cudaNormal, 0, 0);
-			cudaMemcpy2DFromArray(
-				/*dst=*/    d_normal,
-				/*dpitch=*/ rowBytes,
-				/*srcArray=*/ arrNormal,
-				/*wOffset=*/ 0, /*hOffset=*/ 0,
-				/*width=*/  rowBytes,
-				/*height=*/ H,
-				cudaMemcpyDeviceToDevice
-			);
-		}
-		cudaGraphicsUnmapResources(1, &cudaNormal, 0);
-
-		cudaMemcpy(checkValues, d_normal, sizeof(float) * 12, cudaMemcpyDeviceToHost);
-		Log("Normal values sample: ");
-		for (int i = 0; i < 10; i += 4) {
-			Log("RGBA(%f, %f, %f, %f) ", checkValues[i], checkValues[i + 1], checkValues[i + 2], checkValues[i + 3]);
-		}
-		Log("\n");
-
-		// 2) Run the denoiser on 3‑channel data
-		mpOIDNFilter.setImage("color", d_color, oidn::Format::Float3, W, H, 0, sizeof(float) * 4);
-		mpOIDNFilter.setImage("albedo", d_albedo, oidn::Format::Float3, W, H, 0, sizeof(float) * 4);
-		mpOIDNFilter.setImage("normal", d_normal, oidn::Format::Float3, W, H, 0, sizeof(float) * 4);
-		mpOIDNFilter.setImage("output", d_output, oidn::Format::Float3, W, H, 0, sizeof(float) * 4);
-		mpOIDNFilter.commit();
-		mpOIDNFilter.execute();
-
-		// 3) Copy the denoised result back into the GL texture, row-by-row
-		cudaGraphicsMapResources(1, &cudaOut, 0);
-		{
-			cudaArray_t arrOut;
-			cudaGraphicsSubResourceGetMappedArray(&arrOut, cudaOut, 0, 0);
-			cudaMemcpy2DToArray(
-				/*dstArray=*/ arrOut,
-				/*dstX=*/     0, /*dstY=*/    0,
-				/*src=*/      d_output,
-				/*spitch=*/   rowBytes,
-				/*width=*/    rowBytes,
-				/*height=*/   H,
-				cudaMemcpyDeviceToDevice
-			);
-		}
-		cudaGraphicsUnmapResources(1, &cudaOut, 0);
-
-		cudaMemcpy(checkValues, d_output, sizeof(float) * 12, cudaMemcpyDeviceToHost);
-		Log("Output values sample: ");
-		for (int i = 0; i < 10; i += 4) {
-			Log("RGBA(%f, %f, %f, %f) ", checkValues[i], checkValues[i + 1], checkValues[i + 2], checkValues[i + 3]);
-		}
-		Log("\n");
-
-		SetAccumulationBuffer();
-		ClearFrameBuffer(eClearFrameBufferFlag_Color | eClearFrameBufferFlag_Depth, true);
-
-		SetProgram(NULL);
-		SetFlatProjection();
-		SetTexture(0, mpDenoisedTexture);
-		SetTextureRange(NULL, 1);
-
-		cVector2f vTexSize = mpDenoisedTexture->GetSizeFloat2D();
-
-		cVector2f vScreenSizeFloat = mpLowLevelGraphics->GetScreenSizeFloat();
-		cRenderTarget* pRenderTarget = GetCurrentRenderTarget();
-		cVector2l vRenderTargetSize = GetRenderTargetSize();
-		cVector2f vViewportSize((float)vRenderTargetSize.x, (float)vRenderTargetSize.y);
-		cVector2f vViewportPos((float)pRenderTarget->mvPos.x, (float)pRenderTarget->mvPos.y);
-		cVector2f vRelPos = vViewportPos / vScreenSizeFloat;
-		cVector2f vRelSize = vViewportSize / vScreenSizeFloat;
-
-		cVector2f vUvPos = vRelPos * vTexSize;
-		cVector2f vUvSize = vRelSize * vTexSize;
-
-		DrawQuad(0,1, cVector2f(vUvPos.x, (vTexSize.y - vUvSize.y) - vUvPos.y), cVector2f(vUvPos.x + vUvSize.x, vTexSize.y - vUvPos.y), true);
 		END_RENDER_PASS();
 	}
 
@@ -3946,29 +3916,17 @@ namespace hpl {
 		SetTextureRange(NULL,1);
 
 		SetTexture(0, mpGBufferTexture[0][0]);
-		DrawQuad(cVector2f(0,0),cVector2f(0.5f,0.5f), 0,mvScreenSizeFloat, true);
+		DrawQuad(cVector2f(0, 0), cVector2f(0.5f, 0.5f), 0, mvScreenSizeFloat, true);
 
-		cVector2f vTexSize = mpNewLightingTexture->GetSizeFloat2D();
-
-		cVector2f vScreenSizeFloat = mpLowLevelGraphics->GetScreenSizeFloat();
-		cRenderTarget* pRenderTarget = GetCurrentRenderTarget();
-		cVector2l vRenderTargetSize = GetRenderTargetSize();
-		cVector2f vViewportSize((float)vRenderTargetSize.x, (float)vRenderTargetSize.y);
-		cVector2f vViewportPos((float)pRenderTarget->mvPos.x, (float)pRenderTarget->mvPos.y);
-		cVector2f vRelPos = vViewportPos / vScreenSizeFloat;
-		cVector2f vRelSize = vViewportSize / vScreenSizeFloat;
-
-		cVector2f vUvPos = vRelPos * vTexSize;
-		cVector2f vUvSize = vRelSize * vTexSize;
-		
 		SetTexture(0, mpGBufferTexture[0][1]);
-		DrawQuad(cVector2f(0.5f, 0), cVector2f(0.5f, 0.5f), 0, mvScreenSizeFloat, true);
+		DrawQuad(cVector2f(0.5f, 0.0f), cVector2f(0.5f, 0.5f), 0, mvScreenSizeFloat, true);
 
 		SetTexture(0, mpDenoisedTexture);
-		DrawQuad(cVector2f(0.5f, 0.5f), 0.5f, cVector2f(vUvPos.x, (vTexSize.y - vUvSize.y) - vUvPos.y), cVector2f(vUvPos.x + vUvSize.x, vTexSize.y - vUvPos.y), true);
+		DrawQuad(cVector2f(0.5f, 0.5f), cVector2f(0.5f, 0.5f), 0, 1, true);
 
-		SetTexture(0, mpNewLightingTexture);
-		DrawQuad(cVector2f(0.0f, 0.5f), 0.5f, cVector2f(vUvPos.x, (vTexSize.y - vUvSize.y) - vUvPos.y), cVector2f(vUvPos.x + vUvSize.x, vTexSize.y - vUvPos.y), true);
+		SetTexture(0, mpNewTexture);
+		DrawQuad(cVector2f(0.0f, 0.5f), cVector2f(0.5f, 0.5f), 0, 1, true);
+		
 
 		SetNormalFrustumProjection();
 		END_RENDER_PASS();

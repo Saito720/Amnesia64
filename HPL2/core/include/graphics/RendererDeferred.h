@@ -21,9 +21,8 @@
 #define HPL_RENDERER_DEFERRED_H
 
 #include "graphics/Renderer.h"
-#include <GL/glew.h>
 
-// OpenImageDenoise
+#include <GL/glew.h>
 #include <oidn.hpp>
 #include <cuda_gl_interop.h>
 
@@ -202,7 +201,6 @@ namespace hpl {
 		void RenderSSAO();
 		void RenderEdgeSmooth();
 		void RenderDeferredSkyBox();
-		void RenderNewLighting();
 		
 		void SetupLightsAndRenderQueries();
 		void InitLightRendering();
@@ -243,14 +241,53 @@ namespace hpl {
 		iGpuProgram* SetupProgramAndTextures(cDeferredLight* apLightData, tFlag alExtraFlags);
 		iVertexBuffer* GetLightShape(iLight *apLight, eDeferredShapeQuality aQuality);
 		
-		// Room SSBO
-		void CreateRoomSSBO();
-
-		GLuint  mRoomSSBO_Verts = 0;
-		GLuint  mRoomSSBO_UVs   = 0;
-		GLuint  mRoomSSBO_Idxs  = 0;
-		int     mRoomIndexCount = 0;
+		//---------------------------------------------
 		
+		void SetupOIDN(cVector2l avTextureSize, int alInputHandle, int alOutputHandle);
+		void RenderNew();
+		void CreateSceneSSBO();
+
+		///////////////////////
+		// Scene
+		iTexture* mpDiffuseAtlas;		// Diffuse Atlas
+		iTexture* mpNormalAtlas;		// Normal Atlas
+		iRenderable* mpRenderable;		// Renderable
+		iVertexBuffer* mpVertexBuffer;	// Vertex Buffer
+
+		GLuint  mSceneSSBO_Verts	= 0;
+		GLuint  mSceneSSBO_UVs		= 0;
+		GLuint  mSceneSSBO_Idxs		= 0;
+		int     mSceneIndexCount	= 0;
+
+		///////////////////////
+		// Rendering
+		iTexture* mpNewTexture;			// New Texture
+		iFrameBuffer* mpNewBuffer;		// New Buffer
+		iGpuProgram* mpNewProgram;		// New Program
+
+		iTexture* mpCopyTexture;		// Copy Texture
+		iFrameBuffer* mpCopyBuffer;		// Copy Buffer
+		iGpuProgram* mpCopyProgram;		// Copy Program
+
+		iTexture* mpDenoisedTexture;	// OIDN Denoised Texture
+
+		///////////////////////
+		// Open Image Denoise
+		oidn::DeviceRef OidnDevice;		// OIDN Device
+		oidn::FilterRef OidnFilter;		// OIDN Filter
+
+		float* mpColor;
+		float* mpAlbedo;
+		float* mpNormal;
+		float* mpOutput;
+
+		cudaGraphicsResource* mpCudaColor;
+		cudaGraphicsResource* mpCudaAlbedo;
+		cudaGraphicsResource* mpCudaNormal;
+		cudaGraphicsResource* mpCudaOutput;
+		
+		//---------------------------------------------
+
 		iVertexBuffer *mpShapeSphere[eDeferredShapeQuality_LastEnum];
 		iVertexBuffer *mpShapePyramid;
 		
@@ -323,26 +360,10 @@ namespace hpl {
 		iGpuProgram *mpEdgeSmooth_UnpackDepthProgram;
 		iGpuProgram *mpEdgeSmooth_RenderProgram;
 
-		// New Lighting
-		iTexture *mpNewLightingTexture;
-		iTexture *mpDenoisedTexture;
-		iFrameBuffer *mpNewLightingBuffer;
-		iGpuProgram *mpNewLightingProgram;
-
-		// Room Textures
-		iTexture *mpRoomDiffuseMap;
-		iTexture *mpRoomNormalMap;
-
-		// Room Renderable
-		iRenderable *mpRoomRenderable;
-
-		// Room Vertex Buffer
-		iVertexBuffer* mpRoomVertexBuffer;
-
 		std::vector<cDeferredLight*> mvTempDeferredLights;
 		std::vector<cDeferredLight*> mvSortedLights[eDeferredLightList_LastEnum];
 
-		iGpuProgram *mpSkyBoxProgram;
+		iGpuProgram *mpSkyBoxProgram; 
 		iGpuProgram *mpLightStencilProgram;
 		iGpuProgram *mpLightBoxProgram[2];//1=SSAO used, 0=no SSAO
 
@@ -371,19 +392,6 @@ namespace hpl {
 		static bool mbDebugRenderFrameBuffers;
 		static bool mbOcclusionTestLargeLights;
 
-		// OpenImageDenoise
-		oidn::DeviceRef mpOIDNDevice;
-		oidn::FilterRef mpOIDNFilter;
-
-		cudaGraphicsResource* cudaIn;
-		cudaGraphicsResource* cudaOut;
-		cudaGraphicsResource* cudaAlbedo;
-		cudaGraphicsResource* cudaNormal;
-
-		float* d_color;
-		float* d_output;
-		float* d_albedo;
-		float* d_normal;
 	};
 
 	//---------------------------------------------

@@ -33,7 +33,6 @@
 #include "resources/MeshLoaderHandler.h"
 #include "resources/SoundEntityManager.h"
 #include "resources/AnimationManager.h"
-#include "resources/VideoManager.h"
 #include "resources/EntFileManager.h"
 #include "resources/ConfigFile.h"
 #include "resources/LanguageFile.h"
@@ -103,7 +102,6 @@ namespace hpl {
 		hplDelete(mpTextureManager);
 		hplDelete(mpSoundEntityManager);
 		hplDelete(mpAnimationManager);
-		hplDelete(mpVideoManager);
 		hplDelete(mpEntFileManager);
 		
 		Log(" All resources deleted\n");
@@ -304,8 +302,6 @@ namespace hpl {
 		mlstManagers.push_back(mpSoundEntityManager);
 		mpAnimationManager = hplNew( cAnimationManager,(apGraphics, this) );
 		mlstManagers.push_back(mpAnimationManager);
-		mpVideoManager = hplNew( cVideoManager,(apGraphics, this) );
-		mlstManagers.push_back(mpVideoManager);
 		mpEntFileManager = hplNew( cEntFileManager,(this) );
 		mlstManagers.push_back(mpEntFileManager);
 

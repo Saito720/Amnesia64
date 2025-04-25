@@ -80,7 +80,7 @@ namespace hpl {
 
 	void cLowLevelResourcesSDL::AddVideoLoaders(cVideoLoaderHandler* apHandler)
 	{
-		apHandler->AddLoader(hplNew( cVideoStreamTheora_Loader,()));
+		//apHandler->AddLoader(hplNew( cVideoStreamTheora_Loader,()));
 	}
 
 	//-----------------------------------------------------------------------

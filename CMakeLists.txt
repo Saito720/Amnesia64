@@ -1,29 +1,41 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 2.8.12...3.5)
+message(STATUS "CMAKE_SYSTEM: " ${CMAKE_SYSTEM})
+message(STATUS "CMAKE_SYSTEM_NAME: " ${CMAKE_SYSTEM_NAME})
+message(STATUS "CMAKE_SYSTEM_VERSION: " ${CMAKE_SYSTEM_VERSION})
+message(STATUS "CMAKE_SYSTEM_PROCESSOR: " ${CMAKE_SYSTEM_PROCESSOR})
 set(CMAKE_CXX_STANDARD 20)
 set(INSTALL_OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR}/bin)
 set(CMAKE_INSTALL_PREFIX ${INSTALL_OUTPUT_PATH} CACHE PATH "Install path prefix, prepended onto install directories." FORCE)
 
+set(CMAKE_MODULE_PATH ${CMAKE_HOME_DIRECTORY}/cmake)
+include(utils)
+
+set(CMAKE_SKIP_BUILD_RPATH FALSE)
+ 
+# when building, don't use the install RPATH already
+# (but later on when installing)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+set(CMAKE_INSTALL_RPATH $ORIGIN/libs)
+set(CMAKE_BUILD_RPATH $ORIGIN/libs:$ORIGIN)
+
 enable_language(ASM)
 
+set(AMNESIA_GAME_DIRECTORY "Amnesia game assets" CACHE PATH "")
 option(USE_GRAPHICS_X11 "Build using X11" ON)
 option(USE_GRAPHICS_WAYLAND "Build using wayland" ON)
 
+OPTION(USE_SYSTEM_ZLIB "Prefer system ZLIB instead of the bundled one" OFF)
+OPTION(USE_SYSTEM_OPENAL "Prefer system OpenAL Soft instead of the bundled one" OFF)
+OPTION(USE_SYSTEM_TINYXML "Prefer system TinyXMl2 instead of the bundled one" OFF)
+OPTION(USE_SYSTEM_SDL2 "Prefer system SDL2 instead of the bundled one" OFF)
+OPTION(USE_SYSTEM_OGG "Prefer system OGG instead of the bundled one" OFF)
+OPTION(USE_SYSTEM_VORBIS "Prefer system vorbis instead of the bundled one" OFF)
+OPTION(USE_SYSTEM_DEVIL "Prefer system devil instead of the bundled one" OFF)
 
 if(MSVC)
     add_definitions(/MP /std:c++20)
     add_compile_definitions("NOMINMAX=1")
 endif()
-
-if(UNIX)
-    set(VCPKG_CMAKE_SYSTEM_NAME Linux)
-endif()
-include("${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/scripts/buildsystems/vcpkg.cmake")
-
-add_definitions(
-    -DUSE_THE_FORGE_LEGACY
-    # -DUSE_FORWARD_PLUS_BACKEND # prototype forward renderer
-)
-
 
 # hack to get to build on windwos
 # HACK to correctly set Linux property for newer cmake
@@ -38,12 +50,9 @@ execute_process(
         OUTPUT_STRIP_TRAILING_WHITESPACE
         )
 
-option(COPY_GAME_ASSETS "copy games assets into output directory" OFF)
-option(WITH_TOOLS "build HPL2 with tools" ON)
+# option(WITH_TOOLS "build HPL2 with tools" ON)
 
-add_subdirectory(external)
+add_subdirectory(extern)
 add_subdirectory(HPL2)
-add_subdirectory(tools)
 add_subdirectory(amnesia)
-
 

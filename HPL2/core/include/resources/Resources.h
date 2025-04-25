@@ -52,7 +52,6 @@ namespace hpl {
 	class cAnimationManager;
 	class cEntFileManager;
 	class cMeshManager;
-	class cVideoManager;
 	class cConfigFile;
 	class cArea2D;
 	class cSound;
@@ -224,7 +223,6 @@ namespace hpl {
 		cMeshManager* GetMeshManager(){ return mpMeshManager;}
 		cSoundEntityManager* GetSoundEntityManager(){ return mpSoundEntityManager;}
 		cAnimationManager* GetAnimationManager(){ return mpAnimationManager;}
-		cVideoManager* GetVideoManager(){ return mpVideoManager;}
 		cEntFileManager* GetEntFileManager(){ return mpEntFileManager; }
 
 		iLowLevelSystem* GetLowLevelSystem(){ return mpLowLevelSystem;}
@@ -252,7 +250,6 @@ namespace hpl {
 		cMaterialManager* mpMaterialManager;
 		cSoundEntityManager* mpSoundEntityManager;
 		cAnimationManager *mpAnimationManager;
-		cVideoManager *mpVideoManager;
 		cEntFileManager *mpEntFileManager;
 
 		cLanguageFile *mpLanguageFile;

@@ -13,3 +13,18 @@
 [submodule "extern/openal-soft"]
 	path = extern/openal-soft
 	url = https://github.com/kcat/openal-soft.git
+[submodule "extern/tinyxml2"]
+	path = extern/tinyxml2
+	url = https://github.com/leethomason/tinyxml2.git
+[submodule "extern/ogg"]
+	path = extern/ogg
+	url = https://github.com/xiph/ogg.git
+[submodule "extern/vorbis"]
+	path = extern/vorbis
+	url = https://github.com/xiph/vorbis.git
+[submodule "extern/SDL"]
+	path = extern/SDL
+	url = https://github.com/libsdl-org/SDL.git
+[submodule "extern/DevIL"]
+	path = extern/DevIL
+	url = https://github.com/OSS-Cosmic/DevIL.git

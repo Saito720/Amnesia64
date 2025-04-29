@@ -130,30 +130,16 @@ if(WIN32)
     )
 endif()
 
-##add_custom_command(
-##    TARGET Amnesia POST_BUILD
-##    COMMAND ${CMAKE_COMMAND} 
-##    ARGS -E copy_directory  "${_HPL2_SHADER_}" "$<TARGET_FILE_DIR:Amnesia>/Shaders"
-##)
-##
-##add_custom_command(
-##    TARGET Amnesia POST_BUILD
-##    COMMAND ${CMAKE_COMMAND} 
-##    ARGS -E copy_directory  "${_HPL2_COMPILEDSHADER_}" "$<TARGET_FILE_DIR:Amnesia>/CompiledShaders"
-##)
-#copy_shader_to_target_dir(Amnesia)
-
 target_compile_definitions(Amnesia PUBLIC AMNESIA_TDD_VERSION="${AMNESIA_TDD_VERSION}")
 target_compile_definitions(Amnesia PUBLIC AMNESIA_TDD_TAG="${AMNESIA_TDD_TAG}")
 set_output_dir (Amnesia "") 
+    
 
-if((NOT ${AMNESIA_GAME_DIRECTORY} STREQUAL ""))
-    add_custom_command(TARGET copy_assets 
+add_custom_target(deploy
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} 
     COMMAND ${CMAKE_COMMAND} 
-        -DAMNESIA_GAME_DIRECTORY=${AMNESIA_GAME_DIRECTORY}
-        -DAMNESIA_EXECUTABLE_OUTPUT_PATH="$<TARGET_FILE_DIR:Amnesia>"
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/copy_game_assets.cmake
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-endif()
-
+    -DAMNESIA_GAME_DIRECTORY=${AMNESIA_GAME_DIRECTORY}
+    -DAMNESIA_EXECUTABLE_OUTPUT_PATH="$<TARGET_FILE_DIR:Amnesia>"
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/copy_game_assets.cmake
+    COMMENT "packaging assets ...")
 

@@ -56,6 +56,8 @@
 #include "scene/FogArea.h"
 #include "scene/MeshEntity.h"
 
+#include "physics/Flex.h"
+
 #include <algorithm>
 
 namespace hpl {
@@ -165,6 +167,13 @@ namespace hpl {
 	#define kVar_afDepthDiffMul						21
 	#define kVar_afSkipEdgeLimit					22
 
+	#define kVar_avCamPos							23
+	#define kVar_a_mtxInvViewProj					24
+	#define kVar_a_mtxView							25
+	#define kVar_a_mtxProj							26
+	#define kVar_alParticleCount					27
+	#define kVar_afParticleRadius					28
+
 
 	//////////////////////////////////////////////////////////////////////////
 	// CONSTRUCTORS
@@ -172,8 +181,8 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	cRendererDeferred::cRendererDeferred(cGraphics *apGraphics,cResources* apResources) 
-		: iRenderer("Deferred",apGraphics, apResources,eDefferredProgramMode_LastEnum)
+	cRendererDeferred::cRendererDeferred(cGraphics *apGraphics,cResources* apResources,cFlex* apFlex)
+		: iRenderer("Deferred",apGraphics, apResources, apFlex, eDefferredProgramMode_LastEnum)
 	{
 		////////////////////////////////////
 		// Set up render specific things
@@ -643,6 +652,38 @@ namespace hpl {
 			if(mpEdgeSmooth_RenderProgram)
 			{
 				mpEdgeSmooth_RenderProgram->GetVariableAsId("afFarPlane",kVar_afFarPlane);
+			}
+		}
+
+		////////////////////////////////////
+		// Create Flex programs and textures
+		{
+			cVector2l vFlexSize = mvScreenSize;
+
+			// Texture
+			mpFlexTexture = CreateRenderTexture("FlexTexture", vFlexSize, ePixelFormat_RGBA);
+
+			// Frame buffer
+			mpFlexBuffer = mpGraphics->CreateFrameBuffer("FlexBuffer");
+			mpFlexBuffer->SetTexture2D(0, mpFlexTexture);
+			mpFlexBuffer->CompileAndValidate();
+
+			/////////////////////////////////////
+			// Program
+			cParserVarContainer programVars;
+			programVars.Add("UseUv");
+
+			mpFlexProgram = mpGraphics->CreateGpuProgramFromShaders("FlexProgram", "flex_vtx.glsl", "flex_frag.glsl", &programVars);
+
+			if (mpFlexProgram)
+			{
+				mpFlexProgram->GetVariableAsId("avCamPos", kVar_avCamPos);
+				mpFlexProgram->GetVariableAsId("a_mtxInvViewProj", kVar_a_mtxInvViewProj);
+				mpFlexProgram->GetVariableAsId("a_mtxViewProj", kVar_a_mtxView);
+				mpFlexProgram->GetVariableAsId("a_mtxProj", kVar_a_mtxProj);
+				mpFlexProgram->GetVariableAsId("alParticleCount", kVar_alParticleCount);
+				mpFlexProgram->GetVariableAsId("afParticleRadius", kVar_afParticleRadius);
+				mpFlex->SetGpuProgram(mpFlexProgram);
 			}
 		}
 

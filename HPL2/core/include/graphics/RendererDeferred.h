@@ -124,7 +124,7 @@ namespace hpl {
 	class cRendererDeferred : public  iRenderer
 	{
 	public:
-		cRendererDeferred(cGraphics *apGraphics,cResources* apResources);
+		cRendererDeferred(cGraphics *apGraphics,cResources* apResources,cFlex* apFlex);
 		~cRendererDeferred();
 		
 		bool LoadData();
@@ -298,17 +298,20 @@ namespace hpl {
 		iTexture *mpSSAOScatterDisk;
 		iTexture *mpEdgeSmooth_LinearDepthTexture;
 		iTexture *mpEdgeSmooth_TempAccum;
+		iTexture *mpFlexTexture;
 
 		iFrameBuffer *mpLinearDepthBuffer;
 		iFrameBuffer *mpSSAOBuffer;
 		iFrameBuffer *mpSSAOBlurBuffer;
 		iFrameBuffer *mpEdgeSmooth_LinearDepthBuffer;
+		iFrameBuffer *mpFlexBuffer;
 
 		iGpuProgram *mpUnpackDepthProgram;
 		iGpuProgram *mpSSAOBlurProgram[2];
 		iGpuProgram *mpSSAORenderProgram;
 		iGpuProgram *mpEdgeSmooth_UnpackDepthProgram;
 		iGpuProgram *mpEdgeSmooth_RenderProgram;
+		iGpuProgram *mpFlexProgram;
 
 		std::vector<cDeferredLight*> mvTempDeferredLights;
 		std::vector<cDeferredLight*> mvSortedLights[eDeferredLightList_LastEnum];

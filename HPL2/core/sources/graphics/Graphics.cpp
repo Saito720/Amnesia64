@@ -126,7 +126,7 @@ namespace hpl {
 	bool cGraphics::Init(	int alWidth, int alHeight, int alDisplay, int alBpp, int abFullscreen, 
 							int alMultisampling,eGpuProgramFormat aGpuProgramFormat,
 							const tString &asWindowCaption, const cVector2l &avWindowPos,
-							cResources* apResources,
+							cResources* apResources, cFlex* apFlex,
 							tFlag alHplSetupFlags)
 	{
 		Log("Initializing Graphics Module\n");
@@ -171,9 +171,9 @@ namespace hpl {
 
 			mvRenderers.resize(eRenderer_LastEnum, NULL);
 
-			mvRenderers[eRenderer_Main] = hplNew(cRendererDeferred, (this, apResources));
-			mvRenderers[eRenderer_WireFrame] = hplNew(cRendererWireFrame, (this, apResources));
-			mvRenderers[eRenderer_Simple] = hplNew(cRendererSimple, (this, apResources));
+			mvRenderers[eRenderer_Main] = hplNew(cRendererDeferred, (this, apResources, apFlex));
+			mvRenderers[eRenderer_WireFrame] = hplNew(cRendererWireFrame, (this, apResources, apFlex));
+			mvRenderers[eRenderer_Simple] = hplNew(cRendererSimple, (this, apResources, apFlex));
 
 			for(size_t i=0; i<mvRenderers.size(); ++i)
 			{

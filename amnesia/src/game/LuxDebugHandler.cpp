@@ -122,6 +122,7 @@ void cLuxDebugHandler::LoadUserConfig()
 	mbInspectionMode = gpBase->mpUserConfig->GetBool("Debug", "InspectionMode", false);
 	mbDisableFlashBacks = gpBase->mpUserConfig->GetBool("Debug", "DisableFlashBacks", false);
 	mbDrawPhysics = gpBase->mpUserConfig->GetBool("Debug", "DrawPhysics", false);
+	mbDrawFlexPlanes = gpBase->mpUserConfig->GetBool("Debug", "DrawFlexPlanes", false);
 
 	mbReloadFromCurrentPosition = gpBase->mpUserConfig->GetBool("Debug", "ReloadFromCurrentPosition", true);
 
@@ -164,6 +165,7 @@ void cLuxDebugHandler::SaveUserConfig()
 	 gpBase->mpUserConfig->SetBool("Debug", "InspectionMode", mbInspectionMode);
 	 gpBase->mpUserConfig->SetBool("Debug", "DisableFlashBacks", mbDisableFlashBacks);
 	 gpBase->mpUserConfig->SetBool("Debug", "DrawPhysics", mbDrawPhysics);
+	 gpBase->mpUserConfig->SetBool("Debug", "DrawFlexPlanes", mbDrawFlexPlanes);
 
 	 gpBase->mpUserConfig->SetBool("Debug", "ReloadFromCurrentPosition", mbReloadFromCurrentPosition);
 
@@ -961,7 +963,7 @@ void cLuxDebugHandler::CreateGuiWindow()
 
 	///////////////////////////
 	//Window
-	cVector2f vSize = cVector2f(250, 780);
+	cVector2f vSize = cVector2f(250, 802);
 	vGroupSize.x = vSize.x - 20;
 	cVector3f vPos = cVector3f(mpGuiSet->GetVirtualSize().x - vSize.x - 10, 10, 0);
 	mpDebugWindow = mpGuiSet->CreateWidgetWindow(0,vPos,vSize,_W("Debug Toolbar") );
@@ -1038,6 +1040,13 @@ void cLuxDebugHandler::CreateGuiWindow()
 		pCheckBox->SetChecked(mbDrawPhysics);
 		pCheckBox->SetUserValue(11);
 		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;
+
+		//Draw Flex planes
+		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos, vSize, _W("Draw Flex planes"), pGroup);
+		pCheckBox->SetChecked(mbDrawFlexPlanes);
+		pCheckBox->SetUserValue(15);
+		pCheckBox->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(ChangeDebugText));
 		vGroupPos.y += 22;
 
 		//Resource logging
@@ -1577,6 +1586,8 @@ bool cLuxDebugHandler::ChangeDebugText(iWidget* apWidget, const cGuiMessageData&
 
 	else if(lNum == 13)  gpBase->mpPlayer->SetFreeCamActive(bActive);
 	else if(lNum == 14)  gpBase->mpPlayer->SetFreeCamSpeed( cMath::Max((float)aData.mlVal/ 100.0f, 0.001f) );
+
+	else if(lNum == 15)  gpBase->mpEngine->GetFlex()->SetDrawPlanes(bActive);
 
 	else if(lNum == 17)  SetFastForward(bActive);
 	

@@ -155,6 +155,30 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\dependencies\include\Flex\core\aabbtree.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\cloth.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\convex.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\core.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\extrude.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\mat22.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\mat33.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\mat44.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\maths.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\matnn.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\FlexMesh.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\perlin.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\pfm.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\FlexPlatform.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\point3.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\quat.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\sdf.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\skylight.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\tga.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\types.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\vec2.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\vec3.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\vec4.h" />
+    <ClInclude Include="..\dependencies\include\Flex\core\voxelize.h" />
     <ClInclude Include="include\impl\GamepadSDL2.h" />
     <ClInclude Include="include\impl\MeshLoaderFBX.h" />
     <ClInclude Include="include\gui\GuiPopUpUIKeyboard.h" />
@@ -164,6 +188,8 @@
     <ClInclude Include="include\input\ActionGamepadButton.h" />
     <ClInclude Include="include\input\ActionGamepadHat.h" />
     <ClInclude Include="include\input\Gamepad.h" />
+    <ClInclude Include="include\physics\Flex.h" />
+    <ClInclude Include="include\physics\FlexHelper.h" />
     <ClInclude Include="include\system\BinTree.h" />
     <ClInclude Include="include\system\Container.h" />
     <ClInclude Include="include\system\LogicTimer.h" />
@@ -487,6 +513,17 @@
     <ClInclude Include="include\HPL.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\dependencies\include\Flex\core\aabbtree.cpp" />
+    <ClCompile Include="..\dependencies\include\Flex\core\core.cpp" />
+    <ClCompile Include="..\dependencies\include\Flex\core\extrude.cpp" />
+    <ClCompile Include="..\dependencies\include\Flex\core\maths.cpp" />
+    <ClCompile Include="..\dependencies\include\Flex\core\FlexMesh.cpp" />
+    <ClCompile Include="..\dependencies\include\Flex\core\perlin.cpp" />
+    <ClCompile Include="..\dependencies\include\Flex\core\pfm.cpp" />
+    <ClCompile Include="..\dependencies\include\Flex\core\FlexPlatform.cpp" />
+    <ClCompile Include="..\dependencies\include\Flex\core\sdf.cpp" />
+    <ClCompile Include="..\dependencies\include\Flex\core\tga.cpp" />
+    <ClCompile Include="..\dependencies\include\Flex\core\voxelize.cpp" />
     <ClCompile Include="sources\impl\GamepadSDL2.cpp" />
     <ClCompile Include="sources\impl\MeshLoaderFBX.cpp" />
     <ClCompile Include="sources\gui\GuiPopUpUIKeyboard.cpp" />
@@ -496,6 +533,8 @@
     <ClCompile Include="sources\input\ActionGamepadButton.cpp" />
     <ClCompile Include="sources\input\ActionGamepadHat.cpp" />
     <ClCompile Include="sources\input\Gamepad.cpp" />
+    <ClCompile Include="sources\physics\Flex.cpp" />
+    <ClCompile Include="sources\physics\FlexHelper.cpp" />
     <ClCompile Include="sources\system\Container.cpp" />
     <ClCompile Include="sources\system\LogicTimer.cpp" />
     <ClCompile Include="sources\system\MemoryManager.cpp" />

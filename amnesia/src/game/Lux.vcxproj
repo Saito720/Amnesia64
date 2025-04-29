@@ -133,8 +133,8 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>dbghelp.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;Avrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(SolutionDir)\HPL2\dependencies\lib\Win64\Debug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>dbghelp.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;Avrt.lib;NvFlexReleaseCUDA_x64.lib;NvFlexExtReleaseCUDA_x64.lib;NvFlexDeviceRelease_x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)\HPL2\dependencies\lib\Win64\Debug;$(SolutionDir)\HPL2\dependencies\lib\NVIDIA Flex\Win64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -154,8 +154,8 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(SolutionDir)\HPL2\dependencies\lib\Win64\Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>winmm.lib;setupapi.lib;Imm32.lib;Version.lib;Avrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)\HPL2\dependencies\lib\Win64\Release;$(SolutionDir)\HPL2\dependencies\lib\NVIDIA Flex\Win64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>winmm.lib;setupapi.lib;Imm32.lib;Version.lib;Avrt.lib;NvFlexReleaseCUDA_x64.lib;NvFlexExtReleaseCUDA_x64.lib;NvFlexDeviceRelease_x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>

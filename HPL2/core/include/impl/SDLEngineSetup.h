@@ -49,6 +49,7 @@ namespace hpl {
 		cPhysics* CreatePhysics();
 		cAI* CreateAI();
 		cHaptic* CreateHaptic();
+		cFlex* CreateFlex();
 
 	private:
 		iLowLevelSystem *mpLowLevelSystem;

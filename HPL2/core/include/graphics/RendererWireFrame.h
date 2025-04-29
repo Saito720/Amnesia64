@@ -36,7 +36,7 @@ namespace hpl {
 	class cRendererWireFrame : public  iRenderer
 	{
 	public:
-		cRendererWireFrame(cGraphics *apGraphics,cResources* apResources);
+		cRendererWireFrame(cGraphics *apGraphics,cResources* apResources,cFlex* apFlex);
 		~cRendererWireFrame();
 		
 		bool LoadData();

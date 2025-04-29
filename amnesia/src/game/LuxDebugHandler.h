@@ -171,6 +171,7 @@ private:
 	bool mbScriptDebugOn;
 	bool mbInspectionMode;
 	bool mbDrawPhysics;
+	bool mbDrawFlexPlanes;
 
 	bool mbAllowQuickSave;
     

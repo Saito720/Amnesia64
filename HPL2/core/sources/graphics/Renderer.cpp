@@ -57,6 +57,8 @@
 #include "scene/SubMeshEntity.h"
 #include "scene/FogArea.h"
 
+#include "physics/Flex.h"
+
 #include <algorithm>
 
 namespace hpl {
@@ -385,10 +387,11 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	iRenderer::iRenderer(const tString& asName, cGraphics *apGraphics,cResources* apResources, int alNumOfProgramComboModes)
+	iRenderer::iRenderer(const tString& asName, cGraphics *apGraphics,cResources* apResources, cFlex* apFlex, int alNumOfProgramComboModes)
 	{
 		mpGraphics = apGraphics;
 		mpResources = apResources;
+		mpFlex = apFlex;
 
 		//////////////
 		//Set variables from arguments
@@ -473,6 +476,7 @@ namespace hpl {
 
 		SetupRenderList();
         RenderObjects();
+		mpFlex->Render(mpCallbackFunctions);
 		
         EndRendering();
 	}

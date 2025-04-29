@@ -32,6 +32,7 @@ namespace hpl {
 
 	class cGraphics;
 	class cResources;
+	class cFlex;
 	class cEngine;
 	class iLowLevelResources;
 	class cMeshCreator;
@@ -245,7 +246,7 @@ namespace hpl {
 	friend class cRendererCallbackFunctions;
 	friend class cRenderSettings;
 	public:
-		iRenderer(const tString& asName, cGraphics *apGraphics,cResources* apResources, int alNumOfProgramComboModes);
+		iRenderer(const tString& asName, cGraphics *apGraphics,cResources* apResources, cFlex* apFlex, int alNumOfProgramComboModes);
 		virtual ~iRenderer();
 
 		void Render(float afFrameTime, cFrustum *apFrustum, cWorld *apWorld, cRenderSettings *apSettings, cRenderTarget *apRenderTarget,
@@ -427,6 +428,8 @@ namespace hpl {
 
 		iOcclusionQuery *GetOcclusionQuery();
 		void ReleaseOcclusionQuery(iOcclusionQuery * apQuery);
+
+		cFlex* mpFlex;
 		
         cResources* mpResources;
 		cGpuShaderManager *mpShaderManager;

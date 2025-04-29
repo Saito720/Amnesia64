@@ -53,8 +53,8 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	cRendererSimple::cRendererSimple(cGraphics *apGraphics,cResources* apResources) 
-		: iRenderer("Simple",apGraphics, apResources,0)
+	cRendererSimple::cRendererSimple(cGraphics *apGraphics,cResources* apResources,cFlex* apFlex)
+		: iRenderer("Simple",apGraphics, apResources, apFlex, 0)
 	{
 		////////////////////////////////////
 		// Set up render specific things

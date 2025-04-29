@@ -22,6 +22,7 @@
 #include "system/System.h"
 #include "sound/Sound.h"
 #include "physics/Physics.h"
+#include "physics/Flex.h"
 #include "ai/AI.h"
 #include "resources/Resources.h"
 #include "graphics/Graphics.h"
@@ -253,6 +254,14 @@ namespace hpl {
 		Log(" Creating generate module\n");
 		mpGenerate = hplNew(cGenerate,());
 
+		Log(" Creating Flex module");
+		if ((mpFlex = mpGameSetup->CreateFlex())) {
+			Log(" [OK]\n");
+		}
+		else {
+			Log(" [FAILED]\n");
+		}
+
 		Log(" Creating haptic module\n");
 #ifdef INCLUDE_HAPTIC
 		mpHaptic = mpGameSetup->CreateHaptic();
@@ -280,7 +289,7 @@ namespace hpl {
 							apVars->mGraphics.mGpuProgramFormat,
 							apVars->mGraphics.msWindowCaption,
 							apVars->mGraphics.mvWindowPosition,
-							mpResources,alHplSetupFlags);
+							mpResources, mpFlex, alHplSetupFlags);
 		
 		//Init Sound
 		mpSound->Init(mpResources, apVars->mSound.mlSoundDeviceID,
@@ -307,6 +316,8 @@ namespace hpl {
 		//Init Generate
 		mpGenerate->Init(mpResources,mpGraphics);
 
+		//Init Flex
+		mpFlex->Init(100000, 0, 96);
 
 		//Init haptic
 		if(mpHaptic) mpHaptic->Init(mpResources);
@@ -326,6 +337,7 @@ namespace hpl {
 		mpUpdater->AddGlobalUpdate(mpAI);
 		mpUpdater->AddGlobalUpdate(mpGui);
 		mpUpdater->AddGlobalUpdate(mpResources);
+		mpUpdater->AddGlobalUpdate(mpFlex);
 		if(mpHaptic) mpUpdater->AddGlobalUpdate(mpHaptic);
 
 		//Setup the "default" updater container
@@ -376,6 +388,7 @@ namespace hpl {
 		hplDelete(mpGui);
 		hplDelete(mpGenerate);
 		hplDelete(mpScene);
+		hplDelete(mpFlex);
 		if(mpHaptic) hplDelete(mpHaptic);
 		hplDelete(mpInput);
 		hplDelete(mpSound);

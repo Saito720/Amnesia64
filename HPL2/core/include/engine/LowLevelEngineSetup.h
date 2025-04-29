@@ -32,6 +32,7 @@ namespace hpl {
 	class cAI;
 	class cHaptic;
 	class cGui;
+	class cFlex;
 
 	class iLowLevelEngineSetup
 	{
@@ -48,6 +49,7 @@ namespace hpl {
 		virtual cPhysics* CreatePhysics()=0;
 		virtual cAI* CreateAI()=0;
 		virtual cHaptic* CreateHaptic()=0;
+		virtual cFlex* CreateFlex()=0;
 	};
 };
 #endif // HPL_LOWLEVELENGINESETUP_H

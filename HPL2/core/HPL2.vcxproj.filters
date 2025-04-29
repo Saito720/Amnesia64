@@ -73,6 +73,9 @@
     <Filter Include="Resources">
       <UniqueIdentifier>{0276fcca-4f7b-4ed6-9450-82896f0b1ffc}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Physics\Flex Core">
+      <UniqueIdentifier>{7125ba26-129a-4cdb-a4e4-a2e894c75554}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\system\BinTree.h">
@@ -1063,6 +1066,84 @@
     <ClInclude Include="include\impl\GamepadSDL2.h">
       <Filter>Impl\Input</Filter>
     </ClInclude>
+    <ClInclude Include="include\physics\Flex.h">
+      <Filter>Physics</Filter>
+    </ClInclude>
+    <ClInclude Include="include\physics\FlexHelper.h">
+      <Filter>Physics</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\aabbtree.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\cloth.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\convex.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\core.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\extrude.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\mat22.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\mat33.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\mat44.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\maths.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\matnn.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\FlexMesh.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\perlin.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\pfm.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\FlexPlatform.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\point3.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\quat.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\sdf.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\skylight.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\tga.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\types.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\vec2.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\vec3.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\vec4.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\Flex\core\voxelize.h">
+      <Filter>Physics\Flex Core</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="sources\system\Container.cpp">
@@ -1937,6 +2018,45 @@
     </ClCompile>
     <ClCompile Include="sources\impl\GamepadSDL2.cpp">
       <Filter>Impl\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\physics\Flex.cpp">
+      <Filter>Physics</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\physics\FlexHelper.cpp">
+      <Filter>Physics</Filter>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\include\Flex\core\aabbtree.cpp">
+      <Filter>Physics\Flex Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\include\Flex\core\core.cpp">
+      <Filter>Physics\Flex Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\include\Flex\core\extrude.cpp">
+      <Filter>Physics\Flex Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\include\Flex\core\maths.cpp">
+      <Filter>Physics\Flex Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\include\Flex\core\FlexMesh.cpp">
+      <Filter>Physics\Flex Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\include\Flex\core\perlin.cpp">
+      <Filter>Physics\Flex Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\include\Flex\core\pfm.cpp">
+      <Filter>Physics\Flex Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\include\Flex\core\FlexPlatform.cpp">
+      <Filter>Physics\Flex Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\include\Flex\core\sdf.cpp">
+      <Filter>Physics\Flex Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\include\Flex\core\tga.cpp">
+      <Filter>Physics\Flex Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\include\Flex\core\voxelize.cpp">
+      <Filter>Physics\Flex Core</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

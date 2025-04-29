@@ -51,8 +51,8 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	cRendererWireFrame::cRendererWireFrame(cGraphics *apGraphics,cResources* apResources) 
-		: iRenderer("WireFrame",apGraphics, apResources,0)
+	cRendererWireFrame::cRendererWireFrame(cGraphics *apGraphics,cResources* apResources,cFlex* apFlex)
+		: iRenderer("WireFrame",apGraphics, apResources, apFlex, 0)
 	{
 		////////////////////////////////////
 		// Set up render specific things

@@ -170,6 +170,8 @@
 #include "physics/PhysicsJointSlider.h"
 #include "physics/SurfaceData.h"
 #include "physics/PhysicsRope.h"
+#include "physics/Flex.h"
+#include "physics/FlexHelper.h"
 
 #include "ai/AI.h"
 #include "ai/AStar.h"

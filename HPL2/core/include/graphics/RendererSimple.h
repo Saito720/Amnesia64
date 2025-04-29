@@ -36,7 +36,7 @@ namespace hpl {
 	class cRendererSimple : public  iRenderer
 	{
 	public:
-		cRendererSimple(cGraphics *apGraphics,cResources* apResources);
+		cRendererSimple(cGraphics *apGraphics,cResources* apResources,cFlex* apFlex);
 		~cRendererSimple();
 		
 		bool LoadData();

@@ -28,6 +28,7 @@
 namespace hpl {
 
 	class cResources;
+	class cFlex;
 	class iRenderer;
 	class cPostEffectsComposite;
 	class iPostEffectType;
@@ -87,7 +88,7 @@ namespace hpl {
 
 		bool Init(int alWidth, int alHeight, int alDisplay, int alBpp, int abFullscreen, int alMultisampling,
 					eGpuProgramFormat aGpuProgramFormat,const tString &asWindowCaption, const cVector2l &avWindowPos,
-					cResources* apResources, tFlag alHplSetupFlags);
+					cResources* apResources, cFlex* apFlex, tFlag alHplSetupFlags);
 
 		void Update(float afTimeStep);
 

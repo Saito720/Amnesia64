@@ -26,6 +26,7 @@
 #include "scene/Scene.h"
 #include "sound/Sound.h"
 #include "physics/Physics.h"
+#include "physics/Flex.h"
 #include "ai/AI.h"
 #include "haptic/Haptic.h"
 
@@ -255,6 +256,14 @@ namespace hpl {
 	{
 		cHaptic *pHaptic = hplNew( cHaptic, (mpLowLevelHaptic) );
 		return pHaptic;
+	}
+
+	//-----------------------------------------------------------------------
+
+	cFlex* cSDLEngineSetup::CreateFlex()
+	{
+		cFlex* pFlex = new cFlex;
+		return pFlex;
 	}
 
 	//-----------------------------------------------------------------------

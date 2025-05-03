@@ -3,6 +3,7 @@
 
 #include "engine/Updateable.h"
 #include "graphics/RenderFunctions.h"
+#include "gui/GuiGfxElement.h"
 
 #include "Flex/NvFlex.h"
 #include "Flex/NvFlexExt.h"
@@ -50,6 +51,12 @@ namespace hpl {
 		int mlLastParticleCount;
 		GLuint mGLParticlesVbo = 0;
 		NvFlexBuffer* mFlexGLBuffer = nullptr;
+
+		cGuiGfxElement* mpGrabCrosshairGfx;
+		uint32_t mlFocusedParticle;
+		uint32_t mlGrabbedParticle;
+		float mfDist;
+		cVector3f mvLastPos;
 
 		bool mbMeshSet;
 	};

@@ -1,12 +1,11 @@
 #include "physics/Flex.h"
 #include "physics/FlexHelper.h"
 #include "system/LowLevelSystem.h"
-#include "../../../amnesia/src/game/LuxEntity.h"
-#include "../../../amnesia/src/game/LuxMap.h"
-#include "../../../amnesia/src/game/LuxMapHandler.h"
 
 // DEBUG
 #include "../../../amnesia/src/game/LuxDebugHandler.h"
+#include "../../../amnesia/src/game/LuxBase.h"
+#include "../../../amnesia/src/game/LuxPlayer.h"
 
 static void ErrorCallback(NvFlexErrorSeverity type, const char* msg, const char* file, int line) {
 	if (type == eNvFlexLogError) {
@@ -31,6 +30,10 @@ namespace hpl {
 		mlLastParticleCount = 0;
 		mbDrawPlanes = false;
 		mbMeshSet = false;
+
+		mpGrabCrosshairGfx = NULL;
+		mlFocusedParticle = UINT32_MAX;
+		mlGrabbedParticle = UINT32_MAX;
 	}
 
 	cFlex::~cFlex()
@@ -126,26 +129,71 @@ namespace hpl {
 	{
 		if (!mpFlexSolver) return;
 
-		if (!mbMeshSet)
-		{
-			if (!gpBase->mpMapHandler->GetCurrentMap()) return;
-
-			cLuxMap* pMap = gpBase->mpMapHandler->GetCurrentMap();
-			cSubMeshEntity* pSubMeshEntity = pMap->GetEntityByName("basket_1")->GetMeshEntity()->GetSubMeshEntity(0);
-
-			cFlexHelper::AddRigidParticleBody(pSubMeshEntity, mpFlexLibrary, mpFlexSolver, mpSimBuffers, SimParams.radius * 0.75f, 1.0f, 1.0f);
-
-			mbMeshSet = true;
-		}
-
 		NvFlexSetParams(mpFlexSolver, &SimParams);
 		NvFlexUpdateSolver(mpFlexSolver, afTimeStep, 2, false);
 
 		uint32_t active = NvFlexGetActiveCount(mpFlexSolver);
 		NvFlexGetParticles(mpFlexSolver, mFlexGLBuffer, active);
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-
 		mlLastParticleCount = active;
+
+		if (mlGrabbedParticle == UINT32_MAX) // We don't have a particle
+		{
+			NvFlexGetParticles(mpFlexSolver, mpSimBuffers->positions.buffer, mpSimBuffers->positions.size());
+			cFlexHelper::MapBuffers(mpSimBuffers);
+
+			mlFocusedParticle = cFlexHelper::GetClosestParticle(mpSimBuffers, SimParams.radius / 2, 2.0f);
+
+			if (gpBase->mpEngine->GetInput()->IsTriggerd(eLuxAction_LeftClick) && mlFocusedParticle != UINT32_MAX)
+			{
+				mlGrabbedParticle = mlFocusedParticle;
+
+				cCamera* pCam = gpBase->mpPlayer->GetCamera();
+				cVector3f vRayOrigin = pCam->GetPosition();
+				Vec4 vPos = mpSimBuffers->positions[mlGrabbedParticle];
+				mfDist = cMath::Vector3Dist(vRayOrigin, cVector3f(vPos.x, vPos.y, vPos.z));
+			}
+
+			cFlexHelper::UnmapBuffers(mpSimBuffers);
+		}
+		else if (gpBase->mpEngine->GetInput()->IsTriggerd(eLuxAction_LeftClick)) // We grabbed a particle
+		{
+			cFlexHelper::MapBuffers(mpSimBuffers);
+
+			cCamera* pCam = gpBase->mpPlayer->GetCamera();
+			cVector3f vRayOrigin = pCam->GetPosition();
+			cVector3f vRayDir = pCam->GetForward();
+			cVector3f vNewPos = vRayOrigin + vRayDir * mfDist;
+			mvLastPos = vNewPos;
+
+			Vec4 glPos = mpSimBuffers->positions[mlGrabbedParticle];
+			Vec4 glNewPos = Vec4(vNewPos.x, vNewPos.y, vNewPos.z, glPos.w);
+			Vec3 vNewVel = Vec3(0.0f);
+
+			cFlexHelper::UnmapBuffers(mpSimBuffers);
+
+			glBindBuffer(GL_SHADER_STORAGE_BUFFER, mGLParticlesVbo);
+			glBufferSubData(GL_SHADER_STORAGE_BUFFER, sizeof(Vec4) * mlGrabbedParticle, sizeof(Vec4), &glNewPos);
+			NvFlexSetVelocities(mpFlexSolver, mpSimBuffers->velocities.buffer, mpSimBuffers->velocities.size());
+		}
+		else if (gpBase->mpEngine->GetInput()->IsTriggerd(eLuxAction_LeftClick) == false) // We dropped the particle
+		{
+			cFlexHelper::MapBuffers(mpSimBuffers);
+
+			cVector3f vCurrentPos = cVector3f(	mpSimBuffers->positions[mlGrabbedParticle].x,
+												mpSimBuffers->positions[mlGrabbedParticle].y,
+												mpSimBuffers->positions[mlGrabbedParticle].z);
+
+			cVector3f vDelta = (mvLastPos - vCurrentPos) / afTimeStep;
+			Vec3 glNewVel = Vec3(vDelta.x, vDelta.y, vDelta.z);
+
+			mlFocusedParticle = UINT32_MAX;
+			mlGrabbedParticle = UINT32_MAX;
+
+			cFlexHelper::UnmapBuffers(mpSimBuffers);
+
+			NvFlexSetVelocities(mpFlexSolver, mpSimBuffers->velocities.buffer, mpSimBuffers->velocities.size());
+		}
 	}
 
 	void cFlex::Render(cRendererCallbackFunctions* apFunctions)
@@ -184,5 +232,17 @@ namespace hpl {
 		apFunctions->SetFlatProjection();
 		apFunctions->SetTextureRange(NULL, 1);
 		apFunctions->DrawQuad(0, 1);
+
+		if (!mpGrabCrosshairGfx)
+			mpGrabCrosshairGfx = gpBase->mpEngine->GetGui()->CreateGfxImage("hud_crosshair_over_grab.tga", eGuiMaterial_Alpha);
+
+		if (mlFocusedParticle != UINT32_MAX && mlGrabbedParticle == UINT32_MAX)
+		{
+			cVector2f vSetSize = gpBase->mvHudVirtualCenterSize;
+			cVector2f vGfxSize = mpGrabCrosshairGfx->GetImageSize();
+			cVector2f vPos = (vSetSize - vGfxSize) / 2.0f;
+			cVector3f vFinalPos = cVector3f(vPos.x, vPos.y, 1);
+			gpBase->mpGameHudSet->DrawGfx(mpGrabCrosshairGfx, vFinalPos, vGfxSize, cColor(1, 1));
+		}
 	}
 }

@@ -20,10 +20,12 @@
 #ifndef HPL_GRAPHICS_H
 #define HPL_GRAPHICS_H
 
+#include "graphics/RITypes.h"
 #include "system/SystemTypes.h"
 #include "math/MathTypes.h"
 #include "graphics/GraphicsTypes.h"
 #include "engine/Updateable.h"
+
 
 namespace hpl {
 
@@ -134,7 +136,9 @@ namespace hpl {
 		cDecalCreator* GetDecalCreator() {return mpDecalCreator;}
 		
 		bool GetScreenIsSetUp(){ return mbScreenIsSetup;}
-	
+		RIRenderer_s renderer;
+		RIDevice_s device;
+		RISwapchain_s swapchain;
 	private:
 		iLowLevelGraphics *mpLowLevelGraphics;
 		iLowLevelResources *mpLowLevelResources;
@@ -155,6 +159,7 @@ namespace hpl {
 		tGpuProgramList mlstGpuPrograms;
 		tMaterialTypeMap m_mapMaterialTypes;
 		tPostEffectList mlstPostEffects;
+
 
 		bool mbScreenIsSetup;
 	};

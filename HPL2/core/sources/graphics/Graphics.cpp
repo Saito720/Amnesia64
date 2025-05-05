@@ -22,6 +22,8 @@
 #include "engine/EngineTypes.h"
 #include "engine/Updateable.h"
 
+#include "graphics/RIRenderer.h"
+#include "graphics/RITypes.h"
 #include "system/LowLevelSystem.h"
 #include "system/String.h"
 #include "system/Platform.h"
@@ -54,6 +56,7 @@
 #include "graphics/RendererDeferred.h"
 #include "graphics/RendererWireFrame.h"
 #include "graphics/RendererSimple.h"
+#include <cassert>
 
 namespace hpl {
 
@@ -139,7 +142,7 @@ namespace hpl {
 		apResources->AddResourceDir(_W("core/shaders"),false);
 		apResources->AddResourceDir(_W("core/textures"),false);
 		apResources->AddResourceDir(_W("core/models"),false);
-		
+	
 		////////////////////////////////////////////////
 		// LowLevel Init
 		if(alHplSetupFlags & eHplSetup_Screen)
@@ -154,6 +157,62 @@ namespace hpl {
 			mbScreenIsSetup = false;
 		}
 		
+		struct RIBackendInit_s backendInit = { 0 };
+		backendInit.api = RI_DEVICE_API_VK;
+		backendInit.applicationName = "HPL2";
+#ifndef NDEBUG
+		backendInit.vk.enableValidationLayer = true;
+#else
+		backendInit.vk.enableValidationLayer = false;
+#endif
+
+		if(InitRIRenderer(&backendInit, &renderer) != RI_SUCCESS) {
+			return false;
+		}
+
+		uint32_t numAdapters = 0;
+		if( EnumerateRIAdapters( &renderer, NULL, &numAdapters ) != RI_SUCCESS ) {
+			return false;
+		}
+		assert(numAdapters > 0);
+		auto physicalAdapters = std::vector<RIPhysicalAdapter_s>();
+		physicalAdapters.reserve(numAdapters);
+
+		//sizeof(struct RIPhysicalAdapter_s) * numAdapters);
+		if(EnumerateRIAdapters(&renderer, physicalAdapters.data(), &numAdapters) != RI_SUCCESS) {
+			return false;
+		}
+		uint32_t selectedAdapterIdx = 0;
+		for( size_t i = 1; i < numAdapters; i++ ) {
+			if( physicalAdapters[i].type > physicalAdapters[selectedAdapterIdx].type )
+				selectedAdapterIdx = i;
+			if( physicalAdapters[i].type < physicalAdapters[selectedAdapterIdx].type )
+				continue;
+
+			if( physicalAdapters[i].presetLevel > physicalAdapters[selectedAdapterIdx].presetLevel ) 
+				selectedAdapterIdx = i;
+			if( physicalAdapters[i].presetLevel < physicalAdapters[selectedAdapterIdx].presetLevel )
+				continue;
+			
+			if(physicalAdapters[i].videoMemorySize > physicalAdapters[selectedAdapterIdx].videoMemorySize) 
+				selectedAdapterIdx = i;
+		}
+		struct RIDeviceDesc_s deviceInit = { 0 };
+		deviceInit.physicalAdapter = &physicalAdapters[selectedAdapterIdx];
+		InitRIDevice(&renderer, &deviceInit, &device );
+		struct RIWindowHandle_s windowHandle = mpLowLevelGraphics->GetWindowHandle(); 
+		if(windowHandle.type == RI_WINDOW_UNKNOWN) {
+			printf("failed to find valid window handle");
+			return false;
+		}
+		struct RISwapchainDesc_s swapchainInit = { 0 };
+		swapchainInit.windowHandle = &windowHandle;
+		swapchainInit.imageCount = 3;
+		swapchainInit.queue = &device.queues[RI_QUEUE_GRAPHICS];
+		swapchainInit.width = alWidth;
+		swapchainInit.height = alHeight;
+		swapchainInit.format = RI_SWAPCHAIN_BT709_G22_8BIT;
+		InitRISwapchain(&device, &swapchainInit, &swapchain);
 
 		////////////////////////////////////////////////
 		// Create systems

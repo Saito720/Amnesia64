@@ -22,6 +22,9 @@
 #include "system/LogicTimer.h"
 #include "system/String.h"
 
+#define STB_DS_IMPLEMENTATION
+#include "system/stb_ds.h"
+
 namespace hpl {
 	
 	//////////////////////////////////////////////////////////////////////////

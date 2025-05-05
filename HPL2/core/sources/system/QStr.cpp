@@ -632,7 +632,7 @@ int qstrvsscanf(struct QStrSpan slice, const char* fmt, va_list ap)
     char    staticbuf[1024], *buf = staticbuf;
     if ((slice.len + 1) >= 1024)
     {
-        buf = (char*)Q_Malloc(slice.len + 1);
+        buf = (char*)malloc(slice.len + 1);
     }
     memcpy(buf, slice.buf, slice.len);
     buf[slice.len] = 0;
@@ -641,7 +641,7 @@ int qstrvsscanf(struct QStrSpan slice, const char* fmt, va_list ap)
     const int res = vsscanf(buf, fmt, ap);
     va_end(cpy);
     if (buf != staticbuf)
-        Q_Free(buf);
+        free(buf);
     return res;
 }
 
@@ -1146,7 +1146,7 @@ int qPrettyPrintBytes(struct QStrSpan slice, size_t numBytes)
         return -1;
     struct QStrSpan subStr = qSubStrSpan(slice, pos, slice.len);
 
-    size_t len = Q_MIN(strs[i].len, subStr.len);
+    size_t len = std::min(strs[i].len, subStr.len);
     if (len < strs[i].len)
         return -1;
     memcpy(slice.buf + pos, strs[i].buf, len);

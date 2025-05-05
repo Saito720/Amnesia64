@@ -254,6 +254,7 @@ target_link_libraries(HPL2
   GLEW::GLEW
   OpenGL::GLU
   zlib
+  volk
   IL 
   ${PLATFORM_LIBS}
   )

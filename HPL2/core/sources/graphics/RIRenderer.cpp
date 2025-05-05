@@ -126,7 +126,7 @@ void VK_ConfigureImageQueueFamilies( VkImageCreateInfo *info, struct RIQueue_s *
 	info->sharingMode = ( queueFamilyIndexCount > 1 ) ? VK_SHARING_MODE_CONCURRENT : VK_SHARING_MODE_EXCLUSIVE;
 }
 
-void vk_fillQueueFamilies( struct RIDevice_s *dev, uint32_t *queueFamilies, uint32_t *queueFamiliesIdx, size_t reservedLen )
+void VK_FillQueueFamilies( struct RIDevice_s *dev, uint32_t *queueFamilies, uint32_t *queueFamiliesIdx, size_t reservedLen )
 {
 	uint32_t uniqueQueue = 0;
 	for( size_t i = 0; i < RI_QUEUE_LEN; i++ ) {
@@ -941,7 +941,7 @@ int InitRIRenderer( const struct RIBackendInit_s *init, struct RIRenderer_s *ren
 		appInfo.pNext = NULL;
 		appInfo.pApplicationName = init->applicationName;
 		appInfo.applicationVersion = VK_MAKE_VERSION( 1, 0, 0 );
-		appInfo.pEngineName = "qfusion";
+		appInfo.pEngineName = "HPL2";
 		appInfo.engineVersion = VK_MAKE_VERSION( 1, 0, 0 );
     appInfo.apiVersion = VK_API_VERSION_1_3;
 

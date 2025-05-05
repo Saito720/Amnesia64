@@ -4,6 +4,7 @@
 
 #include "graphics/RIDefines.h"
 
+
 #ifdef DEVICE_SUPPORT_VULKAN
 #include "volk.h"
 #define VMA_STATIC_VULKAN_FUNCTIONS 0
@@ -14,6 +15,8 @@
 #include <stdint.h>
 #include "system/Hasher.h"
 #include <cstdio>
+#undef DestroyAll
+#undef ButtonPress
 
 #define R_VK_ADD_STRUCT(current, next) { \
   void* __pNext = (void*)((current)->pNext); \
@@ -240,6 +243,7 @@ enum RIBlendFactor_e {   // RGB                               ALPHA
 };
 
 enum RIWindowType_e {
+	RI_WINDOW_UNKNOWN,
 	RI_WINDOW_X11,
 	RI_WINDOW_WIN32,
 	RI_WINDOW_METAL,

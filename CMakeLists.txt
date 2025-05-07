@@ -9,6 +9,7 @@ set(CMAKE_INSTALL_PREFIX ${INSTALL_OUTPUT_PATH} CACHE PATH "Install path prefix,
 
 set(CMAKE_MODULE_PATH ${CMAKE_HOME_DIRECTORY}/cmake)
 include(utils)
+include(shaders)
 
 set(CMAKE_SKIP_BUILD_RPATH FALSE)
  

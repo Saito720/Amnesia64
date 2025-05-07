@@ -1,5 +1,5 @@
 #include "graphics/RIFormat.h"
-#include <cassert>
+#include <assert.h>
 
 static const struct RIFormatProps_s riFormats[] = {
 	[RI_FORMAT_UNKNOWN] = { 

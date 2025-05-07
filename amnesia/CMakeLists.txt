@@ -115,21 +115,6 @@ install(DIRECTORY DESTINATION ${AMNESIA_EXECUTABLE_OUTPUT_PATH})
 #    )
 #endif()
 
-if(WIN32)
-    add_custom_command ( TARGET Amnesia POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:WinPixEventRuntime> $<TARGET_FILE_DIR:Amnesia>
-    )
-    add_custom_command ( TARGET Amnesia POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:ags> $<TARGET_FILE_DIR:Amnesia>
-    )
-    add_custom_command ( TARGET Amnesia POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        $<TARGET_FILE:DirectXShaderCompiler> $<TARGET_FILE_DIR:Amnesia>
-    )
-endif()
-
 target_compile_definitions(Amnesia PUBLIC AMNESIA_TDD_VERSION="${AMNESIA_TDD_VERSION}")
 target_compile_definitions(Amnesia PUBLIC AMNESIA_TDD_TAG="${AMNESIA_TDD_TAG}")
 set_output_dir (Amnesia "") 
@@ -142,4 +127,26 @@ add_custom_target(deploy
     -DAMNESIA_EXECUTABLE_OUTPUT_PATH="$<TARGET_FILE_DIR:Amnesia>"
     -P ${CMAKE_CURRENT_SOURCE_DIR}/copy_game_assets.cmake
     COMMENT "packaging assets ...")
+
+
+
+# file(GENERATE OUTPUT AMNESIA_SHADER_DIR CONTENT $<TARGET_FILE_DIR:Amnesia>/compiled_shaders)
+
+# file(MAKE_DIRECTORY ${AMNESIA_SHADER_DIR})
+target_shaders( 
+    Amnesia
+SHADERS 
+    ./glsl/gui.frag 
+    ./glsl/gui.vert
+OUTPUT_FOLDER
+${AMNESIA_SHADER_DIR}
+) 
+
+#add_custom_target(shaders
+#    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} 
+#    COMMAND ${CMAKE_COMMAND} 
+#    -DAMNESIA_GAME_DIRECTORY=${AMNESIA_GAME_DIRECTORY}
+#    -DAMNESIA_EXECUTABLE_OUTPUT_PATH="$<TARGET_FILE_DIR:Amnesia>"
+#    -P ${CMAKE_CURRENT_SOURCE_DIR}/build_shaders.cmake
+#    COMMENT "building shaders ...")
 

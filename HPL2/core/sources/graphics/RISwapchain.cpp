@@ -1,9 +1,14 @@
 #include "graphics/RISwapchain.h"
 #include "graphics/RIRenderer.h"
 #include "graphics/RITypes.h"
+#include "system/Types.h"
+
+#include "graphics/RIVK.h"
+
 #include <cassert>
 #include <cstdlib>
-#include "system/Types.h"
+#include <cstring>
+
 
 #if ( DEVICE_IMPL_VULKAN )
 
@@ -47,8 +52,8 @@ int InitRISwapchain( struct RIDevice_s *dev, struct RISwapchainDesc_s *init, str
 #ifdef VK_USE_PLATFORM_XLIB_KHR
 			case RI_WINDOW_X11: {
 				VkXlibSurfaceCreateInfoKHR xlibSurfaceInfo = { VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR };
-				xlibSurfaceInfo.dpy = init->windowHandle->x11.dpy;
-				xlibSurfaceInfo.window = init->windowHandle->x11.window;
+				xlibSurfaceInfo.dpy = (Display*)init->windowHandle->x11.dpy;
+				xlibSurfaceInfo.window = (Window)init->windowHandle->x11.window;
 				result = vkCreateXlibSurfaceKHR( dev->renderer->vk.instance, &xlibSurfaceInfo, NULL, &swapchain->vk.surface );
 				VK_WrapResult( result );
 				break;
@@ -77,8 +82,8 @@ int InitRISwapchain( struct RIDevice_s *dev, struct RISwapchainDesc_s *init, str
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
 			case RI_WINDOW_WAYLAND: {
 				VkWaylandSurfaceCreateInfoKHR waylandSurfaceInfo = { VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR };
-				waylandSurfaceInfo.display = init->windowHandle->wayland.display;
-				waylandSurfaceInfo.surface = init->windowHandle->wayland.surface;
+				waylandSurfaceInfo.display = (wl_display*)init->windowHandle->wayland.display;
+				waylandSurfaceInfo.surface = (wl_surface*)init->windowHandle->wayland.surface;
 				result = vkCreateWaylandSurfaceKHR( dev->renderer->vk.instance, &waylandSurfaceInfo, NULL, &swapchain->vk.surface );
 				VK_WrapResult( result );
 				break;
@@ -138,7 +143,7 @@ int InitRISwapchain( struct RIDevice_s *dev, struct RISwapchainDesc_s *init, str
 	uint32_t presentModeCount = 0;
   result = vkGetPhysicalDeviceSurfacePresentModesKHR(dev->physicalAdapter.vk.physicalDevice, swapchain->vk.surface, &presentModeCount, NULL);
 	VK_WrapResult(result);
-	VkPresentModeKHR* supportedPresentMode = malloc(presentModeCount * sizeof(VkPresentModeKHR));
+	VkPresentModeKHR* supportedPresentMode = (VkPresentModeKHR*)malloc(presentModeCount * sizeof(VkPresentModeKHR));
   result = vkGetPhysicalDeviceSurfacePresentModesKHR(dev->physicalAdapter.vk.physicalDevice, swapchain->vk.surface, &presentModeCount, supportedPresentMode);
 	VK_WrapResult(result);
 

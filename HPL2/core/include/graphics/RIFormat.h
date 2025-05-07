@@ -1,7 +1,8 @@
 #ifndef RI_FORMAT_H
 #define RI_FORMAT_H
 
-#include <cstdint>
+#include <stdint.h>
+
 enum RI_Format_e {
 	RI_FORMAT_UNKNOWN,
 	

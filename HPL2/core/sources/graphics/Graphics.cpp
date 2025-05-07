@@ -178,7 +178,6 @@ namespace hpl {
 		auto physicalAdapters = std::vector<RIPhysicalAdapter_s>();
 		physicalAdapters.reserve(numAdapters);
 
-		//sizeof(struct RIPhysicalAdapter_s) * numAdapters);
 		if(EnumerateRIAdapters(&renderer, physicalAdapters.data(), &numAdapters) != RI_SUCCESS) {
 			return false;
 		}
@@ -220,13 +219,11 @@ namespace hpl {
 		mpTextureCreator  = hplNew( cTextureCreator,(mpLowLevelGraphics, apResources));
 		mpDecalCreator = hplNew( cDecalCreator,(mpLowLevelGraphics, apResources));
 
-		////////////////////////////////////////////////
 		// Create Renderers
 		if(alHplSetupFlags & eHplSetup_Screen)
 		{
-            ////////////////////////////////////////////////
-            // Check feature support
-            apResources->GetGpuShaderManager()->CheckFeatureSupport();
+      // Check feature support
+      apResources->GetGpuShaderManager()->CheckFeatureSupport();
 
 			mvRenderers.resize(eRenderer_LastEnum, NULL);
 

@@ -1,4 +1,3 @@
-
 layout(set = 0, binding = 0) uniform uniformBlock {
     mat4 mvp;
     vec4 clipPlane[4];

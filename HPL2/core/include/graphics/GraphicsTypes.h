@@ -26,6 +26,7 @@
 #include <vector>
 #include "graphics/Color.h"
 #include "math/MathTypes.h"
+#include "graphics/RIFormat.h"
 
 namespace hpl {
 
@@ -909,6 +910,8 @@ namespace hpl {
 	{
 		return (float)(alColor) / 255.0f;
 	}
+
+	RI_Format hpl_to_ri_format(ePixelFormat format);
 
 
 	//---------------------------------------

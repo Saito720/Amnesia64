@@ -693,10 +693,11 @@ namespace hpl {
 	{
 		/////////////////////////////
 		//Check so size is power of 2
-		if((!cMath::IsPow2(avSize.x) || !cMath::IsPow2(avSize.y)) && mType != eTextureType_Rect)
-		{
-			Warning("Texture '%s' does not have a pow2 size!\n",msName.c_str());
-		}
+		// don't bother with POW2
+		//if((!cMath::IsPow2(avSize.x) || !cMath::IsPow2(avSize.y)) && mType != eTextureType_Rect)
+		//{
+		//	Warning("Texture '%s' does not have a pow2 size!\n",msName.c_str());
+		//}
 
 		//////////////////////////////
 		//Setup properties

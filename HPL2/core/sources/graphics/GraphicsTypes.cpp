@@ -19,6 +19,7 @@
 
 #include "graphics/GraphicsTypes.h"
 
+#include "graphics/RIFormat.h"
 #include "graphics/Texture.h"
 #include "graphics/FrameBuffer.h"
 
@@ -178,7 +179,41 @@ namespace hpl {
 		return false;
 	}
 
-	//-----------------------------------------------------------------------
+  RI_Format hpl_to_ri_format(ePixelFormat format) {
+    switch (format) {
+    case ePixelFormat_Unknown:
+    case ePixelFormat_Alpha:
+    case ePixelFormat_Luminance:
+    case ePixelFormat_LuminanceAlpha:
+    case ePixelFormat_RGB:
+    case ePixelFormat_RGBA:
+    case ePixelFormat_BGR:
+    case ePixelFormat_BGRA:
+    case ePixelFormat_DXT1:
+    case ePixelFormat_DXT2:
+    case ePixelFormat_DXT3:
+    case ePixelFormat_DXT4:
+    case ePixelFormat_DXT5:
+    case ePixelFormat_Depth16:
+    case ePixelFormat_Depth24:
+    case ePixelFormat_Depth32:
+    case ePixelFormat_Alpha16:
+    case ePixelFormat_Luminance16:
+    case ePixelFormat_LuminanceAlpha16:
+    case ePixelFormat_RGB16:
+    case ePixelFormat_RGBA16:
+    case ePixelFormat_Alpha32:
+    case ePixelFormat_Luminance32:
+    case ePixelFormat_LuminanceAlpha32:
+    case ePixelFormat_RGB32:
+    case ePixelFormat_RGBA32:
+    case ePixelFormat_LastEnum:
+      break;
+    }
+    return RI_FORMAT_UNKNOWN;
+  }
+
+        //-----------------------------------------------------------------------
 
 	bool PixelFormatIsFloatingPoint(ePixelFormat aFormat)
 	{

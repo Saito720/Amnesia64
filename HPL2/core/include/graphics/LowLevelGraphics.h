@@ -22,7 +22,9 @@
 #ifndef HPL_LOWLEVELGRAPHICS_H
 #define HPL_LOWLEVELGRAPHICS_H
 
+#include "graphics/RIBoostrap.h"
 #include "graphics/GraphicsTypes.h"
+#include "graphics/RIBoostrap.h"
 #include "math/MathTypes.h"
 #include "system/SystemTypes.h"
 
@@ -336,17 +338,13 @@ public:
                               bool abAutoClear = true) = 0;
   virtual void ClearBatch() = 0;
 
-  /////////////////////////////////////////////////////
-  /////////// STATIC VARIABLES /////////////////////////
-  /////////////////////////////////////////////////////
-
   static void SetForceShaderModel3And4Off(bool abX) {
     mbForceShaderModel3And4Off = abX;
   }
   static bool GetForceShaderModel3And4Off() {
     return mbForceShaderModel3And4Off;
   }
-
+  struct RIBoostrap bootsrap;
 protected:
   static bool mbForceShaderModel3And4Off;
 };

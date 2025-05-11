@@ -20,8 +20,6 @@
 #ifndef HPL_GRAPHICS_H
 #define HPL_GRAPHICS_H
 
-#include "graphics/RITypes.h"
-#include "graphics/GraphicsTypes.h"
 #include "system/SystemTypes.h"
 #include "math/MathTypes.h"
 #include "engine/Updateable.h"
@@ -29,6 +27,11 @@
 
 #include "graphics/RIProgram.h"
 #include "graphics/RIScratchAlloc.h"
+#include "graphics/RITypes.h"
+#include "graphics/GraphicsTypes.h"
+#include "graphics/RIVK.h"
+
+#include <memory>
 
 namespace hpl {
 
@@ -51,8 +54,6 @@ namespace hpl {
 	class iGpuProgram;
 	class cParserVarContainer;
 
-	//------------------------------------------------------
-	
 	class cTempFrameBuffer
 	{
 	public:
@@ -61,8 +62,6 @@ namespace hpl {
 		ePixelFormat mPixelFormat;
 		int mlIndex;
 	};
-
-	//------------------------------------------------------
 
 	typedef std::list<iFrameBuffer*> tFrameBufferList;
 	typedef tFrameBufferList::iterator tFrameBufferListIt;
@@ -83,21 +82,9 @@ namespace hpl {
 	typedef tMaterialTypeMap::iterator tMaterialTypeMapIt;
 
 	//------------------------------------------------------
-
 	class cGraphics : public iUpdateable
 	{
 	public:
-		struct FrameContext {
-			struct RIScratchAlloc_s ubo_scratch;
-			struct RICmd_s cmd;
-			union {
-#if ( DEVICE_IMPL_VULKAN )
-				struct {
-						VkCommandPool pool;
-				} vk;
-#endif
-			};
-		};
 
 		cGraphics(iLowLevelGraphics *apLowLevelGraphics,iLowLevelResources *apLowLevelResources);
 		~cGraphics();
@@ -151,26 +138,8 @@ namespace hpl {
 		cDecalCreator* GetDecalCreator() {return mpDecalCreator;}
 		
 		bool GetScreenIsSetUp(){ return mbScreenIsSetup;}
-		RIRenderer_s renderer;
-		RIDevice_s device;
-		RISwapchain_s swapchain;
-
-		uint32_t swapchain_index;
-		uint64_t frame_count = 0;
-		std::array<FrameContext, RI_NUMBER_FRAMES_FLIGHT> frame_sets;
-
-		struct RIResourceUploader_s uploader = {};
 		RIProgram gui;
 
-		FrameContext* GetActiveSet() { return &frame_sets[frame_count % RI_NUMBER_FRAMES_FLIGHT]; }
-
-	union {
-#if ( DEVICE_IMPL_VULKAN )
-		struct {
-			VkSemaphore frame_sem;	
-		} vk;
-#endif
-	};
 
 	private:
 		iLowLevelGraphics *mpLowLevelGraphics;
@@ -181,7 +150,6 @@ namespace hpl {
 		cResources *mpResources;
 
 		std::vector<cTempFrameBuffer> mvTempFrameBuffers;
-		
 		std::vector<iRenderer*> mvRenderers;
 		std::vector<iPostEffectType*> mvPostEffectTypes;
 

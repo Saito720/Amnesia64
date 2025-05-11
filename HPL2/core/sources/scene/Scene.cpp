@@ -182,22 +182,23 @@ namespace hpl {
 		//Increase the frame count (do this at top, so render count is valid until this Render is called again!)
 		iRenderer::IncRenderFrameCount();
 
-		cGraphics::FrameContext* cntx = mpGraphics->GetActiveSet();
-		struct RIQueue_s *graphicsQueue = &mpGraphics->device.queues[RI_QUEUE_GRAPHICS];
+		RIBoostrap* boostrap = 	&mpGraphics->GetLowLevel()->bootsrap;
+		RIBoostrap::FrameContext* cntx = boostrap->GetActiveSet();
+		struct RIQueue_s *graphicsQueue = &boostrap->device.queues[RI_QUEUE_GRAPHICS];
 
-		if( mpGraphics->frame_count >= RI_NUMBER_FRAMES_FLIGHT) {
-			const uint64_t waitValue = 1 + mpGraphics->frame_count - RI_NUMBER_FRAMES_FLIGHT;
+		if( boostrap->frame_count >= RI_NUMBER_FRAMES_FLIGHT) {
+			const uint64_t waitValue = 1 + boostrap->frame_count - RI_NUMBER_FRAMES_FLIGHT;
 			VkSemaphoreWaitInfo semaphoreWaitInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO };
 			semaphoreWaitInfo.semaphoreCount = 1;
-			semaphoreWaitInfo.pSemaphores = &mpGraphics->vk.frame_sem;
+			semaphoreWaitInfo.pSemaphores = &boostrap->vk.frame_sem;
 			semaphoreWaitInfo.pValues = &waitValue;
-			VK_WrapResult( vkWaitSemaphores( mpGraphics->device.vk.device, &semaphoreWaitInfo, 5000 * 1000000ull ) );
-			VK_WrapResult( vkResetCommandPool( mpGraphics->device.vk.device, cntx->vk.pool, 0 ) );
+			VK_WrapResult( vkWaitSemaphores( boostrap->device.vk.device, &semaphoreWaitInfo, 5000 * 1000000ull ) );
+			VK_WrapResult( vkResetCommandPool( boostrap->device.vk.device, cntx->vk.pool, 0 ) );
 		}
-		mpGraphics->swapchain_index = RISwapchainAcquireNextTexture( &mpGraphics->device, &mpGraphics->swapchain);
+		boostrap->swapchain_index = RISwapchainAcquireNextTexture( &boostrap->device, &boostrap->swapchain);
 
 		// cleanup
-		RIResetScratchAlloc( &mpGraphics->device, &cntx->ubo_scratch);
+		RIResetScratchAlloc( &boostrap->device, &cntx->ubo_scratch);
 		{
 			VkCommandBufferBeginInfo info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
 			info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -222,15 +223,15 @@ namespace hpl {
 				submitInfo.pCommandBufferInfos = &cmdSubmitInfo;
 				submitInfo.commandBufferInfoCount = 1;
 
-				RI_ResourceSubmit(&mpGraphics->device, &mpGraphics->uploader);
+				RI_ResourceSubmit(&boostrap->device, &boostrap->uploader);
 				VK_WrapResult(vkQueueSubmit2( graphicsQueue->vk.queue, 1, &submitInfo, VK_NULL_HANDLE ));
-				RISwapchainPresent( &mpGraphics->device, &mpGraphics->swapchain);
+				RISwapchainPresent( &boostrap->device, &boostrap->swapchain);
 			}	
 			{
 				VkSemaphoreSubmitInfo signalSem = { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
 				signalSem.stageMask = VK_PIPELINE_STAGE_2_NONE;
-				signalSem.value = 1 + mpGraphics->frame_count;
-				signalSem.semaphore = mpGraphics->vk.frame_sem;
+				signalSem.value = 1 + boostrap->frame_count;
+				signalSem.semaphore = boostrap->vk.frame_sem;
 				VkSubmitInfo2 submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
 				submitInfo.pSignalSemaphoreInfos = &signalSem;
 				submitInfo.signalSemaphoreInfoCount = 1;
@@ -238,7 +239,7 @@ namespace hpl {
 				VK_WrapResult( vkQueueSubmit2( graphicsQueue->vk.queue, 1, &submitInfo, VK_NULL_HANDLE ) );
 			}
 		}
-		mpGraphics->frame_count++;
+		boostrap->frame_count++;
 
 		/////////////////////////////////////////////
 		//// Iterate all viewports and render

@@ -202,10 +202,9 @@ struct RIWindowHandle_s cLowLevelGraphicsSDL::GetWindowHandle() {
 #endif
 #if defined( SDL_VIDEO_DRIVER_WINDOWS )
 			case SDL_SYSWM_WINDOWS:
-				 init.type = WINDOW_TYPE_WIN32;
-				 init.windows.hwnd = wmi.info.win.window;
-				 //init.windows.surface = wmi.info.wl.surface;
-				break;
+				 handle.type = RI_WINDOW_WIN32;
+				 handle.windows.hwnd = wmi.info.win.window;
+				 break;
 #endif
 			default:
 				assert( false );

@@ -42,6 +42,7 @@
 #include "resources/LowLevelResources.h"
 #include "resources/Resources.h"
 #include "resources/GpuShaderManager.h"
+#include "resources/FileSearcher.h"
 
 #include "graphics/MaterialType_BasicSolid.h"
 #include "graphics/MaterialType_BasicTranslucent.h"
@@ -142,7 +143,9 @@ namespace hpl {
 		apResources->AddResourceDir(_W("core/shaders"),false);
 		apResources->AddResourceDir(_W("core/textures"),false);
 		apResources->AddResourceDir(_W("core/models"),false);
-	
+		apResources->AddResourceDir(_W("compiled_shaders"),false);
+
+
 		////////////////////////////////////////////////
 		// LowLevel Init
 		if(alHplSetupFlags & eHplSetup_Screen)
@@ -213,6 +216,13 @@ namespace hpl {
 		swapchainInit.format = RI_SWAPCHAIN_BT709_G22_8BIT;
 		InitRISwapchain(&device, &swapchainInit, &swapchain);
 
+		auto vert_stage = RIProgram::load_shader_stage(apResources->GetFileSearcher(), "gui.vert.spv");
+		auto frag_stage = RIProgram::load_shader_stage(apResources->GetFileSearcher(), "gui.frag.spv");
+		std::array<RIProgram::ModuleStage, 2> stages = {
+			RIProgram::ModuleStage{RIProgram::PROGRAM_STAGE_VERTEX, vert_stage},
+			RIProgram::ModuleStage{RIProgram::PROGRAM_STAGE_FRAGMENT, frag_stage}
+		};
+		gui = (RIProgram::create(stages)); 
 		////////////////////////////////////////////////
 		// Create systems
 		mpMeshCreator = hplNew( cMeshCreator,(mpLowLevelGraphics, apResources));
@@ -241,10 +251,6 @@ namespace hpl {
 					}
 				}
 			}
-		}
-		else
-		{
-			
 		}
 		
 		////////////////////////////////////////////////

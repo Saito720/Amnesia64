@@ -21,11 +21,12 @@
 #define HPL_GRAPHICS_H
 
 #include "graphics/RITypes.h"
+#include "graphics/GraphicsTypes.h"
 #include "system/SystemTypes.h"
 #include "math/MathTypes.h"
-#include "graphics/GraphicsTypes.h"
 #include "engine/Updateable.h"
 
+#include "graphics/RIProgram.h"
 
 namespace hpl {
 
@@ -139,6 +140,8 @@ namespace hpl {
 		RIRenderer_s renderer;
 		RIDevice_s device;
 		RISwapchain_s swapchain;
+
+		RIProgram gui;
 	private:
 		iLowLevelGraphics *mpLowLevelGraphics;
 		iLowLevelResources *mpLowLevelResources;

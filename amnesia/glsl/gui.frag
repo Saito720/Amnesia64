@@ -29,6 +29,5 @@ void main(void)
     {
        out_color *= texture(sampler2D(diffuseMap, diffuseSampler), v_texcoord); 
     }
-
 }
 

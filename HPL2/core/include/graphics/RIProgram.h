@@ -72,6 +72,7 @@ namespace hpl {
                     VkGraphicsPipelineCreateInfo pipelineCreateInfo);
     static RIProgram create(std::span<ModuleStage> init);
     static std::vector<char> load_shader_stage(cFileSearcher *searcher, const tString& asName);
+
     RIProgram(RIProgram&&);
     RIProgram& operator=(RIProgram&&);
     explicit RIProgram() {

@@ -151,6 +151,7 @@ RIProgram::RIProgram(RIProgram&& prog):
   memcpy(&impl, &prog.impl, sizeof(RIProgram::__impl));
 }
 
+
 RIProgram RIProgram::create(std::span<ModuleStage> moduleInit) {
   RIProgram program = RIProgram();
   VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {
@@ -225,19 +226,23 @@ RIProgram RIProgram::create(std::span<ModuleStage> moduleInit) {
           &program.program_descriptors[spv_reflection->set];
       program_desc->alloc.descriptor_alloc_handle = _vk__descriptorSetAlloc;
       program_desc->alloc.framesInFlight = RI_NUMBER_FRAMES_FLIGHT;
-      for (size_t i_binding = 0; i_binding < spv_reflection->binding_count;
-           i_binding++) {
+      for (size_t i_binding = 0; i_binding < spv_reflection->binding_count; i_binding++) {
         const SpvReflectDescriptorBinding *reflectionBinding =
             spv_reflection->bindings[i_binding];
         assert(reflection->set < R_DESCRIPTOR_SET_MAX);
         assert(reflectionBinding->array.dims_count <=
                1); // not going to handle multi-dim arrays
         struct BindingReflection reflc = {};
-        reflc.hash = create_descriptor_binding_id(reflectionBinding->name).hash;
+        auto reflID = create_descriptor_binding_id(reflectionBinding->name);
+        reflc.hash = reflID.hash;
         reflc.set = reflectionBinding->set;
         reflc.baseRegisterIndex = reflectionBinding->binding;
         reflc.isArray = reflectionBinding->count > 1;
         reflc.dimCount = std::max<uint16_t>(1, reflectionBinding->count);
+        if(program.find_reflection(reflID) != NULL) {
+          continue;
+        }
+        printf("Descriptor[%lu], name: %s hash: %lu\n", i_set, reflectionBinding->name, reflc.hash);
 
         VkDescriptorSetLayoutBinding *layoutBinding = NULL;
         VkDescriptorBindingFlags *bindingFlags = NULL;
@@ -326,8 +331,9 @@ RIProgram RIProgram::create(std::span<ModuleStage> moduleInit) {
         program.binding_reflection.push_back(reflc);
       }
     }
-    return program;
   }
+
+  return program;
 }
 
 } // namespace hpl

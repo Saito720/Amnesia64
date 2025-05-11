@@ -2,7 +2,12 @@
 #define SYSTEM_TYPE_H_INCLUDED
 #include <cstddef>
 
+#define KB_TO_BYTE (1024)
+#define MB_TO_BYTE (1024 * KB_TO_BYTE)
+#define GB_TO_BYTE (1024 * MB_TO_BYTE)
+
 #define ARRAY_COUNT( array ) (sizeof( array ) / (sizeof( array[0])))
+#define ALIGN_TO(size, alignment) (((size) + (alignment)-1) & ~((alignment)-1))
 
 #if defined(_MSC_VER)
 

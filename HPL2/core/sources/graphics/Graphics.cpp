@@ -222,7 +222,7 @@ namespace hpl {
 			RIProgram::ModuleStage{RIProgram::PROGRAM_STAGE_VERTEX, vert_stage},
 			RIProgram::ModuleStage{RIProgram::PROGRAM_STAGE_FRAGMENT, frag_stage}
 		};
-		gui = (RIProgram::create(stages)); 
+		gui = RIProgram::create(stages); 
 		////////////////////////////////////////////////
 		// Create systems
 		mpMeshCreator = hplNew( cMeshCreator,(mpLowLevelGraphics, apResources));

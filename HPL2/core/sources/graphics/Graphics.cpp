@@ -23,6 +23,7 @@
 #include "engine/Updateable.h"
 
 #include "graphics/RIRenderer.h"
+#include "graphics/RIResourceUploader.h"
 #include "graphics/RITypes.h"
 #include "system/LowLevelSystem.h"
 #include "system/String.h"
@@ -57,6 +58,7 @@
 #include "graphics/RendererDeferred.h"
 #include "graphics/RendererWireFrame.h"
 #include "graphics/RendererSimple.h"
+#include "graphics/RIScratchAlloc.h"
 #include <cassert>
 
 namespace hpl {
@@ -202,6 +204,7 @@ namespace hpl {
 		struct RIDeviceDesc_s deviceInit = { 0 };
 		deviceInit.physicalAdapter = &physicalAdapters[selectedAdapterIdx];
 		InitRIDevice(&renderer, &deviceInit, &device );
+		RI_InitResourceUploader(&device, &uploader);
 		struct RIWindowHandle_s windowHandle = mpLowLevelGraphics->GetWindowHandle(); 
 		if(windowHandle.type == RI_WINDOW_UNKNOWN) {
 			printf("failed to find valid window handle");
@@ -209,20 +212,54 @@ namespace hpl {
 		}
 		struct RISwapchainDesc_s swapchainInit = { 0 };
 		swapchainInit.windowHandle = &windowHandle;
-		swapchainInit.imageCount = 3;
+		swapchainInit.imageCount = RI_NUMBER_FRAMES_FLIGHT;
 		swapchainInit.queue = &device.queues[RI_QUEUE_GRAPHICS];
 		swapchainInit.width = alWidth;
 		swapchainInit.height = alHeight;
 		swapchainInit.format = RI_SWAPCHAIN_BT709_G22_8BIT;
 		InitRISwapchain(&device, &swapchainInit, &swapchain);
+	
+		struct RIQueue_s *graphicsQueue = &device.queues[RI_QUEUE_GRAPHICS];
+		for(auto& set: frame_sets) {
+			{
+				VkCommandPoolCreateInfo cmdPoolCreateInfo = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+				cmdPoolCreateInfo.queueFamilyIndex = graphicsQueue->vk.queueFamilyIdx;
+				cmdPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+				VK_WrapResult( vkCreateCommandPool( device.vk.device, &cmdPoolCreateInfo, NULL, &set.vk.pool ) );
+			}
+			{
+				VkCommandBufferAllocateInfo cmdAllocInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+				cmdAllocInfo.commandPool = set.vk.pool;
+				cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+				cmdAllocInfo.commandBufferCount = 1;
+				set.cmd.vk.pool = set.vk.pool;
+				VK_WrapResult( vkAllocateCommandBuffers( device.vk.device, &cmdAllocInfo, &set.cmd.vk.cmd ) );
+			}
 
-		auto vert_stage = RIProgram::load_shader_stage(apResources->GetFileSearcher(), "gui.vert.spv");
-		auto frag_stage = RIProgram::load_shader_stage(apResources->GetFileSearcher(), "gui.frag.spv");
-		std::array<RIProgram::ModuleStage, 2> stages = {
-			RIProgram::ModuleStage{RIProgram::PROGRAM_STAGE_VERTEX, vert_stage},
-			RIProgram::ModuleStage{RIProgram::PROGRAM_STAGE_FRAGMENT, frag_stage}
-		};
-		gui = RIProgram::create(stages); 
+			struct RIScratchAllocDesc_s scratchDesc = { 
+				.blockSize = 256 * 128, 
+				.alignmentReq = 256, 
+				.alloc = RIUniformScratchAllocHandler };
+			InitRIScratchAlloc( &device, &set.ubo_scratch, &scratchDesc );
+		}
+
+		{
+			VkSemaphoreTypeCreateInfo semaphoreTypeCreateInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
+			semaphoreTypeCreateInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+			VkSemaphoreCreateInfo semaphoreCreateInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+			semaphoreCreateInfo.pNext = &semaphoreTypeCreateInfo;
+			VK_WrapResult( vkCreateSemaphore( device.vk.device, &semaphoreCreateInfo, NULL, &vk.frame_sem) );
+		}
+
+		{
+			auto vert_stage = RIProgram::load_shader_stage(apResources->GetFileSearcher(), "gui.vert.spv");
+			auto frag_stage = RIProgram::load_shader_stage(apResources->GetFileSearcher(), "gui.frag.spv");
+			std::array<RIProgram::ModuleStage, 2> stages = {
+				RIProgram::ModuleStage{RIProgram::PROGRAM_STAGE_VERTEX, vert_stage},
+				RIProgram::ModuleStage{RIProgram::PROGRAM_STAGE_FRAGMENT, frag_stage}
+			};
+			gui.initialize(&device, stages);
+		}
 		////////////////////////////////////////////////
 		// Create systems
 		mpMeshCreator = hplNew( cMeshCreator,(mpLowLevelGraphics, apResources));

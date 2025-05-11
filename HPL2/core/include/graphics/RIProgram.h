@@ -8,12 +8,10 @@
 
 #include "RIDescriptorSetAllocator.h"
 #include "RITypes.h"
-#include "graphics/spirv_reflect.h"
 #include "resources/FileSearcher.h"
 #include "system/SystemTypes.h"
 
 namespace hpl {
-
   class RIProgram {
   public:
     static constexpr size_t DESCRIPTOR_SET_MAX = 3;
@@ -63,6 +61,7 @@ namespace hpl {
 	    PROGRAM_STAGE_FRAGMENT, 
 	    PROGRAM_STAGES_MAX 
     };
+
     struct ModuleStage {
       uint8_t stage;
       std::span<char> data;
@@ -70,16 +69,17 @@ namespace hpl {
     const struct BindingReflection* find_reflection(const struct DescriptorBindingID& handle);
     void add_pipeline(struct RIDevice_s *device, hash_t hash,
                     VkGraphicsPipelineCreateInfo pipelineCreateInfo);
-    static RIProgram create(std::span<ModuleStage> init);
+    void initialize(RIDevice_s* device, std::span<ModuleStage> init);
     static std::vector<char> load_shader_stage(cFileSearcher *searcher, const tString& asName);
 
-    RIProgram(RIProgram&&);
-    RIProgram& operator=(RIProgram&&);
     explicit RIProgram() {
     }
 
   private:
     RIProgram(const RIProgram&) = delete;
+    RIProgram(RIProgram&&) = delete;
+    RIProgram& operator=(RIProgram&&) = delete;
+
     union __impl {
       struct {
 #if (DEVICE_IMPL_VULKAN)
@@ -91,6 +91,7 @@ namespace hpl {
 #endif
       } vk;
     } impl;
+    RIDevice_s* device = NULL;
     uint16_t reflection_len = 0;
     uint16_t vertex_input_mask = 0;
     bool has_push_constants = 0;

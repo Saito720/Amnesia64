@@ -5,6 +5,7 @@
 #include <system/Types.h>
 
 #include <system/stb_ds.h>
+#include "graphics/spirv_reflect.h"
 
 namespace hpl {
 static void _vk__descriptorSetAlloc( struct RIDevice_s *device, struct RIDescriptorSetAlloc *alloc ) {
@@ -128,32 +129,33 @@ std::vector<char> RIProgram::load_shader_stage(cFileSearcher *searcher, const tS
   return result;
 }
 
-RIProgram& RIProgram::operator=(RIProgram&& prog) {
-  reflection_len = prog.reflection_len;
-  vertex_input_mask = prog.vertex_input_mask;
-  has_push_constants = prog.has_push_constants;
-  program_descriptors = std::move(prog.program_descriptors);
-  shader_bin = std::move(prog.shader_bin);
-  pipeline = std::move(prog.pipeline);
-  binding_reflection = std::move(prog.binding_reflection);
-  memcpy(&impl, &prog.impl, sizeof(RIProgram::__impl));
-  return *this;
-}
+//RIProgram& RIProgram::operator=(RIProgram&& prog) {
+//  reflection_len = prog.reflection_len;
+//  vertex_input_mask = prog.vertex_input_mask;
+//  has_push_constants = prog.has_push_constants;
+//  program_descriptors = std::move(prog.program_descriptors);
+//  shader_bin = std::move(prog.shader_bin);
+//  pipeline = std::move(prog.pipeline);
+//  binding_reflection = std::move(prog.binding_reflection);
+//  memcpy(&impl, &prog.impl, sizeof(RIProgram::__impl));
+//  return *this;
+//}
+//
+//RIProgram::RIProgram(RIProgram&& prog):
+//  reflection_len(prog.reflection_len),
+//  vertex_input_mask(prog.vertex_input_mask),
+//  has_push_constants(prog.has_push_constants),
+//  program_descriptors(std::move(prog.program_descriptors)),
+//  shader_bin(std::move(prog.shader_bin)),
+//  pipeline(std::move(prog.pipeline)),
+//  binding_reflection(std::move(prog.binding_reflection)) {
+//  memcpy(&impl, &prog.impl, sizeof(RIProgram::__impl));
+//}
 
-RIProgram::RIProgram(RIProgram&& prog):
-  reflection_len(prog.reflection_len),
-  vertex_input_mask(prog.vertex_input_mask),
-  has_push_constants(prog.has_push_constants),
-  program_descriptors(std::move(prog.program_descriptors)),
-  shader_bin(std::move(prog.shader_bin)),
-  pipeline(std::move(prog.pipeline)),
-  binding_reflection(std::move(prog.binding_reflection)) {
-  memcpy(&impl, &prog.impl, sizeof(RIProgram::__impl));
-}
+void RIProgram::initialize(RIDevice_s* device,std::span<ModuleStage> moduleInit) {
+  assert(device == NULL);
+  this->device = device;
 
-
-RIProgram RIProgram::create(std::span<ModuleStage> moduleInit) {
-  RIProgram program = RIProgram();
   VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {
       VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
   std::vector<VkDescriptorSetLayoutBinding> descriptorSetLayoutBindings[DESCRIPTOR_SET_MAX] ;
@@ -163,7 +165,7 @@ RIProgram RIProgram::create(std::span<ModuleStage> moduleInit) {
   std::vector<SpvReflectDescriptorSet *> reflectionDescSets;
 
   for (auto &init : moduleInit) {
-    auto *bin = &program.shader_bin[init.stage];
+    auto *bin = &shader_bin[init.stage];
     bin->buf.insert(bin->buf.begin(), init.data.begin(), init.data.end());
     SpvReflectShaderModule module = {};
     SpvReflectResult result = spvReflectCreateShaderModule(
@@ -174,8 +176,8 @@ RIProgram RIProgram::create(std::span<ModuleStage> moduleInit) {
       result = spvReflectEnumeratePushConstantBlocks(&module,
                                                      &pushConstantCount, NULL);
       assert(result == SPV_REFLECT_RESULT_SUCCESS);
-      program.has_push_constants |= (pushConstantCount > 0);
-      if (program.has_push_constants > 0) {
+      has_push_constants |= (pushConstantCount > 0);
+      if (has_push_constants > 0) {
         if (pushConstantCount > 1) {
           printf("Push constant count is greater than 1, only supporting 1 "
                  "push constant\n");
@@ -188,15 +190,15 @@ RIProgram RIProgram::create(std::span<ModuleStage> moduleInit) {
             &module, &pushConstantCount, reflectionBlockVariables);
         assert(result == SPV_REFLECT_RESULT_SUCCESS);
         pushConstantRange.size = reflectionBlockVariables[0]->size;
-        program.impl.vk.pushConstant.size = reflectionBlockVariables[0]->size;
+        impl.vk.pushConstant.size = reflectionBlockVariables[0]->size;
         switch (init.stage) {
         case PROGRAM_STAGE_VERTEX:
           pushConstantRange.stageFlags |= VK_SHADER_STAGE_VERTEX_BIT;
-          program.impl.vk.pushConstant.shader_stage_flags |= VK_SHADER_STAGE_VERTEX_BIT;
+          impl.vk.pushConstant.shader_stage_flags |= VK_SHADER_STAGE_VERTEX_BIT;
           break;
         case PROGRAM_STAGE_FRAGMENT:
           pushConstantRange.stageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
-          program.impl.vk.pushConstant.shader_stage_flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+          impl.vk.pushConstant.shader_stage_flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
           break;
         default:
           assert(false);
@@ -207,7 +209,7 @@ RIProgram RIProgram::create(std::span<ModuleStage> moduleInit) {
 
     if (init.stage == PROGRAM_STAGE_VERTEX) {
       for (size_t i = 0; i < module.input_variable_count; i++) {
-        program.vertex_input_mask |= (1 << module.input_variables[i]->location);
+        vertex_input_mask |= (1 << module.input_variables[i]->location);
       }
     }
 
@@ -223,7 +225,7 @@ RIProgram RIProgram::create(std::span<ModuleStage> moduleInit) {
       const SpvReflectDescriptorSet *spv_reflection = reflectionDescSets[i_set];
       assert(reflection->set < ARRAY_COUNT(program->programDescriptors));
       struct DescriptorSetSlot *program_desc =
-          &program.program_descriptors[spv_reflection->set];
+          &program_descriptors[spv_reflection->set];
       program_desc->alloc.descriptor_alloc_handle = _vk__descriptorSetAlloc;
       program_desc->alloc.framesInFlight = RI_NUMBER_FRAMES_FLIGHT;
       for (size_t i_binding = 0; i_binding < spv_reflection->binding_count; i_binding++) {
@@ -239,7 +241,7 @@ RIProgram RIProgram::create(std::span<ModuleStage> moduleInit) {
         reflc.baseRegisterIndex = reflectionBinding->binding;
         reflc.isArray = reflectionBinding->count > 1;
         reflc.dimCount = std::max<uint16_t>(1, reflectionBinding->count);
-        if(program.find_reflection(reflID) != NULL) {
+        if(find_reflection(reflID) != NULL) {
           continue;
         }
         printf("Descriptor[%lu], name: %s hash: %lu\n", i_set, reflectionBinding->name, reflc.hash);
@@ -328,12 +330,10 @@ RIProgram RIProgram::create(std::span<ModuleStage> moduleInit) {
           assert(false);
           break;
         }
-        program.binding_reflection.push_back(reflc);
+        binding_reflection.push_back(reflc);
       }
     }
   }
-
-  return program;
 }
 
 } // namespace hpl

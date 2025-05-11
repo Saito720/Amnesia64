@@ -25,8 +25,10 @@
 #include "system/SystemTypes.h"
 #include "math/MathTypes.h"
 #include "engine/Updateable.h"
+#include "graphics/RIResourceUploader.h"
 
 #include "graphics/RIProgram.h"
+#include "graphics/RIScratchAlloc.h"
 
 namespace hpl {
 
@@ -85,6 +87,18 @@ namespace hpl {
 	class cGraphics : public iUpdateable
 	{
 	public:
+		struct FrameContext {
+			struct RIScratchAlloc_s ubo_scratch;
+			struct RICmd_s cmd;
+			union {
+#if ( DEVICE_IMPL_VULKAN )
+				struct {
+						VkCommandPool pool;
+				} vk;
+#endif
+			};
+		};
+
 		cGraphics(iLowLevelGraphics *apLowLevelGraphics,iLowLevelResources *apLowLevelResources);
 		~cGraphics();
 
@@ -141,7 +155,23 @@ namespace hpl {
 		RIDevice_s device;
 		RISwapchain_s swapchain;
 
+		uint32_t swapchain_index;
+		uint64_t frame_count = 0;
+		std::array<FrameContext, RI_NUMBER_FRAMES_FLIGHT> frame_sets;
+
+		struct RIResourceUploader_s uploader = {};
 		RIProgram gui;
+
+		FrameContext* GetActiveSet() { return &frame_sets[frame_count % RI_NUMBER_FRAMES_FLIGHT]; }
+
+	union {
+#if ( DEVICE_IMPL_VULKAN )
+		struct {
+			VkSemaphore frame_sem;	
+		} vk;
+#endif
+	};
+
 	private:
 		iLowLevelGraphics *mpLowLevelGraphics;
 		iLowLevelResources *mpLowLevelResources;

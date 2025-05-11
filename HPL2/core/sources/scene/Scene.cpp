@@ -182,84 +182,142 @@ namespace hpl {
 		//Increase the frame count (do this at top, so render count is valid until this Render is called again!)
 		iRenderer::IncRenderFrameCount();
 
+		cGraphics::FrameContext* cntx = mpGraphics->GetActiveSet();
+		struct RIQueue_s *graphicsQueue = &mpGraphics->device.queues[RI_QUEUE_GRAPHICS];
 
-		///////////////////////////////////////////
-		// Iterate all viewports and render
-		tViewportListIt viewIt = mlstViewports.begin();
-		for(; viewIt != mlstViewports.end(); ++viewIt)
+		if( mpGraphics->frame_count >= RI_NUMBER_FRAMES_FLIGHT) {
+			const uint64_t waitValue = 1 + mpGraphics->frame_count - RI_NUMBER_FRAMES_FLIGHT;
+			VkSemaphoreWaitInfo semaphoreWaitInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO };
+			semaphoreWaitInfo.semaphoreCount = 1;
+			semaphoreWaitInfo.pSemaphores = &mpGraphics->vk.frame_sem;
+			semaphoreWaitInfo.pValues = &waitValue;
+			VK_WrapResult( vkWaitSemaphores( mpGraphics->device.vk.device, &semaphoreWaitInfo, 5000 * 1000000ull ) );
+			VK_WrapResult( vkResetCommandPool( mpGraphics->device.vk.device, cntx->vk.pool, 0 ) );
+		}
+		mpGraphics->swapchain_index = RISwapchainAcquireNextTexture( &mpGraphics->device, &mpGraphics->swapchain);
+
+		// cleanup
+		RIResetScratchAlloc( &mpGraphics->device, &cntx->ubo_scratch);
 		{
-			cViewport *pViewPort = *viewIt;
-			if(pViewPort->IsVisible()==false) continue;
-
-			//////////////////////////////////////////////
-			//Init vars
-			cPostEffectComposite *pPostEffectComposite = pViewPort->GetPostEffectComposite();
-			bool bPostEffects = false;
-			iRenderer *pRenderer = pViewPort->GetRenderer();
-			cCamera *pCamera = pViewPort->GetCamera();
-			cFrustum *pFrustum = pCamera ? pCamera->GetFrustum() : NULL;
-
-			//////////////////////////////////////////////
-			//Render world and call callbacks
-			if(alFlags & tSceneRenderFlag_World)
+			VkCommandBufferBeginInfo info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+			info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+			vkBeginCommandBuffer( cntx->cmd.vk.cmd, &info );
+		}	
+		{
+			VkCommandBufferBeginInfo info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+			info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+			vkBeginCommandBuffer( cntx->cmd.vk.cmd, &info );
+		}
+		{
+		 // render frame ...
+		}
+		// close cmd buffer and submit
+		{
+			vkEndCommandBuffer(cntx->cmd.vk.cmd);
 			{
-				pViewPort->RunViewportCallbackMessage(eViewportMessage_OnPreWorldDraw);
+				VkCommandBufferSubmitInfo cmdSubmitInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO };
+				cmdSubmitInfo.commandBuffer = cntx->cmd.vk.cmd;
+
+				VkSubmitInfo2 submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
+				submitInfo.pCommandBufferInfos = &cmdSubmitInfo;
+				submitInfo.commandBufferInfoCount = 1;
+
+				RI_ResourceSubmit(&mpGraphics->device, &mpGraphics->uploader);
+				VK_WrapResult(vkQueueSubmit2( graphicsQueue->vk.queue, 1, &submitInfo, VK_NULL_HANDLE ));
+				RISwapchainPresent( &mpGraphics->device, &mpGraphics->swapchain);
+			}	
+			{
+				VkSemaphoreSubmitInfo signalSem = { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
+				signalSem.stageMask = VK_PIPELINE_STAGE_2_NONE;
+				signalSem.value = 1 + mpGraphics->frame_count;
+				signalSem.semaphore = mpGraphics->vk.frame_sem;
+				VkSubmitInfo2 submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
+				submitInfo.pSignalSemaphoreInfos = &signalSem;
+				submitInfo.signalSemaphoreInfoCount = 1;
 				
-				if(pPostEffectComposite && (alFlags & tSceneRenderFlag_PostEffects)) 
-				{
-					bPostEffects = pPostEffectComposite->HasActiveEffects();
-				}
-				
-				if(pRenderer && pViewPort->GetWorld() && pFrustum)
-				{
-					START_TIMING(RenderWorld)
-					pRenderer->Render(	afFrameTime,pFrustum,
-										pViewPort->GetWorld(),pViewPort->GetRenderSettings(), 
-										pViewPort->GetRenderTarget(),
-										bPostEffects,
-										pViewPort->GetRendererCallbackList());
-					STOP_TIMING(RenderWorld)
-				}
-				else
-				{
-					//If no renderer sets up viewport do that by our selves.
-					cRenderTarget* pRenderTarget = pViewPort->GetRenderTarget();
-					mpGraphics->GetLowLevel()->SetCurrentFrameBuffer(	pRenderTarget->mpFrameBuffer,
-																		pRenderTarget->mvPos,
-																		pRenderTarget->mvSize);
-				}
-				pViewPort->RunViewportCallbackMessage(eViewportMessage_OnPostWorldDraw);
-
-				//////////////////////////////////////////////
-				//Render 3D GuiSets
-				// Should this really be here? Or perhaps send in a frame buffer depending on the renderer.
-				START_TIMING(Render3DGui)
-				Render3DGui(pViewPort,pFrustum, afFrameTime);
-				STOP_TIMING(Render3DGui)
-			}
-
-			//////////////////////////////////////////////
-			//Render Post effects
-			if(bPostEffects)
-			{
-				//TODO: If renderer is null get texture from frame buffer and if frame buffer is NULL, then copy to a texture.
-				//		Or this is solved?
-				iTexture *pInputTexture = pRenderer->GetPostEffectTexture();
-
-				START_TIMING(RenderPostEffects)
-				pPostEffectComposite->Render(afFrameTime, pFrustum, pInputTexture,pViewPort->GetRenderTarget());
-				STOP_TIMING(RenderPostEffects)
-			}
-			
-			//////////////////////////////////////////////
-			//Render Screen GUI
-			if(alFlags & tSceneRenderFlag_Gui)
-			{
-				START_TIMING(RenderGUI)
-				RenderScreenGui(pViewPort, afFrameTime);
-				STOP_TIMING(RenderGUI)
+				VK_WrapResult( vkQueueSubmit2( graphicsQueue->vk.queue, 1, &submitInfo, VK_NULL_HANDLE ) );
 			}
 		}
+		mpGraphics->frame_count++;
+
+		/////////////////////////////////////////////
+		//// Iterate all viewports and render
+		//tViewportListIt viewIt = mlstViewports.begin();
+		//for(; viewIt != mlstViewports.end(); ++viewIt)
+		//{
+		//	cViewport *pViewPort = *viewIt;
+		//	if(pViewPort->IsVisible()==false) continue;
+
+		//	//////////////////////////////////////////////
+		//	//Init vars
+		//	cPostEffectComposite *pPostEffectComposite = pViewPort->GetPostEffectComposite();
+		//	bool bPostEffects = false;
+		//	iRenderer *pRenderer = pViewPort->GetRenderer();
+		//	cCamera *pCamera = pViewPort->GetCamera();
+		//	cFrustum *pFrustum = pCamera ? pCamera->GetFrustum() : NULL;
+
+		//	//////////////////////////////////////////////
+		//	//Render world and call callbacks
+		//	if(alFlags & tSceneRenderFlag_World)
+		//	{
+		//		pViewPort->RunViewportCallbackMessage(eViewportMessage_OnPreWorldDraw);
+		//		
+		//		if(pPostEffectComposite && (alFlags & tSceneRenderFlag_PostEffects)) 
+		//		{
+		//			bPostEffects = pPostEffectComposite->HasActiveEffects();
+		//		}
+		//		
+		//		if(pRenderer && pViewPort->GetWorld() && pFrustum)
+		//		{
+		//			START_TIMING(RenderWorld)
+		//			pRenderer->Render(	afFrameTime,pFrustum,
+		//								pViewPort->GetWorld(),pViewPort->GetRenderSettings(), 
+		//								pViewPort->GetRenderTarget(),
+		//								bPostEffects,
+		//								pViewPort->GetRendererCallbackList());
+		//			STOP_TIMING(RenderWorld)
+		//		}
+		//		else
+		//		{
+		//			//If no renderer sets up viewport do that by our selves.
+		//			cRenderTarget* pRenderTarget = pViewPort->GetRenderTarget();
+		//			mpGraphics->GetLowLevel()->SetCurrentFrameBuffer(	pRenderTarget->mpFrameBuffer,
+		//																pRenderTarget->mvPos,
+		//																pRenderTarget->mvSize);
+		//		}
+		//		pViewPort->RunViewportCallbackMessage(eViewportMessage_OnPostWorldDraw);
+
+		//		//////////////////////////////////////////////
+		//		//Render 3D GuiSets
+		//		// Should this really be here? Or perhaps send in a frame buffer depending on the renderer.
+		//		START_TIMING(Render3DGui)
+		//		Render3DGui(pViewPort,pFrustum, afFrameTime);
+		//		STOP_TIMING(Render3DGui)
+		//	}
+
+		//	//////////////////////////////////////////////
+		//	//Render Post effects
+		//	if(bPostEffects)
+		//	{
+		//		//TODO: If renderer is null get texture from frame buffer and if frame buffer is NULL, then copy to a texture.
+		//		//		Or this is solved?
+		//		iTexture *pInputTexture = pRenderer->GetPostEffectTexture();
+
+		//		START_TIMING(RenderPostEffects)
+		//		pPostEffectComposite->Render(afFrameTime, pFrustum, pInputTexture,pViewPort->GetRenderTarget());
+		//		STOP_TIMING(RenderPostEffects)
+		//	}
+		//	
+		//	//////////////////////////////////////////////
+		//	//Render Screen GUI
+		//	if(alFlags & tSceneRenderFlag_Gui)
+		//	{
+		//		START_TIMING(RenderGUI)
+		//		RenderScreenGui(pViewPort, afFrameTime);
+		//		STOP_TIMING(RenderGUI)
+		//	}
+		//}
+
 	}
 
 	//-----------------------------------------------------------------------

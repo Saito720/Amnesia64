@@ -262,7 +262,7 @@ int EnumerateRIAdapters( struct RIRenderer_s *renderer, struct RIPhysicalAdapter
 				physicalAdapter->vk.apiVersion = properties.properties.apiVersion;
 				physicalAdapter->presetLevel = RI_GPU_PRESET_NONE;
 				// selected preset
-				for(size_t i = 0; i < Q_ARRAY_COUNT(gpuPCPresets); i++) {
+				for(size_t i = 0; i < ARRAY_COUNT(gpuPCPresets); i++) {
 					if(gpuPCPresets[i].vendorId == properties.properties.vendorID && 
 						 gpuPCPresets[i].modelId == properties.properties.deviceID) {
 						physicalAdapter->presetLevel = gpuPCPresets[i].preset;
@@ -593,7 +593,7 @@ int InitRIDevice( struct RIRenderer_s *renderer, struct RIDeviceDesc_s *init, st
 			{ VK_QUEUE_COMPUTE_BIT, RI_QUEUE_COMPUTE },
 			{ VK_QUEUE_TRANSFER_BIT, RI_QUEUE_COPY },
 		};
-		for( uint32_t configureIdx = 0; configureIdx < Q_ARRAY_COUNT( configureQueue ); configureIdx++ ) {
+		for( uint32_t configureIdx = 0; configureIdx < ARRAY_COUNT( configureQueue ); configureIdx++ ) {
 			//bool found = false;
 			const uint32_t requiredBits = configureQueue[configureIdx].requiredBits;
 
@@ -638,7 +638,7 @@ int InitRIDevice( struct RIRenderer_s *renderer, struct RIDeviceDesc_s *init, st
 			if( createInfo->queueCount >= queueFamilyProps[createInfo->queueFamilyIndex].queueCount) {
 				struct RIQueue_s *dupQueue = NULL;
 				minQueueFlag = UINT32_MAX;
-				for( size_t i = 0; i < Q_ARRAY_COUNT( device->queues ); i++ ) {
+				for( size_t i = 0; i < ARRAY_COUNT( device->queues ); i++ ) {
 					const uint32_t matchingQueueFlags = ( device->queues[i].vk.queueFlags & requiredBits  );
 					if( matchingQueueFlags && ( ( device->queues[i].vk.queueFlags & ~requiredBits  ) == 0 ) ) {
 						dupQueue = &device->queues[i];
@@ -660,7 +660,7 @@ int InitRIDevice( struct RIRenderer_s *renderer, struct RIDeviceDesc_s *init, st
 			}
 		}
 
-		//for( uint32_t initIdx = 0; initIdx < Q_ARRAY_COUNT( configureQueue ); initIdx++ ) {
+		//for( uint32_t initIdx = 0; initIdx < ARRAY_COUNT( configureQueue ); initIdx++ ) {
 		//	VkDeviceQueueCreateInfo *selectedQueue = NULL;
 		//	bool found = false;
 		//	uint32_t minQueueFlag = UINT32_MAX;
@@ -668,7 +668,7 @@ int InitRIDevice( struct RIRenderer_s *renderer, struct RIDeviceDesc_s *init, st
 		//	for( size_t familyIdx = 0; familyIdx < familyNum; familyIdx++ ) {
 		//		uint32_t avaliableQueues = 0;
 		//		size_t createQueueIdx = 0;
-		//		for( ; createQueueIdx < Q_ARRAY_COUNT( deviceQueueCreateInfo ); createQueueIdx++ ) {
+		//		for( ; createQueueIdx < ARRAY_COUNT( deviceQueueCreateInfo ); createQueueIdx++ ) {
 		//			const bool foundQueueFamily = deviceQueueCreateInfo[createQueueIdx].queueFamilyIndex == familyIdx;
 		//			const bool isQueueEmpty =(deviceQueueCreateInfo[createQueueIdx].queueCount == 0); 
 		//			if( foundQueueFamily || isQueueEmpty) {
@@ -690,7 +690,7 @@ int InitRIDevice( struct RIRenderer_s *renderer, struct RIDeviceDesc_s *init, st
 		//			break;
 		//		}
 
-		//		assert( createQueueIdx < Q_ARRAY_COUNT( deviceQueueCreateInfo ) );
+		//		assert( createQueueIdx < ARRAY_COUNT( deviceQueueCreateInfo ) );
 		//		if( avaliableQueues == 0 ) {
 		//			continue; // skip queue family there is no more avaliable
 		//		}
@@ -719,7 +719,7 @@ int InitRIDevice( struct RIRenderer_s *renderer, struct RIDeviceDesc_s *init, st
 		//	} else {
 		//		struct RIQueue_s *dupQueue = NULL;
 		//		minQueueFlag = UINT32_MAX;
-		//		for( size_t i = 0; i < Q_ARRAY_COUNT( device->queues ); i++ ) {
+		//		for( size_t i = 0; i < ARRAY_COUNT( device->queues ); i++ ) {
 		//			const uint32_t matchingQueueFlags = ( device->queues[i].vk.queueFlags & requiredFlags );
 		//			if( matchingQueueFlags && ( ( device->queues[i].vk.queueFlags & ~requiredFlags ) == 0 ) ) {
 		//				dupQueue = &device->queues[i];
@@ -833,7 +833,7 @@ int InitRIDevice( struct RIRenderer_s *renderer, struct RIDeviceDesc_s *init, st
    // }
 
 		vkGetPhysicalDeviceFeatures2( physicalAdapter->vk.physicalDevice, &features );
-		for( size_t idx = 0; idx < Q_ARRAY_COUNT( DefaultDeviceExtension ); idx++ ) {
+		for( size_t idx = 0; idx < ARRAY_COUNT( DefaultDeviceExtension ); idx++ ) {
 			if( __VK_SupportExtension( extensionProperties, extensionNum, qCToStrRef( DefaultDeviceExtension[idx] ) ) ) {
 				printf("Enabled Extension: %s", extensionProperties[idx].extensionName);
 				arrpush( enabledExtensionNames, DefaultDeviceExtension[idx] );
@@ -852,7 +852,7 @@ int InitRIDevice( struct RIRenderer_s *renderer, struct RIDeviceDesc_s *init, st
 		}
 
 		// the request size
-		for( size_t q = 0; q < Q_ARRAY_COUNT( device->queues ); q++ ) {
+		for( size_t q = 0; q < ARRAY_COUNT( device->queues ); q++ ) {
 			// the queue
 			if( device->queues[q].vk.queueFlags == 0 )
 				continue;
@@ -950,7 +950,7 @@ int InitRIRenderer( const struct RIBackendInit_s *init, struct RIRenderer_s *ren
 		const VkValidationFeatureEnableEXT enabledValidationFeatures[] = { VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT };
 
 		VkValidationFeaturesEXT validationFeatures = { VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT };
-		validationFeatures.enabledValidationFeatureCount = Q_ARRAY_COUNT( enabledValidationFeatures );
+		validationFeatures.enabledValidationFeatureCount = ARRAY_COUNT( enabledValidationFeatures );
 		validationFeatures.pEnabledValidationFeatures = enabledValidationFeatures;
 
 		VkInstanceCreateInfo instanceCreateInfo = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
@@ -965,7 +965,7 @@ int InitRIRenderer( const struct RIBackendInit_s *init, struct RIRenderer_s *ren
 		VkLayerProperties *layerProperties = NULL;
 		VkExtensionProperties *extProperties = NULL;
 		{
-			assert( 1 <= Q_ARRAY_COUNT( enabledLayerNames ) );
+			assert( 1 <= ARRAY_COUNT( enabledLayerNames ) );
 			uint32_t enumInstanceLayers = 0;
 			vkEnumerateInstanceLayerProperties( &enumInstanceLayers, NULL );
 			layerProperties = (VkLayerProperties*)malloc( enumInstanceLayers * sizeof( VkLayerProperties ) );
@@ -975,7 +975,7 @@ int InitRIRenderer( const struct RIBackendInit_s *init, struct RIRenderer_s *ren
 				useLayer |= ( init->vk.enableValidationLayer && strcmp( layerProperties[i].layerName, "VK_LAYER_KHRONOS_validation" ) == 0 );
 				printf( "Instance Layer: %s(%d): %s", layerProperties[i].layerName, layerProperties[i].specVersion, useLayer ? "ENABLED" : "DISABLED" );
 				if( useLayer ) {
-					assert( instanceCreateInfo.enabledLayerCount < Q_ARRAY_COUNT( enabledLayerNames ) );
+					assert( instanceCreateInfo.enabledLayerCount < ARRAY_COUNT( enabledLayerNames ) );
 					enabledLayerNames[instanceCreateInfo.enabledLayerCount++] = layerProperties[i].layerName;
 				}
 			}
@@ -1009,7 +1009,7 @@ int InitRIRenderer( const struct RIBackendInit_s *init, struct RIRenderer_s *ren
 				useExtension |= ( strcmp( extProperties[i].extensionName, VK_EXT_DEBUG_UTILS_EXTENSION_NAME ) == 0 );
 				printf( "Instance Extensions: %s(%d): %s", extProperties[i].extensionName, extProperties[i].specVersion, useExtension ? "ENABLED" : "DISABLED" );
 				if( useExtension ) {
-					assert( instanceCreateInfo.enabledExtensionCount < Q_ARRAY_COUNT( enabledExtensionNames ) );
+					assert( instanceCreateInfo.enabledExtensionCount < ARRAY_COUNT( enabledExtensionNames ) );
 					enabledExtensionNames[instanceCreateInfo.enabledExtensionCount++] = extProperties[i].extensionName;
 				}
 			}

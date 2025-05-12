@@ -136,7 +136,7 @@ add_custom_target(deploy
 target_shaders( 
     Amnesia
 SHADERS 
-    ./glsl/gui.frag 
+    ./glsl/gui.frag
     ./glsl/gui.vert
 OUTPUT_FOLDER
 ${AMNESIA_SHADER_DIR}

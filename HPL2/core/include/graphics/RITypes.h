@@ -3,7 +3,7 @@
 #define RI_TYPES_H
 
 #include "graphics/RIDefines.h"
-
+#include <cstring>
 
 #ifdef DEVICE_SUPPORT_VULKAN
 #include "volk.h"
@@ -13,19 +13,20 @@
 #endif
 
 #include <stdint.h>
-#include "system/Hasher.h"
 #include <cstdio>
 #undef DestroyAll
 #undef ButtonPress
+
+#include "system/Hasher.h"
 
 #define R_VK_ADD_STRUCT(current, next) { \
   void* __pNext = (void*)((current)->pNext); \
   (current)->pNext = (next); \
   (next)->pNext = __pNext; \
 }
-#define VK_WrapResult( res ) __vk_WrapResult( res, __FILE__, __FUNCTION__, __LINE__ )
+#define VK_WrapResult( res ) __VK_WrapResult( res, __FILE__, __FUNCTION__, __LINE__ )
 
-static inline bool __vk_WrapResult(VkResult result, const char *sourceFilename, const char *functionName, int sourceLine) {
+static inline bool __VK_WrapResult(VkResult result, const char *sourceFilename, const char *functionName, int sourceLine) {
 	if(result != VK_SUCCESS) {
 		printf( "RI: VK %i, file %s:%i (%s)\n", result, sourceFilename, sourceLine, functionName);
 		return false;
@@ -325,6 +326,18 @@ enum RIDescriptorFlags_e {
 	RI_VK_DESC_OWN_SAMPLER = 0x1,		 // owns the backing assets VKImage, VkBuffer
 	RI_VK_DESC_OWN_IMAGE_VIEW = 0x2 // owns the backing sampler
 };
+
+struct DescriptorBindingID {
+  const char *name;
+  hash_t hash;
+};
+
+static inline struct DescriptorBindingID create_descriptor_binding_id(const char *name) {
+	struct DescriptorBindingID key;
+	key.name = name;
+	key.hash = hash_data(HASH_INITIAL_VALUE, name, strlen(name));
+  return key;
+}
 
 struct RIDescriptor_s {
 	// unique id to mark the descriptor

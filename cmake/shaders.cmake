@@ -1,6 +1,5 @@
 function(target_shaders target)
     cmake_parse_arguments(PARSE_ARGV 1 target_shaders "" "OUTPUT_FOLDER" "SHADERS")
-    #file(MAKE_DIRECTORY ${AMNESIA_SHADER_DIR})
     foreach(shader_file IN LISTS target_shaders_SHADERS)
         target_sources(
             "${target}"

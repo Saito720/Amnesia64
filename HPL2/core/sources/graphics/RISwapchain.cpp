@@ -41,7 +41,7 @@ int InitRISwapchain( struct RIDevice_s *dev, struct RISwapchainDesc_s *init, str
 	assert( init->windowHandle );
 	assert( init );
 	assert( swapchain );
-	assert( init->imageCount <= Q_ARRAY_COUNT( swapchain->vk.images ) && init->imageCount > 0 );
+	assert( init->imageCount <= ARRAY_COUNT( swapchain->vk.images ) && init->imageCount > 0 );
 	swapchain->width = init->width;
 	swapchain->height = init->height;
 	swapchain->presentQueue = init->queue;
@@ -156,7 +156,7 @@ int InitRISwapchain( struct RIDevice_s *dev, struct RISwapchainDesc_s *init, str
       VK_PRESENT_MODE_FIFO_RELAXED_KHR,
       VK_PRESENT_MODE_FIFO_KHR
   };
-  for( size_t j = 0; j < Q_ARRAY_COUNT( preferredModeList ); j++ ) {
+  for( size_t j = 0; j < ARRAY_COUNT( preferredModeList ); j++ ) {
 	  VkPresentModeKHR mode = preferredModeList[j];
 	  uint32_t i = 0;
 	  for(; i < presentModeCount; ++i ) {

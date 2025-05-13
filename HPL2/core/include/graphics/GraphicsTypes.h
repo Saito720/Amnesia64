@@ -913,7 +913,6 @@ namespace hpl {
 
 	RI_Format hpl_to_ri_format(ePixelFormat format);
 
-
 	//---------------------------------------
 
 }

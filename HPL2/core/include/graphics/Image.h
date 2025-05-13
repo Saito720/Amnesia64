@@ -17,54 +17,55 @@
 #pragma once
 
 #include "graphics/Bitmap.h"
+#include "graphics/HPLTexture.h"
 #include "graphics/RIBoostrap.h"
+#include "graphics/RIRenderer.h"
 #include "math/MathTypes.h"
 #include "resources/ResourceBase.h"
 #include "system/SystemTypes.h"
 
+#include <cassert>
 #include <cstdint>
 #include <memory>
 #include <span>
 #include <string>
 
 namespace hpl {
+class cBitmap;
 
-    class cBitmap;
-    class Image : public iResourceBase {
-    public:
+class Image : public iResourceBase {
+public:
+  Image();
+  Image(const tString &asName, const tWString &asFullPath);
 
-        Image();
-        Image(const tString& asName, const tWString& asFullPath);
+  ~Image();
+  Image(Image &&other);
+  Image(const Image &other) = delete;
 
-        ~Image();
-        Image(Image&& other);
-        Image(const Image& other) = delete;
+  Image &operator=(const Image &other) = delete;
+  void operator=(Image &&other);
 
-        Image& operator=(const Image& other) = delete;
-        void operator=(Image&& other);
+  virtual bool Reload() override;
+  virtual void Unload() override;
+  virtual void Destroy() override;
 
-        virtual bool Reload() override;
-        virtual void Unload() override;
-        virtual void Destroy() override;
+  inline uint16_t GetWidth() const {
+    assert(image != nullptr);
+    return image->width;
+  }
+  inline uint16_t GetHeight() const {
+    assert(image != nullptr);
+    return image->height;
+  }
 
-        //inline uint16_t GetWidth() const {
-        //    ASSERT(m_texture.IsValid());
-        //    return m_texture.m_handle->mWidth;
-        //}
-        //inline uint16_t GetHeight() const {
-        //    ASSERT(m_texture.IsValid());
-        //    return m_texture.m_handle->mHeight;
-        //}
+  cVector2l GetImageSize() const {
+    if (image != nullptr) {
+      return cVector2l(image->width, image->height);
+    }
+    return cVector2l(0, 0);
+  }
 
-        //cVector2l GetImageSize() const {
-        //    if (m_texture.IsValid()) {
-        //        return cVector2l(m_texture.m_handle->mWidth, m_texture.m_handle->mHeight);
-        //    }
-        //    return cVector2l(0, 0);
-        //}
-
-        std::shared_ptr<HPLTexture> textures;
-    };
+  std::shared_ptr<HPLTexture> image;
+};
 
 } // namespace hpl
-

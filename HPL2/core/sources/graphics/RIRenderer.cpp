@@ -1043,7 +1043,7 @@ int InitRIRenderer( const struct RIBackendInit_s *init, struct RIRenderer_s *ren
 	return RI_SUCCESS;
 }
 
-void UpdateRIDescriptor( struct RIDevice_s *dev, struct RIDescriptor_s *desc )
+void RefreshCookies( struct RIDevice_s *dev, struct RIDescriptor_s *desc )
 {
 #if ( DEVICE_IMPL_VULKAN )
 	{

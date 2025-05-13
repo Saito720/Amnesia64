@@ -29,14 +29,12 @@
 #include "graphics/Bitmap.h"
 #include "resources/BitmapLoaderHandler.h"
 
+#include "graphics/Image.h"
+#include "graphics/HPLTexture.h"
+#include "graphics/RIBoostrap.h"
+
 
 namespace hpl {
-
-	//////////////////////////////////////////////////////////////////////////
-	// CONSTRUCTORS
-	//////////////////////////////////////////////////////////////////////////
-
-	//-----------------------------------------------------------------------
 
 	cTextureManager::cTextureManager(cGraphics* apGraphics,cResources *apResources)
 		: iResourceManager(apResources->GetFileSearcher(), apResources->GetLowLevel(),
@@ -64,13 +62,133 @@ namespace hpl {
 		Log(" Destroyed all textures\n");
 	}
 
-	//-----------------------------------------------------------------------
+	Image* cTextureManager::wrap_image_resource(const tString& name, std::function<Image*(const tString& name, const tWString& path, cBitmap* bitmap)> create_image_handler) {
+		tWString sPath;
+		BeginLoad(name);
 
-	//////////////////////////////////////////////////////////////////////////
-	// PUBLIC METHODS
-	//////////////////////////////////////////////////////////////////////////
+		Image* resource = find_image_resource(name, sPath);
+		if( resource==NULL && sPath!=_W(""))
+		{
+			// pTexture = FindTexture2D(asName,sPath);
+			cBitmap *pBmp = mpBitmapLoaderHandler->LoadBitmap(sPath,0);
+			if(!pBmp) {
 
-	//-----------------------------------------------------------------------
+				Error("Texture manager Couldn't load bitmap '%s'\n", cString::To8Char(sPath).c_str());
+				EndLoad();
+				return nullptr;
+			}
+			resource = create_image_handler(name, sPath, pBmp);
+
+			//Bitmap is no longer needed so delete it.
+			hplDelete(pBmp);
+
+			// mlMemoryUsage += pTexture->GetMemorySize();
+			AddResource(resource);
+		}
+
+		if(resource) {
+			resource->IncUserCount();
+		}
+		EndLoad();
+		return resource;
+	}
+
+
+	Image* cTextureManager::find_image_resource(const tString &asName, tWString &asFilePath) {
+		Image *pTexture=NULL;
+
+		if(cString::GetFileExt(asName)=="")
+		{
+			int lMaxCount =-1;
+
+			///////////////////////
+			//Iterate the different formats
+			tStringVec *apFileFormatsVec = mpBitmapLoaderHandler->GetSupportedTypes();
+			for(tStringVecIt it = apFileFormatsVec->begin();it!= apFileFormatsVec->end();++it)
+			{
+				tWString sTempPath = _W("");
+				int lCount=0;
+
+				tString sNewName = cString::SetFileExt(asName,*it);
+				auto resource = static_cast<Image*> (FindLoadedResource(sNewName, sTempPath, &lCount));
+
+				///////////////////////
+				//Check if the image exists and then check if it has the hightest equal count.
+				if((resource==nullptr && sTempPath!=_W("")) || resource != nullptr)
+				{
+					if(lCount > lMaxCount)
+					{
+						lMaxCount = lCount;
+						asFilePath = sTempPath;
+						return resource;
+					}
+				}
+			}
+		}
+		return static_cast<Image*> (FindLoadedResource(asName, asFilePath));
+	}
+
+	Image* cTextureManager::create_1D(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage,
+						unsigned int alTextureSizeLevel) {
+		return wrap_image_resource(asName, [&abUseMipMaps, this](const tString& asName, const tWString& path, cBitmap* pBmp) -> Image* {
+				auto resource = new Image(asName, path);//, &HPLTexture::HPLTexture_Delete);
+				HPLTexture::BitmapLoadOptions opts = {0};
+				opts.use_mipmaps = abUseMipMaps;
+				RIBarrierImageHandle_s barrierHandle = {};
+				HPLTexture* tex = new HPLTexture{};
+				auto img = std::shared_ptr<HPLTexture>(tex, HPLTexture::HPLTexture_Delete);
+				if(!img->LoadBitmap(
+					&mpGraphics->GetLowLevel()->bootsrap, barrierHandle, *pBmp, opts)) {
+					Error("Texture manager Couldn't load bitmap '%s'\n", cString::To8Char(path).c_str());
+					return NULL;
+				}
+				resource->image = img;
+				return resource;
+		});
+	}
+
+	Image* cTextureManager::create_2D(const tString& asName,bool abUseMipMaps,eTextureType aType,
+						eTextureUsage aUsage,unsigned int alTextureSizeLevel) {
+		return wrap_image_resource(asName, [&abUseMipMaps, this](const tString& asName, const tWString& path, cBitmap* pBmp) -> Image* {
+				auto resource = new Image(asName, path);//, &HPLTexture::HPLTexture_Delete);
+				HPLTexture::BitmapLoadOptions opts = {0};
+				opts.use_mipmaps = abUseMipMaps;
+				RIBarrierImageHandle_s barrierHandle = {};
+				auto img = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete);
+				if(!img->LoadBitmap(
+					&mpGraphics->GetLowLevel()->bootsrap, barrierHandle, *pBmp, opts)) {
+					Error("Texture manager Couldn't load bitmap '%s'\n", cString::To8Char(path).c_str());
+					return NULL;
+				}
+				resource->image = img;
+				return resource;
+		});
+	}
+
+	Image* cTextureManager::create_3D(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage,
+						unsigned int alTextureSizeLevel){
+		return wrap_image_resource(asName, [&abUseMipMaps, this](const tString& asName, const tWString& path, cBitmap* pBmp) -> Image* {
+				auto resource = new Image(asName, path);//, &HPLTexture::HPLTexture_Delete);
+				HPLTexture::BitmapLoadOptions opts = {0};
+				opts.use_mipmaps = abUseMipMaps;
+				RIBarrierImageHandle_s barrierHandle = {};
+				HPLTexture* tex = new HPLTexture{};
+				auto img = std::shared_ptr<HPLTexture>(tex, HPLTexture::HPLTexture_Delete);
+				if(!img->LoadBitmap(
+					&mpGraphics->GetLowLevel()->bootsrap, barrierHandle, *pBmp, opts)) {
+					Error("Texture manager Couldn't load bitmap '%s'\n", cString::To8Char(path).c_str());
+					return NULL;
+				}
+				resource->image = img;
+				return resource;
+		});
+	}
+
+	Image* cTextureManager::create_cubemap(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage,
+				unsigned int alTextureSizeLevel){
+		assert(false);
+		return NULL;
+	}
 
 	iTexture* cTextureManager::Create1D(const tString& asName,bool abUseMipMaps, 
 										eTextureUsage aUsage, unsigned int alTextureSizeLevel)

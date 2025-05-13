@@ -44,7 +44,7 @@ namespace hpl {
 					cached_filters[index].vk.image.imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 					cached_filters[index].flags = RI_VK_DESC_OWN_SAMPLER;
 					VK_WrapResult( vkCreateSampler( device.vk.device, &info, NULL, &cached_filters[index].vk.image.sampler ) );
-					UpdateRIDescriptor( &device, &cached_filters[index] );
+					RefreshCookies( &device, &cached_filters[index] );
 					return &cached_filters[index];
 				}
 				index = ( index + 1 ) % cached_filters.size();

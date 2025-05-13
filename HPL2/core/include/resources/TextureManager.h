@@ -20,9 +20,9 @@
 #ifndef HPL_TEXTURE_MANAGER_H
 #define HPL_TEXTURE_MANAGER_H
 
-#include "graphics/Image.h"
 #include "resources/ResourceManager.h"
 #include "graphics/Texture.h"
+
 #include <functional>
 
 namespace hpl {
@@ -31,7 +31,8 @@ namespace hpl {
 	class cResources;
 	class iTexture;
 	class cBitmapLoaderHandler;
-	
+	class Image;
+
 	//------------------------------------------------------
 	
 	typedef std::map<tString, iTexture*> tTextureAttenuationMap;

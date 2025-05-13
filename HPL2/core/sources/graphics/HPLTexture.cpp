@@ -5,6 +5,8 @@
 #include "graphics/RIRenderer.h"
 #include "graphics/RIVK.h"
 
+#include "graphics/Bitmap.h"
+
 #include <cassert>
 
 namespace hpl {

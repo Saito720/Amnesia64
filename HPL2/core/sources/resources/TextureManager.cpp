@@ -31,7 +31,6 @@
 
 #include "graphics/Image.h"
 #include "graphics/HPLTexture.h"
-#include "graphics/RIBoostrap.h"
 
 
 namespace hpl {
@@ -132,7 +131,7 @@ namespace hpl {
 						unsigned int alTextureSizeLevel) {
 		return wrap_image_resource(asName, [&abUseMipMaps, this](const tString& asName, const tWString& path, cBitmap* pBmp) -> Image* {
 				auto resource = new Image(asName, path);//, &HPLTexture::HPLTexture_Delete);
-				HPLTexture::BitmapLoadOptions opts = {0};
+				hpl::HPLTexture::BitmapLoadOptions opts = {0};
 				opts.use_mipmaps = abUseMipMaps;
 				RIBarrierImageHandle_s barrierHandle = {};
 				HPLTexture* tex = new HPLTexture{};

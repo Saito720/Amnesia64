@@ -16,23 +16,19 @@
 
 #pragma once
 
-#include "graphics/Bitmap.h"
-#include "graphics/HPLTexture.h"
-#include "graphics/RIBoostrap.h"
-#include "graphics/RIRenderer.h"
+
 #include "math/MathTypes.h"
 #include "resources/ResourceBase.h"
-#include "system/SystemTypes.h"
 
+#include <memory>
 #include <cassert>
 #include <cstdint>
-#include <memory>
-#include <span>
-#include <string>
+
+#include "graphics/HPLTexture.h"
 
 namespace hpl {
 class cBitmap;
-
+struct HPLTexture;
 class Image : public iResourceBase {
 public:
   Image();

@@ -1,16 +1,10 @@
 
-#ifndef HPL_TEXTURE_H
-#define HPL_TEXTURE_H
+#ifndef HPL_TEXTURE__H__
+#define HPL_TEXTURE__H__
 
-
+#include "graphics/GraphicsTypes.h"
 #include "graphics/RIFormat.h"
-#include <graphics/Bitmap.h>
-
-#include <graphics/RITypes.h>
-#include <graphics/GraphicsTypes.h>
-#include <graphics/RIResourceUploader.h>
-#include <graphics/RIScratchAlloc.h>
-
+#include "graphics/RITypes.h"
 #include <array>
 #include <memory>
 
@@ -18,10 +12,12 @@ struct RIResourceUploader_s;
 
 namespace hpl {
 struct RIBoostrap;
-  
+class cBitmap;
+
 RI_Format to_image_supported_format(ePixelFormat format); 
 
 struct HPLTexture {
+public:
   struct RIBoostrap *bootstrap;
   struct RITexture_s handle;
   union {

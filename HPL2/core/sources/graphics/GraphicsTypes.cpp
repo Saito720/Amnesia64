@@ -181,34 +181,58 @@ namespace hpl {
 
   RI_Format hpl_to_ri_format(ePixelFormat format) {
     switch (format) {
-    case ePixelFormat_Unknown:
     case ePixelFormat_Alpha:
+    	return RI_FORMAT_A8_UNORM;	
     case ePixelFormat_Luminance:
+    	return RI_FORMAT_L8_UNORM;
     case ePixelFormat_LuminanceAlpha:
+    	return RI_FORMAT_L8_A8_UNORM;
     case ePixelFormat_RGB:
+    	return RI_FORMAT_RGB8_UNORM;
     case ePixelFormat_RGBA:
+    	return RI_FORMAT_RGBA8_UNORM;
     case ePixelFormat_BGR:
+    	return RI_FORMAT_BGR8_UNORM;
     case ePixelFormat_BGRA:
+    	return RI_FORMAT_BGRA8_UNORM;
     case ePixelFormat_DXT1:
+    return RI_FORMAT_BC1_RGBA_UNORM;
     case ePixelFormat_DXT2:
     case ePixelFormat_DXT3:
+    return RI_FORMAT_BC2_RGBA_UNORM;
     case ePixelFormat_DXT4:
     case ePixelFormat_DXT5:
+    	return RI_FORMAT_BC3_RGBA_UNORM;
     case ePixelFormat_Depth16:
+    	return RI_FORMAT_D16_UNORM;
     case ePixelFormat_Depth24:
+    	return RI_FORMAT_D16_UNORM;
     case ePixelFormat_Depth32:
+    	return RI_FORMAT_D32_SFLOAT;
     case ePixelFormat_Alpha16:
+    	return RI_FORMAT_R16_UNORM;
     case ePixelFormat_Luminance16:
+    	return RI_FORMAT_R16_UNORM;
     case ePixelFormat_LuminanceAlpha16:
+    	return RI_FORMAT_RG16_UNORM;
     case ePixelFormat_RGB16:
+    	return RI_FORMAT_RGB16_UNORM;
     case ePixelFormat_RGBA16:
+    	return RI_FORMAT_RGBA16_UNORM;
     case ePixelFormat_Alpha32:
+    	return RI_FORMAT_R32_SFLOAT;
     case ePixelFormat_Luminance32:
+    	return RI_FORMAT_R32_SFLOAT;
     case ePixelFormat_LuminanceAlpha32:
+    	return RI_FORMAT_RG32_SFLOAT;
     case ePixelFormat_RGB32:
+    	return RI_FORMAT_RGB32_SFLOAT;
     case ePixelFormat_RGBA32:
+    	return RI_FORMAT_RGBA32_SFLOAT;
     case ePixelFormat_LastEnum:
       break;
+    case ePixelFormat_Unknown:
+    	break;
     }
     return RI_FORMAT_UNKNOWN;
   }

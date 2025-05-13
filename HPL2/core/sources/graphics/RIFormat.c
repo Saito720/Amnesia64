@@ -6,7 +6,17 @@ static const struct RIFormatProps_s riFormats[] = {
 		.name = "UNKNOWN", 
 		.format = RI_FORMAT_UNKNOWN 
 	},
-
+	[RI_FORMAT_RGB16_UNORM] = {
+	  .name = "RGB16_UNORM", 
+	  .format = RI_FORMAT_RGB16_UNORM,
+	  .redBits = 16,
+	  .greenBits = 16,
+	  .blueBits = 16,
+	  .stride = 48,
+	  .blockWidth = 1,
+	  .blockHeight = 1,
+	  .isNorm = 1,
+	},
 	[RI_FORMAT_L8_A8_UNORM] = { 
 	  .name = "L8_A8_UNORM", 
 	  .format = RI_FORMAT_L8_A8_UNORM,

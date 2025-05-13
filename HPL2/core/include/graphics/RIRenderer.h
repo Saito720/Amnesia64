@@ -33,7 +33,7 @@ int FreeRIDevice( struct RIDevice_s *dev );
 void FreeRIFree( struct RIDevice_s *dev, struct RIFree_s *mem );
 
 // RIDescriptor
-void UpdateRIDescriptor( struct RIDevice_s *dev, struct RIDescriptor_s *desc ); // after configure an RIDescriptor call update to configure it
+void RefreshCookies( struct RIDevice_s *dev, struct RIDescriptor_s *desc ); // after configure an RIDescriptor call update to configure it
 void FreeRIDescriptor( struct RIDevice_s *dev, struct RIDescriptor_s *desc );
 static inline bool RI_IsEmptyDescriptor( struct RIDescriptor_s *desc ) { return desc->cookie == 0; }
 

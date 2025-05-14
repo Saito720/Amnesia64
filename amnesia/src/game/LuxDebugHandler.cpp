@@ -123,6 +123,11 @@ void cLuxDebugHandler::LoadUserConfig()
 	mbDisableFlashBacks = gpBase->mpUserConfig->GetBool("Debug", "DisableFlashBacks", false);
 	mbDrawPhysics = gpBase->mpUserConfig->GetBool("Debug", "DrawPhysics", false);
 
+	// Normals Inspection
+	mbInspectVertex = gpBase->mpUserConfig->GetBool("Debug", "InspectVertex", false);
+	mbInspectSplit = gpBase->mpUserConfig->GetBool("Debug", "InspectSplit", false);
+	mbInspectFace = gpBase->mpUserConfig->GetBool("Debug", "InspectFace", false);
+
 	mbReloadFromCurrentPosition = gpBase->mpUserConfig->GetBool("Debug", "ReloadFromCurrentPosition", true);
 
 	mbAllowQuickSave = gpBase->mpUserConfig->GetBool("Debug", "AllowQuickSave", false);
@@ -164,6 +169,11 @@ void cLuxDebugHandler::SaveUserConfig()
 	 gpBase->mpUserConfig->SetBool("Debug", "InspectionMode", mbInspectionMode);
 	 gpBase->mpUserConfig->SetBool("Debug", "DisableFlashBacks", mbDisableFlashBacks);
 	 gpBase->mpUserConfig->SetBool("Debug", "DrawPhysics", mbDrawPhysics);
+
+	 // Normals Inspection
+	 gpBase->mpUserConfig->GetBool("Debug", "InspectVertex", mbInspectVertex);
+	 gpBase->mpUserConfig->GetBool("Debug", "InspectSplit", mbInspectSplit);
+	 gpBase->mpUserConfig->GetBool("Debug", "InspectFace", mbInspectFace);
 
 	 gpBase->mpUserConfig->SetBool("Debug", "ReloadFromCurrentPosition", mbReloadFromCurrentPosition);
 
@@ -646,12 +656,120 @@ void cLuxDebugHandler::RenderSolid(cRendererCallbackFunctions* apFunctions)
 		apFunctions->SetMatrix(mpInspectMeshEntity->GetModelMatrix(NULL));
 		apFunctions->DrawWireFrame(mpInspectMeshEntity->GetVertexBuffer(), cColor(1,1,1,1));
 		apFunctions->SetMatrix(NULL);
+
+		if (mbInspectVertex)
+			DrawMeshVertexNormals(apFunctions, mpInspectMeshEntity, cColor(0, 0, 1), mfLength);
+		if (mbInspectSplit)
+			DrawMeshSplitNormals(apFunctions, mpInspectMeshEntity, cColor(1, 0, 1), mfLength);
+		if (mbInspectFace)
+			DrawMeshFaceNormals(apFunctions, mpInspectMeshEntity, cColor(0, 1, 1), mfLength);
 	}
 
 	if(mbDrawPhysics)
 	{
 		gpBase->mpMapHandler->GetCurrentMap()->GetPhysicsWorld()->RenderDebugGeometry(apFunctions->GetLowLevelGfx(), cColor(0.5f));
 	}
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxDebugHandler::DrawMeshVertexNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, const cColor& aColor, float afLength)
+{
+	iVertexBuffer* pVB = apMeshEntity->GetVertexBuffer();
+	float* pPosArray = pVB->GetFloatArray(eVertexBufferElement_Position);
+	float* pNrmArray = pVB->GetFloatArray(eVertexBufferElement_Normal);
+
+	apFunctions->SetBlendMode(eMaterialBlendMode_None);
+	apFunctions->SetDepthTest(true);
+	apFunctions->SetDepthWrite(false);
+
+	apFunctions->SetMatrix(apMeshEntity->GetModelMatrix(NULL));
+
+	int lVertCount = pVB->GetVertexNum();
+	for (int j = 0; j < lVertCount; ++j)
+	{
+		cVector3f vPos(pPosArray[4 * j + 0], pPosArray[4 * j + 1], pPosArray[4 * j + 2]);
+		cVector3f vNrm(pNrmArray[3 * j + 0], pNrmArray[3 * j + 1], pNrmArray[3 * j + 2]);
+		cVector3f vEnd = vPos + vNrm * afLength;
+
+		apFunctions->GetLowLevelGfx()->DrawLine(vPos, vEnd, aColor);
+	}
+
+	apFunctions->SetMatrix(NULL);
+}
+
+void cLuxDebugHandler::DrawMeshSplitNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, const cColor& aColor, float afLength)
+{
+	iVertexBuffer* pVB = apMeshEntity->GetVertexBuffer();
+
+	float* pPosArray = pVB->GetFloatArray(eVertexBufferElement_Position);
+	unsigned int* pIdxArray = pVB->GetIndices();
+
+	int lVertCount = pVB->GetVertexNum();
+	int lIdxCount = pVB->GetIndexNum();
+	int lTriCount = lIdxCount / 3;
+
+	apFunctions->SetBlendMode(eMaterialBlendMode_None);
+	apFunctions->SetDepthTest(true);
+	apFunctions->SetDepthWrite(false);
+
+	apFunctions->SetMatrix(apMeshEntity->GetModelMatrix(NULL));
+
+	for (int j = 0; j < lTriCount; ++j)
+	{
+		unsigned int i0 = pIdxArray[3 * j + 0];
+		unsigned int i1 = pIdxArray[3 * j + 1];
+		unsigned int i2 = pIdxArray[3 * j + 2];
+
+		cVector3f v0(pPosArray[i0 * 4 + 0], pPosArray[i0 * 4 + 1], pPosArray[i0 * 4 + 2]);
+		cVector3f v1(pPosArray[i1 * 4 + 0], pPosArray[i1 * 4 + 1], pPosArray[i1 * 4 + 2]);
+		cVector3f v2(pPosArray[i2 * 4 + 0], pPosArray[i2 * 4 + 1], pPosArray[i2 * 4 + 2]);
+
+		cVector3f vFaceNrm = cMath::Vector3Cross(v2 - v0, v1 - v0); vFaceNrm.Normalize();
+
+		apFunctions->GetLowLevelGfx()->DrawLine(v0, v0 + vFaceNrm * afLength, aColor);
+		apFunctions->GetLowLevelGfx()->DrawLine(v1, v1 + vFaceNrm * afLength, aColor);
+		apFunctions->GetLowLevelGfx()->DrawLine(v2, v2 + vFaceNrm * afLength, aColor);
+	}
+
+	apFunctions->SetMatrix(NULL);
+}
+
+void cLuxDebugHandler::DrawMeshFaceNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, const cColor& aColor, float afLength)
+{
+	iVertexBuffer* pVB = apMeshEntity->GetVertexBuffer();
+
+	float* pPosArray = pVB->GetFloatArray(eVertexBufferElement_Position);
+	unsigned int* pIdxArray = pVB->GetIndices();
+
+	int lVertCount = pVB->GetVertexNum();
+	int lIdxCount = pVB->GetIndexNum();
+	int lTriCount = lIdxCount / 3;
+
+	apFunctions->SetBlendMode(eMaterialBlendMode_None);
+	apFunctions->SetDepthTest(true);
+	apFunctions->SetDepthWrite(false);
+
+	apFunctions->SetMatrix(apMeshEntity->GetModelMatrix(NULL));
+
+	for (int j = 0; j < lTriCount; ++j)
+	{
+		unsigned int i0 = pIdxArray[3 * j + 0];
+		unsigned int i1 = pIdxArray[3 * j + 1];
+		unsigned int i2 = pIdxArray[3 * j + 2];
+
+		cVector3f v0(pPosArray[i0 * 4 + 0], pPosArray[i0 * 4 + 1], pPosArray[i0 * 4 + 2]);
+		cVector3f v1(pPosArray[i1 * 4 + 0], pPosArray[i1 * 4 + 1], pPosArray[i1 * 4 + 2]);
+		cVector3f v2(pPosArray[i2 * 4 + 0], pPosArray[i2 * 4 + 1], pPosArray[i2 * 4 + 2]);
+
+		cVector3f vCenter = (v0 + v1 + v2) * (1.0f / 3.0f);
+		cVector3f vFaceNrm = cMath::Vector3Cross(v2 - v0, v1 - v0); vFaceNrm.Normalize();
+		cVector3f vEnd = vCenter + vFaceNrm * afLength;
+
+		apFunctions->GetLowLevelGfx()->DrawLine(vCenter, vEnd, aColor);
+	}
+
+	apFunctions->SetMatrix(NULL);
 }
 
 //-----------------------------------------------------------------------
@@ -961,7 +1079,7 @@ void cLuxDebugHandler::CreateGuiWindow()
 
 	///////////////////////////
 	//Window
-	cVector2f vSize = cVector2f(250, 780);
+	cVector2f vSize = cVector2f(250, 890);
 	vGroupSize.x = vSize.x - 20;
 	cVector3f vPos = cVector3f(mpGuiSet->GetVirtualSize().x - vSize.x - 10, 10, 0);
 	mpDebugWindow = mpGuiSet->CreateWidgetWindow(0,vPos,vSize,_W("Debug Toolbar") );
@@ -1019,13 +1137,6 @@ void cLuxDebugHandler::CreateGuiWindow()
 		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
 		vGroupPos.y += 22;
 
-		//Inspection mode
-		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos,vSize,_W("Inspection mode"),pGroup);
-		pCheckBox->SetChecked(mbInspectionMode);
-		pCheckBox->SetUserValue(5);
-		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
-		vGroupPos.y += 22;
-
 		//Occlusion culling
 		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos,vSize,_W("Occlusion Culling"),pGroup);
 		pCheckBox->SetChecked(gpBase->mpMapHandler->GetViewport()->GetRenderSettings()->mbUseOcclusionCulling);
@@ -1047,6 +1158,13 @@ void cLuxDebugHandler::CreateGuiWindow()
 		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
 		vGroupPos.y += 22;
 
+		//Inspection mode
+		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos, vSize, _W("Inspection mode"), pGroup);
+		pCheckBox->SetChecked(mbInspectionMode);
+		pCheckBox->SetUserValue(5);
+		pCheckBox->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;
+
 		//Print Container debug info
 		pButton = mpGuiSet->CreateWidgetButton(vGroupPos,vSize,_W("Print Container Debug Info"),pGroup);
 		pButton->AddCallback(eGuiMessage_ButtonPressed,this, kGuiCallback(PressPrinfContDebugInfo));
@@ -1059,7 +1177,47 @@ void cLuxDebugHandler::CreateGuiWindow()
 
 
 		//Group end
-		vGroupSize.y = vGroupPos.y + 15;
+		vGroupSize.y = vGroupPos.y + 10;
+		pGroup->SetSize(vGroupSize);
+		vPos.y += vGroupSize.y + 15;
+	}
+
+	//////////////////////////
+	//Mesh Normals
+	{
+		//Group
+		vGroupPos = cVector3f(5, 10, 0.1f);
+		pGroup = mpGuiSet->CreateWidgetGroup(vPos, 100, _W("Inspection Specific"), mpDebugWindow);
+
+		//Vertex Normals
+		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos, vSize, _W("Vertex Normals"), pGroup);
+		pCheckBox->SetChecked(mbInspectVertex);
+		pCheckBox->SetUserValue(18);
+		pCheckBox->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;
+
+		//Split Normals
+		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos, vSize, _W("Split Normals"), pGroup);
+		pCheckBox->SetChecked(mbInspectSplit);
+		pCheckBox->SetUserValue(19);
+		pCheckBox->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;
+
+		//Face Normals
+		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos, vSize, _W("Face Normals"), pGroup);
+		pCheckBox->SetChecked(mbInspectFace);
+		pCheckBox->SetUserValue(20);
+		pCheckBox->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;
+
+		//Set fly camera speed
+		pSlider = mpGuiSet->CreateWidgetSlider(eWidgetSliderOrientation_Horizontal, vGroupPos, vSize, 100, pGroup, ("Draw length of normals"));
+		pSlider->SetUserValue(21);
+		pSlider->AddCallback(eGuiMessage_SliderMove, this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;
+
+		//Group end
+		vGroupSize.y = vGroupPos.y + 10;
 		pGroup->SetSize(vGroupSize);
 		vPos.y += vGroupSize.y + 15;
 	}
@@ -1118,7 +1276,7 @@ void cLuxDebugHandler::CreateGuiWindow()
 
 		
 		//Group end
-		vGroupSize.y = vGroupPos.y + 15;
+		vGroupSize.y = vGroupPos.y + 10;
 		pGroup->SetSize(vGroupSize);
 		vPos.y += vGroupSize.y + 15;
 	}
@@ -1175,7 +1333,7 @@ void cLuxDebugHandler::CreateGuiWindow()
 
 
 		//Group end
-		vGroupSize.y = vGroupPos.y + 15;
+		vGroupSize.y = vGroupPos.y + 10;
 		pGroup->SetSize(vGroupSize);
 		vPos.y += vGroupSize.y + 15;
 	}
@@ -1579,6 +1737,11 @@ bool cLuxDebugHandler::ChangeDebugText(iWidget* apWidget, const cGuiMessageData&
 	else if(lNum == 14)  gpBase->mpPlayer->SetFreeCamSpeed( cMath::Max((float)aData.mlVal/ 100.0f, 0.001f) );
 
 	else if(lNum == 17)  SetFastForward(bActive);
+
+	else if(lNum == 18)	 mbInspectVertex = bActive;
+	else if(lNum == 19)	 mbInspectSplit = bActive;
+	else if(lNum == 20)	 mbInspectFace = bActive;
+	else if(lNum == 21)  mfLength = (float)aData.mlVal / 100.0f;
 	
 
 	return true;

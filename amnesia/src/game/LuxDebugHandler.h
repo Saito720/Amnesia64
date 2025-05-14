@@ -61,6 +61,10 @@ public:
 	void OnDraw(float afFrameTime);
 	void RenderSolid(cRendererCallbackFunctions* apFunctions);
 
+	void DrawMeshVertexNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, const cColor& aColor, float afLength);
+	void DrawMeshSplitNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, const cColor& aColor, float afLength);
+	void DrawMeshFaceNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, const cColor& aColor, float afLength);
+
 	void AddErrorOrWarningMessage(const tWString& asText);
 	void AddMessage(const tWString& asText, bool abCheckForDuplicates);
 
@@ -171,6 +175,11 @@ private:
 	bool mbScriptDebugOn;
 	bool mbInspectionMode;
 	bool mbDrawPhysics;
+
+	bool mbInspectVertex;
+	bool mbInspectSplit;
+	bool mbInspectFace;
+	float mfLength;
 
 	bool mbAllowQuickSave;
     

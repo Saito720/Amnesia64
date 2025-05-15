@@ -694,6 +694,7 @@ void cLuxScriptHandler::InitScriptFunctions()
 	AddFunc("float StringToFloat(string&in asString)",(void *)ScriptStringToFloat);
 	AddFunc("bool StringToBool(string&in asString)",(void *)ScriptStringToBool);
 
+	AddFunc("void CastRaysFromEntity(string &in asName, int alSubMeshIdx, float afCastDist, float afR, float afG, float afB, float afA)",(void *)CastRaysFromEntity);
 }
 //-----------------------------------------------------------------------
 
@@ -3687,4 +3688,27 @@ bool __stdcall cLuxScriptHandler::ScriptStringToBool(string& asString)
 
 //-----------------------------------------------------------------------
 
+void __stdcall cLuxScriptHandler::CastRaysFromEntity(string& asName, int alSubMeshIdx, float afCastDist, float afR, float afG, float afB, float afA)
+{
+	cLuxMap* pMap = gpBase->mpMapHandler->GetCurrentMap();
 
+	iLuxEntity* pEntity = pMap->GetEntityByName(asName);
+	if (!pEntity)
+	{
+		std::string sNoEnt = "ERROR: No entity found for ray casting!";
+		AddDebugMessage(sNoEnt, false);
+		return;
+	}
+
+	cSubMeshEntity* pMeshEntity = pEntity->GetMeshEntity()->GetSubMeshEntity(alSubMeshIdx);
+	if (!pMeshEntity)
+	{
+		std::string sNoMeshEnt = "ERROR: No submesh entity found for ray casting!";
+		AddDebugMessage(sNoMeshEnt, false);
+		return;
+	}
+
+	gpBase->mpDebugHandler->SetCastingEntity(pMeshEntity, afCastDist, cColor(afR, afG, afB, afA));
+}
+
+//-----------------------------------------------------------------------

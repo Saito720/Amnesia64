@@ -534,6 +534,10 @@ private:
 	static int __stdcall ScriptStringToInt(string& asString);
 	static float __stdcall ScriptStringToFloat(string& asString);
 	static bool __stdcall ScriptStringToBool(string& asString);
+
+	//////////////////////////////
+	// Misc
+	static void __stdcall CastRaysFromEntity(string& asName, int alSubMeshIdx, float afCastDist, float afR, float afG, float afB, float afA);
 };
 
 //----------------------------------------------

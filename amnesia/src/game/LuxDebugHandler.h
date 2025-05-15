@@ -38,6 +38,30 @@ typedef tLuxDebugMessageList::iterator tLuxDebugMessageListIt;
 
 //----------------------------------------------
 
+class cLuxDebugHandler;
+class cLuxDebugRayCallback : public iPhysicsRayCallback
+{
+public:
+	cLuxDebugRayCallback(cLuxDebugHandler* apDebugHandler) : mpDebugHandler(apDebugHandler) {}
+
+	void Reset();
+
+	bool BeforeIntersect(iPhysicsBody* pBody);
+	bool OnIntersect(iPhysicsBody* pBody, cPhysicsRayParams* apParams);
+
+	bool GetIntersected() const { return mbIntersected; }
+	const cVector3f& GetPos() { return mvPos; }
+
+private:
+	float mfClosestT;
+	bool mbIntersected;
+	cVector3f mvPos;
+
+	cLuxDebugHandler* mpDebugHandler;
+};
+
+//----------------------------------------------
+
 class cLuxDebugHandler : public iLuxUpdateable
 {
 public:	
@@ -61,9 +85,12 @@ public:
 	void OnDraw(float afFrameTime);
 	void RenderSolid(cRendererCallbackFunctions* apFunctions);
 
-	void DrawMeshVertexNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, const cColor& aColor, float afLength);
-	void DrawMeshSplitNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, const cColor& aColor, float afLength);
-	void DrawMeshFaceNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, const cColor& aColor, float afLength);
+	void SetCastingEntity(cSubMeshEntity* apMeshEntity, float afCastDist, const cColor& aHitColor) { mpCastingEntity = apMeshEntity; mfCastDist = afCastDist; mHitColor = aHitColor; };
+
+	void CastRaysFromMeshSurface(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, float afNrmLength, const cColor& aNrmColor);
+	void DrawMeshVertexNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, float afNrmLength, const cColor& aNrmColor);
+	void DrawMeshSplitNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, float afNrmLength, const cColor& aNrmColor);
+	void DrawMeshFaceNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, float afCastDist, const cColor& aHitColor);
 
 	void AddErrorOrWarningMessage(const tWString& asText);
 	void AddMessage(const tWString& asText, bool abCheckForDuplicates);
@@ -164,6 +191,12 @@ private:
 	cWidgetFrame *mpScriptOutputFrame;
 
 	cWidgetCheckBox *mpCBFastForward;
+
+	// Ray casting
+	cLuxDebugRayCallback *mpRayCallback;
+	cSubMeshEntity *mpCastingEntity;
+	float mfCastDist;
+	cColor mHitColor;
 	
 	tWidgetList mlstScriptOutputWidgets;
 
@@ -179,7 +212,7 @@ private:
 	bool mbInspectVertex;
 	bool mbInspectSplit;
 	bool mbInspectFace;
-	float mfLength;
+	float mfNrmLength;
 
 	bool mbAllowQuickSave;
     

@@ -87,6 +87,9 @@ cLuxDebugHandler::cLuxDebugHandler() : iLuxUpdateable("LuxDebugHandler")
 	
 	mbFastForward = false;
 	mpCBFastForward = NULL;
+
+	mpCastingEntity = NULL;
+	mpRayCallback = hplNew(cLuxDebugRayCallback, (this));
 }
 
 //-----------------------------------------------------------------------
@@ -94,6 +97,7 @@ cLuxDebugHandler::cLuxDebugHandler() : iLuxUpdateable("LuxDebugHandler")
 cLuxDebugHandler::~cLuxDebugHandler()
 {
 	SetLogMessageCallback(NULL);
+	hplDelete(mpRayCallback);
 }
 
 //-----------------------------------------------------------------------
@@ -658,22 +662,27 @@ void cLuxDebugHandler::RenderSolid(cRendererCallbackFunctions* apFunctions)
 		apFunctions->SetMatrix(NULL);
 
 		if (mbInspectVertex)
-			DrawMeshVertexNormals(apFunctions, mpInspectMeshEntity, cColor(0, 0, 1), mfLength);
+			DrawMeshVertexNormals(apFunctions, mpInspectMeshEntity, mfNrmLength, cColor(0, 0, 1));
 		if (mbInspectSplit)
-			DrawMeshSplitNormals(apFunctions, mpInspectMeshEntity, cColor(1, 0, 1), mfLength);
+			DrawMeshSplitNormals(apFunctions, mpInspectMeshEntity, mfNrmLength, cColor(1, 0, 1));
 		if (mbInspectFace)
-			DrawMeshFaceNormals(apFunctions, mpInspectMeshEntity, cColor(0, 1, 1), mfLength);
+			DrawMeshFaceNormals(apFunctions, mpInspectMeshEntity, mfNrmLength, cColor(0, 1, 1));
 	}
 
 	if(mbDrawPhysics)
 	{
 		gpBase->mpMapHandler->GetCurrentMap()->GetPhysicsWorld()->RenderDebugGeometry(apFunctions->GetLowLevelGfx(), cColor(0.5f));
 	}
+
+	if(mpCastingEntity)
+	{
+		CastRaysFromMeshSurface(apFunctions, mpCastingEntity, mfCastDist, mHitColor);
+	}
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxDebugHandler::DrawMeshVertexNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, const cColor& aColor, float afLength)
+void cLuxDebugHandler::DrawMeshVertexNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, float afNrmLength, const cColor& aNrmColor)
 {
 	iVertexBuffer* pVB = apMeshEntity->GetVertexBuffer();
 	float* pPosArray = pVB->GetFloatArray(eVertexBufferElement_Position);
@@ -690,15 +699,15 @@ void cLuxDebugHandler::DrawMeshVertexNormals(cRendererCallbackFunctions* apFunct
 	{
 		cVector3f vPos(pPosArray[4 * j + 0], pPosArray[4 * j + 1], pPosArray[4 * j + 2]);
 		cVector3f vNrm(pNrmArray[3 * j + 0], pNrmArray[3 * j + 1], pNrmArray[3 * j + 2]);
-		cVector3f vEnd = vPos + vNrm * afLength;
+		cVector3f vEnd = vPos + vNrm * afNrmLength;
 
-		apFunctions->GetLowLevelGfx()->DrawLine(vPos, vEnd, aColor);
+		apFunctions->GetLowLevelGfx()->DrawLine(vPos, vEnd, aNrmColor);
 	}
 
 	apFunctions->SetMatrix(NULL);
 }
 
-void cLuxDebugHandler::DrawMeshSplitNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, const cColor& aColor, float afLength)
+void cLuxDebugHandler::DrawMeshSplitNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, float afNrmLength, const cColor& aNrmColor)
 {
 	iVertexBuffer* pVB = apMeshEntity->GetVertexBuffer();
 
@@ -727,15 +736,15 @@ void cLuxDebugHandler::DrawMeshSplitNormals(cRendererCallbackFunctions* apFuncti
 
 		cVector3f vFaceNrm = cMath::Vector3Cross(v2 - v0, v1 - v0); vFaceNrm.Normalize();
 
-		apFunctions->GetLowLevelGfx()->DrawLine(v0, v0 + vFaceNrm * afLength, aColor);
-		apFunctions->GetLowLevelGfx()->DrawLine(v1, v1 + vFaceNrm * afLength, aColor);
-		apFunctions->GetLowLevelGfx()->DrawLine(v2, v2 + vFaceNrm * afLength, aColor);
+		apFunctions->GetLowLevelGfx()->DrawLine(v0, v0 + vFaceNrm * afNrmLength, aNrmColor);
+		apFunctions->GetLowLevelGfx()->DrawLine(v1, v1 + vFaceNrm * afNrmLength, aNrmColor);
+		apFunctions->GetLowLevelGfx()->DrawLine(v2, v2 + vFaceNrm * afNrmLength, aNrmColor);
 	}
 
 	apFunctions->SetMatrix(NULL);
 }
 
-void cLuxDebugHandler::DrawMeshFaceNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, const cColor& aColor, float afLength)
+void cLuxDebugHandler::DrawMeshFaceNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, float afNrmLength, const cColor& aNrmColor)
 {
 	iVertexBuffer* pVB = apMeshEntity->GetVertexBuffer();
 
@@ -764,12 +773,93 @@ void cLuxDebugHandler::DrawMeshFaceNormals(cRendererCallbackFunctions* apFunctio
 
 		cVector3f vCenter = (v0 + v1 + v2) * (1.0f / 3.0f);
 		cVector3f vFaceNrm = cMath::Vector3Cross(v2 - v0, v1 - v0); vFaceNrm.Normalize();
-		cVector3f vEnd = vCenter + vFaceNrm * afLength;
+		cVector3f vEnd = vCenter + vFaceNrm * afNrmLength;
 
-		apFunctions->GetLowLevelGfx()->DrawLine(vCenter, vEnd, aColor);
+		apFunctions->GetLowLevelGfx()->DrawLine(vCenter, vEnd, aNrmColor);
 	}
 
 	apFunctions->SetMatrix(NULL);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxDebugHandler::CastRaysFromMeshSurface(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, float afCastDist, const cColor& aHitColor)
+{
+	iVertexBuffer* pVB = apMeshEntity->GetVertexBuffer();
+	iVertexBuffer* pTempVB = pVB->CreateCopy(eVertexBufferType_Software, eVertexBufferUsageType_Stream, eVertexElementFlag_Position);
+	pTempVB->Transform(*apMeshEntity->GetModelMatrix(NULL));
+
+	float* pPosArray = pTempVB->GetFloatArray(eVertexBufferElement_Position);
+	unsigned int* pIdxArray = pTempVB->GetIndices();
+
+	int lVertCount = pTempVB->GetVertexNum();
+	int lIdxCount = pTempVB->GetIndexNum();
+	int lTriCount = lIdxCount / 3;
+
+	apFunctions->SetBlendMode(eMaterialBlendMode_None);
+	apFunctions->SetDepthTest(true);
+	apFunctions->SetDepthWrite(false);
+
+	for (int j = 0; j < lTriCount; ++j)
+	{
+		unsigned int i0 = pIdxArray[3 * j + 0];
+		unsigned int i1 = pIdxArray[3 * j + 1];
+		unsigned int i2 = pIdxArray[3 * j + 2];
+
+		cVector3f v0(pPosArray[i0 * 4 + 0], pPosArray[i0 * 4 + 1], pPosArray[i0 * 4 + 2]);
+		cVector3f v1(pPosArray[i1 * 4 + 0], pPosArray[i1 * 4 + 1], pPosArray[i1 * 4 + 2]);
+		cVector3f v2(pPosArray[i2 * 4 + 0], pPosArray[i2 * 4 + 1], pPosArray[i2 * 4 + 2]);
+
+		cVector3f vStart = (v0 + v1 + v2) * (1.0f / 3.0f);
+		cVector3f vFaceNrm = cMath::Vector3Cross(v2 - v0, v1 - v0); vFaceNrm.Normalize();
+		cVector3f vEnd = vStart + vFaceNrm * afCastDist;
+
+		mpRayCallback->Reset();
+		iPhysicsWorld* pPhysicsWorld = gpBase->mpMapHandler->GetCurrentMap()->GetPhysicsWorld();
+		pPhysicsWorld->CastRay(mpRayCallback, vStart, vEnd, false, false, true, true);
+
+		if (mpRayCallback->GetIntersected())
+		{
+			apFunctions->GetLowLevelGfx()->DrawSphere(mpRayCallback->GetPos(), 0.015f, aHitColor);
+		}
+	}
+
+	hplDelete(pTempVB);
+}
+
+//-----------------------------------------------------------------------
+
+bool cLuxDebugRayCallback::BeforeIntersect(iPhysicsBody* pBody)
+{
+	if (pBody->GetName() == "Enemy_Grunt" ||
+		pBody->GetName() == "Enemy_WaterLurker" ||
+		pBody->GetName() == "Enemy_ManPig")
+		return true;
+
+	if (pBody->GetCollide() == false ||
+		pBody->IsCharacter() ||
+		pBody->GetName() == "ray_sphere_body")
+		return false;
+
+	return true;
+}
+
+bool cLuxDebugRayCallback::OnIntersect(iPhysicsBody* pBody, cPhysicsRayParams* apParams)
+{
+	if (apParams->mfT < mfClosestT)
+	{
+		mfClosestT = apParams->mfT;
+		mvPos = apParams->mvPoint;
+	}
+	mbIntersected = true;
+
+	return true;
+}
+
+void cLuxDebugRayCallback::Reset()
+{
+	mbIntersected = false;
+	mfClosestT = 99999.0f;
 }
 
 //-----------------------------------------------------------------------
@@ -1741,7 +1831,7 @@ bool cLuxDebugHandler::ChangeDebugText(iWidget* apWidget, const cGuiMessageData&
 	else if(lNum == 18)	 mbInspectVertex = bActive;
 	else if(lNum == 19)	 mbInspectSplit = bActive;
 	else if(lNum == 20)	 mbInspectFace = bActive;
-	else if(lNum == 21)  mfLength = (float)aData.mlVal / 100.0f;
+	else if(lNum == 21)  mfNrmLength = (float)aData.mlVal / 100.0f;
 	
 
 	return true;

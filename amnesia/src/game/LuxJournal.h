@@ -313,9 +313,9 @@ private:
 	iWidget		 *mpWidgetReturn[eLuxJournalState_LastEnum];
 	cWidgetImage *mpImageBackward[eLuxJournalState_LastEnum];
 	
-	iTexture *mpScreenTexture;
+	Image *mpScreenTexture;
 	cGuiGfxElement *mpScreenGfx;
-	iTexture *mpScreenBgTexture;
+	Image  *mpScreenBgTexture;
 	cGuiGfxElement *mpScreenBgGfx;
 
 	cGuiGfxElement *mpWhiteGfx;

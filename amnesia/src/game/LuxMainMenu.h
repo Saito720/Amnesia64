@@ -268,9 +268,9 @@ private:
 	
 	cViewport *mpViewport;
 
-	iTexture *mpScreenTexture;
+	Image* mpScreenTexture;
 	cGuiGfxElement *mpScreenGfx;
-	iTexture *mpScreenBlurTexture;
+	Image* mpScreenBlurTexture;
 	cGuiGfxElement *mpScreenBlurGfx;
 	iGpuProgram *mpBlurProgram[2]; //0=Hori, 1=Vert
 

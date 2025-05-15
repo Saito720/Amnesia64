@@ -112,4 +112,5 @@ else()
   add_subdirectory(DevIL/DevIL)
 endif()
 
+add_subdirectory(MathLib)
 

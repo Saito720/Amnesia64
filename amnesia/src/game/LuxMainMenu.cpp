@@ -40,6 +40,7 @@
 #include "LuxDemoEnd.h"
 #include <sstream>
 #include "LuxAchievementHandler.h"
+#include "graphics/Image.h"
 
 //--------------------------------------------------------------------------------
 
@@ -1307,12 +1308,19 @@ void cLuxMainMenu::CreateScreenTextures()
 	cVector3l vTexSize = pLowGfx->GetScreenSizeInt();
 	vTexSize.z = 0;
 
-	mpScreenTexture = mpGraphics->CreateTexture("Screen",eTextureType_Rect,eTextureUsage_RenderTarget);
-	mpScreenTexture->CreateFromRawData(vTexSize,ePixelFormat_RGBA,NULL);
-	mpScreenTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
+	mpScreenTexture = hplNew(Image, ());// mpGraphics->CreateTexture("Screen",eTextureType_Rect,eTextureUsage_RenderTarget);
+	mpScreenTexture->image = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete); 
+	
+	mpScreenBlurTexture  = hplNew(Image, ()); //mpGraphics->CreateTexture("ScreenBlur",eTextureType_Rect,eTextureUsage_RenderTarget);
+	mpScreenBlurTexture->image = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete); 
 
-	mpScreenBlurTexture = mpGraphics->CreateTexture("ScreenBlur",eTextureType_Rect,eTextureUsage_RenderTarget);
-	mpScreenBlurTexture->CreateFromRawData(vTexSize,ePixelFormat_RGBA,NULL);
+
+	//mpScreenTexture = mpGraphics->CreateTexture("Screen",eTextureType_Rect,eTextureUsage_RenderTarget);
+	//mpScreenTexture->CreateFromRawData(vTexSize,ePixelFormat_RGBA,NULL);
+	//mpScreenTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
+
+	//mpScreenBlurTexture = mpGraphics->CreateTexture("ScreenBlur",eTextureType_Rect,eTextureUsage_RenderTarget);
+	//mpScreenBlurTexture->CreateFromRawData(vTexSize,ePixelFormat_RGBA,NULL);
 	
 	mpScreenGfx = mpGui->CreateGfxTexture(mpScreenTexture,false,eGuiMaterial_Diffuse);
 	mpScreenBlurGfx = mpGui->CreateGfxTexture(mpScreenBlurTexture,false,eGuiMaterial_Alpha);
@@ -1345,61 +1353,62 @@ void cLuxMainMenu::RenderBlur(iTexture *apInputTexture, iTexture *apTempTexture,
 
 void cLuxMainMenu::RenderBlurTexture()
 {
-	iLowLevelGraphics *pLowGfx = mpGraphics->GetLowLevel();
+	assert(false);
+	//iLowLevelGraphics *pLowGfx = mpGraphics->GetLowLevel();
 
-	//////////////////////////////
-	// Create frame buffers
-	iTexture* pTempBlurTexture = mpGraphics->CreateTexture("TempBlur",eTextureType_Rect,eTextureUsage_RenderTarget);
-	pTempBlurTexture->CreateFromRawData(cVector3l((int)mvScreenSize.x, (int)mvScreenSize.y,0),ePixelFormat_RGBA,NULL);
-	pTempBlurTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
-	
-	iFrameBuffer *pBlurBuffer[2];
-	for(int i=0; i<2; ++i)
-	{
-		pBlurBuffer[i] = mpGraphics->CreateFrameBuffer("MainMenuBlurBuffer"+cString::ToString(i));
-		if(i==0) pBlurBuffer[i]->SetTexture2D(0,pTempBlurTexture);
-		else	pBlurBuffer[i]->SetTexture2D(0,mpScreenBlurTexture);
+	////////////////////////////////
+	//// Create frame buffers
+	//iTexture* pTempBlurTexture = mpGraphics->CreateTexture("TempBlur",eTextureType_Rect,eTextureUsage_RenderTarget);
+	//pTempBlurTexture->CreateFromRawData(cVector3l((int)mvScreenSize.x, (int)mvScreenSize.y,0),ePixelFormat_RGBA,NULL);
+	//pTempBlurTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
+	//
+	//iFrameBuffer *pBlurBuffer[2];
+	//for(int i=0; i<2; ++i)
+	//{
+	//	pBlurBuffer[i] = mpGraphics->CreateFrameBuffer("MainMenuBlurBuffer"+cString::ToString(i));
+	//	if(i==0) pBlurBuffer[i]->SetTexture2D(0,pTempBlurTexture);
+	//	else	pBlurBuffer[i]->SetTexture2D(0,mpScreenBlurTexture);
 
-		pBlurBuffer[i]->CompileAndValidate();
-	}
-	
-	//////////////////////////////
-	// Render
+	//	pBlurBuffer[i]->CompileAndValidate();
+	//}
+	//
+	////////////////////////////////
+	//// Render
 
-	//Set up main states
-	pLowGfx->SetBlendActive(false);
-	pLowGfx->SetDepthTestActive(false);
-	pLowGfx->SetDepthWriteActive(false);
-	
-	pLowGfx->SetOrthoProjection(mvScreenSize,-1000,1000);
-	pLowGfx->SetIdentityMatrix(eMatrix_ModelView);
+	////Set up main states
+	//pLowGfx->SetBlendActive(false);
+	//pLowGfx->SetDepthTestActive(false);
+	//pLowGfx->SetDepthWriteActive(false);
+	//
+	//pLowGfx->SetOrthoProjection(mvScreenSize,-1000,1000);
+	//pLowGfx->SetIdentityMatrix(eMatrix_ModelView);
 
-	//Copy screen to screen texture
-	pLowGfx->CopyFrameBufferToTexure(mpScreenTexture,0,pLowGfx->GetScreenSizeInt(),0);
-	
-	RenderBlur(mpScreenTexture,pTempBlurTexture,pBlurBuffer);
+	////Copy screen to screen texture
+	//pLowGfx->CopyFrameBufferToTexure(mpScreenTexture,0,pLowGfx->GetScreenSizeInt(),0);
+	//
+	//RenderBlur(mpScreenTexture,pTempBlurTexture,pBlurBuffer);
 
-	for(int i=0; i<6; ++i)
-		RenderBlur(mpScreenBlurTexture,pTempBlurTexture,pBlurBuffer);
+	//for(int i=0; i<6; ++i)
+	//	RenderBlur(mpScreenBlurTexture,pTempBlurTexture,pBlurBuffer);
 
-	///////////////////////
-	// Exit
+	/////////////////////////
+	//// Exit
 
-	//Render states
-	pLowGfx->SetTexture(0,NULL);
-	pLowGfx->SetCurrentFrameBuffer(NULL);
-	pLowGfx->SetDepthTestActive(true);
+	////Render states
+	//pLowGfx->SetTexture(0,NULL);
+	//pLowGfx->SetCurrentFrameBuffer(NULL);
+	//pLowGfx->SetDepthTestActive(true);
 
-	//Flush the rendering
-	pLowGfx->FlushRendering();
-	pLowGfx->WaitAndFinishRendering();
-	
-	//Destroy data
-	mpGraphics->DestroyTexture(pTempBlurTexture);
-	for(int i=0; i<2; ++i)
-	{
-		mpGraphics->DestroyFrameBuffer(pBlurBuffer[i]);
-	}
+	////Flush the rendering
+	//pLowGfx->FlushRendering();
+	//pLowGfx->WaitAndFinishRendering();
+	//
+	////Destroy data
+	//mpGraphics->DestroyTexture(pTempBlurTexture);
+	//for(int i=0; i<2; ++i)
+	//{
+	//	mpGraphics->DestroyFrameBuffer(pBlurBuffer[i]);
+	//}
 }
 
 //-----------------------------------------------------------------------
@@ -1427,9 +1436,9 @@ void cLuxMainMenu::DestroyBackground()
 	else
 	{
 		if(mpScreenGfx) mpGui->DestroyGfx(mpScreenGfx);
-		if(mpScreenTexture) mpGraphics->DestroyTexture(mpScreenTexture);
+		if(mpScreenTexture) hplFree(mpScreenTexture);
 		if(mpScreenBlurGfx) mpGui->DestroyGfx(mpScreenBlurGfx);
-		if(mpScreenBlurTexture) mpGraphics->DestroyTexture(mpScreenBlurTexture);
+		if(mpScreenBlurTexture) hplFree(mpScreenBlurTexture);
 
 		mpScreenGfx = NULL;
 		mpScreenTexture = NULL;

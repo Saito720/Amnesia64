@@ -253,6 +253,7 @@ target_link_libraries(HPL2
   OpenGL::GL 
   GLEW::GLEW
   OpenGL::GLU
+  MathLib
   zlib
   volk
   IL 

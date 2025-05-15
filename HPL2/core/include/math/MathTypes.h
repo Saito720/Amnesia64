@@ -31,6 +31,7 @@
 #include "math/Matrix.h"
 #include "system/SystemTypes.h"
 
+
 namespace hpl {
 
 	#define kPif (3.141592654f)

@@ -19,6 +19,7 @@
 
 #include "graphics/FrameBitmap.h"
 
+#include "graphics/HPLTexture.h"
 #include "math/Math.h"
 
 #include "system/LowLevelSystem.h"
@@ -29,6 +30,7 @@
 #include "graphics/FrameSubImage.h"
 #include "graphics/Bitmap.h"
 #include "graphics/Texture.h"
+#include "graphics/Image.h"
 
 
 namespace hpl {
@@ -470,9 +472,18 @@ namespace hpl {
 	{
 		if(mbIsUpdated)
 		{
-			mpFrameTexture->GetTexture()->CreateFromBitmap(mpBitmap);
-			mpFrameTexture->GetTexture()->SetWrapS(eTextureWrap_ClampToEdge);
-			mpFrameTexture->GetTexture()->SetWrapT(eTextureWrap_ClampToEdge);
+			auto img = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete);
+			RIBarrierImageHandle_s barrierHandle = {};
+			hpl::HPLTexture::BitmapLoadOptions opts = {0};
+			opts.use_mipmaps = true;
+			if(!img->LoadBitmap(barrierHandle, *mpBitmap, opts)) {
+				Error("Failed to load bitmap");
+				return false;
+			}
+			mpFrameTexture->GetTexture()->image = img;	
+			//mpFrameTexture->GetTexture()->CreateFromBitmap(mpBitmap);
+			//mpFrameTexture->GetTexture()->SetWrapS(eTextureWrap_ClampToEdge);
+			//mpFrameTexture->GetTexture()->SetWrapT(eTextureWrap_ClampToEdge);
 
 			//mpFrameTexture->SetPicCount(mlPicCount);
 			mbIsUpdated = false;

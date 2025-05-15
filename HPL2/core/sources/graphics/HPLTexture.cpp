@@ -11,11 +11,11 @@
 
 namespace hpl {
 void HPLTexture::HPLTexture_Delete(HPLTexture *texture) {
-  vmaFreeMemory(texture->bootstrap->device.vk.vmaAllocator,
+  vmaFreeMemory(RI.device.vk.vmaAllocator,
                 texture->vk.vmaAlloc);
-  vkDestroyImage(texture->bootstrap->device.vk.device, texture->handle.vk.image,
+  vkDestroyImage(RI.device.vk.device, texture->handle.vk.image,
                  NULL);
-  vkDestroyImageView(texture->bootstrap->device.vk.device,
+  vkDestroyImageView(RI.device.vk.device,
                      texture->binding.vk.image.imageView, NULL);
   delete texture;
 }
@@ -71,12 +71,11 @@ RI_Format to_image_supported_format(ePixelFormat format) {
   return RI_FORMAT_UNKNOWN;
 }
 
-bool HPLTexture::LoadBitmap(struct RIBoostrap *bstr,
-                            RIBarrierImageHandle_s postBarrier,
+bool HPLTexture::LoadBitmap(
+                          RIBarrierImageHandle_s postBarrier,
                             cBitmap &bitmap, 
                             const BitmapLoadOptions &options) {
   assert(this->bootstrap);
-  bootstrap = bstr;
   width = bitmap.GetWidth();
   height = bitmap.GetHeight();
   depth = bitmap.GetDepth();
@@ -122,7 +121,7 @@ bool HPLTexture::LoadBitmap(struct RIBoostrap *bstr,
 
   uint32_t queueFamilies[RI_QUEUE_LEN] = {0};
   info.pQueueFamilyIndices = queueFamilies;
-  VK_ConfigureImageQueueFamilies(&info, bstr->device.queues, RI_QUEUE_LEN,
+  VK_ConfigureImageQueueFamilies(&info, RI.device.queues, RI_QUEUE_LEN,
                                  queueFamilies, RI_QUEUE_LEN);
   info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
   VmaAllocationCreateInfo mem_reqs = {0};
@@ -133,7 +132,7 @@ bool HPLTexture::LoadBitmap(struct RIBoostrap *bstr,
 		VK_IMAGE_ASPECT_COLOR_BIT, 0, std::max<uint32_t>(info.mipLevels, 1), 0, 1,
 	};
 	VkImageViewCreateInfo createInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
-	if(!VK_WrapResult(vmaCreateImage(bstr->device.vk.vmaAllocator, &info, &mem_reqs, &handle.vk.image, &vk.vmaAlloc, NULL))) {
+	if(!VK_WrapResult(vmaCreateImage(RI.device.vk.vmaAllocator, &info, &mem_reqs, &handle.vk.image, &vk.vmaAlloc, NULL))) {
 	  return false;
 	}
 
@@ -148,8 +147,8 @@ bool HPLTexture::LoadBitmap(struct RIBoostrap *bstr,
 	binding.texture = &handle;
 	binding.vk.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 	binding.vk.image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	VK_WrapResult( vkCreateImageView( bstr->device.vk.device, &createInfo, NULL, &binding.vk.image.imageView ) );
-	RefreshCookies( &bstr->device, &binding );
+	VK_WrapResult( vkCreateImageView( RI.device.vk.device, &createInfo, NULL, &binding.vk.image.imageView ) );
+	RefreshCookies( &RI.device, &binding );
 
   auto sourceFormat = to_image_supported_format(bitmap.GetPixelFormat());
   const struct RIFormatProps_s* srcProps = GetRIFormatProps(sourceFormat);
@@ -182,7 +181,7 @@ bool HPLTexture::LoadBitmap(struct RIBoostrap *bstr,
       //VK_ACCESS_2_SHADER_READ_BIT;
       //	}
       // #endif
-      RI_ResourceBeginCopyTexture(&bstr->device, &bstr->uploader, &uploadDesc);
+      RI_ResourceBeginCopyTexture(&RI.device, &RI.uploader, &uploadDesc);
       for (size_t z = 0; z < info.extent.depth; ++z) {
         for (size_t slice = 0; slice < uploadDesc.height; slice++) {
           const size_t dstRowStart = uploadDesc.alignRowPitch * slice;
@@ -201,7 +200,7 @@ bool HPLTexture::LoadBitmap(struct RIBoostrap *bstr,
           }
         }
       }
-      RI_ResourceEndCopyTexture(&bstr->device, &bstr->uploader, &uploadDesc);
+      RI_ResourceEndCopyTexture(&RI.device, &RI.uploader, &uploadDesc);
     }
   }
 

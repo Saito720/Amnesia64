@@ -24,6 +24,7 @@
 
 namespace hpl {
 
+	class Image;
 	class iTexture;
 	class cFrameSubImage;
 	class cImageManager;
@@ -31,10 +32,10 @@ namespace hpl {
 	class cFrameTexture : public iFrameBase
 	{
 	public:
-		cFrameTexture(iTexture *pTex, int alHandle,cImageManager *apImageManager, bool abIsCustom);
+		cFrameTexture(Image *pTex, int alHandle,cImageManager *apImageManager, bool abIsCustom);
 		~cFrameTexture();
 
-		iTexture* GetTexture();
+		Image* GetTexture();
 		int GetHandle(){return mlHandle;}
 
 		inline bool IsCustom(){ return mbIsCustom;}
@@ -45,9 +46,8 @@ namespace hpl {
 		cFrameSubImage* CreateCustomImage(const cVector2l& avPixelPos,const cVector2l& avPixelSize);
 		
 	private:
-		
 
-		iTexture *mpTexture;
+		Image* mpTexture;
 		int mlHandle;
 
 		bool mbIsCustom;

@@ -18,9 +18,10 @@
  */
 
 #include "graphics/FrameTexture.h"
-#include "graphics/Texture.h"
 #include "graphics/FrameSubImage.h"
 #include "resources/ImageManager.h"
+
+#include "graphics/Image.h"
 
 namespace hpl {
 
@@ -30,7 +31,7 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	cFrameTexture::cFrameTexture(iTexture *apTex, int alHandle,cImageManager *apImageManager, bool abIsCustom) : iFrameBase()
+cFrameTexture::cFrameTexture(Image *apTex, int alHandle,cImageManager *apImageManager, bool abIsCustom) : iFrameBase()
 	{
 		mpTexture = apTex;
 		mlHandle =alHandle;
@@ -54,7 +55,7 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 	
-	iTexture* cFrameTexture::GetTexture()
+Image* cFrameTexture::GetTexture()
 	{
 		return mpTexture;
 	}

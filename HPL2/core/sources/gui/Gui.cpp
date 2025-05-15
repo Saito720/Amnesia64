@@ -401,7 +401,7 @@ namespace hpl {
 
 		///////////////////
 		// Load texture
-		iTexture *pTexture = mpResources->GetTextureManager()->Create2D(asFile,abMipMaps,aTextureType);
+		Image *pTexture = mpResources->GetTextureManager()->Create2DImage(asFile,abMipMaps,aTextureType);
 		if(pTexture==NULL)
 		{
 			Error("Could not load texture '%s'!\n",asFile.c_str());
@@ -415,18 +415,19 @@ namespace hpl {
 		return pGfxElem;
 	}
 
-	//-----------------------------------------------------------------------
-
-	cGuiGfxElement* cGui::CreateGfxTexture(iTexture *apTexture, bool abAutoDestroyTexture, 
+	cGuiGfxElement* cGui::CreateGfxTexture(Image *apTexture, bool abAutoDestroyTexture, 
 											eGuiMaterial aMaterial,
 											const cColor& aColor,
 											bool abAddToList,
 											const cVector2f& avStartUV,
-											const cVector2f& avEndUV)
+											const cVector2f& avEndUV, 
+											bool filpUVY)
 	{
 		cGuiGfxElement *pGfxElem = hplNew( cGuiGfxElement, (this) );
 
-		if(apTexture->GetUsage() == eTextureUsage_RenderTarget) pGfxElem->SetFlipUvYAxis(true);
+		if(filpUVY) {
+			pGfxElem->SetFlipUvYAxis(true);
+		}
 
 		pGfxElem->SetColor(aColor);
 		pGfxElem->SetMaterial(GetMaterial(aMaterial));

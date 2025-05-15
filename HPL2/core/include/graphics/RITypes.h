@@ -255,10 +255,12 @@ struct RIBuffer_s {
 	union {
     #if(DEVICE_IMPL_VULKAN)
     struct {
+			struct VmaAllocation_T *vertexAlloc;
     	VkBuffer buffer;
     } vk;
     #endif
 	};
+	void* mappedAddress;
 };
 
 struct RIBarrierImageHandle_s {

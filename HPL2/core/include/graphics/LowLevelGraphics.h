@@ -344,7 +344,6 @@ public:
   static bool GetForceShaderModel3And4Off() {
     return mbForceShaderModel3And4Off;
   }
-  struct RIBoostrap bootsrap;
 protected:
   static bool mbForceShaderModel3And4Off;
 };

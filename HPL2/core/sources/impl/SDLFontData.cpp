@@ -28,6 +28,8 @@
 #include "graphics/FrameTexture.h"
 #include "graphics/FrameSubImage.h"
 #include "graphics/Texture.h"
+#include "graphics/Image.h"
+
 
 #include "impl/tinyXML/tinyxml.h"
 
@@ -149,15 +151,25 @@ namespace hpl {
 			///////////////////////
 			//Create a texture from bitmap (do not want to load it from texture manager since that would delete the texture on its own).
 			tString sName = cString::SetFileExt(cString::To8Char(asFileName),"")+"_"+cString::ToString(lCount);
-			iTexture *pTexture = mpLowLevelGraphics->CreateTexture("",eTextureType_2D,eTextureUsage_Normal);
-
-			pTexture->CreateFromBitmap(pBitmap);
+			//iTexture *pTexture = mpLowLevelGraphics->CreateTexture("",eTextureType_2D,eTextureUsage_Normal);
+			Image* pImg = hplNew(Image, ());
+			auto img = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete);
+			RIBarrierImageHandle_s barrierHandle = {};
+			HPLTexture::BitmapLoadOptions opts = {0};
+			opts.use_mipmaps = true;
+			if(!img->LoadBitmap(barrierHandle, *pBitmap, opts)) {
+				Error("Texture manager Couldn't load SDLFontData '%s'\n", sName.c_str());
+				hplDelete(pBitmap); //Bitmap no longer needed
+				hplDelete(pImg);
+				continue;
+			}
+			pImg->image = img;
 
 			hplDelete( pBitmap ); //Bitmap no longer needed
 
 			///////////////////////
 			//Create Custom Frame for images
-			cFrameTexture *pFrameTexture = mpResources->GetImageManager()->CreateCustomFrame(pTexture);
+			cFrameTexture *pFrameTexture = mpResources->GetImageManager()->CreateCustomFrame(pImg);
 
 			vFrameTextures.push_back(pFrameTexture);
 		}

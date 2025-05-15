@@ -18,7 +18,6 @@ RI_Format to_image_supported_format(ePixelFormat format);
 
 struct HPLTexture {
 public:
-  struct RIBoostrap *bootstrap;
   struct RITexture_s handle;
   union {
 #if (DEVICE_IMPL_VULKAN)
@@ -45,8 +44,7 @@ public:
     bool use_array = false;
     bool use_mipmaps = false;
   };
-  bool LoadBitmap(struct RIBoostrap *bootstrap,
-                  RIBarrierImageHandle_s postBarrier, 
+  bool LoadBitmap(RIBarrierImageHandle_s postBarrier, 
                   cBitmap &bitmap,
                   const BitmapLoadOptions &options);
   // HPLTexture();

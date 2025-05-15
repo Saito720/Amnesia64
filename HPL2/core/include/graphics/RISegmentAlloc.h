@@ -1,6 +1,8 @@
 #ifndef RI_RINAGE_ALLOC_H
 #define RI_RINAGE_ALLOC_H
+
 #include "RITypes.h"
+#include "system/Types.h"
 #include <array>
 #include <cassert>
 
@@ -21,19 +23,19 @@ struct RISegmentReq_s {
 
 template<size_t N> 
 struct RISegmentAlloc {
+  RISegmentAlloc() {}
   RISegmentAlloc(struct RISegmentAllocDesc_s* desc);
   bool request(uint32_t frameIndex, size_t numElements, struct RISegmentReq_s *req); 
-  
 
-  uint16_t elementStride;
- 	uint16_t numSegments;
-  uint16_t maxElements;
+  uint16_t elementStride = 0;
+ 	uint16_t numSegments = 0;
+  uint16_t maxElements = 0;
 
   // data
-  int16_t tail;
-  int16_t head;
-  uint16_t numElements;
-  size_t elementOffset;
+  int16_t tail = 0;
+  int16_t head = 1;
+  uint16_t numElements = 0;
+  size_t elementOffset = 0;
   struct Segment {
     uint64_t frameNum;
     size_t numElements; // size of the generation
@@ -66,7 +68,7 @@ bool RISegmentAlloc<N>::request(uint32_t frameIndex, size_t numElements,
 
   // the frame has change
   if (frameIndex != segment[head].frameNum) {
-    head = (head + 1) % Q_ARRAY_COUNT(segment);
+    head = (head + 1) % ARRAY_COUNT(segment);
     segment[head].frameNum = frameIndex;
     segment[head].numElements = 0;
     assert(head != tail); // this shouldn't happen

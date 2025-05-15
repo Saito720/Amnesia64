@@ -127,17 +127,15 @@ namespace hpl {
 		return static_cast<Image*> (FindLoadedResource(asName, asFilePath));
 	}
 
-	Image* cTextureManager::create_1D(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage,
+	Image* cTextureManager::Create1DImage(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage,
 						unsigned int alTextureSizeLevel) {
 		return wrap_image_resource(asName, [&abUseMipMaps, this](const tString& asName, const tWString& path, cBitmap* pBmp) -> Image* {
 				auto resource = new Image(asName, path);//, &HPLTexture::HPLTexture_Delete);
 				hpl::HPLTexture::BitmapLoadOptions opts = {0};
 				opts.use_mipmaps = abUseMipMaps;
 				RIBarrierImageHandle_s barrierHandle = {};
-				HPLTexture* tex = new HPLTexture{};
-				auto img = std::shared_ptr<HPLTexture>(tex, HPLTexture::HPLTexture_Delete);
-				if(!img->LoadBitmap(
-					&mpGraphics->GetLowLevel()->bootsrap, barrierHandle, *pBmp, opts)) {
+				auto img = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete);
+				if(!img->LoadBitmap(barrierHandle, *pBmp, opts)) {
 					Error("Texture manager Couldn't load bitmap '%s'\n", cString::To8Char(path).c_str());
 					return NULL;
 				}
@@ -146,7 +144,7 @@ namespace hpl {
 		});
 	}
 
-	Image* cTextureManager::create_2D(const tString& asName,bool abUseMipMaps,eTextureType aType,
+	Image* cTextureManager::Create2DImage(const tString& asName,bool abUseMipMaps,eTextureType aType,
 						eTextureUsage aUsage,unsigned int alTextureSizeLevel) {
 		return wrap_image_resource(asName, [&abUseMipMaps, this](const tString& asName, const tWString& path, cBitmap* pBmp) -> Image* {
 				auto resource = new Image(asName, path);//, &HPLTexture::HPLTexture_Delete);
@@ -154,8 +152,7 @@ namespace hpl {
 				opts.use_mipmaps = abUseMipMaps;
 				RIBarrierImageHandle_s barrierHandle = {};
 				auto img = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete);
-				if(!img->LoadBitmap(
-					&mpGraphics->GetLowLevel()->bootsrap, barrierHandle, *pBmp, opts)) {
+				if(!img->LoadBitmap( barrierHandle, *pBmp, opts)) {
 					Error("Texture manager Couldn't load bitmap '%s'\n", cString::To8Char(path).c_str());
 					return NULL;
 				}
@@ -164,7 +161,7 @@ namespace hpl {
 		});
 	}
 
-	Image* cTextureManager::create_3D(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage,
+	Image* cTextureManager::Create3DImage(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage,
 						unsigned int alTextureSizeLevel){
 		return wrap_image_resource(asName, [&abUseMipMaps, this](const tString& asName, const tWString& path, cBitmap* pBmp) -> Image* {
 				auto resource = new Image(asName, path);//, &HPLTexture::HPLTexture_Delete);
@@ -173,8 +170,7 @@ namespace hpl {
 				RIBarrierImageHandle_s barrierHandle = {};
 				HPLTexture* tex = new HPLTexture{};
 				auto img = std::shared_ptr<HPLTexture>(tex, HPLTexture::HPLTexture_Delete);
-				if(!img->LoadBitmap(
-					&mpGraphics->GetLowLevel()->bootsrap, barrierHandle, *pBmp, opts)) {
+				if(!img->LoadBitmap( barrierHandle, *pBmp, opts)) {
 					Error("Texture manager Couldn't load bitmap '%s'\n", cString::To8Char(path).c_str());
 					return NULL;
 				}
@@ -183,7 +179,7 @@ namespace hpl {
 		});
 	}
 
-	Image* cTextureManager::create_cubemap(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage,
+	Image* cTextureManager::CreateCubeMapImage(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage,
 				unsigned int alTextureSizeLevel){
 		assert(false);
 		return NULL;

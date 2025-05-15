@@ -29,7 +29,7 @@
 #include "graphics/FrameSubImage.h"
 #include "graphics/FrameBitmap.h"
 
-#include "graphics/Texture.h"
+#include "graphics/Image.h"
 
 #include "gui/Gui.h"
 
@@ -251,7 +251,7 @@ namespace hpl {
 
 	//---------------------------------------------------
 
-	void cGuiGfxElement::AddTexture(iTexture* apTexture, const cVector2f& avStartUV, const cVector2f& avEndUV)
+	void cGuiGfxElement::AddTexture(Image* apTexture, const cVector2f& avStartUV, const cVector2f& avEndUV)
 	{
 		mvTextures[mlTextureNum] = apTexture;
 
@@ -259,40 +259,20 @@ namespace hpl {
 		{
 			cVector2f vSize = cVector2f((float)apTexture->GetWidth(), (float)apTexture->GetHeight());
 
-			mvImageSize.x = vSize.x * (avEndUV.x - avStartUV.x);
-			mvImageSize.y = vSize.y * (avEndUV.y - avStartUV.y);
+		  mvImageSize.x = vSize.x * (avEndUV.x - avStartUV.x);
+		  mvImageSize.y = vSize.y * (avEndUV.y - avStartUV.y);
 
-			if(apTexture->GetType() == eTextureType_Rect)
-			{
-				//If a rect, give new texture coordinates
-				
-				mvVtx[0].tex.x = avStartUV.x * vSize.x;
-				mvVtx[0].tex.y = avStartUV.y * vSize.y;
+			mvVtx[0].tex.x = avStartUV.x;
+			mvVtx[0].tex.y = avStartUV.y;
 
-				mvVtx[1].tex.x = avEndUV.x * vSize.x;
-				mvVtx[1].tex.y = avStartUV.y * vSize.y;
+			mvVtx[1].tex.x = avEndUV.x;
+			mvVtx[1].tex.y = avStartUV.y;
 
-				mvVtx[2].tex.x = avEndUV.x * vSize.x;
-				mvVtx[2].tex.y = avEndUV.y * vSize.y;
-				
-				mvVtx[3].tex.x = avStartUV.x * vSize.x;
-				mvVtx[3].tex.y = avEndUV.y * vSize.y;
-			}
-			else
-			{
-				mvVtx[0].tex.x = avStartUV.x;
-				mvVtx[0].tex.y = avStartUV.y;
+			mvVtx[2].tex.x = avEndUV.x;
+			mvVtx[2].tex.y = avEndUV.y;
 
-				mvVtx[1].tex.x = avEndUV.x;
-				mvVtx[1].tex.y = avStartUV.y;
-
-				mvVtx[2].tex.x = avEndUV.x;
-				mvVtx[2].tex.y = avEndUV.y;
-				
-				mvVtx[3].tex.x = avStartUV.x;
-				mvVtx[3].tex.y = avEndUV.y;
-
-			}
+			mvVtx[3].tex.x = avStartUV.x;
+			mvVtx[3].tex.y = avEndUV.y;
 
 			if(mbFlipUvYAxis) SetFlipUvYAxis(mbFlipUvYAxis);
 		}
@@ -302,7 +282,7 @@ namespace hpl {
 		++mlTextureNum;
 	}
 	
-	void cGuiGfxElement::AddTexture(iTexture* apTexture, const cVector2f& avUVUpperLeft, const cVector2f& avUVUpperRight, const cVector2f& avUVLowerRight, const cVector2f& avUVLowerLeft)
+	void cGuiGfxElement::AddTexture(Image* apTexture, const cVector2f& avUVUpperLeft, const cVector2f& avUVUpperRight, const cVector2f& avUVLowerRight, const cVector2f& avUVLowerLeft)
 	{
 		mvTextures[mlTextureNum] = apTexture;
 
@@ -316,37 +296,17 @@ namespace hpl {
 			mvImageSize.x = vSize.x * (avUVLowerRight.x - avUVUpperLeft.x);
 			mvImageSize.y = vSize.y * (avUVLowerRight.y - avUVUpperLeft.y);
 
-			if(apTexture->GetType() == eTextureType_Rect)
-			{
-				//If a rect, give new texture coordinates
-				
-				mvVtx[0].tex.x = avUVUpperLeft.x * vSize.x;
-				mvVtx[0].tex.y = avUVUpperLeft.y * vSize.y;
+			mvVtx[0].tex.x = avUVUpperLeft.x;
+			mvVtx[0].tex.y = avUVUpperLeft.y;
 
-				mvVtx[1].tex.x = avUVUpperRight.x * vSize.x;
-				mvVtx[1].tex.y = avUVUpperRight.y * vSize.y;
+			mvVtx[1].tex.x = avUVUpperRight.x;
+			mvVtx[1].tex.y = avUVUpperRight.y;
 
-				mvVtx[2].tex.x = avUVLowerRight.x * vSize.x;
-				mvVtx[2].tex.y = avUVLowerRight.y * vSize.y;
-				
-				mvVtx[3].tex.x = avUVLowerLeft.x * vSize.x;
-				mvVtx[3].tex.y = avUVLowerLeft.y * vSize.y;
-			}
-			else
-			{
-				mvVtx[0].tex.x = avUVUpperLeft.x;
-				mvVtx[0].tex.y = avUVUpperLeft.y;
-
-				mvVtx[1].tex.x = avUVUpperRight.x;
-				mvVtx[1].tex.y = avUVUpperRight.y;
-
-				mvVtx[2].tex.x = avUVLowerRight.x;
-				mvVtx[2].tex.y = avUVLowerRight.y;
-				
-				mvVtx[3].tex.x = avUVLowerLeft.x;
-				mvVtx[3].tex.y = avUVLowerLeft.y;
-
-			}
+			mvVtx[2].tex.x = avUVLowerRight.x;
+			mvVtx[2].tex.y = avUVLowerRight.y;
+			
+			mvVtx[3].tex.x = avUVLowerLeft.x;
+			mvVtx[3].tex.y = avUVLowerLeft.y;
 
 			if(mbFlipUvYAxis) SetFlipUvYAxis(mbFlipUvYAxis);
 		}

@@ -46,16 +46,16 @@ namespace hpl {
 		cTextureManager(cGraphics* apGraphics,cResources *apResources);
 		~cTextureManager();
 
-		Image* create_1D(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage=eTextureUsage_Normal,
+		Image* Create1DImage(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage=eTextureUsage_Normal,
 							unsigned int alTextureSizeLevel=0);
 
-		Image* create_2D(const tString& asName,bool abUseMipMaps,eTextureType aType= eTextureType_2D,
+		Image* Create2DImage(const tString& asName,bool abUseMipMaps,eTextureType aType= eTextureType_2D,
 							eTextureUsage aUsage=eTextureUsage_Normal,unsigned int alTextureSizeLevel=0);
 
-		Image* create_3D(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage=eTextureUsage_Normal,
+		Image* Create3DImage(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage=eTextureUsage_Normal,
 							unsigned int alTextureSizeLevel=0);
 
-		Image* create_cubemap(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage=eTextureUsage_Normal,
+		Image* CreateCubeMapImage(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage=eTextureUsage_Normal,
 					unsigned int alTextureSizeLevel=0);
 
 		[[deprecated("create_1D")]]

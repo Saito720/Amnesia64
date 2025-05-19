@@ -695,6 +695,9 @@ void cLuxScriptHandler::InitScriptFunctions()
 	AddFunc("bool StringToBool(string&in asString)",(void *)ScriptStringToBool);
 
 	AddFunc("void CastRaysFromEntity(string &in asName, int alSubMeshIdx, float afCastDist, float afR, float afG, float afB, float afA)",(void *)CastRaysFromEntity);
+
+	AddFunc("void SetSatelliteAzEl(float afSatAz, float afSatEl)",(void *)SetSatelliteAzEl);
+	AddFunc("void SetAntennaEntity(string &in asName, int alBodyIdx)",(void *)SetAntennaEntity);
 }
 //-----------------------------------------------------------------------
 
@@ -3709,6 +3712,36 @@ void __stdcall cLuxScriptHandler::CastRaysFromEntity(string& asName, int alSubMe
 	}
 
 	gpBase->mpDebugHandler->SetCastingEntity(pMeshEntity, afCastDist, cColor(afR, afG, afB, afA));
+}
+
+//-----------------------------------------------------------------------
+
+void __stdcall cLuxScriptHandler::SetSatelliteAzEl(float afAz, float afEl)
+{
+	gpBase->mpDebugHandler->SetSatAzEl(afAz, afEl);
+}
+
+void __stdcall cLuxScriptHandler::SetAntennaEntity(string& asName, int alBodyIdx)
+{
+	cLuxMap* pMap = gpBase->mpMapHandler->GetCurrentMap();
+
+	iLuxEntity* pEntity = pMap->GetEntityByName(asName);
+	if (!pEntity)
+	{
+		std::string sNoEnt = "ERROR: No entity found for antenna!";
+		AddDebugMessage(sNoEnt, false);
+		return;
+	}
+
+	iPhysicsBody* pBody = pEntity->GetBody(alBodyIdx);
+	if (!pBody)
+	{
+		std::string sNoBody = "ERROR: No body found for antenna!";
+		AddDebugMessage(sNoBody, false);
+		return;
+	}
+
+	gpBase->mpDebugHandler->SetAntEntity(pBody);
 }
 
 //-----------------------------------------------------------------------

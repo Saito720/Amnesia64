@@ -92,6 +92,12 @@ public:
 	void DrawMeshSplitNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, float afNrmLength, const cColor& aNrmColor);
 	void DrawMeshFaceNormals(cRendererCallbackFunctions* apFunctions, cSubMeshEntity* apMeshEntity, float afCastDist, const cColor& aHitColor);
 
+	void SetSatAzEl(float afSatAz, float afSatEl) { mfSatAz = afSatAz; mfSatEl = afSatEl; };
+	void SetAntEntity(iPhysicsBody* apBody) { mpAntBody = apBody; };
+
+	cVector2f AzElToUV(float afAz, float afEl, float afProjRadius, cVector2f avProjCenter, cVector2f avTextureRes, cVector2f avScreenRes);
+	cVector2f GetAzElFromBody(iPhysicsBody* apBody);
+
 	void AddErrorOrWarningMessage(const tWString& asText);
 	void AddMessage(const tWString& asText, bool abCheckForDuplicates);
 
@@ -197,6 +203,16 @@ private:
 	cSubMeshEntity *mpCastingEntity;
 	float mfCastDist;
 	cColor mHitColor;
+
+	bool mbTracking;
+	iTexture* mpTrackWin;
+	iTexture* mpSatMarker;
+	iTexture* mpAntMarker;
+
+	float mfSatAz;
+	float mfSatEl;
+
+	iPhysicsBody* mpAntBody;
 	
 	tWidgetList mlstScriptOutputWidgets;
 

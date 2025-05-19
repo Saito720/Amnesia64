@@ -341,7 +341,7 @@ namespace hpl {
 									cVector3l(256, 256,1),
 									cVector3l(256, 256,1),
 									cVector3l(512, 512,1),
-									cVector3l(1024, 1024,1)
+									cVector3l(16384, 16384,1)
 		};
 		int lStartSize = 2;
 		if(mShadowMapResolution == eShadowMapResolution_Medium)		lStartSize = 1;

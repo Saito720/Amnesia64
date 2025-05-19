@@ -42,6 +42,8 @@
 
 #include "scene/RenderableContainer_DynBoxTree.h"
 
+#define _USE_MATH_DEFINES
+#include <math.h>
 
 //////////////////////////////////////////////////////////////////////////
 // STATIC FUNCTIONS
@@ -90,6 +92,22 @@ cLuxDebugHandler::cLuxDebugHandler() : iLuxUpdateable("LuxDebugHandler")
 
 	mpCastingEntity = NULL;
 	mpRayCallback = hplNew(cLuxDebugRayCallback, (this));
+
+	mbTracking = false;
+
+	mpTrackWin = gpBase->mpEngine->GetResources()->GetTextureManager()->Create2D("tracking_window.tga", false);
+	if (!mpTrackWin) FatalError("Could not load 'tracking_window.tga'!\n");
+
+	mpSatMarker = gpBase->mpEngine->GetResources()->GetTextureManager()->Create2D("satellite_marker.tga", false);
+	if (!mpSatMarker) FatalError("Could not load 'satellite_marker.tga'!\n");
+
+	mpAntMarker = gpBase->mpEngine->GetResources()->GetTextureManager()->Create2D("antenna_marker.tga", false);
+	if (!mpAntMarker) FatalError("Could not load 'antenna_marker.tga'!\n");
+
+	mfSatAz = 0.0f;
+	mfSatEl = 0.0f;
+
+	mpAntBody = NULL;
 }
 
 //-----------------------------------------------------------------------
@@ -678,6 +696,103 @@ void cLuxDebugHandler::RenderSolid(cRendererCallbackFunctions* apFunctions)
 	{
 		CastRaysFromMeshSurface(apFunctions, mpCastingEntity, mfCastDist, mHitColor);
 	}
+
+	if(mbTracking)
+	{
+		apFunctions->SetDepthTestFunc(eDepthTestFunc_Always);
+		apFunctions->SetDepthTest(true);
+		apFunctions->SetDepthWrite(true);
+		apFunctions->SetBlendMode(eMaterialBlendMode_Alpha);
+		apFunctions->SetAlphaMode(eMaterialAlphaMode_Trans);
+		apFunctions->SetChannelMode(eMaterialChannelMode_RGBA);
+
+		apFunctions->SetFlatProjection();
+		apFunctions->SetProgram(NULL);
+		apFunctions->SetTextureRange(NULL, 1);
+
+		// Window Specific (256x256)
+		float fWindowScale   = 0.2f;
+		float fScreenAspect  = apFunctions->GetFrustum()->GetAspect();
+		cVector2f vScreenRes = apFunctions->GetLowLevelGfx()->GetScreenSizeFloat();
+		cVector2f vWindowRes = cVector2f(fWindowScale * vScreenRes.x, (fWindowScale * fScreenAspect) * vScreenRes.y);
+		cVector2f vOffset    = cVector2f(vScreenRes - vWindowRes) / vScreenRes;
+
+		// Tracking Window
+		{
+			apFunctions->SetTexture(0, mpTrackWin);
+			apFunctions->DrawQuad(cVector2f(vOffset.x, vOffset.y), cVector2f(fWindowScale, fWindowScale * fScreenAspect));
+		}
+
+		// Marker Specific (16x16)
+		float fMarkerScale    = fWindowScale / 16.0f;
+		cVector2f vMarkerRes  = cVector2f(fMarkerScale * vScreenRes.x, (fMarkerScale * fScreenAspect) * vScreenRes.y);
+		cVector2f vProjCenter = cVector2f((vScreenRes - vWindowRes) + (vWindowRes.x / 2.0f));	// Projection center in pixels
+		float fProjRadius     = ((228.0f / 256.0f) * vWindowRes.x) / 2.0f;						// Projection radius in pixels
+
+		// Satellite Marker
+		{
+			cVector2f vSatPos = AzElToUV(mfSatAz, mfSatEl, fProjRadius, vProjCenter, vMarkerRes, vScreenRes);
+			apFunctions->SetTexture(0, mpSatMarker);
+			apFunctions->DrawQuad(vSatPos, cVector2f(fMarkerScale, fMarkerScale * fScreenAspect));
+		}
+
+		// Antenna Marker
+		{
+			cVector2f vAntPos;
+			if(mpAntBody)
+			{
+				cVector2f vAntAzEl = GetAzElFromBody(mpAntBody);
+				vAntPos = AzElToUV(vAntAzEl.x, vAntAzEl.y, fProjRadius, vProjCenter, vMarkerRes, vScreenRes);
+			}
+			else
+			{
+				Warning("No entity set for antenna!\n");
+				vAntPos = (0.0f);
+			}
+
+			apFunctions->SetTexture(0, mpAntMarker);
+			apFunctions->DrawQuad(vAntPos, cVector2f(fMarkerScale, fMarkerScale * fScreenAspect));
+		}
+
+		apFunctions->SetNormalFrustumProjection();
+		apFunctions->SetDepthTestFunc(eDepthTestFunc_Less);
+	}
+}
+
+cVector2f cLuxDebugHandler::AzElToUV(float afAz, float afEl, float afProjRadius, cVector2f avProjCenter, cVector2f avTextureRes, cVector2f avScreenRes)
+{
+	const float fAzRadians = afAz * (M_PI / 180.0f);
+	const float fRadialDist = (90.0f - afEl) / 90.0f * afProjRadius;
+
+	float fOffsetX = sinf(fAzRadians) * fRadialDist;
+	float fOffsetY = cosf(fAzRadians) * fRadialDist;
+	fOffsetY = -fOffsetY;
+
+	float fPixelX = avProjCenter.x + fOffsetX;
+	float fPixelY = avProjCenter.y + fOffsetY;
+
+	fPixelX -= avTextureRes.x * 0.5f;
+	fPixelY -= avTextureRes.y * 0.5f;
+
+	cVector2f vUV(fPixelX / avScreenRes.x, fPixelY / avScreenRes.y);
+
+	return vUV;
+}
+
+cVector2f cLuxDebugHandler::GetAzElFromBody(iPhysicsBody* apBody)
+{
+	cMatrixf mtxRot = cMath::MatrixInverse(apBody->GetWorldMatrix().GetRotation());
+	cVector3f vFwd = mtxRot.GetForward();
+	vFwd.Normalize();
+
+	float fAz = atan2f(vFwd.x, vFwd.z) * (180.0f / M_PI);
+	if (fAz < 0.0f) fAz += 360.0f;
+
+	float fHoriz = static_cast<float>(std::hypot(vFwd.x, vFwd.z));
+	float fEl = atan2f(vFwd.y, fHoriz) * (180.0f / M_PI);
+	fEl = std::max(0.0f, fEl);
+
+	return cVector2f(fAz, fEl);
 }
 
 //-----------------------------------------------------------------------

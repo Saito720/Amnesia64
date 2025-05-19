@@ -538,6 +538,9 @@ private:
 	//////////////////////////////
 	// Misc
 	static void __stdcall CastRaysFromEntity(string& asName, int alSubMeshIdx, float afCastDist, float afR, float afG, float afB, float afA);
+
+	static void __stdcall SetSatelliteAzEl(float afAz, float afEl);
+	static void __stdcall SetAntennaEntity(string& asName, int alBodyIdx);
 };
 
 //----------------------------------------------

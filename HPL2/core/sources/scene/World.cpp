@@ -148,6 +148,8 @@ namespace hpl {
 
 
 		msFilePath = _W("");
+
+		mpWorldVB = NULL;
 	}
 
 	//-----------------------------------------------------------------------
@@ -173,6 +175,8 @@ namespace hpl {
 		}
 
 		hplDelete(mpRootNode);
+
+		if(mpWorldVB) hplDelete(mpWorldVB);
 	}
 
 	//-----------------------------------------------------------------------
@@ -239,6 +243,8 @@ namespace hpl {
 		START_TIMING(SoundEntities);
 		UpdateSoundEntities(afTimeStep);
 		STOP_TIMING(SoundEntities);
+
+		UpdateWorldVB();
 	}
 
 	//-----------------------------------------------------------------------
@@ -423,6 +429,227 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
+	cVector2l cWorld::GetAllocSizeForWorldVB()
+	{
+		int lVertCount = 0;
+		int lIdxCount  = 0;
+
+		// Static
+		cMeshEntityIterator it = GetStaticMeshEntityIterator();
+		while (it.HasNext())
+		{
+			cMeshEntity* pMeshEntity = it.Next();
+			for (int i = 0; i < pMeshEntity->GetSubMeshEntityNum(); ++i)
+			{
+				cSubMeshEntity* pSubEntity = pMeshEntity->GetSubMeshEntity(i);
+				if (!IsValidForWorldVB(pSubEntity)) continue;
+
+				mlstSubMeshEntities.push_back(pSubEntity);
+
+				lVertCount += pSubEntity->GetVertexBuffer()->GetVertexNum();
+				lIdxCount += pSubEntity->GetVertexBuffer()->GetIndexNum();
+			}
+		}
+
+		// Dynamic
+		it = GetDynamicMeshEntityIterator();
+		while (it.HasNext())
+		{
+			cMeshEntity* pMeshEntity = it.Next();
+			for (int i = 0; i < pMeshEntity->GetSubMeshEntityNum(); ++i)
+			{
+				cSubMeshEntity* pSubEntity = pMeshEntity->GetSubMeshEntity(i);
+				if (!IsValidForWorldVB(pSubEntity)) continue;
+
+				tDynamicMeshIndexMap::value_type value(pSubEntity, lVertCount);
+				m_mapDynamicMeshIndicies.insert(value);
+				mlstSubMeshEntities.push_back(pSubEntity);
+
+				lVertCount += pSubEntity->GetVertexBuffer()->GetVertexNum();
+				lIdxCount += pSubEntity->GetVertexBuffer()->GetIndexNum();
+			}
+		}
+
+		return cVector2l(lVertCount, lIdxCount);
+	}
+
+	//-----------------------------------------------------------------------
+
+	static bool sbIncludeCritter   = false;
+	static bool sbIncludeEnemy     = false;
+	static bool sbIncludeTechnical = false;
+	bool cWorld::IsValidForWorldVB(cSubMeshEntity* apSubEntity)
+	{
+		if (!apSubEntity->GetMeshEntity()->IsActive()) return false;   // Inactive
+		if (apSubEntity->GetSubMesh()->IsCollideShape()) return false; // Collide shapes
+
+		tString sEntityFilePath = apSubEntity->GetMeshEntity()->GetSourceFile();
+		if (cString::GetFirstStringPos(sEntityFilePath, "entities/critter/")   >= 0) return sbIncludeCritter;   // critter
+		if (cString::GetFirstStringPos(sEntityFilePath, "entities/enemy/")     >= 0) return sbIncludeEnemy;     // enemy
+		if (cString::GetFirstStringPos(sEntityFilePath, "entities/technical/") >= 0) return sbIncludeTechnical; // technical
+
+		tString sMeshFilePath = cString::To8Char(apSubEntity->GetMeshEntity()->GetMesh()->GetFullPath());
+		if (cString::GetFirstStringPos(sMeshFilePath, "entities/door/") >= 0)
+		{
+			if (cString::GetFirstStringPos(sMeshFilePath, "damage") >= 0)
+			{
+				return false; // Door damage meshes
+			}
+		}
+
+		return true;
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cWorld::CompileWorldVB()
+	{
+		cVector2l vAlloc = GetAllocSizeForWorldVB();
+
+		mpWorldVB = mpGraphics->GetLowLevel()->CreateVertexBuffer(eVertexBufferType_Hardware, eVertexBufferDrawType_Tri, eVertexBufferUsageType_Stream, vAlloc.x, vAlloc.y);
+		mpWorldVB->CreateElementArray(eVertexBufferElement_Position, eVertexBufferElementFormat_Float, 4);
+		mpWorldVB->CreateElementArray(eVertexBufferElement_Normal, eVertexBufferElementFormat_Float, 3);
+		mpWorldVB->CreateElementArray(eVertexBufferElement_Color0, eVertexBufferElementFormat_Float, 4);
+		mpWorldVB->CreateElementArray(eVertexBufferElement_Texture0, eVertexBufferElementFormat_Float, 3);
+
+		uint32_t lIdxOffset = 0;
+		cSubMeshEntityIterator it = GetSubMeshEntityIterator();
+		while (it.HasNext())
+		{
+			cSubMeshEntity* pSubEntity = it.Next();
+			iVertexBuffer* pVB = pSubEntity->GetVertexBuffer();
+			iVertexBuffer* pTempVB = pVB->CreateCopy(eVertexBufferType_Software, eVertexBufferUsageType_Stream, eVertexElementFlag_Position | eVertexElementFlag_Normal | eVertexElementFlag_Color0 | eVertexElementFlag_Texture0);
+			pTempVB->Transform(pSubEntity->GetWorldMatrix());
+
+			float* pPosArray        = pTempVB->GetFloatArray(eVertexBufferElement_Position);
+			float* pNrmArray        = pTempVB->GetFloatArray(eVertexBufferElement_Normal);
+			float* pColArray        = pTempVB->GetFloatArray(eVertexBufferElement_Color0);
+			float* pUvArray         = pTempVB->GetFloatArray(eVertexBufferElement_Texture0);
+			unsigned int* pIdxArray = pTempVB->GetIndices();
+
+			int lTempVertCount = pTempVB->GetVertexNum();
+			for (int j = 0; j < lTempVertCount; ++j)
+			{
+				mpWorldVB->AddVertexVec3f(eVertexBufferElement_Position, cVector3f(pPosArray[j * 4 + 0], pPosArray[j * 4 + 1], pPosArray[j * 4 + 2]));
+				mpWorldVB->AddVertexVec3f(eVertexBufferElement_Normal, cVector3f(pNrmArray[j * 3 + 0], pNrmArray[j * 3 + 1], pNrmArray[j * 3 + 2]));
+				mpWorldVB->AddVertexColor(eVertexBufferElement_Color0, cColor(pColArray[j * 4 + 0], pColArray[j * 4 + 1], pColArray[j * 4 + 2], pColArray[j * 4 + 3]));
+				mpWorldVB->AddVertexVec3f(eVertexBufferElement_Texture0, cVector3f(pUvArray[j * 3 + 0], pUvArray[j * 3 + 1], pUvArray[j * 3 + 2]));
+			}
+
+			int lTempIdxCount = pTempVB->GetIndexNum();
+			for (int k = 0; k < lTempIdxCount; ++k)
+			{
+				mpWorldVB->AddIndex(pIdxArray[k] + lIdxOffset);
+			}
+
+			lIdxOffset += lTempVertCount;
+
+			hplDelete(pTempVB);
+		}
+
+		mpWorldVB->Compile(eVertexCompileFlag_CreateTangents);
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cWorld::UpdateWorldVB()
+	{
+		if (mlstToBeDestroyedSubEntities.size() > 0)
+		{
+			float* pPosArray = mpWorldVB->GetFloatArray(eVertexBufferElement_Position);
+			float* pNrmArray = mpWorldVB->GetFloatArray(eVertexBufferElement_Normal);
+			float* pColArray = mpWorldVB->GetFloatArray(eVertexBufferElement_Color0);
+			float* pUvArray = mpWorldVB->GetFloatArray(eVertexBufferElement_Texture0);
+			unsigned int* pIdxArray = mpWorldVB->GetIndices();
+
+			for (auto DestroyIt = mlstToBeDestroyedSubEntities.begin(); DestroyIt != mlstToBeDestroyedSubEntities.end(); ++DestroyIt)
+			{
+				auto MeshIt = m_mapDynamicMeshIndicies.find(*DestroyIt);
+				if (MeshIt == m_mapDynamicMeshIndicies.end())
+				{
+					Warning("Could not find mapped entity!\n");
+					continue;
+				}
+
+				int lStartVertOffset = MeshIt->second;
+				int lVertCount = MeshIt->first->GetVertexBuffer()->GetVertexNum();
+
+				int lTotalVertices = mpWorldVB->GetVertexNum();
+				for (int i = lStartVertOffset + lVertCount; i < lTotalVertices; ++i)
+				{
+					int lSrcIdx = i;
+					int lDstIdx = i - lVertCount;
+
+					pPosArray[lDstIdx * 4 + 0] = pPosArray[lSrcIdx * 4 + 0];
+					pPosArray[lDstIdx * 4 + 1] = pPosArray[lSrcIdx * 4 + 1];
+					pPosArray[lDstIdx * 4 + 2] = pPosArray[lSrcIdx * 4 + 2];
+					pPosArray[lDstIdx * 4 + 3] = pPosArray[lSrcIdx * 4 + 3];
+
+					pNrmArray[lDstIdx * 3 + 0] = pNrmArray[lSrcIdx * 3 + 0];
+					pNrmArray[lDstIdx * 3 + 1] = pNrmArray[lSrcIdx * 3 + 1];
+					pNrmArray[lDstIdx * 3 + 2] = pNrmArray[lSrcIdx * 3 + 2];
+
+					pColArray[lDstIdx * 4 + 0] = pColArray[lSrcIdx * 4 + 0];
+					pColArray[lDstIdx * 4 + 1] = pColArray[lSrcIdx * 4 + 1];
+					pColArray[lDstIdx * 4 + 2] = pColArray[lSrcIdx * 4 + 2];
+					pColArray[lDstIdx * 4 + 3] = pColArray[lSrcIdx * 4 + 3];
+
+					pUvArray[lDstIdx * 3 + 0] = pUvArray[lSrcIdx * 3 + 0];
+					pUvArray[lDstIdx * 3 + 1] = pUvArray[lSrcIdx * 3 + 1];
+					pUvArray[lDstIdx * 3 + 2] = pUvArray[lSrcIdx * 3 + 2];
+				}
+
+				int lTotalIndices = mpWorldVB->GetIndexNum();
+				for (int i = 0; i < lTotalIndices; ++i)
+				{
+					if (pIdxArray[i] >= lStartVertOffset + lVertCount)
+					{
+						pIdxArray[i] -= lVertCount;
+					}
+				}
+
+				for (auto& mapEntry : m_mapDynamicMeshIndicies)
+				{
+					if (mapEntry.second > lStartVertOffset)
+					{
+						mapEntry.second -= lVertCount;
+					}
+				}
+				mpWorldVB->SetElementNum(lTotalIndices - MeshIt->first->GetVertexBuffer()->GetIndexNum());
+				m_mapDynamicMeshIndicies.erase(MeshIt);
+			}
+			mlstToBeDestroyedSubEntities.clear();
+			mpWorldVB->UpdateData(eVertexElementFlag_Position | eVertexElementFlag_Texture0 | eVertexElementFlag_Texture1 | eVertexElementFlag_Normal, true);
+		}
+
+		for (auto it = m_mapDynamicMeshIndicies.begin(); it != m_mapDynamicMeshIndicies.end(); ++it)
+		{
+			cSubMeshEntity* pSubEntity = it->first;
+			int lIndex = it->second;
+
+			iVertexBuffer* pVB = pSubEntity->GetVertexBuffer();
+			iVertexBuffer* pTempVB = pVB->CreateCopy(eVertexBufferType_Software, eVertexBufferUsageType_Stream, eVertexElementFlag_Position);
+			pTempVB->Transform(pSubEntity->GetWorldMatrix());
+
+			float* pDstPosArray = mpWorldVB->GetFloatArray(eVertexBufferElement_Position);
+			float* pSrcPosArray = pTempVB->GetFloatArray(eVertexBufferElement_Position);
+
+			for (int i = 0; i < pTempVB->GetVertexNum(); ++i)
+			{
+				int lSrcPosIdx = i * 4;
+				int lDstPosIdx = (lIndex + i) * 4;
+				pDstPosArray[lDstPosIdx + 0] = pSrcPosArray[lSrcPosIdx + 0];
+				pDstPosArray[lDstPosIdx + 1] = pSrcPosArray[lSrcPosIdx + 1];
+				pDstPosArray[lDstPosIdx + 2] = pSrcPosArray[lSrcPosIdx + 2];
+				pDstPosArray[lDstPosIdx + 3] = pSrcPosArray[lSrcPosIdx + 3];
+			}
+			hplDelete(pTempVB);
+		}
+		mpWorldVB->UpdateData(eVertexElementFlag_Position, false);
+	}
+
+	//-----------------------------------------------------------------------
+
 	cMeshEntity* cWorld::CreateMeshEntity(const tString &asName,cMesh *apMesh, bool abStatic)
 	{
 		cMeshEntity* pMeshEntity = hplNew( cMeshEntity, (asName,apMesh,mpResources->GetMaterialManager(),
@@ -489,6 +716,13 @@ namespace hpl {
 		return cMeshEntityIterator(&mlstStaticMeshEntities);
 	}
 	
+	//-----------------------------------------------------------------------
+
+	cSubMeshEntityIterator cWorld::GetSubMeshEntityIterator()
+	{
+		return cSubMeshEntityIterator(&mlstSubMeshEntities);
+	}
+
 	//-----------------------------------------------------------------------
 
 	void cWorld::DrawMeshBoundingBoxes(const cColor &aColor, bool abStatic)

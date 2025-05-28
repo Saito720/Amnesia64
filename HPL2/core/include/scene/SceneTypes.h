@@ -246,9 +246,13 @@ namespace hpl
 	typedef std::map<tString, int> tAnimationStateIndexMap;
 	typedef tAnimationStateIndexMap::iterator tAnimationStateIndexMapIt;
 
+	typedef std::map<cSubMeshEntity*, int> tDynamicMeshIndexMap;
+	typedef tDynamicMeshIndexMap::iterator tDynamicMeshIndexMapIt;
+
 	//-------------------------------------------------------------------
 
 	typedef cSTLIterator<cMeshEntity*, tMeshEntityList, tMeshEntityListIt> cMeshEntityIterator;
+	typedef cSTLIterator<cSubMeshEntity*, tSubMeshEntityList, tSubMeshEntityListIt> cSubMeshEntityIterator;
 	typedef cSTLIterator<cBillboard*, tBillboardList, tBillboardListIt> cBillboardIterator;
 	typedef cSTLIterator<iLight*, tLightList, tLightListIt> cLightListIterator;
 	typedef cSTLIterator<cParticleSystem*, tParticleSystemList, tParticleSystemListIt> cParticleSystemIterator;

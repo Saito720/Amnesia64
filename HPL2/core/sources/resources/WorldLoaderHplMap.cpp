@@ -340,17 +340,19 @@ namespace hpl {
 			lDeltaTime = cPlatform::GetApplicationTime() - lStartTime;
 			if(gbLogTiming) Log("  Entities: %d ms\n", lDeltaTime);
 		}
-			
+		
+		mpCurrentWorld->CompileWorldVB();
+
 		//////////////////////////////
 		// Compile
-		lStartTime = cPlatform::GetApplicationTime();
+		/* lStartTime = cPlatform::GetApplicationTime();
 		mpCurrentWorld->Compile(true);
 		lDeltaTime = cPlatform::GetApplicationTime() - lStartTime;
 		if(gbLogTiming) Log("  Compilation: %d ms\n", lDeltaTime);
 
 		//////////////////////////////
 		// Save cache
-		SaveCacheFile(asFile);
+		SaveCacheFile(asFile); */
 
 		//////////////////////////////
 		// Final clean up

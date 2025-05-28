@@ -232,13 +232,22 @@ namespace hpl {
 		tAreaEntityMap* GetAreaEntityMap(){return &m_mapAreaEntities;}
 
 		///// MESH ENTITY METHODS ////////////////////
-		
+
+		void AddToBeDeletedSubEntity(cSubMeshEntity* apSubEntity) { mlstToBeDestroyedSubEntities.push_back(apSubEntity); };
+		bool IsValidForWorldVB(cSubMeshEntity* apSubEntity);
+		iVertexBuffer* GetWorldVB() { return mpWorldVB; };
+		cVector2l GetAllocSizeForWorldVB();
+		void CompileWorldVB();
+		void UpdateWorldVB();
+
 		cMeshEntity* CreateMeshEntity(const tString &asName,cMesh *apMesh, bool abStatic=false);
 		void DestroyMeshEntity(cMeshEntity* apMesh);
 		cMeshEntity* GetDynamicMeshEntity(const tString& asName);
 		
 		cMeshEntityIterator GetDynamicMeshEntityIterator();
 		cMeshEntityIterator GetStaticMeshEntityIterator();
+
+		cSubMeshEntityIterator GetSubMeshEntityIterator();
 		
 		void DrawMeshBoundingBoxes(const cColor &aColor, bool abStatic);
 		
@@ -383,6 +392,11 @@ namespace hpl {
 		bool mbIsSoundEmitter;
 		
 		cVector3f mvWorldSize;
+
+		tSubMeshEntityList mlstSubMeshEntities;
+		tSubMeshEntityList mlstToBeDestroyedSubEntities;
+		tDynamicMeshIndexMap m_mapDynamicMeshIndicies;
+		iVertexBuffer* mpWorldVB;
 
 		iRenderableContainer* mpRenderableContainer[2];
 

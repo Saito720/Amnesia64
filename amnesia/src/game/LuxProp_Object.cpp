@@ -22,6 +22,7 @@
 #include "LuxPlayer.h"
 #include "LuxPlayerState.h"
 #include "LuxMap.h"
+#include "LuxMapHandler.h"
 #include "LuxEnemy.h"
 #include "LuxProp_Item.h"
 #include "LuxHintHandler.h"
@@ -717,6 +718,12 @@ void cLuxProp_Object::Break()
 {
 	mbBroken = true;
 	mpMap->DestroyEntity(this);
+
+	for (int i = 0; i < mpMeshEntity->GetSubMeshEntityNum(); ++i)
+	{
+		cSubMeshEntity* pSubEnt = mpMeshEntity->GetSubMeshEntity(i);
+		gpBase->mpMapHandler->GetCurrentMap()->GetWorld()->AddToBeDeletedSubEntity(pSubEnt);
+	}
 }
 
 //-----------------------------------------------------------------------

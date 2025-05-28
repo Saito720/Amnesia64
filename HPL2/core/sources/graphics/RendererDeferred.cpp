@@ -215,6 +215,8 @@ namespace hpl {
 	
 	bool cRendererDeferred::LoadData()
 	{
+		mpUvDebug = mpResources->GetTextureManager()->Create2D("debug.dds", true);
+
 		cVector2l vRelfectionSize = cVector2l(mvScreenSize.x/mlReflectionSizeDiv, mvScreenSize.y/mlReflectionSizeDiv);
 
 		Log("Setting up G-Bugger: type: %d texturenum: %d\n", mGBufferType, mlNumOfGBufferTextures);
@@ -679,7 +681,38 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	
+	void cRendererDeferred::RenderStaticVB()
+	{
+		if (!mpCurrentWorld->GetWorldVB()) return;
+
+		START_RENDER_PASS(StaticVB);
+
+		//Pure testing below
+		SetDepthTest(true);
+		SetDepthWrite(true);
+		SetBlendMode(eMaterialBlendMode_None);
+		SetAlphaMode(eMaterialAlphaMode_Solid);
+		SetChannelMode(eMaterialChannelMode_RGBA);
+
+		SetAccumulationBuffer();
+
+		ClearFrameBuffer(eClearFrameBufferFlag_Depth | eClearFrameBufferFlag_Color, false);
+
+		SetProgram(NULL);
+		SetTextureRange(NULL, 1);
+		SetTexture(0, mpUvDebug);
+		SetVertexBuffer(mpCurrentWorld->GetWorldVB());
+		cMatrixf mtxOrigin = cMatrixf::Identity;
+		SetMatrix(&mtxOrigin);
+		DrawCurrent();
+
+		DrawWireFrame(mpCurrentWorld->GetWorldVB(), cColor(0, 0, 0, 1));
+
+		END_RENDER_PASS();
+	}
+
+	//-----------------------------------------------------------------------
+
 	void cRendererDeferred::DestroyData()
 	{
 		/////////////////////////
@@ -846,6 +879,9 @@ namespace hpl {
 		
 		//Set up the frame buffers needed for G-buffer
 		SetupGBuffer();
+
+		RenderStaticVB();
+		return;
 
 		tRenderableFlag lVisibleFlags=0;
 		if(mpCurrentSettings->mbIsReflection)	lVisibleFlags |= eRenderableFlag_VisibleInReflection;

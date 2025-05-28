@@ -84,6 +84,8 @@ namespace hpl {
 
 		eRenderableType GetRenderType(){ return eRenderableType_SubMesh;}
 
+		cMeshEntity* GetMeshEntity() const { return mpMeshEntity; }
+
 		cSubMesh* GetSubMesh() const { return mpSubMesh;}
 
 		void SetLocalNode(cNode3D *apNode);

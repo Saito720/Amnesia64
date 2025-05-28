@@ -225,6 +225,7 @@ namespace hpl {
 		
 		void RenderGbufferContent();
 		void RenderReflectionContent();
+		void RenderStaticVB();
 
 		////////////////
 		//Draw helpers
@@ -237,7 +238,8 @@ namespace hpl {
 		iGpuProgram* SetupProgramAndTextures(cDeferredLight* apLightData, tFlag alExtraFlags);
 		iVertexBuffer* GetLightShape(iLight *apLight, eDeferredShapeQuality aQuality);
 		
-		
+		iTexture* mpUvDebug;
+
 		iVertexBuffer *mpShapeSphere[eDeferredShapeQuality_LastEnum];
 		iVertexBuffer *mpShapePyramid;
 		

@@ -30,10 +30,10 @@ int InitRIDevice( struct RIRenderer_s *renderer, struct RIDeviceDesc_s *init, st
 void WaitRIQueueIdle( struct RIDevice_s *device, struct RIQueue_s *queue );
 
 int FreeRIDevice( struct RIDevice_s *dev );
-void FreeRIFree( struct RIDevice_s *dev, struct RIFree_s *mem );
+void FreeRIFree( struct RIDevice_s *dev, struct RIFree *mem );
 
 // RIDescriptor
-void RefreshCookies( struct RIDevice_s *dev, struct RIDescriptor_s *desc ); // after configure an RIDescriptor call update to configure it
+void RIFinalizeDescriptor( struct RIDevice_s *dev, struct RIDescriptor_s *desc ); // after configure an RIDescriptor call update to configure it
 void FreeRIDescriptor( struct RIDevice_s *dev, struct RIDescriptor_s *desc );
 static inline bool RI_IsEmptyDescriptor( struct RIDescriptor_s *desc ) { return desc->cookie == 0; }
 

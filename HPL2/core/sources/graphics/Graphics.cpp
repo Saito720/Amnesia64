@@ -212,10 +212,73 @@ namespace hpl {
 		swapchainInit.width = alWidth;
 		swapchainInit.height = alHeight;
 		swapchainInit.format = RI_SWAPCHAIN_BT709_G22_8BIT;
+		RI.depthFormat = RI_FORMAT_D32_SFLOAT;
 		InitRISwapchain(&RI.device, &swapchainInit, &RI.swapchain);
-	
+
+		{
+			uint32_t queueFamilies[RI_QUEUE_LEN] = { 0 };
+			assert( RI.riSwapchain.imageCount > 0 );
+			for( uint32_t i = 0; i < RI.swapchain.imageCount; i++ ) {
+				VmaAllocationCreateInfo mem_reqs = { 0 };
+				mem_reqs.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+				{
+					VkImageViewUsageCreateInfo usageInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO };
+					VkImageViewCreateInfo createInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+					createInfo.pNext = &usageInfo;
+					createInfo.subresourceRange = (VkImageSubresourceRange){
+						VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1,
+					};
+					usageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+					createInfo.image = RI.swapchain.vk.images[i];
+					createInfo.format = RIFormatToVK( RI.swapchain.format );
+					createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+					RI.colorAttachment[i].flags |= RI_VK_DESC_OWN_IMAGE_VIEW;
+					RI.colorAttachment[i].texture = &RI.swapchain.textures[i];
+					RI.colorAttachment[i].vk.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+					RI.colorAttachment[i].vk.image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+					VK_WrapResult( vkCreateImageView( RI.device.vk.device, &createInfo, NULL, &RI.colorAttachment[i].vk.image.imageView ) );
+					RIFinalizeDescriptor( &RI.device, &RI.colorAttachment[i] );
+				}
+				{
+					VkImageCreateInfo info = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+					info.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
+					info.imageType = VK_IMAGE_TYPE_2D;
+					info.extent.width = RI.swapchain.width;
+					info.extent.height = RI.swapchain.height;
+					info.extent.depth = 1;
+					info.mipLevels = 1;
+					info.arrayLayers = 1;
+					info.samples = VK_SAMPLE_COUNT_1_BIT;
+					info.tiling = VK_IMAGE_TILING_OPTIMAL;
+					info.pQueueFamilyIndices = queueFamilies;
+					VK_ConfigureImageQueueFamilies( &info, RI.device.queues, RI_QUEUE_LEN, queueFamilies, RI_QUEUE_LEN );
+					info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+					info.format = RIFormatToVK( RI.depthFormat);
+					info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+					VK_WrapResult( vmaCreateImage( RI.device.vk.vmaAllocator, &info, &mem_reqs, &RI.depthTextures[i].vk.image, &RI.vk.depthAlloc[i], NULL ) );
+				}
+				{
+					VkImageViewCreateInfo createInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+					createInfo.format = RIFormatToVK( RI.depthFormat );
+					createInfo.subresourceRange = (VkImageSubresourceRange){
+						VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1,
+					};
+					createInfo.image = RI.depthTextures[i].vk.image;
+					createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; //| VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+					
+					RI.depthAttachment[i].flags |= RI_VK_DESC_OWN_IMAGE_VIEW;
+					RI.depthAttachment[i].texture = &RI.depthTextures[i];
+					RI.depthAttachment[i].vk.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+					RI.depthAttachment[i].vk.image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+					VK_WrapResult( vkCreateImageView( RI.device.vk.device, &createInfo, NULL, &RI.depthAttachment[i].vk.image.imageView ) );
+					RIFinalizeDescriptor( &RI.device, &RI.depthAttachment[i] );
+				}
+			}
+		}
+
 		struct RIQueue_s *graphicsQueue = &RI.device.queues[RI_QUEUE_GRAPHICS];
-		for(auto& set: RI.frame_sets) {
+		for(auto& set: RI.frameSets) {
 			{
 				VkCommandPoolCreateInfo cmdPoolCreateInfo = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
 				cmdPoolCreateInfo.queueFamilyIndex = graphicsQueue->vk.queueFamilyIdx;
@@ -232,29 +295,29 @@ namespace hpl {
 			}
 
 			struct RIScratchAllocDesc_s scratchDesc = { 
-				.blockSize = 256 * 128, 
-				.alignmentReq = 256, 
-				.alloc = RIUniformScratchAllocHandler };
-			InitRIScratchAlloc( &RI.device, &set.UBOScratchAlloc, &scratchDesc );
+					.blockSize = 256 * 128, 
+					.alignmentReq = 256, 
+					.alloc = RIUniformScratchAllocHandler };
+				InitRIScratchAlloc( &RI.device, &set.uboScratchAlloc, &scratchDesc );
+			}
+
+			{
+				VkSemaphoreTypeCreateInfo semaphoreTypeCreateInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
+				semaphoreTypeCreateInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+				VkSemaphoreCreateInfo semaphoreCreateInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+				semaphoreCreateInfo.pNext = &semaphoreTypeCreateInfo;
+				VK_WrapResult( vkCreateSemaphore( RI.device.vk.device, &semaphoreCreateInfo, NULL, &RI.vk.frame_sem) );
+			}
 		}
 
 		{
-			VkSemaphoreTypeCreateInfo semaphoreTypeCreateInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
-			semaphoreTypeCreateInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
-			VkSemaphoreCreateInfo semaphoreCreateInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
-			semaphoreCreateInfo.pNext = &semaphoreTypeCreateInfo;
-			VK_WrapResult( vkCreateSemaphore( RI.device.vk.device, &semaphoreCreateInfo, NULL, &RI.vk.frame_sem) );
-		}
-
-		}
-		{
-			auto vert_stage = RIProgram::load_shader_stage(apResources->GetFileSearcher(), "gui.vert.spv");
-			auto frag_stage = RIProgram::load_shader_stage(apResources->GetFileSearcher(), "gui.frag.spv");
+			auto vert_stage = RIProgram::loadShaderStage(apResources->GetFileSearcher(), "gui.vert.spv");
+			auto frag_stage = RIProgram::loadShaderStage(apResources->GetFileSearcher(), "gui.frag.spv");
 			std::array<RIProgram::ModuleStage, 2> stages = {
 				RIProgram::ModuleStage{RIProgram::PROGRAM_STAGE_VERTEX, vert_stage},
 				RIProgram::ModuleStage{RIProgram::PROGRAM_STAGE_FRAGMENT, frag_stage}
 			};
-			gui.initialize(&RI.device, stages);
+			RI.gui.initialize(&RI.device, stages);
 		}
 		////////////////////////////////////////////////
 		// Create systems

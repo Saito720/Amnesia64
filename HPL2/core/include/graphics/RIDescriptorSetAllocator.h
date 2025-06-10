@@ -64,7 +64,7 @@ struct RIDescriptorSetResult {
 	struct RIDescriptorSetSlot *set; // the associated slot
 };
 
-struct RIDescriptorSetResult resolve_descriptor_set( struct RIDevice_s *device,
+struct RIDescriptorSetResult resolveDescriptorSetAlloc( struct RIDevice_s *device,
 													 struct RIDescriptorSetAlloc *alloc,
 													 uint32_t frameCount,
 													 uint32_t hash );

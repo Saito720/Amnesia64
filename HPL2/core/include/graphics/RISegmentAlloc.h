@@ -6,8 +6,6 @@
 #include <array>
 #include <cassert>
 
-#define MAX_NUMBER_SEGMENTS 8
-
 struct RISegmentAllocDesc_s{
 	uint32_t numElements;
 	uint16_t elementStride;
@@ -23,6 +21,7 @@ struct RISegmentReq_s {
 
 template<size_t N> 
 struct RISegmentAlloc {
+  static constexpr uint32_t SEGMENTS = N;
   RISegmentAlloc() {}
   RISegmentAlloc(struct RISegmentAllocDesc_s* desc);
   bool request(uint32_t frameIndex, size_t numElements, struct RISegmentReq_s *req); 
@@ -51,6 +50,7 @@ RISegmentAlloc<N>::RISegmentAlloc(struct RISegmentAllocDesc_s* desc) {
 	  head = 1;
 	  numSegments = desc->numSegments;
 	  maxElements = desc->maxElements;
+	  assert(numSegments <= N);
 	  assert( elementStride > 0 );
 }
 template <size_t N>

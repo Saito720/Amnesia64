@@ -16,7 +16,7 @@ void RIBoostrap::UpdateFrameUBO(RIDescriptor_s *descriptor, void *data, size_t s
 	const hash_t hash = hash_data_hsieh( HASH_INITIAL_VALUE + frame_count, data, size );
 	if( descriptor->cookie != hash ) {
 		descriptor->cookie = hash;
-		struct RIBufferScratchAllocReq_s scratchReq = RIAllocBufferFromScratchAlloc( &device, &activeSet->UBOScratchAlloc, size );
+		struct RIBufferScratchAllocReq_s scratchReq = RIAllocBufferFromScratchAlloc( &device, &activeSet->uboScratchAlloc, size );
 		descriptor->vk.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		descriptor->vk.buffer.buffer = scratchReq.block.vk.buffer;
 		descriptor->vk.buffer.offset = scratchReq.bufferOffset;
@@ -72,7 +72,7 @@ RIDescriptor_s *RIBoostrap::resolve_filter_descriptor(eTextureWrap wrapS,
         cachedFilters[index].flags = RI_VK_DESC_OWN_SAMPLER;
         VK_WrapResult(vkCreateSampler(device.vk.device, &info, NULL,
                                       &cachedFilters[index].vk.image.sampler));
-        RefreshCookies(&device, &cachedFilters[index]);
+        RIFinalizeDescriptor(&device, &cachedFilters[index]);
         return &cachedFilters[index];
       }
       index = (index + 1) % cachedFilters.size();

@@ -3,6 +3,7 @@
 #define RI_TYPES_H
 
 #include "graphics/RIDefines.h"
+#include "graphics/RIFormat.h"
 #include <cstring>
 
 #ifdef DEVICE_SUPPORT_VULKAN
@@ -255,7 +256,7 @@ struct RIBuffer_s {
 	union {
     #if(DEVICE_IMPL_VULKAN)
     struct {
-			struct VmaAllocation_T *vertexAlloc;
+			struct VmaAllocation_T *alloc;
     	VkBuffer buffer;
     } vk;
     #endif
@@ -299,6 +300,7 @@ struct RITexture_s {
 enum RIFreeType_e {
 	RI_FREE_UNKNOWN = 0,
 	RI_FREE_VK_START = 0,
+	RI_FREE_VK_CMD_BUFFER,
 	RI_FREE_VK_IMAGE,
 	RI_FREE_VK_IMAGEVIEW,
 	RI_FREE_VK_SAMPLER,
@@ -308,7 +310,15 @@ enum RIFreeType_e {
 	RI_FREE_VK_END,
 };
 
-struct RIFree_s {
+struct RIFree {
+	explicit RIFree(VkCommandBuffer cmd) { type = RI_FREE_VK_CMD_BUFFER; vkCmdBuffer = cmd; }
+	explicit RIFree(VkImage cmd) { type = RI_FREE_VK_IMAGE; vkImage = cmd; }
+	explicit RIFree(VkImageView cmd) { type = RI_FREE_VK_IMAGEVIEW; vkImageView = cmd; }
+	explicit RIFree(VkBuffer  cmd) { type = RI_FREE_VK_BUFFER; vkBuffer = cmd; }
+	explicit RIFree(VkSampler cmd) { type = RI_FREE_VK_SAMPLER; vkSampler = cmd; }
+	explicit RIFree(VkBufferView  cmd) { type = RI_FREE_VK_BUFFER_VIEW; vkBufferView = cmd; }
+	explicit RIFree(struct VmaAllocation_T*  cmd) { type = RI_FREE_VK_VMA_AllOC; vmaAlloc = cmd; }
+
 	uint8_t type; // enum r_frame_free_list_e
 	union {
 #if ( DEVICE_IMPL_VULKAN )
@@ -332,9 +342,15 @@ enum RIDescriptorFlags_e {
 struct DescriptorBindingID {
   const char *name;
   hash_t hash;
+	static DescriptorBindingID Create(const char* name) {
+		struct DescriptorBindingID key;
+		key.name = name;
+		key.hash = hash_data(HASH_INITIAL_VALUE, name, strlen(name));
+  	return key;
+	}
 };
 
-static inline struct DescriptorBindingID create_descriptor_binding_id(const char *name) {
+static inline struct DescriptorBindingID CreateDescriptorBindingID(const char *name) {
 	struct DescriptorBindingID key;
 	key.name = name;
 	key.hash = hash_data(HASH_INITIAL_VALUE, name, strlen(name));

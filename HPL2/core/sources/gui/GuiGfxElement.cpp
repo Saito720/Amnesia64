@@ -19,6 +19,7 @@
 
 #include "gui/GuiGfxElement.h"
 
+#include "gui/GuiTypes.h"
 #include "system/LowLevelSystem.h"
 
 #include "math/Math.h"
@@ -113,7 +114,7 @@ namespace hpl {
 		mlActiveImage =0;
 		mbAnimationPaused = false;
 
-		mpMaterial = NULL;
+		mpMaterial = eGuiMaterial_LastEnum;
 
 		mbFlipUvYAxis = false;
 
@@ -364,7 +365,7 @@ namespace hpl {
 
 	//---------------------------------------------------
 
-	void cGuiGfxElement::SetMaterial(iGuiMaterial *apMat)
+	void cGuiGfxElement::SetMaterial(eGuiMaterial apMat)
 	{
 		mpMaterial = apMat;
 	}

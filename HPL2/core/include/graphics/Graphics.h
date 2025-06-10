@@ -138,8 +138,6 @@ namespace hpl {
 		cDecalCreator* GetDecalCreator() {return mpDecalCreator;}
 		
 		bool GetScreenIsSetUp(){ return mbScreenIsSetup;}
-		RIProgram gui;
-
 
 	private:
 		iLowLevelGraphics *mpLowLevelGraphics;

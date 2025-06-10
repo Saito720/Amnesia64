@@ -1043,7 +1043,7 @@ int InitRIRenderer( const struct RIBackendInit_s *init, struct RIRenderer_s *ren
 	return RI_SUCCESS;
 }
 
-void RefreshCookies( struct RIDevice_s *dev, struct RIDescriptor_s *desc )
+void RIFinalizeDescriptor( struct RIDevice_s *dev, struct RIDescriptor_s *desc )
 {
 #if ( DEVICE_IMPL_VULKAN )
 	{
@@ -1093,7 +1093,7 @@ void FreeRIDescriptor( struct RIDevice_s *dev, struct RIDescriptor_s *desc )
 	memset( desc, 0, sizeof( struct RIDescriptor_s ) );
 }
 
-void FreeRIFree(struct RIDevice_s* dev,struct RIFree_s* mem) {
+void FreeRIFree(struct RIDevice_s* dev,struct RIFree* mem) {
 assert(free);
 	switch(mem->type) {
 #if ( DEVICE_IMPL_VULKAN )

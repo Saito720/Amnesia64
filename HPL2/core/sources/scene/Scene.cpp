@@ -194,10 +194,10 @@ namespace hpl {
 			VK_WrapResult( vkWaitSemaphores( RI.device.vk.device, &semaphoreWaitInfo, 5000 * 1000000ull ) );
 			VK_WrapResult( vkResetCommandPool( RI.device.vk.device, cntx->vk.pool, 0 ) );
 		}
-		RI.swapchain_index = RISwapchainAcquireNextTexture( &RI.device, &RI.swapchain);
+		RI.swapchainIndex = RISwapchainAcquireNextTexture( &RI.device, &RI.swapchain);
 
 		// cleanup
-		RIResetScratchAlloc( &RI.device, &cntx->UBOScratchAlloc);
+		RIResetScratchAlloc( &RI.device, &cntx->uboScratchAlloc);
 		{
 			VkCommandBufferBeginInfo info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
 			info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;

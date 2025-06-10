@@ -82,7 +82,7 @@ void detach_descriptor_slot( struct RIDescriptorSetAlloc *alloc, struct RIDescri
 	}
 }
 
-struct RIDescriptorSetResult resolve_descriptor_set( struct RIDevice_s *device, struct RIDescriptorSetAlloc *alloc, uint32_t frameCount, uint32_t hash )
+struct RIDescriptorSetResult resolveDescriptorSetAlloc( struct RIDevice_s *device, struct RIDescriptorSetAlloc *alloc, uint32_t frameCount, uint32_t hash )
 {
 	struct RIDescriptorSetResult result = { 0 };
 	const size_t hashIndex = hash % ALLOC_HASH_RESERVE;

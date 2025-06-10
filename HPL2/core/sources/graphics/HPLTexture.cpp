@@ -148,7 +148,7 @@ bool HPLTexture::LoadBitmap(
 	binding.vk.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
 	binding.vk.image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	VK_WrapResult( vkCreateImageView( RI.device.vk.device, &createInfo, NULL, &binding.vk.image.imageView ) );
-	RefreshCookies( &RI.device, &binding );
+	RIFinalizeDescriptor( &RI.device, &binding );
 
   auto sourceFormat = to_image_supported_format(bitmap.GetPixelFormat());
   const struct RIFormatProps_s* srcProps = GetRIFormatProps(sourceFormat);
@@ -156,7 +156,7 @@ bool HPLTexture::LoadBitmap(
 #define MIP_REDUCE(s, mip) (std::max<uint32_t>(1u, (uint32_t)((s) >> (mip))))
   for (uint32_t arrIndex = 0; arrIndex < info.arrayLayers; arrIndex++) {
     for (uint32_t mipLevel = 0; mipLevel < info.mipLevels; mipLevel++) {
-      struct RIResourceTextureTransaction_s uploadDesc = {0};
+      struct RIResourceTextureTransaction_s uploadDesc = {};
       
       const auto& input = bitmap.GetData(arrIndex, mipLevel);
       uploadDesc.target = handle;

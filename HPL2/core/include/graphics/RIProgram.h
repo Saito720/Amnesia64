@@ -1,4 +1,7 @@
 
+#ifndef RI_PROGRAM_H
+#define RI_PROGRAM_H
+
 
 #include "system/Hasher.h"
 #include <array>
@@ -6,10 +9,11 @@
 #include <unordered_map>
 #include <vector>
 
-#include "RIDescriptorSetAllocator.h"
-#include "RITypes.h"
 #include "resources/FileSearcher.h"
 #include "system/SystemTypes.h"
+
+#include "RIDescriptorSetAllocator.h"
+#include "RITypes.h"
 
 namespace hpl {
   class RIProgram {
@@ -24,6 +28,13 @@ namespace hpl {
 #endif
       };
     };
+
+    struct DescriptorBinding {
+      struct DescriptorBindingID handle;
+      uint32_t registerOffset; 
+      struct RIDescriptor_s descriptor;
+    };
+
     struct DescriptorSetSlot {
       union {
 #if (DEVICE_IMPL_VULKAN)
@@ -66,12 +77,11 @@ namespace hpl {
       uint8_t stage;
       std::span<char> data;
     };
-    const struct BindingReflection* find_reflection(const struct DescriptorBindingID& handle);
-    void add_pipeline(struct RIDevice_s *device, hash_t hash,
-                    VkGraphicsPipelineCreateInfo pipelineCreateInfo);
+    const struct BindingReflection* findReflection(const struct DescriptorBindingID& handle);
     void initialize(RIDevice_s* device, std::span<ModuleStage> init);
-    static std::vector<char> load_shader_stage(cFileSearcher *searcher, const tString& asName);
-
+    static std::vector<char> loadShaderStage(cFileSearcher *searcher, const tString& asName);
+    void bindPipeline(struct RIDevice_s *device, struct RICmd_s* cmd, hash_t pipelineHash, VkGraphicsPipelineCreateInfo* pipelineCreateInfo);
+    void bindDescriptors(struct RIDevice_s* device, struct RICmd_s* cmd, uint32_t frameIndex, DescriptorBinding* binding, size_t bindingCount);
     explicit RIProgram() {
     }
 
@@ -101,3 +111,4 @@ namespace hpl {
     std::vector<BindingReflection> binding_reflection;
   };
 } // namespace hpl
+#endif

@@ -31,10 +31,6 @@ public:
   uint16_t depth;
   uint8_t mipNum;
   struct RIDescriptor_s binding;
-  //struct RIDescriptor_s *samplerBinding;
-  
-  //HPLTexture(HPLTexture&&) = delete;
-  //HPLTexture(const HPLTexture&) = delete;
 
   static void HPLTexture_Delete(HPLTexture* tex); 
 

@@ -8,12 +8,12 @@ RIBoostrap RI = RIBoostrap{};
 
 void RIBoostrap::IncrementFrame() {
   // FrameContext* cntx = GetActiveSet();
-  frame_count++;
+  frameIndex++;
 }
 
 void RIBoostrap::UpdateFrameUBO(RIDescriptor_s *descriptor, void *data, size_t size) {
 	auto* activeSet = GetActiveSet();
-	const hash_t hash = hash_data_hsieh( HASH_INITIAL_VALUE + frame_count, data, size );
+	const hash_t hash = hash_data_hsieh( HASH_INITIAL_VALUE + frameIndex, data, size );
 	if( descriptor->cookie != hash ) {
 		descriptor->cookie = hash;
 		struct RIBufferScratchAllocReq_s scratchReq = RIAllocBufferFromScratchAlloc( &device, &activeSet->uboScratchAlloc, size );

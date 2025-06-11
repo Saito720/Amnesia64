@@ -94,21 +94,21 @@ namespace hpl {
       struct {
 #if (DEVICE_IMPL_VULKAN)
         struct {
-          VkShaderStageFlags shader_stage_flags;
+          VkShaderStageFlags shaderStageFlags;
           uint32_t size;
         } pushConstant;
-        VkPipelineLayout pipeline_layout;
+        VkPipelineLayout pipelineLayout;
 #endif
       } vk;
     } impl;
     RIDevice_s* device = NULL;
     uint16_t reflection_len = 0;
     uint16_t vertex_input_mask = 0;
-    bool has_push_constants = 0;
-    std::array<struct DescriptorSetSlot, DESCRIPTOR_SET_MAX> program_descriptors;
-    std::array<ShaderBinary, PROGRAM_STAGES_MAX> shader_bin;
+    bool hashPushConstants = 0;
+    std::array<struct DescriptorSetSlot, DESCRIPTOR_SET_MAX> programDescriptors;
+    std::array<ShaderBinary, PROGRAM_STAGES_MAX> shaderBin;
     std::unordered_map<hash_t, PipelineSlot> pipeline;
-    std::vector<BindingReflection> binding_reflection;
+    std::vector<BindingReflection> bindingReflection;
   };
 } // namespace hpl
 #endif

@@ -40,13 +40,13 @@ namespace hpl {
 	cPostEffectComposite::cPostEffectComposite(cGraphics *apGraphics)
 	{
 		mpGraphics = apGraphics;
-		SetupRenderFunctions(mpGraphics->GetLowLevel());
+		//SetupRenderFunctions(mpGraphics->GetLowLevel());
 
-		cVector2l vSize = mpLowLevelGraphics->GetScreenSizeInt();
-		for(int i=0; i<2; ++i)
-		{
-			mpFinalTempBuffer[i] = mpGraphics->GetTempFrameBuffer(vSize,ePixelFormat_RGBA,i);
-		}
+		//cVector2l vSize = mpLowLevelGraphics->GetScreenSizeInt();
+		//for(int i=0; i<2; ++i)
+		//{
+		//	mpFinalTempBuffer[i] = mpGraphics->GetTempFrameBuffer(vSize,ePixelFormat_RGBA,i);
+		//}
 	}
 
 	//-----------------------------------------------------------------------

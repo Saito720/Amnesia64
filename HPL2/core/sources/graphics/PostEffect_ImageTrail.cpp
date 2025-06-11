@@ -83,17 +83,17 @@ namespace hpl {
 
 	cPostEffect_ImageTrail::cPostEffect_ImageTrail(cGraphics *apGraphics, cResources *apResources, iPostEffectType *apType) : iPostEffect(apGraphics,apResources,apType)
 	{
-		cVector2l vSize = mpLowLevelGraphics->GetScreenSizeInt();
-		
-		mpAccumTexture = mpGraphics->CreateTexture("ImageTrailTexture", eTextureType_Rect, eTextureUsage_RenderTarget);	
-		mpAccumTexture->CreateFromRawData(cVector3l(vSize.x, vSize.y,1), ePixelFormat_RGB, NULL);
+		//cVector2l vSize = mpLowLevelGraphics->GetScreenSizeInt();
+		//
+		//mpAccumTexture = mpGraphics->CreateTexture("ImageTrailTexture", eTextureType_Rect, eTextureUsage_RenderTarget);	
+		//mpAccumTexture->CreateFromRawData(cVector3l(vSize.x, vSize.y,1), ePixelFormat_RGB, NULL);
 
-		mpAccumBuffer = mpGraphics->CreateFrameBuffer("ImageTrailBuffer");
-		mpAccumBuffer->SetTexture2D(0, mpAccumTexture);
-		if(mpAccumBuffer->CompileAndValidate()==false)
-		{
-			Error("Could not compile and validate image trail frame buffer!\n");
-		}
+		//mpAccumBuffer = mpGraphics->CreateFrameBuffer("ImageTrailBuffer");
+		//mpAccumBuffer->SetTexture2D(0, mpAccumTexture);
+		//if(mpAccumBuffer->CompileAndValidate()==false)
+		//{
+		//	Error("Could not compile and validate image trail frame buffer!\n");
+		//}
 
 		mpImageTrailType = static_cast<cPostEffectType_ImageTrail*>(mpType);
 

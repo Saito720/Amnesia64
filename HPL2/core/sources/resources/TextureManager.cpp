@@ -134,6 +134,9 @@ namespace hpl {
 				hpl::HPLTexture::BitmapLoadOptions opts = {0};
 				opts.use_mipmaps = abUseMipMaps;
 				RIBarrierImageHandle_s barrierHandle = {};
+				barrierHandle.vk.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+				barrierHandle.vk.stage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+				barrierHandle.vk.access = VK_ACCESS_2_SHADER_READ_BIT;
 				auto img = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete);
 				if(!img->LoadBitmap(barrierHandle, *pBmp, opts)) {
 					Error("Texture manager Couldn't load bitmap '%s'\n", cString::To8Char(path).c_str());
@@ -151,6 +154,9 @@ namespace hpl {
 				HPLTexture::BitmapLoadOptions opts = {0};
 				opts.use_mipmaps = abUseMipMaps;
 				RIBarrierImageHandle_s barrierHandle = {};
+				barrierHandle.vk.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+				barrierHandle.vk.stage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+				barrierHandle.vk.access = VK_ACCESS_2_SHADER_READ_BIT;
 				auto img = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete);
 				if(!img->LoadBitmap( barrierHandle, *pBmp, opts)) {
 					Error("Texture manager Couldn't load bitmap '%s'\n", cString::To8Char(path).c_str());
@@ -168,6 +174,9 @@ namespace hpl {
 				HPLTexture::BitmapLoadOptions opts = {0};
 				opts.use_mipmaps = abUseMipMaps;
 				RIBarrierImageHandle_s barrierHandle = {};
+				barrierHandle.vk.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+				barrierHandle.vk.stage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+				barrierHandle.vk.access = VK_ACCESS_2_SHADER_READ_BIT;
 				HPLTexture* tex = new HPLTexture{};
 				auto img = std::shared_ptr<HPLTexture>(tex, HPLTexture::HPLTexture_Delete);
 				if(!img->LoadBitmap( barrierHandle, *pBmp, opts)) {

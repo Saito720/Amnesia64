@@ -9,7 +9,7 @@
 #include "graphics/spirv_reflect.h"
 
 namespace hpl {
-static void _vk__descriptorSetAlloc( struct RIDevice_s *device, struct RIDescriptorSetAlloc *alloc ) {
+static void vkDescriptorSetAlloc( struct RIDevice_s *device, struct RIDescriptorSetAlloc *alloc ) {
 	assert( device->renderer->api == RI_DEVICE_API_VK );
 	struct RIProgram::DescriptorSetSlot *programDescriptor = hpl_container_of( alloc, &RIProgram::DescriptorSetSlot::alloc );
   VkDescriptorPoolSize descriptorPoolSize[16] = {};
@@ -59,15 +59,15 @@ void RIProgram::bindPipeline(struct RIDevice_s *device, struct RICmd_s* cmd, has
     uint32_t numModules = 0;
     VkShaderModule modules[4] = {0};
     VkPipelineShaderStageCreateInfo stageCreateInfo[4] = {};
-    if (shader_bin[PROGRAM_STAGE_VERTEX].buf.size() > 0 &&
-        shader_bin[PROGRAM_STAGE_FRAGMENT].buf.size() > 0) {
+    if (shaderBin[PROGRAM_STAGE_VERTEX].buf.size() > 0 &&
+        shaderBin[PROGRAM_STAGE_FRAGMENT].buf.size() > 0) {
       pipelineCreateInfo->stageCount = 2;
       const VkShaderModuleCreateInfo vertModuleCreateInfo = {
           VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
           NULL,
           (VkShaderModuleCreateFlags)0,
-          (size_t)shader_bin[PROGRAM_STAGE_VERTEX].buf.size(),
-          (const uint32_t *)shader_bin[PROGRAM_STAGE_VERTEX].buf.data(),
+          (size_t)shaderBin[PROGRAM_STAGE_VERTEX].buf.size(),
+          (const uint32_t *)shaderBin[PROGRAM_STAGE_VERTEX].buf.data(),
       };
       vkCreateShaderModule(device->vk.device, &vertModuleCreateInfo, NULL,
                           &modules[numModules]);
@@ -81,8 +81,8 @@ void RIProgram::bindPipeline(struct RIDevice_s *device, struct RICmd_s* cmd, has
           VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
           NULL,
           (VkShaderModuleCreateFlags)0,
-          (size_t)shader_bin[PROGRAM_STAGE_FRAGMENT].buf.size(),
-          (const uint32_t *)shader_bin[PROGRAM_STAGE_FRAGMENT].buf.data(),
+          (size_t)shaderBin[PROGRAM_STAGE_FRAGMENT].buf.size(),
+          (const uint32_t *)shaderBin[PROGRAM_STAGE_FRAGMENT].buf.data(),
       };
       vkCreateShaderModule(device->vk.device, &fragModuleCreateInfo, NULL,
                           &modules[numModules]);
@@ -96,7 +96,7 @@ void RIProgram::bindPipeline(struct RIDevice_s *device, struct RICmd_s* cmd, has
     }
     pipelineCreateInfo->pStages = stageCreateInfo;
     pipelineCreateInfo->basePipelineIndex = -1;
-    pipelineCreateInfo->layout = impl.vk.pipeline_layout;
+    pipelineCreateInfo->layout = impl.vk.pipelineLayout;
     PipelineSlot slot = {};
     VK_WrapResult(vkCreateGraphicsPipelines(device->vk.device, VK_NULL_HANDLE, 1,
                                             pipelineCreateInfo, NULL,
@@ -106,6 +106,8 @@ void RIProgram::bindPipeline(struct RIDevice_s *device, struct RICmd_s* cmd, has
     for (size_t i = 0; i < numModules; i++) {
       vkDestroyShaderModule(device->vk.device, modules[i], NULL);
     }
+  } else {
+    pipelineHandle = it->second.vk.handle;
   }
   vkCmdBindPipeline(cmd->vk.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineHandle);
 }
@@ -126,7 +128,7 @@ void RIProgram::bindDescriptors(struct RIDevice_s* device, struct RICmd_s* cmd, 
 			}
 			if( hash == HASH_INITIAL_VALUE )
 				continue;
-			struct DescriptorSetSlot *info = &program_descriptors[setIndex];
+			struct DescriptorSetSlot *info = &programDescriptors[setIndex];
 			struct RIDescriptorSetResult result = resolveDescriptorSetAlloc( device, &info->alloc, frameIndex, hash );
 			if( !result.found ) {
 				for( size_t i = 0; i < bindingCount; i++ ) {
@@ -169,7 +171,7 @@ void RIProgram::bindDescriptors(struct RIDevice_s* device, struct RICmd_s* cmd, 
 				}
 			}
 			VkDescriptorSet vkDescriptorSet = result.set->vk.handle;
-			vkCmdBindDescriptorSets( cmd->vk.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, impl.vk.pipeline_layout, setIndex, 1, &vkDescriptorSet, 0, NULL );
+			vkCmdBindDescriptorSets( cmd->vk.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, impl.vk.pipelineLayout, setIndex, 1, &vkDescriptorSet, 0, NULL );
 		}
 		if( numWrites > 0 ) {
 			vkUpdateDescriptorSets( device->vk.device, numWrites, descriptorWrite, 0, NULL );
@@ -179,7 +181,7 @@ void RIProgram::bindDescriptors(struct RIDevice_s* device, struct RICmd_s* cmd, 
 }
 
 const struct RIProgram::BindingReflection* RIProgram::findReflection(const struct DescriptorBindingID& handle) {
-  for(auto& ref : binding_reflection) {
+  for(auto& ref : bindingReflection) {
     if(ref.hash == handle.hash) {
       return &ref;
     }
@@ -200,29 +202,6 @@ std::vector<char> RIProgram::loadShaderStage(cFileSearcher *searcher, const tStr
   return result;
 }
 
-//RIProgram& RIProgram::operator=(RIProgram&& prog) {
-//  reflection_len = prog.reflection_len;
-//  vertex_input_mask = prog.vertex_input_mask;
-//  has_push_constants = prog.has_push_constants;
-//  program_descriptors = std::move(prog.program_descriptors);
-//  shader_bin = std::move(prog.shader_bin);
-//  pipeline = std::move(prog.pipeline);
-//  binding_reflection = std::move(prog.binding_reflection);
-//  memcpy(&impl, &prog.impl, sizeof(RIProgram::__impl));
-//  return *this;
-//}
-//
-//RIProgram::RIProgram(RIProgram&& prog):
-//  reflection_len(prog.reflection_len),
-//  vertex_input_mask(prog.vertex_input_mask),
-//  has_push_constants(prog.has_push_constants),
-//  program_descriptors(std::move(prog.program_descriptors)),
-//  shader_bin(std::move(prog.shader_bin)),
-//  pipeline(std::move(prog.pipeline)),
-//  binding_reflection(std::move(prog.binding_reflection)) {
-//  memcpy(&impl, &prog.impl, sizeof(RIProgram::__impl));
-//}
-
 void RIProgram::initialize(RIDevice_s* device,std::span<ModuleStage> moduleInit) {
   assert(device == NULL);
   this->device = device;
@@ -236,7 +215,7 @@ void RIProgram::initialize(RIDevice_s* device,std::span<ModuleStage> moduleInit)
   std::vector<SpvReflectDescriptorSet *> reflectionDescSets;
 
   for (auto &init : moduleInit) {
-    auto *bin = &shader_bin[init.stage];
+    auto *bin = &shaderBin[init.stage];
     bin->buf.insert(bin->buf.begin(), init.data.begin(), init.data.end());
     SpvReflectShaderModule module = {};
     SpvReflectResult result = spvReflectCreateShaderModule(
@@ -247,8 +226,8 @@ void RIProgram::initialize(RIDevice_s* device,std::span<ModuleStage> moduleInit)
       result = spvReflectEnumeratePushConstantBlocks(&module,
                                                      &pushConstantCount, NULL);
       assert(result == SPV_REFLECT_RESULT_SUCCESS);
-      has_push_constants |= (pushConstantCount > 0);
-      if (has_push_constants > 0) {
+      hashPushConstants |= (pushConstantCount > 0);
+      if (hashPushConstants > 0) {
         if (pushConstantCount > 1) {
           printf("Push constant count is greater than 1, only supporting 1 "
                  "push constant\n");
@@ -265,11 +244,11 @@ void RIProgram::initialize(RIDevice_s* device,std::span<ModuleStage> moduleInit)
         switch (init.stage) {
         case PROGRAM_STAGE_VERTEX:
           pushConstantRange.stageFlags |= VK_SHADER_STAGE_VERTEX_BIT;
-          impl.vk.pushConstant.shader_stage_flags |= VK_SHADER_STAGE_VERTEX_BIT;
+          impl.vk.pushConstant.shaderStageFlags |= VK_SHADER_STAGE_VERTEX_BIT;
           break;
         case PROGRAM_STAGE_FRAGMENT:
           pushConstantRange.stageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
-          impl.vk.pushConstant.shader_stage_flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+          impl.vk.pushConstant.shaderStageFlags |= VK_SHADER_STAGE_FRAGMENT_BIT;
           break;
         default:
           assert(false);
@@ -296,8 +275,8 @@ void RIProgram::initialize(RIDevice_s* device,std::span<ModuleStage> moduleInit)
       const SpvReflectDescriptorSet *spv_reflection = reflectionDescSets[i_set];
       assert(reflection->set < ARRAY_COUNT(program->programDescriptors));
       struct DescriptorSetSlot *program_desc =
-          &program_descriptors[spv_reflection->set];
-      program_desc->alloc.descriptor_alloc_handle = _vk__descriptorSetAlloc;
+          &programDescriptors[spv_reflection->set];
+      program_desc->alloc.descriptor_alloc_handle = vkDescriptorSetAlloc;
       program_desc->alloc.framesInFlight = RI_NUMBER_FRAMES_FLIGHT;
       for (size_t i_binding = 0; i_binding < spv_reflection->binding_count; i_binding++) {
         const SpvReflectDescriptorBinding *reflectionBinding =
@@ -305,27 +284,31 @@ void RIProgram::initialize(RIDevice_s* device,std::span<ModuleStage> moduleInit)
         assert(reflection->set < R_DESCRIPTOR_SET_MAX);
         assert(reflectionBinding->array.dims_count <=
                1); // not going to handle multi-dim arrays
-        struct BindingReflection reflc = {};
-        auto reflID = CreateDescriptorBindingID(reflectionBinding->name);
-        reflc.hash = reflID.hash;
-        reflc.set = reflectionBinding->set;
-        reflc.baseRegisterIndex = reflectionBinding->binding;
-        reflc.isArray = reflectionBinding->count > 1;
-        reflc.dimCount = std::max<uint16_t>(1, reflectionBinding->count);
-        if(findReflection(reflID) != NULL) {
-          continue;
+        DescriptorBindingID reflID = CreateDescriptorBindingID(reflectionBinding->name);
+        struct RIProgram::BindingReflection* reflc = NULL;
+        for(auto& ref : bindingReflection) {
+          if(ref.hash == reflID.hash) {
+            reflc = &ref;
+            break;
+          }
         }
-        printf("Descriptor[%lu], name: %s hash: %lu\n", i_set, reflectionBinding->name, reflc.hash);
+        if(reflc == NULL) {
+          bindingReflection.push_back({});
+          reflc = &bindingReflection.back();
+        }
+
+        reflc->hash = reflID.hash;
+        reflc->set = reflectionBinding->set;
+        reflc->baseRegisterIndex = reflectionBinding->binding;
+        reflc->isArray = reflectionBinding->count > 1;
+        reflc->dimCount = std::max<uint16_t>(1, reflectionBinding->count);
+        printf("[MP] Descriptor[%lu], name: %s hash: %lu stage: %u\n", i_set, reflectionBinding->name, reflc->hash, init.stage);
 
         VkDescriptorSetLayoutBinding *layoutBinding = NULL;
         VkDescriptorBindingFlags *bindingFlags = NULL;
-        for (size_t i = 0;
-             i < descriptorSetLayoutBindings[spv_reflection->set].size();
-             i++) {
-          if (descriptorSetLayoutBindings[spv_reflection->set][i].binding ==
-              reflectionBinding->binding) {
-            layoutBinding =
-                &descriptorSetLayoutBindings[spv_reflection->set][i];
+        for (size_t i = 0; i < descriptorSetLayoutBindings[spv_reflection->set].size(); i++) {
+          if (descriptorSetLayoutBindings[spv_reflection->set][i].binding == reflectionBinding->binding) {
+            layoutBinding = &descriptorSetLayoutBindings[spv_reflection->set][i];
             bindingFlags = &descriptorBindingFlags[spv_reflection->set][i];
           }
         }
@@ -335,15 +318,11 @@ void RIProgram::initialize(RIDevice_s* device,std::span<ModuleStage> moduleInit)
           VkDescriptorBindingFlags flags = 0;
           descriptorSetLayoutBindings[spv_reflection->set].push_back(bindings);
           descriptorBindingFlags[spv_reflection->set].push_back(flags);
-          layoutBinding =
-              &descriptorSetLayoutBindings[spv_reflection->set][
-              descriptorSetLayoutBindings[spv_reflection->set].size() - 1];
-          bindingFlags = &descriptorBindingFlags[spv_reflection->set][
-                         descriptorBindingFlags[spv_reflection->set].size() -
-                         1];
+          layoutBinding = &descriptorSetLayoutBindings[spv_reflection->set][descriptorSetLayoutBindings[spv_reflection->set].size() - 1];
+          bindingFlags = &descriptorBindingFlags[spv_reflection->set][descriptorBindingFlags[spv_reflection->set].size() - 1];
         }
 
-        if (reflc.isArray) {
+        if (reflc->isArray) {
           (*bindingFlags) = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT;
         }
 
@@ -401,9 +380,38 @@ void RIProgram::initialize(RIDevice_s* device,std::span<ModuleStage> moduleInit)
           assert(false);
           break;
         }
-        binding_reflection.push_back(reflc);
       }
     }
+	  uint32_t numLayoutCount = 0;
+	  for( size_t bindingIdx = 0; bindingIdx < DESCRIPTOR_SET_MAX; bindingIdx++ ) {
+		  if( descriptorSetLayoutBindings[bindingIdx].size() > 0) {
+			  numLayoutCount = bindingIdx + 1;
+		  }
+	  }
+		
+		for( size_t bindingIdx = 0; bindingIdx < numLayoutCount; bindingIdx++ ) {
+			if(descriptorSetLayoutBindings[bindingIdx].size() > 0 ) {
+				VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO };
+				bindingFlagsInfo.bindingCount = descriptorBindingFlags[bindingIdx].size();
+				bindingFlagsInfo.pBindingFlags = descriptorBindingFlags[bindingIdx].data();
+
+				VkDescriptorSetLayoutCreateInfo createSetLayoutInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+				createSetLayoutInfo.bindingCount = descriptorSetLayoutBindings[bindingIdx].size();
+				createSetLayoutInfo.pBindings = descriptorSetLayoutBindings[bindingIdx].data();
+				R_VK_ADD_STRUCT( &createSetLayoutInfo, &bindingFlagsInfo );
+
+				VK_WrapResult( vkCreateDescriptorSetLayout( device->vk.device, &createSetLayoutInfo, NULL, setLayouts + bindingIdx ) );
+			} else {
+				VkDescriptorSetLayoutCreateInfo createSetLayoutInfo = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+				VK_WrapResult( vkCreateDescriptorSetLayout( device->vk.device, &createSetLayoutInfo, NULL, setLayouts + bindingIdx ) );
+			}
+			programDescriptors[bindingIdx].vk.setLayout = setLayouts[bindingIdx];
+		}
+		pipelineLayoutCreateInfo.pSetLayouts = setLayouts;
+		pipelineLayoutCreateInfo.setLayoutCount = numLayoutCount;
+		if( pushConstantRange.stageFlags > 0 )
+			pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
+		VK_WrapResult( vkCreatePipelineLayout( device->vk.device, &pipelineLayoutCreateInfo, NULL, &impl.vk.pipelineLayout ) );
   }
 }
 

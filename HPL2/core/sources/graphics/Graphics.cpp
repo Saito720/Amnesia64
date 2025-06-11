@@ -331,22 +331,22 @@ namespace hpl {
       // Check feature support
       apResources->GetGpuShaderManager()->CheckFeatureSupport();
 
-			mvRenderers.resize(eRenderer_LastEnum, NULL);
+			//mvRenderers.resize(eRenderer_LastEnum, NULL);
 
-			mvRenderers[eRenderer_Main] = hplNew(cRendererDeferred, (this, apResources));
-			mvRenderers[eRenderer_WireFrame] = hplNew(cRendererWireFrame, (this, apResources));
-			mvRenderers[eRenderer_Simple] = hplNew(cRendererSimple, (this, apResources));
+			//mvRenderers[eRenderer_Main] = hplNew(cRendererDeferred, (this, apResources));
+			//mvRenderers[eRenderer_WireFrame] = hplNew(cRendererWireFrame, (this, apResources));
+			//mvRenderers[eRenderer_Simple] = hplNew(cRendererSimple, (this, apResources));
 
-			for(size_t i=0; i<mvRenderers.size(); ++i)
-			{
-				if(mvRenderers[i])
-				{
-					if(mvRenderers[i]->LoadData()==false)
-					{
-						FatalError("Renderer #%d could not be initialized! Make sure your graphic card drivers are up to date. Check log file for more information.\n", i);
-					}
-				}
-			}
+			//for(size_t i=0; i<mvRenderers.size(); ++i)
+			//{
+			//	if(mvRenderers[i])
+			//	{
+			//		if(mvRenderers[i]->LoadData()==false)
+			//		{
+			//			FatalError("Renderer #%d could not be initialized! Make sure your graphic card drivers are up to date. Check log file for more information.\n", i);
+			//		}
+			//	}
+			//}
 		}
 		
 		////////////////////////////////////////////////
@@ -463,7 +463,7 @@ namespace hpl {
 		pTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
 
 		//Create frame buffer
-        iFrameBuffer *pFrameBuffer = CreateFrameBuffer("TempBuffer"+sNameSuffix);
+    iFrameBuffer *pFrameBuffer = CreateFrameBuffer("TempBuffer"+sNameSuffix);
 		pFrameBuffer->SetTexture2D(0, pTexture);
 		if(pFrameBuffer->CompileAndValidate()==false)
 		{
@@ -630,7 +630,7 @@ namespace hpl {
 		pProgram->SetShader(eGpuShaderType_Fragment, pFragShader);
 		pProgram->Link();
 
-        return pProgram;		
+    return pProgram;		
 	}
 	
 	void cGraphics::DestroyGpuProgram(iGpuProgram* apProgram)

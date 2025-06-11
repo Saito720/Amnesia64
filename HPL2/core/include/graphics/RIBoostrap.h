@@ -10,9 +10,10 @@
 #include <graphics/RIResourceUploader.h>
 #include <graphics/RIScratchAlloc.h>
 #include <graphics/RIProgram.h>
+#include <memory>
 
 namespace hpl {
-
+struct HPLTexture;
 //bootstrap implementation
 struct RIBoostrap {
 public:
@@ -24,7 +25,7 @@ public:
     struct RICmd_s cmd;
     struct RIDescriptor_s colorAttachment;
     struct RIDescriptor_s depthAttachment;
-
+    std::vector<std::shared_ptr<HPLTexture>> textureLink; // keep track of textures that are used in this frame
     std::vector<RIFree> freelist;
     union {
 #if (DEVICE_IMPL_VULKAN)
@@ -62,13 +63,13 @@ public:
   std::array<FrameContext, RI_NUMBER_FRAMES_FLIGHT> frameSets;
 	std::array<RIDescriptor_s, 2048> cachedFilters; 
   uint32_t swapchainIndex;
-  uint64_t frame_count = 0;
+  uint64_t frameIndex = 0;
 
   struct RIResourceUploader_s uploader = {};
 
   void IncrementFrame();
   RIDescriptor_s *resolve_filter_descriptor(eTextureWrap wrapS, eTextureWrap wrapT, eTextureWrap wrapR, eTextureFilter filter);
-  FrameContext *GetActiveSet() { return &frameSets[frame_count % RI_NUMBER_FRAMES_FLIGHT]; }
+  FrameContext *GetActiveSet() { return &frameSets[frameIndex % RI_NUMBER_FRAMES_FLIGHT]; }
 
   void UpdateFrameUBO(RIDescriptor_s* descriptor, void* data, size_t size);
 

@@ -327,11 +327,14 @@ void RI_ResourceSubmit( struct RIDevice_s *device, struct RIResourceUploader_s *
 
 void RI_ResourceBeginCopyTexture( struct RIDevice_s *device, struct RIResourceUploader_s *res, struct RIResourceTextureTransaction_s *trans )
 {
+	assert(trans);
 	const uint64_t alignedRowPitch = ALIGN_TO( trans->rowPitch, device->physicalAdapter.uploadBufferTextureRowAlignment );
 	const uint64_t alignedSlicePitch = ALIGN_TO( trans->sliceNum * alignedRowPitch, device->physicalAdapter.uploadBufferTextureSliceAlignment );
 	trans->alignRowPitch = alignedRowPitch;
 	trans->alignSlicePitch = alignedSlicePitch;
 	__ResolveStageBuffer(device, res, alignedSlicePitch, &trans->req);
+
+	assert(trans->req.cpuMapping); 
 	trans->data = (uint8_t *)trans->req.cpuMapping + trans->req.byteOffset;
 }
 

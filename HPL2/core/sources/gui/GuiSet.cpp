@@ -19,6 +19,7 @@
 
 #include "gui/GuiSet.h"
 
+#include "graphics/GraphicsTypes.h"
 #include "graphics/Image.h"
 #include "graphics/RIScratchAlloc.h"
 #include "graphics/RITypes.h"
@@ -532,13 +533,12 @@ namespace hpl {
 		}
 
 		RIBoostrap::FrameContext* cntx = RI.GetActiveSet();
-  	RIDescriptor_s pass = {};
 
-		const size_t numVerts = m_setRenderObjects.size() * 4;//* sizeof(PositionTexColor);// * 4;
-		const size_t numIndecies = m_setRenderObjects.size() * 6;// * sizeof(uint32_t);// * 6;
+		const size_t numVerts = m_setRenderObjects.size() * 4;;
+		const size_t numIndecies = m_setRenderObjects.size() * 6;;
 		RISegmentReq_s vtxReq = {};
 		RISegmentReq_s idxReq = {};
-		if(!IsRIBufferValid(&RI.renderer, &RI.guiVertexBuffer) || !RI.guiVertexAlloc.request(RI.frame_count, numVerts, &vtxReq)) {
+		if(!IsRIBufferValid(&RI.renderer, &RI.guiVertexBuffer) || !RI.guiVertexAlloc.request(RI.frameIndex, numVerts, &vtxReq)) {
 		  struct RISegmentAllocDesc_s segmentAllocDesc = { 0 };
 		  segmentAllocDesc.numSegments = RI_NUMBER_FRAMES_FLIGHT;
 		  segmentAllocDesc.elementStride = sizeof(PositionTexColor);
@@ -547,7 +547,7 @@ namespace hpl {
 			  segmentAllocDesc.maxElements = ( segmentAllocDesc.maxElements + ( segmentAllocDesc.maxElements >> 1 ) );
 		  } while( segmentAllocDesc.maxElements < m_setRenderObjects.size() * 4);
 		  RI.guiVertexAlloc = RISegmentAlloc<RI_NUMBER_FRAMES_FLIGHT>( &segmentAllocDesc );
-		  bool res = RI.guiVertexAlloc.request( RI.frame_count, numVerts, &vtxReq);
+		  bool res = RI.guiVertexAlloc.request( RI.frameIndex, numVerts, &vtxReq);
 			assert(res);
 
 			uint32_t queueFamilies[RI_QUEUE_LEN] = { 0 };
@@ -571,7 +571,7 @@ namespace hpl {
 			RI.guiVertexBuffer.mappedAddress = allocationInfo.pMappedData;
 		}
 
-		if(!IsRIBufferValid(&RI.renderer, &RI.guiIndexBuffer) || !RI.guiIndexAlloc.request(RI.frame_count, numIndecies, &idxReq)) {
+		if(!IsRIBufferValid(&RI.renderer, &RI.guiIndexBuffer) || !RI.guiIndexAlloc.request(RI.frameIndex, numIndecies, &idxReq)) {
 			struct RISegmentAllocDesc_s segmentAllocDesc = { 0 };
 			segmentAllocDesc.numSegments = RI_NUMBER_FRAMES_FLIGHT;
 			segmentAllocDesc.elementStride = sizeof(uint32_t);
@@ -630,8 +630,8 @@ namespace hpl {
 	  																			mvVirtualSize.x-mvVirtualSizeOffset.x, mvVirtualSize.y-mvVirtualSizeOffset.y, mfVirtualMaxZ);
 	
 	  }
-		const VkDeviceSize vkOffset = vtxReq.elementOffset * vtxReq.elementStride;; 
-		const VkDeviceSize idxOffset = idxReq.elementOffset * idxReq.elementStride;; 
+		const VkDeviceSize vkOffset = vtxReq.elementOffset * vtxReq.elementStride; 
+		const VkDeviceSize idxOffset = idxReq.elementOffset * idxReq.elementStride;
 
   	void *vboMemory = ( (uint8_t *)RI.guiVertexBuffer.mappedAddress ) + vkOffset;
   	void *eleMemory = ( (uint8_t *)RI.guiIndexBuffer.mappedAddress) + idxOffset ;
@@ -646,7 +646,16 @@ namespace hpl {
 		eGuiMaterial materialType = it->mpCustomMaterial != eGuiMaterial_LastEnum ? it->mpCustomMaterial : pGfx->mpMaterial;
 		Image* pTexture = pGfx->mvTextures[0];
 		cGuiClipRegion *pClipRegion = it->mpClipRegion;
-		
+
+		VkViewport viewports[] = {
+			{0,0, (float)RI.swapchain.width, (float)RI.swapchain.height, 0.0f, 1.0f}
+		};
+		VkRect2D scissors[] = {
+			{ {0, 0}, {RI.swapchain.width, RI.swapchain.height} }
+		};
+		vkCmdSetViewport(cntx->cmd.vk.cmd, 0, ARRAY_COUNT(viewports), viewports);
+		vkCmdSetScissor( cntx->cmd.vk.cmd, 0, ARRAY_COUNT(scissors), scissors );
+
 		size_t vertexBufferOffset = 0;
 		size_t indexBufferOffset = 0;
 		while(it != m_setRenderObjects.end()) {
@@ -654,11 +663,9 @@ namespace hpl {
 			size_t indexBufferIndex = 0;
 
 			GuiPass uniformBlock = {};
-
 			const bool hasClip = pClipRegion && pClipRegion->mRect.w > 0.0f;
 			if(hasClip)
 			{
-			//	uniformBlock.textureConfig |= gui::GUI_TEXTURE_CONFIG_CLIP;
 				cRect2f& clipRect = pClipRegion->mRect;
 				cPlanef plane;
 				//Bottom
@@ -691,31 +698,40 @@ namespace hpl {
 				uniformBlock.textureCfg |= (1 << 1); // Has clip planes
 			}
 
-			struct RIProgram::DescriptorBinding bindings[8] = { 0 };
+			struct RIProgram::DescriptorBinding bindings[3] = { 0 };
 			size_t numBindings = 0;
 			if(pTexture) {
 				uniformBlock.textureCfg |= (1 << 0); // Has texture
 				bindings[numBindings].descriptor = pTexture->image->binding;
+				cntx->textureLink.push_back(pTexture->image);
 				bindings[numBindings++].handle = DescriptorBindingID::Create("diffuseMap");
 			}
 			memcpy(uniformBlock.mvp, ((projectionMtx * viewMtx) * modelMtx).a, sizeof(float) * 16);
 			RI.UpdateFrameUBO(&bindings[numBindings].descriptor, (void*)&uniformBlock, sizeof(GuiPass));		
-			bindings[numBindings++].handle = DescriptorBindingID::Create("uniformBlock");
+			bindings[numBindings++].handle = DescriptorBindingID::Create("pass");
+
+			bindings[numBindings].descriptor = *RI.resolve_filter_descriptor(eTextureWrap_ClampToEdge, eTextureWrap_ClampToEdge, eTextureWrap_ClampToEdge, eTextureFilter_Nearest);
+			bindings[numBindings++].handle = DescriptorBindingID::Create("diffuseSampler");
 
 			hash_t hash = hash_u32(HASH_INITIAL_VALUE, materialType);
 			hash = hash_u32(hash, RI.depthFormat);
 			hash = hash_u32(hash, RI.swapchain.format);
 			VkPipelineVertexInputStateCreateInfo vertexInputState = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
-			VkVertexInputAttributeDescription vertextbindingDesc[3];
-			vertextbindingDesc[0] = { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(PositionTexColor, position) };
-			vertextbindingDesc[1] = { 1, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(PositionTexColor, texCoords) };
-			vertextbindingDesc[2] = { 2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(PositionTexColor, color) };
-			VkVertexInputBindingDescription vertexInputStreamsDesc[1];
-			vertexInputStreamsDesc[0] = { 0, sizeof(PositionTexColor), VK_VERTEX_INPUT_RATE_VERTEX };
+			VkVertexInputAttributeDescription vertextbindingDesc[] = {
+				{ 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(PositionTexColor, position) },
+				{ 1, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(PositionTexColor, texCoords) },
+				{ 2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(PositionTexColor, color) }
+			};
+			VkVertexInputBindingDescription vertexInputStreamsDesc[] = {
+			 	{ 0, sizeof(PositionTexColor), VK_VERTEX_INPUT_RATE_VERTEX }
+			};
 			vertexInputState.pVertexAttributeDescriptions = vertextbindingDesc;
 			vertexInputState.vertexAttributeDescriptionCount = ARRAY_COUNT(vertextbindingDesc);
 			vertexInputState.pVertexBindingDescriptions = vertexInputStreamsDesc;
 			vertexInputState.vertexBindingDescriptionCount = ARRAY_COUNT(vertexInputStreamsDesc);
+
+			VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
+			inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 
 			VkPipelineRasterizationStateCreateInfo rasterizationState = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
 			rasterizationState.polygonMode = VK_POLYGON_MODE_FILL;
@@ -729,8 +745,6 @@ namespace hpl {
 			dynamicState.dynamicStateCount = ARRAY_COUNT(dynamicStates);
 			dynamicState.pDynamicStates = dynamicStates;
 
-			cVector2l vSize = mpGraphics->GetLowLevel()->GetScreenSizeInt();
-			
 			VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
 			pipelineRenderingCreateInfo.colorAttachmentCount = 1;
 			VkFormat colorFormats[1] = { RIFormatToVK( RI.swapchain.format) };
@@ -738,6 +752,22 @@ namespace hpl {
 			pipelineRenderingCreateInfo.depthAttachmentFormat = RIFormatToVK( RI.depthFormat );
 			pipelineRenderingCreateInfo.stencilAttachmentFormat = VK_FORMAT_UNDEFINED; 
 
+			VkPipelineViewportStateCreateInfo viewportState = { VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
+			viewportState.viewportCount = 1;
+			viewportState.scissorCount = 1;
+
+			VkPipelineMultisampleStateCreateInfo multisampleState = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
+			multisampleState.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+			
+			VkGraphicsPipelineCreateInfo pipelineCreateInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
+			pipelineCreateInfo.pNext = &pipelineRenderingCreateInfo;
+			pipelineCreateInfo.pVertexInputState = &vertexInputState;
+			pipelineCreateInfo.pRasterizationState = &rasterizationState;
+			pipelineCreateInfo.pDynamicState = &dynamicState;
+			pipelineCreateInfo.pInputAssemblyState = &inputAssemblyState;
+			pipelineCreateInfo.pViewportState = &viewportState;
+			pipelineCreateInfo.pMultisampleState = &multisampleState;
+			
 			switch(materialType)
 			{
 				case eGuiMaterial_FontNormal: 
@@ -755,12 +785,7 @@ namespace hpl {
 					VkPipelineColorBlendStateCreateInfo colorBlendState = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
 					colorBlendState.attachmentCount = ARRAY_COUNT(blendAttachmentState);
 					colorBlendState.pAttachments = blendAttachmentState;
-					VkGraphicsPipelineCreateInfo pipelineCreateInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
-					pipelineCreateInfo.pNext = &pipelineRenderingCreateInfo;
 				 	pipelineCreateInfo.pColorBlendState = &colorBlendState;
-					pipelineCreateInfo.pVertexInputState = &vertexInputState;
-					pipelineCreateInfo.pRasterizationState = &rasterizationState;
-					pipelineCreateInfo.pDynamicState = &dynamicState;
 					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash, &pipelineCreateInfo);
 				}
 				case eGuiMaterial_Additive: {
@@ -777,12 +802,7 @@ namespace hpl {
 					VkPipelineColorBlendStateCreateInfo colorBlendState = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
 					colorBlendState.attachmentCount = ARRAY_COUNT(blendAttachmentState);
 					colorBlendState.pAttachments = blendAttachmentState;
-					VkGraphicsPipelineCreateInfo pipelineCreateInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
-					pipelineCreateInfo.pNext = &pipelineRenderingCreateInfo;
 				 	pipelineCreateInfo.pColorBlendState = &colorBlendState;
-					pipelineCreateInfo.pVertexInputState = &vertexInputState;
-					pipelineCreateInfo.pRasterizationState = &rasterizationState;
-					pipelineCreateInfo.pDynamicState = &dynamicState;
 					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash, &pipelineCreateInfo);
 					break;	
 				}
@@ -800,12 +820,7 @@ namespace hpl {
 					VkPipelineColorBlendStateCreateInfo colorBlendState = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
 					colorBlendState.attachmentCount = ARRAY_COUNT(blendAttachmentState);
 					colorBlendState.pAttachments = blendAttachmentState;
-					VkGraphicsPipelineCreateInfo pipelineCreateInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
-					pipelineCreateInfo.pNext = &pipelineRenderingCreateInfo;
 				 	pipelineCreateInfo.pColorBlendState = &colorBlendState;
-					pipelineCreateInfo.pVertexInputState = &vertexInputState;
-					pipelineCreateInfo.pRasterizationState = &rasterizationState;
-					pipelineCreateInfo.pDynamicState = &dynamicState;
 					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash, &pipelineCreateInfo);
 					break;	
 				}
@@ -823,12 +838,7 @@ namespace hpl {
 					VkPipelineColorBlendStateCreateInfo colorBlendState = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
 					colorBlendState.attachmentCount = ARRAY_COUNT(blendAttachmentState);
 					colorBlendState.pAttachments = blendAttachmentState;
-					VkGraphicsPipelineCreateInfo pipelineCreateInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
-					pipelineCreateInfo.pNext = &pipelineRenderingCreateInfo;
 				 	pipelineCreateInfo.pColorBlendState = &colorBlendState;
-					pipelineCreateInfo.pVertexInputState = &vertexInputState;
-					pipelineCreateInfo.pRasterizationState = &rasterizationState;
-					pipelineCreateInfo.pDynamicState = &dynamicState;
 					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash, &pipelineCreateInfo);
 					break;	
 				}
@@ -847,17 +857,12 @@ namespace hpl {
 					VkPipelineColorBlendStateCreateInfo colorBlendState = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
 					colorBlendState.attachmentCount = ARRAY_COUNT(blendAttachmentState);
 					colorBlendState.pAttachments = blendAttachmentState;
-					VkGraphicsPipelineCreateInfo pipelineCreateInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
-					pipelineCreateInfo.pNext = &pipelineRenderingCreateInfo;
 				 	pipelineCreateInfo.pColorBlendState = &colorBlendState;
-					pipelineCreateInfo.pVertexInputState = &vertexInputState;
-					pipelineCreateInfo.pRasterizationState = &rasterizationState;
-					pipelineCreateInfo.pDynamicState = &dynamicState;
 					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash, &pipelineCreateInfo);
 					break;
 				}
 			}
-			RI.gui.bindDescriptors(&RI.device, &cntx->cmd, RI.frame_count, bindings, numBindings);
+			RI.gui.bindDescriptors(&RI.device, &cntx->cmd, RI.frameIndex, bindings, numBindings);
 			do
 			{
 				const cGuiRenderObject &object = *it;

@@ -20,6 +20,7 @@
 #ifndef HPL_MATERIAL_TYPE_BASIC_SURFACES_H
 #define HPL_MATERIAL_TYPE_BASIC_SURFACES_H
 
+#include "graphics/Image.h"
 #include "graphics/MaterialType.h"
 #include "graphics/Material.h"
 
@@ -64,7 +65,7 @@ namespace hpl {
 		static cProgramComboManager* mpGlobalProgramManager;
 		//[skeleton][uv animation]
 
-		iTexture *mpDissolveTexture;
+		Image* mpDissolveTexture;
 
 		static float mfVirtualPositionAddScale;
 	};

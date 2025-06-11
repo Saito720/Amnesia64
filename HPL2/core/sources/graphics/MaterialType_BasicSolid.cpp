@@ -200,7 +200,7 @@ namespace hpl {
 
 		//////////////
 		// Create textures
-		mpDissolveTexture = mpResources->GetTextureManager()->Create2D("core_dissolve.tga",true);
+		mpDissolveTexture = mpResources->GetTextureManager()->Create2DImage("core_dissolve.tga",true);
 
 
 		LoadSpecificData();
@@ -402,7 +402,7 @@ namespace hpl {
 			switch(alUnit)
 			{
 			case 0: return apMaterial->GetTexture(eMaterialTexture_Alpha);
-			case 1: return mpDissolveTexture;
+			//case 1: return mpDissolveTexture;
 			}
 		}
 		////////////////////////////
@@ -412,7 +412,7 @@ namespace hpl {
 			switch(alUnit)
 			{
 			case 0: return apMaterial->GetTexture(eMaterialTexture_Alpha);
-			case 1: return mpDissolveTexture;
+			//case 1: return mpDissolveTexture;
 			case 2: return apMaterial->GetTexture(eMaterialTexture_DissolveAlpha);
 			}
 		}

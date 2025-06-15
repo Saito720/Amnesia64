@@ -33,7 +33,7 @@ static void vkDescriptorSetAlloc( struct RIDevice_s *device, struct RIDescriptor
   		VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, (uint32_t)programDescriptor->structuredBufferMaxNum * DESCRIPTOR_MAX_SIZE + (uint32_t)programDescriptor->storageStructuredBufferMaxNum * DESCRIPTOR_MAX_SIZE };
   if( programDescriptor->accelerationStructureMaxNum > 0 )
   	descriptorPoolSize[descriptorPoolLen++] = (VkDescriptorPoolSize){ VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, (uint32_t)programDescriptor->accelerationStructureMaxNum * DESCRIPTOR_MAX_SIZE };
-  assert( descriptorPoolLen < RRAY_COUNT( descriptorPoolSize ) );
+  assert( descriptorPoolLen < ARRAY_COUNT( descriptorPoolSize ) );
   const VkDescriptorPoolCreateInfo info = {
   	VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO, NULL, VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT, DESCRIPTOR_MAX_SIZE, (uint32_t)descriptorPoolLen, descriptorPoolSize };
   struct RIDescriptorPoolAllocSlot poolSlot = {};
@@ -48,7 +48,7 @@ static void vkDescriptorSetAlloc( struct RIDevice_s *device, struct RIDescriptor
   	assert( programDescriptor->vk.setLayout != VK_NULL_HANDLE );
   	info.pSetLayouts = &programDescriptor->vk.setLayout;
   	VK_WrapResult( vkAllocateDescriptorSets( device->vk.device, &info, &slot->vk.handle ) );
-  	arrpush( alloc->reserved_slots, slot );
+  	arrpush( alloc->reservedSlots, slot );
   }
 }
 
@@ -203,7 +203,7 @@ std::vector<char> RIProgram::loadShaderStage(cFileSearcher *searcher, const tStr
 }
 
 void RIProgram::initialize(RIDevice_s* device,std::span<ModuleStage> moduleInit) {
-  assert(device == NULL);
+  assert(device);
   this->device = device;
 
   VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {
@@ -273,7 +273,7 @@ void RIProgram::initialize(RIDevice_s* device,std::span<ModuleStage> moduleInit)
     assert(result == SPV_REFLECT_RESULT_SUCCESS);
     for (size_t i_set = 0; i_set < reflectionDescriptorCount; i_set++) {
       const SpvReflectDescriptorSet *spv_reflection = reflectionDescSets[i_set];
-      assert(reflection->set < ARRAY_COUNT(program->programDescriptors));
+      assert(spv_reflection->set < programDescriptors.size());
       struct DescriptorSetSlot *program_desc =
           &programDescriptors[spv_reflection->set];
       program_desc->alloc.descriptor_alloc_handle = vkDescriptorSetAlloc;
@@ -281,7 +281,6 @@ void RIProgram::initialize(RIDevice_s* device,std::span<ModuleStage> moduleInit)
       for (size_t i_binding = 0; i_binding < spv_reflection->binding_count; i_binding++) {
         const SpvReflectDescriptorBinding *reflectionBinding =
             spv_reflection->bindings[i_binding];
-        assert(reflection->set < R_DESCRIPTOR_SET_MAX);
         assert(reflectionBinding->array.dims_count <=
                1); // not going to handle multi-dim arrays
         DescriptorBindingID reflID = CreateDescriptorBindingID(reflectionBinding->name);

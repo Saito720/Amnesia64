@@ -22,7 +22,7 @@ struct RISegmentReq_s {
 template<size_t N> 
 struct RISegmentAlloc {
   static constexpr uint32_t SEGMENTS = N;
-  RISegmentAlloc() {}
+  RISegmentAlloc() { segment.fill(Segment{0, 0}); }
   RISegmentAlloc(struct RISegmentAllocDesc_s* desc);
   bool request(uint32_t frameIndex, size_t numElements, struct RISegmentReq_s *req); 
 
@@ -45,6 +45,7 @@ struct RISegmentAlloc {
 template<size_t N> 
 RISegmentAlloc<N>::RISegmentAlloc(struct RISegmentAllocDesc_s* desc) {
 	  assert( desc );
+	  segment.fill(Segment{0, 0});
 	  elementStride = desc->elementStride;
 	  tail = 0;
 	  head = 1;
@@ -54,11 +55,11 @@ RISegmentAlloc<N>::RISegmentAlloc(struct RISegmentAllocDesc_s* desc) {
 	  assert( elementStride > 0 );
 }
 template <size_t N>
-bool RISegmentAlloc<N>::request(uint32_t frameIndex, size_t numElements,
+bool RISegmentAlloc<N>::request(uint32_t frameIndex, size_t reqElements,
                                 struct RISegmentReq_s *req) {
   // reclaim segments that are unused
   while (tail != head && frameIndex >= (segment[tail].frameNum + numSegments)) {
-    assert(alloc->numElements >= segment[tail].numElements);
+    assert(numElements >= segment[tail].numElements);
     numElements -= segment[tail].numElements;
     elementOffset = (elementOffset + segment[tail].numElements) % maxElements;
     segment[tail].numElements = 0;
@@ -68,25 +69,24 @@ bool RISegmentAlloc<N>::request(uint32_t frameIndex, size_t numElements,
 
   // the frame has change
   if (frameIndex != segment[head].frameNum) {
-    head = (head + 1) % ARRAY_COUNT(segment);
+    head = (head + 1) % segment.size();
     segment[head].frameNum = frameIndex;
     segment[head].numElements = 0;
     assert(head != tail); // this shouldn't happen
   }
 
   size_t elmentEndOffset = (elementOffset + numElements) % maxElements;
-  assert(alloc->elementOffset < alloc->maxElements);
-  assert(elmentEndOffset < alloc->maxElements);
+  assert(elementOffset < maxElements);
+  assert(elmentEndOffset < maxElements);
   // we don't have enough space to fit into the end of the buffer give up the
   // remaning and move the cursor to the start
   if (elementOffset < elmentEndOffset &&
-      elmentEndOffset + numElements > maxElements) {
+      elmentEndOffset + reqElements > maxElements) {
     const uint32_t remaining = (maxElements - elmentEndOffset);
     segment[head].numElements += remaining;
     numElements += remaining;
     elmentEndOffset = 0;
-    assert((alloc->elementOffset + alloc->numElements) % alloc->maxElements ==
-           0);
+    assert((elementOffset + numElements) % maxElements == 0);
   }
   size_t remainingSpace = 0;
   if (elmentEndOffset < elementOffset) { // the buffer has wrapped around
@@ -94,19 +94,18 @@ bool RISegmentAlloc<N>::request(uint32_t frameIndex, size_t numElements,
   } else {
     remainingSpace = maxElements - elmentEndOffset;
   }
-  assert(remainingSpace <= alloc->maxElements);
+  assert(remainingSpace <= maxElements);
 
   // there is not enough avalaible space we need to reallocate
-  if (numElements > remainingSpace) {
+  if (reqElements > remainingSpace) {
     return false;
   }
-  segment[head].numElements += numElements;
-  numElements += numElements;
+  segment[head].numElements += reqElements;
+  numElements += reqElements;
 
   req->elementOffset = elmentEndOffset;
   req->elementStride = elementStride;
-  req->numElements =
-      numElements; // includes the padding on the end of the buffer
+  req->numElements = reqElements; // includes the padding on the end of the buffer
   return true;
 }
 

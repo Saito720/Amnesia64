@@ -5,8 +5,6 @@
 #include "graphics/GraphicsTypes.h"
 #include "graphics/RIFormat.h"
 #include "graphics/RITypes.h"
-#include <array>
-#include <memory>
 
 struct RIResourceUploader_s;
 
@@ -43,9 +41,8 @@ public:
   bool LoadBitmap(RIBarrierImageHandle_s postBarrier, 
                   cBitmap &bitmap,
                   const BitmapLoadOptions &options);
-  // HPLTexture();
-  // HPLTexture(struct RIResourceUploader_s *upload, cBitmap &bitmap,
-  //            const BitmapLoadOptions &options);
+  void setDebugName(const tWString& name);
+  void setDebugName(const char* name);
 };
 
 } // namespace hpl

@@ -10,10 +10,12 @@
 #include <graphics/RIResourceUploader.h>
 #include <graphics/RIScratchAlloc.h>
 #include <graphics/RIProgram.h>
+#include <graphics/RINulTexture.h>
 #include <memory>
 
 namespace hpl {
 struct HPLTexture;
+
 //bootstrap implementation
 struct RIBoostrap {
 public:
@@ -50,14 +52,16 @@ public:
   RISwapchain_s swapchain;
 	RIProgram gui;
 
+  struct RINulTexture whiteTexture2D;
+
   RI_Format_e depthFormat;
 	struct RIDescriptor_s colorAttachment[RI_MAX_SWAPCHAIN_IMAGES];
 	struct RITexture_s depthTextures[RI_MAX_SWAPCHAIN_IMAGES];
 	struct RIDescriptor_s depthAttachment[RI_MAX_SWAPCHAIN_IMAGES];
 
-  struct RISegmentAlloc<RI_NUMBER_FRAMES_FLIGHT> guiVertexAlloc;
+  struct RISegmentAlloc<RI_NUMBER_FRAME_SEGMENTS> guiVertexAlloc;
   RIBuffer_s guiVertexBuffer; 
-  struct RISegmentAlloc<RI_NUMBER_FRAMES_FLIGHT> guiIndexAlloc;
+  struct RISegmentAlloc<RI_NUMBER_FRAME_SEGMENTS> guiIndexAlloc;
   RIBuffer_s guiIndexBuffer;
 
   std::array<FrameContext, RI_NUMBER_FRAMES_FLIGHT> frameSets;

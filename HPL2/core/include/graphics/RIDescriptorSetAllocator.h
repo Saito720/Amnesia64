@@ -53,7 +53,7 @@ struct RIDescriptorSetAlloc {
 	struct RIDescriptorSetSlot *queue_begin;
 	struct RIDescriptorSetSlot *queue_end;
 
-	struct RIDescriptorSetSlot **reserved_slots; // stb arrays
+	struct RIDescriptorSetSlot **reservedSlots; // stb arrays
 	struct RIDescriptorPoolAllocSlot* pools; // stb arrays
 	struct RIDescriptorSetSlot **blocks;
 	size_t blockIndex;

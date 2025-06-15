@@ -240,7 +240,7 @@ namespace hpl {
 			dependencyInfo.pImageMemoryBarriers = imageBarriers;
 			vkCmdPipelineBarrier2( cntx->cmd.vk.cmd, &dependencyInfo );
 		}
-
+	
 		{
 			RI_InsertTransitionBarriers( &RI.device, &RI.uploader, &cntx->cmd );
 			tViewportListIt viewIt = mlstViewports.begin();

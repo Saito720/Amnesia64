@@ -61,6 +61,7 @@
 #include "graphics/RendererSimple.h"
 #include "graphics/RIScratchAlloc.h"
 #include <cassert>
+#include <vulkan/vulkan_core.h>
 
 #include "graphics/RIBoostrap.h"
 
@@ -81,8 +82,6 @@ namespace hpl {
 		mpTextureCreator = NULL;
 		mpDecalCreator = NULL;
 	}
-
-	//-----------------------------------------------------------------------
 
 	cGraphics::~cGraphics()
 	{
@@ -123,7 +122,7 @@ namespace hpl {
 		
 		Log("--------------------------------------------------------\n\n");
 	}
-	
+
 	bool cGraphics::Init(	int alWidth, int alHeight, int alDisplay, int alBpp, int abFullscreen, 
 							int alMultisampling,eGpuProgramFormat aGpuProgramFormat,
 							const tString &asWindowCaption, const cVector2l &avWindowPos,
@@ -217,7 +216,7 @@ namespace hpl {
 
 		{
 			uint32_t queueFamilies[RI_QUEUE_LEN] = { 0 };
-			assert( RI.riSwapchain.imageCount > 0 );
+			assert( RI.swapchain.imageCount > 0 );
 			for( uint32_t i = 0; i < RI.swapchain.imageCount; i++ ) {
 				VmaAllocationCreateInfo mem_reqs = { 0 };
 				mem_reqs.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
@@ -309,7 +308,26 @@ namespace hpl {
 				VK_WrapResult( vkCreateSemaphore( RI.device.vk.device, &semaphoreCreateInfo, NULL, &RI.vk.frame_sem) );
 			}
 		}
+		{
+			RIBoostrap::FrameContext* cntx = RI.GetActiveSet();
+			VkCommandBufferBeginInfo info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+			info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+			vkBeginCommandBuffer( cntx->cmd.vk.cmd, &info );
+			if(!RINulTexture::Create2DNulWhite(&cntx->cmd,&RI.device, &RI.whiteTexture2D)) {
+				printf("failed to create white texture");
+				return false;
+			}
+			vkEndCommandBuffer(cntx->cmd.vk.cmd);
+			VkCommandBufferSubmitInfo cmdSubmitInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO };
+			cmdSubmitInfo.commandBuffer = cntx->cmd.vk.cmd;
 
+			VkSubmitInfo2 submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
+			submitInfo.pCommandBufferInfos = &cmdSubmitInfo;
+			submitInfo.commandBufferInfoCount = 1;
+			VK_WrapResult( vkQueueSubmit2( RI.device.queues[RI_QUEUE_GRAPHICS].vk.queue, 1, &submitInfo, VK_NULL_HANDLE ) );
+			WaitRIQueueIdle(&RI.device, &RI.device.queues[RI_QUEUE_GRAPHICS]);
+
+		}
 		{
 			auto vert_stage = RIProgram::loadShaderStage(apResources->GetFileSearcher(), "gui.vert.spv");
 			auto frag_stage = RIProgram::loadShaderStage(apResources->GetFileSearcher(), "gui.frag.spv");

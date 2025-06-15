@@ -130,11 +130,11 @@ struct RIDescriptorSetResult resolveDescriptorSetAlloc( struct RIDevice_s *devic
 		return result;
 	}
 
-	if( arrlen( alloc->reserved_slots ) == 0 ) {
+	if( arrlen( alloc->reservedSlots ) == 0 ) {
 		alloc->descriptor_alloc_handle(device, alloc);
 		assert(arrlen(alloc->reservedSlots) > 0); // we didn't reserve any slots ...
 	}
-	struct RIDescriptorSetSlot *slot = arrpop( alloc->reserved_slots );
+	struct RIDescriptorSetSlot *slot = arrpop( alloc->reservedSlots );
 	slot->hash = hash;
 	slot->frameCount = frameCount;
 	attach_descriptor_slot( alloc, slot );

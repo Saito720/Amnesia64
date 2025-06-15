@@ -483,6 +483,7 @@ namespace hpl {
 				Error("Failed to load bitmap");
 				return false;
 			}
+
 			mpFrameTexture->GetTexture()->image = img;	
 			//mpFrameTexture->GetTexture()->CreateFromBitmap(mpBitmap);
 			//mpFrameTexture->GetTexture()->SetWrapS(eTextureWrap_ClampToEdge);

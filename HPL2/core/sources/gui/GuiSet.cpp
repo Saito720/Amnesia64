@@ -546,7 +546,7 @@ namespace hpl {
 		  do {
 			  segmentAllocDesc.maxElements = ( segmentAllocDesc.maxElements + ( segmentAllocDesc.maxElements >> 1 ) );
 		  } while( segmentAllocDesc.maxElements < m_setRenderObjects.size() * 4);
-		  RI.guiVertexAlloc = RISegmentAlloc<RI_NUMBER_FRAMES_FLIGHT>( &segmentAllocDesc );
+		  RI.guiVertexAlloc = RISegmentAlloc<RI_NUMBER_FRAME_SEGMENTS>( &segmentAllocDesc );
 		  bool res = RI.guiVertexAlloc.request( RI.frameIndex, numVerts, &vtxReq);
 			assert(res);
 
@@ -579,7 +579,7 @@ namespace hpl {
 			do {
 				segmentAllocDesc.maxElements = ( segmentAllocDesc.maxElements + ( segmentAllocDesc.maxElements >> 1 ) );
 			} while( segmentAllocDesc.maxElements < m_setRenderObjects.size() * 6);
-			RI.guiIndexAlloc = RISegmentAlloc<RI_NUMBER_FRAMES_FLIGHT>( &segmentAllocDesc );
+			RI.guiIndexAlloc = RISegmentAlloc<RI_NUMBER_FRAME_SEGMENTS>( &segmentAllocDesc );
 			
 			uint32_t queueFamilies[RI_QUEUE_LEN] = { 0 };
 		  VkBufferCreateInfo indexBufferCreateInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
@@ -704,8 +704,11 @@ namespace hpl {
 				uniformBlock.textureCfg |= (1 << 0); // Has texture
 				bindings[numBindings].descriptor = pTexture->image->binding;
 				cntx->textureLink.push_back(pTexture->image);
-				bindings[numBindings++].handle = DescriptorBindingID::Create("diffuseMap");
+			} else {
+				bindings[numBindings].descriptor = RI.whiteTexture2D.binding;
 			}
+			bindings[numBindings++].handle = DescriptorBindingID::Create("diffuseMap");
+
 			memcpy(uniformBlock.mvp, ((projectionMtx * viewMtx) * modelMtx).a, sizeof(float) * 16);
 			RI.UpdateFrameUBO(&bindings[numBindings].descriptor, (void*)&uniformBlock, sizeof(GuiPass));		
 			bindings[numBindings++].handle = DescriptorBindingID::Create("pass");
@@ -716,6 +719,7 @@ namespace hpl {
 			hash_t hash = hash_u32(HASH_INITIAL_VALUE, materialType);
 			hash = hash_u32(hash, RI.depthFormat);
 			hash = hash_u32(hash, RI.swapchain.format);
+			hash = hash_u32(hash, mbIs3D);
 			VkPipelineVertexInputStateCreateInfo vertexInputState = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
 			VkVertexInputAttributeDescription vertextbindingDesc[] = {
 				{ 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(PositionTexColor, position) },
@@ -758,7 +762,16 @@ namespace hpl {
 
 			VkPipelineMultisampleStateCreateInfo multisampleState = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
 			multisampleState.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-			
+		
+			VkPipelineDepthStencilStateCreateInfo depthStencilState = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
+			depthStencilState.minDepthBounds = 0.0f;
+			depthStencilState.maxDepthBounds = 1.0f;
+			if (mbIs3D) {
+				depthStencilState.depthTestEnable = VK_TRUE;
+				depthStencilState.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+			}
+		
+
 			VkGraphicsPipelineCreateInfo pipelineCreateInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
 			pipelineCreateInfo.pNext = &pipelineRenderingCreateInfo;
 			pipelineCreateInfo.pVertexInputState = &vertexInputState;
@@ -766,6 +779,7 @@ namespace hpl {
 			pipelineCreateInfo.pDynamicState = &dynamicState;
 			pipelineCreateInfo.pInputAssemblyState = &inputAssemblyState;
 			pipelineCreateInfo.pViewportState = &viewportState;
+			pipelineCreateInfo.pDepthStencilState = &depthStencilState;
 			pipelineCreateInfo.pMultisampleState = &multisampleState;
 			
 			switch(materialType)

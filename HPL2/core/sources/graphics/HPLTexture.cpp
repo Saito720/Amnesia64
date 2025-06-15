@@ -6,8 +6,12 @@
 #include "graphics/RIVK.h"
 
 #include "graphics/Bitmap.h"
+#include "system/SystemTypes.h"
 
+#include <codecvt>
 #include <cassert>
+#include <locale>
+#include <vulkan/vulkan_core.h>
 
 namespace hpl {
 void HPLTexture::HPLTexture_Delete(HPLTexture *texture) {
@@ -19,6 +23,60 @@ void HPLTexture::HPLTexture_Delete(HPLTexture *texture) {
                      texture->binding.vk.image.imageView, NULL);
   delete texture;
 }
+
+RI_Format from_hpl_format(ePixelFormat format) {
+  switch (format) {
+  case ePixelFormat_Alpha:
+    return RI_FORMAT_R8_UNORM;
+  case ePixelFormat_Luminance:
+    return RI_FORMAT_R8_UNORM;
+  case ePixelFormat_LuminanceAlpha:
+    return RI_FORMAT_RG8_UNORM;
+  case ePixelFormat_RGB: 
+    return RI_FORMAT_RGB8_UNORM;
+  case ePixelFormat_RGBA:
+    return RI_FORMAT_RGBA8_UNORM;
+  case ePixelFormat_BGRA:
+    return RI_FORMAT_BGRA8_UNORM;
+  case ePixelFormat_DXT1:
+    return RI_FORMAT_BC1_RGBA_UNORM;
+  case ePixelFormat_DXT2:
+  case ePixelFormat_DXT3:
+    return RI_FORMAT_BC2_RGBA_UNORM;
+  case ePixelFormat_DXT4:
+  case ePixelFormat_DXT5:
+    return RI_FORMAT_BC3_RGBA_UNORM;
+  case ePixelFormat_Depth16:
+    return RI_FORMAT_D16_UNORM;
+  case ePixelFormat_Depth24:
+    return RI_FORMAT_D32_SFLOAT_S8_UINT;
+  case ePixelFormat_Depth32:
+    return RI_FORMAT_D32_SFLOAT;
+  case ePixelFormat_Alpha16:
+    return RI_FORMAT_R16_UNORM;
+  case ePixelFormat_Luminance16:
+    return RI_FORMAT_R16_UNORM;
+  case ePixelFormat_LuminanceAlpha16:
+    return RI_FORMAT_RG16_UNORM;
+  case ePixelFormat_RGBA16:
+    return RI_FORMAT_RGBA16_UNORM;
+  case ePixelFormat_RGB16:
+    return RI_FORMAT_RGB16_UNORM;
+  case ePixelFormat_Alpha32:
+    return RI_FORMAT_R32_SFLOAT;
+  case ePixelFormat_Luminance32:
+    return RI_FORMAT_R32_SFLOAT;
+  case ePixelFormat_LuminanceAlpha32:
+    return RI_FORMAT_RG32_SFLOAT;
+  case ePixelFormat_RGBA32:
+    return RI_FORMAT_RGBA32_SFLOAT;
+  default:
+    assert(false && "Unsupported texture format");
+    break;
+  }
+  return RI_FORMAT_UNKNOWN;
+}
+
 
 RI_Format to_image_supported_format(ePixelFormat format) {
   switch (format) {
@@ -134,11 +192,31 @@ static inline bool GetSurfaceInfo(
 	return true;
 }
 
+void HPLTexture::setDebugName(const tWString& name) {
+  std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
+  std::string utf8 = converter.to_bytes(name);
+  setDebugName(utf8.c_str());
+}
+
+void HPLTexture::setDebugName(const char* name) {
+  assert(handle.vk.image);
+	if(vkSetDebugUtilsObjectNameEXT){
+		VkDebugUtilsObjectNameInfoEXT debugName = { 
+			VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT, 
+			NULL, 
+			VK_OBJECT_TYPE_IMAGE, 
+			(uint64_t)handle.vk.image, 
+			name 
+		};
+		VK_WrapResult( vkSetDebugUtilsObjectNameEXT( RI.device.vk.device, &debugName ) );
+	}
+
+}
+
 bool HPLTexture::LoadBitmap(
                           RIBarrierImageHandle_s postBarrier,
                             cBitmap &bitmap, 
                             const BitmapLoadOptions &options) {
-  assert(this->bootstrap);
   width = bitmap.GetWidth();
   height = bitmap.GetHeight();
   depth = bitmap.GetDepth();
@@ -187,15 +265,15 @@ bool HPLTexture::LoadBitmap(
   VK_ConfigureImageQueueFamilies(&info, RI.device.queues, RI_QUEUE_LEN,
                                  queueFamilies, RI_QUEUE_LEN);
   info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  VmaAllocationCreateInfo mem_reqs = {0};
-  mem_reqs.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+  VmaAllocationCreateInfo memReqs = {0};
+  memReqs.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 	
 	VkImageViewUsageCreateInfo usageInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO };
 	VkImageSubresourceRange subresource = {
 		VK_IMAGE_ASPECT_COLOR_BIT, 0, std::max<uint32_t>(info.mipLevels, 1), 0, 1,
 	};
 	VkImageViewCreateInfo createInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
-	if(!VK_WrapResult(vmaCreateImage(RI.device.vk.vmaAllocator, &info, &mem_reqs, &handle.vk.image, &vk.vmaAlloc, NULL))) {
+	if(!VK_WrapResult(vmaCreateImage(RI.device.vk.vmaAllocator, &info, &memReqs, &handle.vk.image, &vk.vmaAlloc, NULL))) {
 	  return false;
 	}
 
@@ -212,8 +290,9 @@ bool HPLTexture::LoadBitmap(
 	binding.vk.image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	VK_WrapResult( vkCreateImageView( RI.device.vk.device, &createInfo, NULL, &binding.vk.image.imageView ) );
 	RIFinalizeDescriptor( &RI.device, &binding );
-
-  RI_Format sourceFormat = to_image_supported_format(bitmap.GetPixelFormat());
+	
+	setDebugName(bitmap.GetFileName());
+  RI_Format sourceFormat = from_hpl_format(bitmap.GetPixelFormat());
   const struct RIFormatProps_s* srcProps = GetRIFormatProps(sourceFormat);
   const struct RIFormatProps_s* destProps = GetRIFormatProps(destFormat);
 #define MIP_REDUCE(s, mip) (std::max<uint32_t>(1u, (uint32_t)((s) >> (mip))))
@@ -221,38 +300,41 @@ bool HPLTexture::LoadBitmap(
     for (uint32_t mipLevel = 0; mipLevel < info.mipLevels; mipLevel++) {
       struct RIResourceTextureTransaction_s uploadDesc = {};
 
+      //uint32_t sourceRowStride;
+      //uint32_t destRowStride;
+      //uint32_t destRowCount = 0;
+      //if (!GetSurfaceInfo(
+      //        MIP_REDUCE(info.extent.width, mipLevel),
+      //        MIP_REDUCE(info.extent.height, mipLevel),
+      //        srcProps,
+      //        nullptr,
+      //        &sourceRowStride,
+      //        nullptr)) {
+      //    assert(false && "Failed to get surface info");
+      //}
+      //uint32_t srcElementStride = sourceRowStride / info.extent.width;
 
-      uint32_t sourceRowStride;
-      uint32_t destRowStride;
-      uint32_t destRowCount = 0;
-      if (!GetSurfaceInfo(
-              MIP_REDUCE(info.extent.width, mipLevel),
-              MIP_REDUCE(info.extent.height, mipLevel),
-              srcProps,
-              nullptr,
-              &sourceRowStride,
-              nullptr)) {
-          assert(false && "Failed to get surface info");
-      }
-      uint32_t srcElementStride = sourceRowStride / info.extent.width;
+      //if (!GetSurfaceInfo(
+      //        MIP_REDUCE(info.extent.width, mipLevel),
+      //        MIP_REDUCE(info.extent.height, mipLevel),
+      //        destProps,
+      //        nullptr,
+      //        &destRowStride,
+      //        &destRowCount)) {
+      //    assert(false && "Failed to get surface info");
+      //}
+      //uint32_t dstElementStride = destRowStride / info.extent.width;
+      const uint32_t w = MIP_REDUCE(info.extent.width, mipLevel);
+      const uint32_t h = MIP_REDUCE(info.extent.height, mipLevel); 
 
-      if (!GetSurfaceInfo(
-              MIP_REDUCE(info.extent.width, mipLevel),
-              MIP_REDUCE(info.extent.height, mipLevel),
-              destProps,
-              nullptr,
-              &destRowStride,
-              &destRowCount)) {
-          assert(false && "Failed to get surface info");
-      }
-      uint32_t dstElementStride = destRowStride / info.extent.width;
-
+      const uint32_t srcSliceNum = (h / srcProps->blockHeight);
+      const uint32_t srcRowPitch = (w / srcProps->blockWidth) * srcProps->stride;
       const auto& input = bitmap.GetData(arrIndex, mipLevel);
       uploadDesc.target = handle;
       uploadDesc.width = MIP_REDUCE(info.extent.width, mipLevel);
       uploadDesc.height = MIP_REDUCE(info.extent.height, mipLevel);
-      uploadDesc.sliceNum = destRowCount;
-      uploadDesc.rowPitch = destRowCount * destRowStride;
+      uploadDesc.sliceNum = (h / destProps->blockHeight);
+      uploadDesc.rowPitch = (w / destProps->blockWidth) * destProps->stride;
       uploadDesc.arrayOffset = arrIndex;
       uploadDesc.mipOffset = mipLevel;
       uploadDesc.x = 0;
@@ -260,45 +342,52 @@ bool HPLTexture::LoadBitmap(
       uploadDesc.depth = info.extent.depth;
       uploadDesc.format = destFormat;
       uploadDesc.postBarrier = postBarrier;
-      // #if ( DEVICE_IMPL_VULKAN )
-      //	{
-      //		uploadDesc.postBarrier.vk.layout =
-      //VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-      //		uploadDesc.postBarrier.vk.stage =
-      //VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
-      //		uploadDesc.postBarrier.vk.access =
-      //VK_ACCESS_2_SHADER_READ_BIT;
-      //	}
-      // #endif
       RI_ResourceBeginCopyTexture(&RI.device, &RI.uploader, &uploadDesc);
-      for (size_t z = 0; z < info.extent.depth; ++z) {
-        for (size_t slice = 0; slice < uploadDesc.sliceNum; slice++) {
-          const size_t dstRowStart = uploadDesc.alignRowPitch * slice;
-          const uint8_t* srcData = input->mpData + uploadDesc.rowPitch * z;
-          if(destProps->isCompressed) {
-					  memcpy( ( (uint8_t *)uploadDesc.data ) + dstRowStart, srcData + (slice * destRowStride), destRowStride);
-          } else {
-            for (size_t column = 0; column < uploadDesc.width; column++) {
-                memset(&( (uint8_t *)uploadDesc.data )[dstRowStart + ( destProps->stride * column )], 0xff, destProps->stride);
-					      memcpy( &( (uint8_t *)uploadDesc.data )[dstRowStart + ( destProps->stride * column )], 
-					              &srcData[column * srcProps->stride], 
-					            std::min<uint32_t>( srcProps->stride, destProps->stride ) );
-
-              
-            }
+      if(destProps->isCompressed) {
+        assert(srcRowPitch == uploadDesc.rowPitch); // compressed formats must match
+        assert(srcSliceNum == uploadDesc.sliceNum);
+        for(size_t z = 0; z < info.extent.depth; ++z) {
+          for( size_t slice = 0; slice < uploadDesc.height; slice++ ) {
+            const size_t srcRowStart = (srcRowPitch * slice) + (srcRowPitch * srcSliceNum * z);
+            const size_t dstRowStart = (uploadDesc.alignRowPitch * slice) + (uploadDesc.alignRowPitch * uploadDesc.alignSlicePitch * z);
+            memcpy( &( (uint8_t *)uploadDesc.data )[dstRowStart], &input->mpData[srcRowStart], uploadDesc.rowPitch );
           }
         }
+      } else {
+        for (size_t z = 0; z < info.extent.depth; ++z) {
+	        for( size_t slice = 0; slice < uploadDesc.height; slice++ ) {
+	          const size_t srcRowStart = (srcRowPitch * slice) + (srcRowPitch * srcSliceNum * z);
+		        const size_t dstRowStart = (uploadDesc.alignRowPitch * slice) + (uploadDesc.alignRowPitch * uploadDesc.alignSlicePitch * z);
+		        memset( &( (uint8_t *)uploadDesc.data )[dstRowStart], 255, uploadDesc.rowPitch );
+		        for( size_t column = 0; column < uploadDesc.width; column++ ) {
+					    memcpy( &( (uint8_t *)uploadDesc.data )[dstRowStart + ( destProps->stride * column )], &input->mpData[srcRowStart + ( srcProps->stride * column )],
+							    std::min( srcProps->stride, destProps->stride ) );
+		        }
+	        }
+	      }
       }
+
+      //for (size_t z = 0; z < info.extent.depth; ++z) {
+      //  for (size_t slice = 0; slice < uploadDesc.sliceNum; slice++) {
+      //    const size_t dstRowStart = uploadDesc.alignRowPitch * slice;
+      //    const uint8_t* srcData = input->mpData + uploadDesc.rowPitch * z;
+      //    if(destProps->isCompressed) {
+			//		  memcpy( ( (uint8_t *)uploadDesc.data ) + dstRowStart, srcData + (slice * destRowStride), destRowStride);
+      //    } else {
+      //      for (size_t column = 0; column < uploadDesc.width; column++) {
+      //          memset(&( (uint8_t *)uploadDesc.data )[dstRowStart + ( destProps->stride * column )], 0xff, destProps->stride);
+			//		      memcpy( &( (uint8_t *)uploadDesc.data )[dstRowStart + ( destProps->stride * column )], 
+			//		              &srcData[column * srcProps->stride], 
+			//		            std::min<uint32_t>( srcProps->stride, destProps->stride ) );
+
+      //        
+      //      }
+      //    }
+      //  }
+      //}
       RI_ResourceEndCopyTexture(&RI.device, &RI.uploader, &uploadDesc);
     }
   }
-
-        //if(vkSetDebugUtilsObjectNameEXT){
-	//	VkDebugUtilsObjectNameInfoEXT debugName = { VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT, NULL, VK_OBJECT_TYPE_IMAGE, (uint64_t)handle.vk.image, name.buf };
-	//	VK_WrapResult( vkSetDebugUtilsObjectNameEXT( bootstrap->device.vk.device, &debugName ) );
-	//}
-
-
   return true;
 }
 

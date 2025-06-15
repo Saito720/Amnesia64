@@ -7,7 +7,6 @@ namespace hpl {
 RIBoostrap RI = RIBoostrap{};
 
 void RIBoostrap::IncrementFrame() {
-  // FrameContext* cntx = GetActiveSet();
   frameIndex++;
 }
 

@@ -285,7 +285,7 @@ void RI_InsertTransitionBarriers( struct RIDevice_s *device, struct RIResourceUp
 
 void RI_ResourceSubmit( struct RIDevice_s *device, struct RIResourceUploader_s *res )
 {
-	if(arrlen(res->postImageBarriers) == 0 && arrlen(res->postBufferBarriers)) {
+	if(arrlen(res->postImageBarriers) == 0 && arrlen(res->postBufferBarriers) == 0) {
 		return;	
 	}
 	arrsetlen( res->postImageBarriers, 0 );

@@ -80,7 +80,7 @@ namespace hpl {
     const struct BindingReflection* findReflection(const struct DescriptorBindingID& handle);
     void initialize(RIDevice_s* device, std::span<ModuleStage> init);
     static std::vector<char> loadShaderStage(cFileSearcher *searcher, const tString& asName);
-    void bindPipeline(struct RIDevice_s *device, struct RICmd_s* cmd, hash_t pipelineHash, VkGraphicsPipelineCreateInfo* pipelineCreateInfo);
+    void bindPipeline(struct RIDevice_s *device, struct RICmd_s* cmd, hash_t pipelineHash, const char* debugName, VkGraphicsPipelineCreateInfo* pipelineCreateInfo);
     void bindDescriptors(struct RIDevice_s* device, struct RICmd_s* cmd, uint32_t frameIndex, DescriptorBinding* binding, size_t bindingCount);
     explicit RIProgram() {
     }

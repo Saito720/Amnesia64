@@ -140,8 +140,8 @@ namespace hpl {
 		}
 		
 		//Material
-		eGuiMaterial pMaterialA = aObjectA.mpCustomMaterial ? aObjectA.mpCustomMaterial : aObjectA.mpGfx->mpMaterial;
-		eGuiMaterial pMaterialB = aObjectB.mpCustomMaterial ? aObjectB.mpCustomMaterial : aObjectB.mpGfx->mpMaterial;
+		eGuiMaterial pMaterialA = aObjectA.mpCustomMaterial != eGuiMaterial_LastEnum ? aObjectA.mpCustomMaterial : aObjectA.mpGfx->mpMaterial;
+		eGuiMaterial pMaterialB = aObjectB.mpCustomMaterial != eGuiMaterial_LastEnum ? aObjectB.mpCustomMaterial : aObjectB.mpGfx->mpMaterial;
 		if(pMaterialA != pMaterialB)
 		{
 			return pMaterialA > pMaterialB;
@@ -626,8 +626,9 @@ namespace hpl {
 	  else
 	  {
 	  	//Set up min and max for orth projection
-	  	projectionMtx.SetupByOrthoProjection(-mvVirtualSizeOffset.x, -mvVirtualSizeOffset.y, mfVirtualMinZ, 
-	  																			mvVirtualSize.x-mvVirtualSizeOffset.x, mvVirtualSize.y-mvVirtualSizeOffset.y, mfVirtualMaxZ);
+	  	projectionMtx.SetupByOrthoProjection(-mvVirtualSizeOffset.x, mvVirtualSize.x-mvVirtualSizeOffset.x, 
+	  																		 	 mvVirtualSize.y - mvVirtualSizeOffset.y, -mvVirtualSizeOffset.y, 
+	  																		 	mfVirtualMinZ, mfVirtualMaxZ);
 	
 	  }
 		const VkDeviceSize vkOffset = vtxReq.elementOffset * vtxReq.elementStride; 
@@ -740,7 +741,6 @@ namespace hpl {
 			VkPipelineRasterizationStateCreateInfo rasterizationState = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
 			rasterizationState.polygonMode = VK_POLYGON_MODE_FILL;
 			rasterizationState.cullMode = VK_CULL_MODE_NONE;
-			rasterizationState.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 			rasterizationState.depthBiasEnable = VK_FALSE;
 			rasterizationState.lineWidth = 1.0f;
 		
@@ -770,7 +770,6 @@ namespace hpl {
 				depthStencilState.depthTestEnable = VK_TRUE;
 				depthStencilState.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 			}
-		
 
 			VkGraphicsPipelineCreateInfo pipelineCreateInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
 			pipelineCreateInfo.pNext = &pipelineRenderingCreateInfo;
@@ -800,7 +799,7 @@ namespace hpl {
 					colorBlendState.attachmentCount = ARRAY_COUNT(blendAttachmentState);
 					colorBlendState.pAttachments = blendAttachmentState;
 				 	pipelineCreateInfo.pColorBlendState = &colorBlendState;
-					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash, &pipelineCreateInfo);
+					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash,"gui.eGuiMaterial_Alpha", &pipelineCreateInfo);
 				}
 				case eGuiMaterial_Additive: {
 					VkPipelineColorBlendAttachmentState blendAttachmentState[] = { 
@@ -817,7 +816,7 @@ namespace hpl {
 					colorBlendState.attachmentCount = ARRAY_COUNT(blendAttachmentState);
 					colorBlendState.pAttachments = blendAttachmentState;
 				 	pipelineCreateInfo.pColorBlendState = &colorBlendState;
-					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash, &pipelineCreateInfo);
+					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash,"gui.eGuiMaterial_Additive", &pipelineCreateInfo);
 					break;	
 				}
 				case eGuiMaterial_Modulative: {
@@ -835,7 +834,7 @@ namespace hpl {
 					colorBlendState.attachmentCount = ARRAY_COUNT(blendAttachmentState);
 					colorBlendState.pAttachments = blendAttachmentState;
 				 	pipelineCreateInfo.pColorBlendState = &colorBlendState;
-					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash, &pipelineCreateInfo);
+					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash,"gui.eGuiMaterial_Modulative", &pipelineCreateInfo);
 					break;	
 				}
 				case eGuiMaterial_PremulAlpha: {
@@ -853,7 +852,7 @@ namespace hpl {
 					colorBlendState.attachmentCount = ARRAY_COUNT(blendAttachmentState);
 					colorBlendState.pAttachments = blendAttachmentState;
 				 	pipelineCreateInfo.pColorBlendState = &colorBlendState;
-					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash, &pipelineCreateInfo);
+					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash,"gui.eGuiMaterial_PremulAlpha", &pipelineCreateInfo);
 					break;	
 				}
 				case eGuiMaterial_Diffuse:{
@@ -872,7 +871,7 @@ namespace hpl {
 					colorBlendState.attachmentCount = ARRAY_COUNT(blendAttachmentState);
 					colorBlendState.pAttachments = blendAttachmentState;
 				 	pipelineCreateInfo.pColorBlendState = &colorBlendState;
-					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash, &pipelineCreateInfo);
+					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash,"gui.eGuiMaterial_Diffuse", &pipelineCreateInfo);
 					break;
 				}
 			}
@@ -957,8 +956,10 @@ namespace hpl {
 				materialType == pLastMaterial &&
 				pClipRegion == pLastClipRegion);
 
-			vkCmdBindVertexBuffers(cntx->cmd.vk.cmd, 0, 1, &RI.guiVertexBuffer.vk.buffer, &vkOffset);
-			vkCmdBindIndexBuffer(cntx->cmd.vk.cmd, RI.guiIndexBuffer.vk.buffer, idxOffset, VK_INDEX_TYPE_UINT32);
+			uint64_t vbOffset = vkOffset + vertexBufferOffset * sizeof(PositionTexColor);
+			uint64_t ibOffset = idxOffset + indexBufferOffset * sizeof(uint32_t);
+			vkCmdBindVertexBuffers(cntx->cmd.vk.cmd, 0, 1, &RI.guiVertexBuffer.vk.buffer, &vbOffset);
+			vkCmdBindIndexBuffer(cntx->cmd.vk.cmd, RI.guiIndexBuffer.vk.buffer, ibOffset, VK_INDEX_TYPE_UINT32);
 			vkCmdDrawIndexed(cntx->cmd.vk.cmd, indexBufferIndex, 1, 0, 0, 0);
 
 			vertexBufferOffset += vertexBufferIndex;

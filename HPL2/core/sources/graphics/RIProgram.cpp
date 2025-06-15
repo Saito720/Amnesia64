@@ -52,7 +52,7 @@ static void vkDescriptorSetAlloc( struct RIDevice_s *device, struct RIDescriptor
   }
 }
 
-void RIProgram::bindPipeline(struct RIDevice_s *device, struct RICmd_s* cmd, hash_t pipelineHash, VkGraphicsPipelineCreateInfo* pipelineCreateInfo) {
+void RIProgram::bindPipeline(struct RIDevice_s *device, struct RICmd_s* cmd, hash_t pipelineHash, const char* debugName, VkGraphicsPipelineCreateInfo* pipelineCreateInfo) {
   VkPipeline pipelineHandle = VK_NULL_HANDLE;
   auto it = pipeline.find(pipelineHash);
   if(it == pipeline.end()) {
@@ -101,6 +101,11 @@ void RIProgram::bindPipeline(struct RIDevice_s *device, struct RICmd_s* cmd, has
     VK_WrapResult(vkCreateGraphicsPipelines(device->vk.device, VK_NULL_HANDLE, 1,
                                             pipelineCreateInfo, NULL,
                                             &slot.vk.handle));
+
+		if( vkSetDebugUtilsObjectNameEXT ) {
+			VkDebugUtilsObjectNameInfoEXT debugExt = { VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT, NULL, VK_OBJECT_TYPE_PIPELINE, (uint64_t)slot.vk.handle, debugName};
+			VK_WrapResult( vkSetDebugUtilsObjectNameEXT( device->vk.device, &debugExt ) );
+		}
     pipelineHandle = slot.vk.handle;
     pipeline[pipelineHash] = slot;
     for (size_t i = 0; i < numModules; i++) {

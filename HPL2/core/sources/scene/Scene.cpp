@@ -244,33 +244,34 @@ namespace hpl {
 		{
 			RI_InsertTransitionBarriers( &RI.device, &RI.uploader, &cntx->cmd );
 			tViewportListIt viewIt = mlstViewports.begin();
+			
+			VkRenderingAttachmentInfo colorAttachment = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+			RI_VK_FillColorAttachment( &colorAttachment, &cntx->colorAttachment , true );
+
+			VkRenderingAttachmentInfo depthStencil = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+			RI_VK_FillDepthAttachment( &depthStencil, &cntx->depthAttachment, true );
+			VkRenderingInfo renderingInfo = { VK_STRUCTURE_TYPE_RENDERING_INFO };
+			renderingInfo.flags = 0;
+			renderingInfo.renderArea = (VkRect2D){ { 0, 0 }, { RI.swapchain.width, RI.swapchain.height } };
+			renderingInfo.layerCount = 1;
+			renderingInfo.viewMask = 0;
+			renderingInfo.colorAttachmentCount = 1;
+			renderingInfo.pColorAttachments = &colorAttachment;
+			renderingInfo.pDepthAttachment = &depthStencil;
+			renderingInfo.pStencilAttachment = NULL;
+			vkCmdBeginRendering( cntx->cmd.vk.cmd , &renderingInfo );
 			for(; viewIt != mlstViewports.end(); ++viewIt)
 			{
-				cViewport *pViewPort = *viewIt;
-		 		// render frame ...
-				if(alFlags & tSceneRenderFlag_Gui)
-				{
-					START_TIMING(RenderGUI)
-					VkRenderingAttachmentInfo colorAttachment = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
-					RI_VK_FillColorAttachment( &colorAttachment, &cntx->colorAttachment , true );
-
-					VkRenderingAttachmentInfo depthStencil = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
-					RI_VK_FillDepthAttachment( &depthStencil, &cntx->depthAttachment, true );
-					VkRenderingInfo renderingInfo = { VK_STRUCTURE_TYPE_RENDERING_INFO };
-					renderingInfo.flags = 0;
-					renderingInfo.renderArea = (VkRect2D){ { 0, 0 }, { RI.swapchain.width, RI.swapchain.height } };
-					renderingInfo.layerCount = 1;
-					renderingInfo.viewMask = 0;
-					renderingInfo.colorAttachmentCount = 1;
-					renderingInfo.pColorAttachments = &colorAttachment;
-					renderingInfo.pDepthAttachment = &depthStencil;
-					renderingInfo.pStencilAttachment = NULL;
-					vkCmdBeginRendering( cntx->cmd.vk.cmd , &renderingInfo );
-					RenderScreenGui(pViewPort, afFrameTime);
-					vkCmdEndRendering( cntx->cmd.vk.cmd );
-					STOP_TIMING(RenderGUI)
+					cViewport *pViewPort = *viewIt;
+		 			// render frame ...
+					if(alFlags & tSceneRenderFlag_Gui)
+					{
+						START_TIMING(RenderGUI)
+						RenderScreenGui(pViewPort, afFrameTime);
+						STOP_TIMING(RenderGUI)
+					}
 				}
-			}
+				vkCmdEndRendering( cntx->cmd.vk.cmd );
 		}
 
 		{

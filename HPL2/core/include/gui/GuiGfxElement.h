@@ -121,7 +121,7 @@ namespace hpl {
 		cVector3f mvOffset;
 		cVector2f mvActiveSize;
 
-		eGuiMaterial mpMaterial;
+		eGuiMaterial mpMaterial = eGuiMaterial_LastEnum;
 		Image* mvTextures[kMaxGuiTextures];
 		cFrameSubImage* mvImages[kMaxGuiTextures];
 

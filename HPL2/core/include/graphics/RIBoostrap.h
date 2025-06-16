@@ -76,6 +76,8 @@ public:
   FrameContext *GetActiveSet() { return &frameSets[frameIndex % RI_NUMBER_FRAMES_FLIGHT]; }
 
   void UpdateFrameUBO(RIDescriptor_s* descriptor, void* data, size_t size);
+  void CloseAndSubmitActiveSet();
+  void BeginActiveSet();
 
 };
 extern struct RIBoostrap RI; 

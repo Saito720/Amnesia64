@@ -182,27 +182,53 @@ bool cLuxHelpFuncs::PlayGuiSoundData(const tString& asName,eSoundEntryType aDest
 
 //-----------------------------------------------------------------------
 
-void cLuxHelpFuncs::DrawSetToScreen(bool abClearScreen, const cColor& aCol, cGuiSet* apSet)
-{
-	///////////////////////////
-	// Clear screen
-	if(abClearScreen)
-	{
-		mpLowLevelGfx->SetClearColor(aCol);
-        mpLowLevelGfx->ClearFrameBuffer(eClearFrameBufferFlag_Color);		
-	}
+void cLuxHelpFuncs::DrawSetToScreen(bool abClearScreen, const cColor &aCol,
+                                    cGuiSet *apSet) {
 
-	///////////////////////////
-	// Draw set
-	cGuiSet* pSet = mpSet;
-	if(apSet!=NULL)
-		pSet = apSet;
-		
-	pSet->Render(NULL);
-	pSet->ClearRenderObjects();
+  VkRenderingInfo renderingInfo = {VK_STRUCTURE_TYPE_RENDERING_INFO};
+  RIBoostrap::FrameContext *cntx = RI.GetActiveSet();
+
+  VkRenderingAttachmentInfo colorAttachment = {
+      VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+  RI_VK_FillColorAttachment(&colorAttachment, &cntx->colorAttachment, abClearScreen);
+  colorAttachment.clearValue.color.float32[0] = aCol.r;
+  colorAttachment.clearValue.color.float32[1] = aCol.g;
+  colorAttachment.clearValue.color.float32[2] = aCol.b;
+  colorAttachment.clearValue.color.float32[3] = aCol.a;
+
+  VkRenderingAttachmentInfo depthStencil = {
+      VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+  RI_VK_FillDepthAttachment(&depthStencil, &cntx->depthAttachment, false);
+  // Clear screen
+  //if (abClearScreen) {
+  //  mpLowLevelGfx->SetClearColor(aCol);
+  //  mpLowLevelGfx->ClearFrameBuffer(eClearFrameBufferFlag_Color);
+  //}
+
+  renderingInfo.flags = 0;
+  renderingInfo.renderArea =
+      (VkRect2D){{0, 0}, {RI.swapchain.width, RI.swapchain.height}};
+  renderingInfo.layerCount = 1;
+  renderingInfo.viewMask = 0;
+  renderingInfo.colorAttachmentCount = 1;
+  renderingInfo.pColorAttachments = &colorAttachment;
+  renderingInfo.pDepthAttachment = &depthStencil;
+  renderingInfo.pStencilAttachment = NULL;
+  vkCmdBeginRendering(cntx->cmd.vk.cmd, &renderingInfo);
+
+  ///////////////////////////
+  // Draw set
+  cGuiSet *pSet = mpSet;
+  if (apSet != NULL)
+    pSet = apSet;
+
+  pSet->Render(NULL);
+  pSet->ClearRenderObjects();
 	
-	mpLowLevelGfx->FlushRendering();
-	mpLowLevelGfx->SwapBuffers();
+	vkCmdEndRendering( cntx->cmd.vk.cmd );
+
+  //mpLowLevelGfx->FlushRendering();
+  //mpLowLevelGfx->SwapBuffers();
 }
 
 //-----------------------------------------------------------------------

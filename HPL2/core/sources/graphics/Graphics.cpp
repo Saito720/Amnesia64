@@ -305,7 +305,7 @@ namespace hpl {
 				semaphoreTypeCreateInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
 				VkSemaphoreCreateInfo semaphoreCreateInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
 				semaphoreCreateInfo.pNext = &semaphoreTypeCreateInfo;
-				VK_WrapResult( vkCreateSemaphore( RI.device.vk.device, &semaphoreCreateInfo, NULL, &RI.vk.frame_sem) );
+				VK_WrapResult( vkCreateSemaphore( RI.device.vk.device, &semaphoreCreateInfo, NULL, &RI.vk.frameSemaphore) );
 			}
 		}
 		{
@@ -326,7 +326,6 @@ namespace hpl {
 			submitInfo.commandBufferInfoCount = 1;
 			VK_WrapResult( vkQueueSubmit2( RI.device.queues[RI_QUEUE_GRAPHICS].vk.queue, 1, &submitInfo, VK_NULL_HANDLE ) );
 			WaitRIQueueIdle(&RI.device, &RI.device.queues[RI_QUEUE_GRAPHICS]);
-
 		}
 		{
 			auto vert_stage = RIProgram::loadShaderStage(apResources->GetFileSearcher(), "gui.vert.spv");

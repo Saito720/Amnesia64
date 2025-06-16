@@ -189,7 +189,7 @@ namespace hpl {
 			const uint64_t waitValue = 1 + RI.frameIndex - RI_NUMBER_FRAMES_FLIGHT;
 			VkSemaphoreWaitInfo semaphoreWaitInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO };
 			semaphoreWaitInfo.semaphoreCount = 1;
-			semaphoreWaitInfo.pSemaphores = &RI.vk.frame_sem;
+			semaphoreWaitInfo.pSemaphores = &RI.vk.frameSemaphore;
 			semaphoreWaitInfo.pValues = &waitValue;
 			VK_WrapResult( vkWaitSemaphores( RI.device.vk.device, &semaphoreWaitInfo, 5000 * 1000000ull ) );
 			VK_WrapResult( vkResetCommandPool( RI.device.vk.device, cntx->vk.pool, 0 ) );
@@ -312,8 +312,8 @@ namespace hpl {
 			{
 				VkSemaphoreSubmitInfo signalSem = { VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO };
 				signalSem.stageMask = VK_PIPELINE_STAGE_2_NONE;
-				signalSem.value = 1 + RI.frameIndex;
-				signalSem.semaphore = RI.vk.frame_sem;
+				signalSem.value = RI.frameIndex + 1;
+				signalSem.semaphore = RI.vk.frameSemaphore;
 				VkSubmitInfo2 submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
 				submitInfo.pSignalSemaphoreInfos = &signalSem;
 				submitInfo.signalSemaphoreInfoCount = 1;

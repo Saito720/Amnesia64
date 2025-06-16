@@ -509,7 +509,7 @@ namespace hpl {
 				STOP_TIMING(WaitAndFinishRendering)
 
 				START_TIMING(SwapBuffers)
-				mpGraphics->GetLowLevel()->SwapBuffers();
+				//mpGraphics->GetLowLevel()->SwapBuffers();
 				STOP_TIMING(SwapBuffers)
 				
 				//Log("Swap done: %d\n", cPlatform::GetApplicationTime());

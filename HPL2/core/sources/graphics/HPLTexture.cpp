@@ -3,6 +3,7 @@
 #include "graphics/HPLTexture.h"
 #include "graphics/RIFormat.h"
 #include "graphics/RIRenderer.h"
+#include "graphics/RITypes.h"
 #include "graphics/RIVK.h"
 
 #include "graphics/Bitmap.h"
@@ -15,12 +16,14 @@
 
 namespace hpl {
 void HPLTexture::HPLTexture_Delete(HPLTexture *texture) {
-  vmaFreeMemory(RI.device.vk.vmaAllocator,
-                texture->vk.vmaAlloc);
-  vkDestroyImage(RI.device.vk.device, texture->handle.vk.image,
-                 NULL);
+	WaitRIQueueIdle(&RI.device, &RI.device.queues[RI_QUEUE_COPY]); // TODO: fix synchronization
+	//WaitRIQueueIdle(&RI.device, &RI.device.queues[RI_QUEUE_GRAPHICS]);
   vkDestroyImageView(RI.device.vk.device,
                      texture->binding.vk.image.imageView, NULL);
+  vkDestroyImage(RI.device.vk.device, texture->handle.vk.image,
+                 NULL);
+  vmaFreeMemory(RI.device.vk.vmaAllocator,
+                texture->vk.vmaAlloc);
   delete texture;
 }
 

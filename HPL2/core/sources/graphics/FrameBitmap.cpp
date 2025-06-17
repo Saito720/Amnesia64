@@ -472,19 +472,19 @@ namespace hpl {
 	{
 		if(mbIsUpdated)
 		{
-			auto img = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete);
+			Image::SingleImage singleImage = {};
+			singleImage.image = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete);
 			RIBarrierImageHandle_s barrierHandle = {};
 			barrierHandle.vk.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			barrierHandle.vk.stage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
 			barrierHandle.vk.access = VK_ACCESS_2_SHADER_READ_BIT;
 			hpl::HPLTexture::BitmapLoadOptions opts = {0};
 			opts.use_mipmaps = true;
-			if(!img->LoadBitmap(barrierHandle, *mpBitmap, opts)) {
+			if(!singleImage.image->LoadBitmap(barrierHandle, *mpBitmap, opts)) {
 				Error("Failed to load bitmap");
 				return false;
 			}
-
-			mpFrameTexture->GetTexture()->image = img;	
+			mpFrameTexture->GetTexture()->SetImage(std::move(singleImage));	
 			//mpFrameTexture->GetTexture()->CreateFromBitmap(mpBitmap);
 			//mpFrameTexture->GetTexture()->SetWrapS(eTextureWrap_ClampToEdge);
 			//mpFrameTexture->GetTexture()->SetWrapT(eTextureWrap_ClampToEdge);

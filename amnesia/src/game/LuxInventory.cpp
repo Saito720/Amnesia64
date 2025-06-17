@@ -1547,12 +1547,12 @@ void cLuxInventory::CreateScreenTextures()
 	vTexSize.z = 0;
 
 	mpScreenTexture = hplNew(Image, ());// mpGraphics->CreateTexture("Screen",eTextureType_Rect,eTextureUsage_RenderTarget);
-	mpScreenTexture->image = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete); 
+	mpScreenTexture->SetImage(Image::SingleImage{std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete)}); 
 	//mpScreenTexture->CreateFromRawData(vTexSize,ePixelFormat_RGBA,NULL);
 	//mpScreenTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
 
 	mpScreenBgTexture = hplNew(Image, ()); //mpGraphics->CreateTexture("ScreenBlur",eTextureType_Rect,eTextureUsage_RenderTarget);
-	mpScreenBgTexture->image = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete); 
+	mpScreenBgTexture->SetImage(Image::SingleImage{std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete)}); 
 
 	mpScreenGfx = mpGui->CreateGfxTexture(mpScreenTexture,false,eGuiMaterial_Diffuse);
 	mpScreenBgGfx = mpGui->CreateGfxTexture(mpScreenBgTexture,false,eGuiMaterial_Alpha);

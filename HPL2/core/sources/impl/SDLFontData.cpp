@@ -152,22 +152,20 @@ namespace hpl {
 			//Create a texture from bitmap (do not want to load it from texture manager since that would delete the texture on its own).
 			tString sName = cString::SetFileExt(cString::To8Char(asFileName),"")+"_"+cString::ToString(lCount);
 			//iTexture *pTexture = mpLowLevelGraphics->CreateTexture("",eTextureType_2D,eTextureUsage_Normal);
-			Image* pImg = hplNew(Image, ());
-			auto img = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete);
+			Image::SingleImage singleImage = {};
+			singleImage.image = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete);
 			RIBarrierImageHandle_s barrierHandle = {};
 			barrierHandle.vk.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			barrierHandle.vk.stage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
 			barrierHandle.vk.access = VK_ACCESS_2_SHADER_READ_BIT;
 			HPLTexture::BitmapLoadOptions opts = {0};
 			opts.use_mipmaps = true;
-			if(!img->LoadBitmap(barrierHandle, *pBitmap, opts)) {
+			if(!singleImage.image->LoadBitmap(barrierHandle, *pBitmap, opts)) {
 				Error("Texture manager Couldn't load SDLFontData '%s'\n", sName.c_str());
 				hplDelete(pBitmap); //Bitmap no longer needed
-				hplDelete(pImg);
 				continue;
 			}
-			pImg->image = img;
-
+			Image* pImg = hplNew(Image, (std::move(singleImage)));
 			hplDelete( pBitmap ); //Bitmap no longer needed
 
 			///////////////////////

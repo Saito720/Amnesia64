@@ -23,6 +23,7 @@
 #include <memory>
 #include <cassert>
 #include <cstdint>
+#include <variant>
 
 #include "graphics/HPLTexture.h"
 
@@ -31,37 +32,49 @@ class cBitmap;
 struct HPLTexture;
 class Image : public iResourceBase {
 public:
-  Image();
-  Image(const tString &asName, const tWString &asFullPath);
+  struct SingleImage {
+    std::shared_ptr<HPLTexture> image;
+  };
 
+  struct AnimatedImage {
+    std::vector<std::shared_ptr<HPLTexture>> images;
+    float frameTime = 0.0f;
+    float timeCount = 0.0f;
+    float timeDir = 1.0f;
+    eTextureAnimMode animMode = eTextureAnimMode_Loop;
+  };
+
+  Image();
+  explicit Image(SingleImage &&singleImage);
+  explicit Image(AnimatedImage &&singleImage);
+  explicit Image(const tString &asName, const tWString &asFullPath, SingleImage &&singleImage);
+  explicit Image(const tString &asName, const tWString &asFullPath, AnimatedImage &&singleImage);
   ~Image();
+
+  void SetImage(SingleImage &&singleImage);
+  void SetImage(AnimatedImage &&animatedImage);
+
   Image(Image &&other);
   Image(const Image &other) = delete;
-
+  bool isAnimated() const; 
   Image &operator=(const Image &other) = delete;
   void operator=(Image &&other);
 
   virtual bool Reload() override;
   virtual void Unload() override;
   virtual void Destroy() override;
+  uint16_t GetWidth() const;
+  uint16_t GetHeight() const; 
+  eTextureAnimMode GetAnimMode();
+  void SetAnimMode(eTextureAnimMode aMode);
 
-  inline uint16_t GetWidth() const {
-    assert(image != nullptr);
-    return image->width;
-  }
-  inline uint16_t GetHeight() const {
-    assert(image != nullptr);
-    return image->height;
-  }
-
-  cVector2l GetImageSize() const {
-    if (image != nullptr) {
-      return cVector2l(image->width, image->height);
-    }
-    return cVector2l(0, 0);
-  }
-
-  std::shared_ptr<HPLTexture> image;
+  cVector2l GetImageSize() const; 
+  std::shared_ptr<HPLTexture> GetTexture() const;
+  void Update(float afTimeStep);
+  void SetFrameTime(float frameTime);
+  float GetFrameTime() const;
+private:
+  std::variant<SingleImage, AnimatedImage> value;
 };
 
 } // namespace hpl

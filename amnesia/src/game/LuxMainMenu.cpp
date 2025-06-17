@@ -1309,10 +1309,10 @@ void cLuxMainMenu::CreateScreenTextures()
 	vTexSize.z = 0;
 
 	mpScreenTexture = hplNew(Image, ());// mpGraphics->CreateTexture("Screen",eTextureType_Rect,eTextureUsage_RenderTarget);
-	mpScreenTexture->image = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete); 
+	mpScreenTexture->SetImage(Image::SingleImage{std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete)}); 
 	
 	mpScreenBlurTexture  = hplNew(Image, ()); //mpGraphics->CreateTexture("ScreenBlur",eTextureType_Rect,eTextureUsage_RenderTarget);
-	mpScreenBlurTexture->image = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete); 
+	mpScreenBlurTexture->SetImage(Image::SingleImage{std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete)}); 
 
 
 	//mpScreenTexture = mpGraphics->CreateTexture("Screen",eTextureType_Rect,eTextureUsage_RenderTarget);

@@ -95,8 +95,8 @@ namespace hpl {
 		///////////////////////////////
 		//Data init
 		mpFalloffMap = mpTextureManager->Create1D("core_falloff_linear",false);
-		mpFalloffMap->SetWrapS(eTextureWrap_ClampToEdge);
-		mpFalloffMap->SetWrapT(eTextureWrap_ClampToEdge);
+//		mpFalloffMap->SetWrapS(eTextureWrap_ClampToEdge);
+//		mpFalloffMap->SetWrapT(eTextureWrap_ClampToEdge);
 
 		mpGoboTexture = NULL;
 

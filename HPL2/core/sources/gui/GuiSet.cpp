@@ -702,9 +702,10 @@ namespace hpl {
 			struct RIProgram::DescriptorBinding bindings[3] = { 0 };
 			size_t numBindings = 0;
 			if(pTexture) {
+				std::shared_ptr<HPLTexture> texture = pTexture->GetTexture();
 				uniformBlock.textureCfg |= (1 << 0); // Has texture
-				bindings[numBindings].descriptor = pTexture->image->binding;
-				cntx->textureLink.push_back(pTexture->image);
+				bindings[numBindings].descriptor = texture->binding;
+				cntx->textureLink.push_back(texture);
 			} else {
 				bindings[numBindings].descriptor = RI.whiteTexture2D.binding;
 			}

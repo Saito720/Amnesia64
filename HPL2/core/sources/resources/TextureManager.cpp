@@ -130,19 +130,19 @@ namespace hpl {
 	Image* cTextureManager::Create1DImage(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage,
 						unsigned int alTextureSizeLevel) {
 		return wrap_image_resource(asName, [&abUseMipMaps, this](const tString& asName, const tWString& path, cBitmap* pBmp) -> Image* {
-				auto resource = new Image(asName, path);//, &HPLTexture::HPLTexture_Delete);
+				Image::SingleImage singleImage = {};
 				hpl::HPLTexture::BitmapLoadOptions opts = {0};
 				opts.use_mipmaps = abUseMipMaps;
 				RIBarrierImageHandle_s barrierHandle = {};
 				barrierHandle.vk.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 				barrierHandle.vk.stage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
 				barrierHandle.vk.access = VK_ACCESS_2_SHADER_READ_BIT;
-				auto img = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete);
-				if(!img->LoadBitmap(barrierHandle, *pBmp, opts)) {
+				singleImage.image = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete);
+				if(!singleImage.image->LoadBitmap(barrierHandle, *pBmp, opts)) {
 					Error("Texture manager Couldn't load bitmap '%s'\n", cString::To8Char(path).c_str());
 					return NULL;
 				}
-				resource->image = img;
+				auto resource = new Image(asName, path, std::move(singleImage));
 				return resource;
 		});
 	}
@@ -150,41 +150,38 @@ namespace hpl {
 	Image* cTextureManager::Create2DImage(const tString& asName,bool abUseMipMaps,eTextureType aType,
 						eTextureUsage aUsage,unsigned int alTextureSizeLevel) {
 		return wrap_image_resource(asName, [&abUseMipMaps, this](const tString& asName, const tWString& path, cBitmap* pBmp) -> Image* {
-				auto resource = new Image(asName, path);//, &HPLTexture::HPLTexture_Delete);
+				Image::SingleImage singleImage = {};
 				HPLTexture::BitmapLoadOptions opts = {0};
 				opts.use_mipmaps = abUseMipMaps;
 				RIBarrierImageHandle_s barrierHandle = {};
 				barrierHandle.vk.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 				barrierHandle.vk.stage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
 				barrierHandle.vk.access = VK_ACCESS_2_SHADER_READ_BIT;
-				auto img = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete);
-				if(!img->LoadBitmap( barrierHandle, *pBmp, opts)) {
+				singleImage.image = std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete);
+				if(!singleImage.image->LoadBitmap( barrierHandle, *pBmp, opts)) {
 					Error("Texture manager Couldn't load bitmap '%s'\n", cString::To8Char(path).c_str());
 					return NULL;
 				}
-				resource->image = img;
-				return resource;
+				return new Image(asName, path, std::move(singleImage));//, &HPLTexture::HPLTexture_Delete);
 		});
 	}
 
 	Image* cTextureManager::Create3DImage(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage,
 						unsigned int alTextureSizeLevel){
 		return wrap_image_resource(asName, [&abUseMipMaps, this](const tString& asName, const tWString& path, cBitmap* pBmp) -> Image* {
-				auto resource = new Image(asName, path);//, &HPLTexture::HPLTexture_Delete);
+				Image::SingleImage singleImage = {};
 				HPLTexture::BitmapLoadOptions opts = {0};
 				opts.use_mipmaps = abUseMipMaps;
 				RIBarrierImageHandle_s barrierHandle = {};
 				barrierHandle.vk.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 				barrierHandle.vk.stage = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
 				barrierHandle.vk.access = VK_ACCESS_2_SHADER_READ_BIT;
-				HPLTexture* tex = new HPLTexture{};
-				auto img = std::shared_ptr<HPLTexture>(tex, HPLTexture::HPLTexture_Delete);
-				if(!img->LoadBitmap( barrierHandle, *pBmp, opts)) {
+				singleImage.image =  std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete);
+				if(!singleImage.image->LoadBitmap( barrierHandle, *pBmp, opts)) {
 					Error("Texture manager Couldn't load bitmap '%s'\n", cString::To8Char(path).c_str());
 					return NULL;
 				}
-				resource->image = img;
-				return resource;
+				return new Image(asName, path, std::move(singleImage));//, &HPLTexture::HPLTexture_Delete);
 		});
 	}
 
@@ -197,7 +194,8 @@ namespace hpl {
 	iTexture* cTextureManager::Create1D(const tString& asName,bool abUseMipMaps, 
 										eTextureUsage aUsage, unsigned int alTextureSizeLevel)
 	{
-		return CreateSimpleTexture(asName,abUseMipMaps,aUsage, eTextureType_1D,alTextureSizeLevel);
+	return NULL;
+		//return CreateSimpleTexture(asName,abUseMipMaps,aUsage, eTextureType_1D,alTextureSizeLevel);
 	}
 
 	//-----------------------------------------------------------------------
@@ -205,6 +203,7 @@ namespace hpl {
 	iTexture* cTextureManager::Create2D(const tString& asName,bool abUseMipMaps, eTextureType aType,
 										eTextureUsage aUsage, unsigned int alTextureSizeLevel)
 	{
+	return NULL;
 		return CreateSimpleTexture(asName,abUseMipMaps,aUsage, aType,alTextureSizeLevel);
 	}
 
@@ -213,6 +212,7 @@ namespace hpl {
 	iTexture* cTextureManager::Create3D(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage,
 										unsigned int alTextureSizeLevel)
 	{
+	return NULL;
 		return CreateSimpleTexture(asName,abUseMipMaps,aUsage, eTextureType_3D,alTextureSizeLevel);
 	}
 
@@ -221,6 +221,7 @@ namespace hpl {
 	iTexture* cTextureManager::CreateAnim(const tString& asFirstFrameName,bool abUseMipMaps,eTextureType aType,
 											eTextureUsage aUsage, unsigned int alTextureSizeLevel)
 	{
+	return NULL;
 		BeginLoad(asFirstFrameName);
 		
 		///////////////////////////
@@ -348,6 +349,7 @@ namespace hpl {
 											eTextureUsage aUsage,
 											unsigned int alTextureSizeLevel)
 	{
+		return NULL;
 		tString sExt = cString::ToLowerCase(cString::GetFileExt(asPathName));
 
 		/////////////////////////////////////////////////////////
@@ -468,9 +470,8 @@ namespace hpl {
 		for(; it != m_mapResources.end(); ++it)
 		{
 			iResourceBase *pBase = it->second;
-			iTexture *pTexture = static_cast<iTexture*>(pBase);
-
-			pTexture->Update(afTimeStep);
+			Image* img = static_cast<Image*>(pBase);
+			img->Update(afTimeStep);
 		}
 	}
 
@@ -539,6 +540,7 @@ namespace hpl {
 	
 	iTexture* cTextureManager::FindTexture2D(const tString &asName, tWString &asFilePath)
 	{
+	assert(false);
 		iTexture *pTexture=NULL;
 
 		if(cString::GetFileExt(asName)=="")

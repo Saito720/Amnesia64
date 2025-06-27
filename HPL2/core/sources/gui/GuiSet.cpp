@@ -649,7 +649,7 @@ namespace hpl {
 		cGuiClipRegion *pClipRegion = it->mpClipRegion;
 
 		VkViewport viewports[] = {
-			{0,0, (float)RI.swapchain.width, (float)RI.swapchain.height, 0.0f, 1.0f}
+			{0,(float)RI.swapchain.height, (float)RI.swapchain.width, -(float)RI.swapchain.height, 0.0f, 1.0f}
 		};
 		VkRect2D scissors[] = {
 			{ {0, 0}, {RI.swapchain.width, RI.swapchain.height} }

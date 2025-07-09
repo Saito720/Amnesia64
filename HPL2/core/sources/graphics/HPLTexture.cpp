@@ -1,5 +1,5 @@
 #include "graphics/GraphicsTypes.h"
-#include "graphics/RIBoostrap.h"
+#include "graphics/RIBootstrap.h"
 #include "graphics/HPLTexture.h"
 #include "graphics/RIFormat.h"
 #include "graphics/RIRenderer.h"
@@ -302,31 +302,6 @@ bool HPLTexture::LoadBitmap(
   for (uint32_t arrIndex = 0; arrIndex < info.arrayLayers; arrIndex++) {
     for (uint32_t mipLevel = 0; mipLevel < info.mipLevels; mipLevel++) {
       struct RIResourceTextureTransaction_s uploadDesc = {};
-
-      //uint32_t sourceRowStride;
-      //uint32_t destRowStride;
-      //uint32_t destRowCount = 0;
-      //if (!GetSurfaceInfo(
-      //        MIP_REDUCE(info.extent.width, mipLevel),
-      //        MIP_REDUCE(info.extent.height, mipLevel),
-      //        srcProps,
-      //        nullptr,
-      //        &sourceRowStride,
-      //        nullptr)) {
-      //    assert(false && "Failed to get surface info");
-      //}
-      //uint32_t srcElementStride = sourceRowStride / info.extent.width;
-
-      //if (!GetSurfaceInfo(
-      //        MIP_REDUCE(info.extent.width, mipLevel),
-      //        MIP_REDUCE(info.extent.height, mipLevel),
-      //        destProps,
-      //        nullptr,
-      //        &destRowStride,
-      //        &destRowCount)) {
-      //    assert(false && "Failed to get surface info");
-      //}
-      //uint32_t dstElementStride = destRowStride / info.extent.width;
       const uint32_t w = MIP_REDUCE(info.extent.width, mipLevel);
       const uint32_t h = MIP_REDUCE(info.extent.height, mipLevel); 
 
@@ -369,25 +344,6 @@ bool HPLTexture::LoadBitmap(
 	        }
 	      }
       }
-
-      //for (size_t z = 0; z < info.extent.depth; ++z) {
-      //  for (size_t slice = 0; slice < uploadDesc.sliceNum; slice++) {
-      //    const size_t dstRowStart = uploadDesc.alignRowPitch * slice;
-      //    const uint8_t* srcData = input->mpData + uploadDesc.rowPitch * z;
-      //    if(destProps->isCompressed) {
-			//		  memcpy( ( (uint8_t *)uploadDesc.data ) + dstRowStart, srcData + (slice * destRowStride), destRowStride);
-      //    } else {
-      //      for (size_t column = 0; column < uploadDesc.width; column++) {
-      //          memset(&( (uint8_t *)uploadDesc.data )[dstRowStart + ( destProps->stride * column )], 0xff, destProps->stride);
-			//		      memcpy( &( (uint8_t *)uploadDesc.data )[dstRowStart + ( destProps->stride * column )], 
-			//		              &srcData[column * srcProps->stride], 
-			//		            std::min<uint32_t>( srcProps->stride, destProps->stride ) );
-
-      //        
-      //      }
-      //    }
-      //  }
-      //}
       RI_ResourceEndCopyTexture(&RI.device, &RI.uploader, &uploadDesc);
     }
   }

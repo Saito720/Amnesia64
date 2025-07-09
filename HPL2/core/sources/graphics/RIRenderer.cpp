@@ -150,7 +150,9 @@ VkBool32 VKAPI_PTR __VK_DebugUtilsMessenger( VkDebugUtilsMessageSeverityFlagBits
 		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
 			//assert(callbackData->messageIdNumber ==0xc1c74a9c );
 			printf( "VK ERROR: %s", callbackData->pMessage );
-		  if( callbackData->messageIdNumber != 0xcc9c32be )
+		  if( callbackData->messageIdNumber != 0xcc9c32be && 
+		  	callbackData->messageIdNumber != 0x4DAE5635 && 
+		  	callbackData->messageIdNumber != 0x2C8C6E7D ) 
 		  	assert( false );
 			break;
 		case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:

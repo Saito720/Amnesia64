@@ -186,7 +186,7 @@ void cLuxHelpFuncs::DrawSetToScreen(bool abClearScreen, const cColor &aCol,
                                     cGuiSet *apSet) {
 
   VkRenderingInfo renderingInfo = {VK_STRUCTURE_TYPE_RENDERING_INFO};
-  RIBoostrap::FrameContext *cntx = RI.GetActiveSet();
+  RIBootstrap::FrameContext *cntx = RI.GetActiveSet();
 
   VkRenderingAttachmentInfo colorAttachment = {
       VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};

@@ -63,7 +63,7 @@
 #include <cassert>
 #include <vulkan/vulkan_core.h>
 
-#include "graphics/RIBoostrap.h"
+#include "graphics/RIBootstrap.h"
 
 namespace hpl {
 
@@ -309,7 +309,7 @@ namespace hpl {
 			}
 		}
 		{
-			RIBoostrap::FrameContext* cntx = RI.GetActiveSet();
+			RIBootstrap::FrameContext* cntx = RI.GetActiveSet();
 			VkCommandBufferBeginInfo info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
 			info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 			vkBeginCommandBuffer( cntx->cmd.vk.cmd, &info );

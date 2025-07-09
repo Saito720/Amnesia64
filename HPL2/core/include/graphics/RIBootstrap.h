@@ -17,9 +17,9 @@ namespace hpl {
 struct HPLTexture;
 
 //bootstrap implementation
-struct RIBoostrap {
+struct RIBootstrap {
 public:
-  explicit RIBoostrap() {
+  explicit RIBootstrap() {
 
   }
   struct FrameContext {
@@ -65,7 +65,7 @@ public:
   RIBuffer_s guiIndexBuffer;
 
   std::array<FrameContext, RI_NUMBER_FRAMES_FLIGHT> frameSets;
-	std::array<RIDescriptor_s, 2048> cachedFilters; 
+	std::array<RIDescriptor_s, 1024> cachedFilters; 
   uint32_t swapchainIndex;
   uint64_t frameIndex = 0;
 
@@ -80,7 +80,7 @@ public:
   void BeginActiveSet();
 
 };
-extern struct RIBoostrap RI; 
+extern struct RIBootstrap RI; 
 
 }; // namespace hpl
 

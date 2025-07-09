@@ -182,7 +182,7 @@ namespace hpl {
 		//Increase the frame count (do this at top, so render count is valid until this Render is called again!)
 		iRenderer::IncRenderFrameCount();
 		{
-			RIBoostrap::FrameContext* cntx = RI.GetActiveSet();
+			RIBootstrap::FrameContext* cntx = RI.GetActiveSet();
 			RI_InsertTransitionBarriers( &RI.device, &RI.uploader, &cntx->cmd );
 			tViewportListIt viewIt = mlstViewports.begin();
 			
@@ -211,8 +211,8 @@ namespace hpl {
 						RenderScreenGui(pViewPort, afFrameTime);
 						STOP_TIMING(RenderGUI)
 					}
-				}
-				vkCmdEndRendering( cntx->cmd.vk.cmd );
+			}
+			vkCmdEndRendering( cntx->cmd.vk.cmd );
 		}
 
 

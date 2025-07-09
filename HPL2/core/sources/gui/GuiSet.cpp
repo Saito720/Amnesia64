@@ -532,7 +532,7 @@ namespace hpl {
 			return;
 		}
 
-		RIBoostrap::FrameContext* cntx = RI.GetActiveSet();
+		RIBootstrap::FrameContext* cntx = RI.GetActiveSet();
 
 		const size_t numVerts = m_setRenderObjects.size() * 4;;
 		const size_t numIndecies = m_setRenderObjects.size() * 6;;
@@ -699,7 +699,7 @@ namespace hpl {
 				uniformBlock.textureCfg |= (1 << 1); // Has clip planes
 			}
 
-			struct RIProgram::DescriptorBinding bindings[3] = { 0 };
+			struct RIProgram::DescriptorBinding bindings[4] = { 0 };
 			size_t numBindings = 0;
 			if(pTexture) {
 				std::shared_ptr<HPLTexture> texture = pTexture->GetTexture();
@@ -715,7 +715,9 @@ namespace hpl {
 			RI.UpdateFrameUBO(&bindings[numBindings].descriptor, (void*)&uniformBlock, sizeof(GuiPass));		
 			bindings[numBindings++].handle = DescriptorBindingID::Create("pass");
 
-			bindings[numBindings].descriptor = *RI.resolve_filter_descriptor(eTextureWrap_ClampToEdge, eTextureWrap_ClampToEdge, eTextureWrap_ClampToEdge, eTextureFilter_Nearest);
+			RIDescriptor_s* desc = 	RI.resolve_filter_descriptor(eTextureWrap_ClampToEdge, eTextureWrap_ClampToEdge, eTextureWrap_ClampToEdge, eTextureFilter_Nearest);
+			assert(desc);
+			bindings[numBindings].descriptor = *desc;
 			bindings[numBindings++].handle = DescriptorBindingID::Create("diffuseSampler");
 
 			hash_t hash = hash_u32(HASH_INITIAL_VALUE, materialType);

@@ -224,14 +224,16 @@ void RI_InsertTransitionBarriers( struct RIDevice_s *device, struct RIResourceUp
 {
 #if ( DEVICE_IMPL_VULKAN )
 	{
-		size_t postBufferIdx = 0;
+		size_t postBufferIdx = res->bufferBarrierTransitionIndex;
 		size_t numBufferBarriers = 0;
 		VkBufferMemoryBarrier2 bufferBarriers[32] = { };
 		
-		size_t postImageIdx = 0;
+		size_t postImageIdx = res->imageBarrierTransitionIndex;
 		size_t numImageBarriers = 0;
 		VkImageMemoryBarrier2 imageBarriers[32] = { };
 
+		res->bufferBarrierTransitionIndex = arrlen( res->postBufferBarriers );
+		res->imageBarrierTransitionIndex = arrlen( res->postImageBarriers );
 		while( true ) {
 			while( postBufferIdx < arrlen( res->postBufferBarriers ) && numBufferBarriers < ARRAY_COUNT( bufferBarriers ) ) {
 				VkBufferMemoryBarrier2 *barrier = &bufferBarriers[numBufferBarriers++];
@@ -275,7 +277,7 @@ void RI_InsertTransitionBarriers( struct RIDevice_s *device, struct RIResourceUp
 			dependencyInfo.pBufferMemoryBarriers = bufferBarriers;
 			dependencyInfo.imageMemoryBarrierCount = numImageBarriers;
 			dependencyInfo.pImageMemoryBarriers = imageBarriers;
-			vkCmdPipelineBarrier2(  cmd->vk.cmd, &dependencyInfo );
+			vkCmdPipelineBarrier2(cmd->vk.cmd, &dependencyInfo );
 			numBufferBarriers = 0;
 			numImageBarriers = 0; 
 		}
@@ -290,6 +292,8 @@ void RI_ResourceSubmit( struct RIDevice_s *device, struct RIResourceUploader_s *
 	}
 	arrsetlen( res->postImageBarriers, 0 );
 	arrsetlen( res->postBufferBarriers, 0 );
+	res->imageBarrierTransitionIndex = 0;
+	res->bufferBarrierTransitionIndex = 0;
 
 #if ( DEVICE_IMPL_VULKAN )
 	{
@@ -337,17 +341,6 @@ void RI_ResourceBeginCopyTexture( struct RIDevice_s *device, struct RIResourceUp
 	assert(trans->req.cpuMapping); 
 	trans->data = (uint8_t *)trans->req.cpuMapping + trans->req.byteOffset;
 }
-
-//static VkImageSubresourceRange _VK_UnionSubresourceRange(VkImageSubresourceRange a1, VkImageSubresourceRange  a2) {
-//	VkImageSubresourceRange range = { 0 };
-//	range.aspectMask = (a1.aspectMask | a2.aspectMask); 
-//	range.baseMipLevel = Q_MIN(a1.baseMipLevel, a2.baseMipLevel);
-//	range.baseArrayLayer = Q_MIN(a1.baseArrayLayer, a2.baseArrayLayer);
-//	range.layerCount = Q_MAX(a1.baseArrayLayer + a1.layerCount, a2.baseArrayLayer + a2.layerCount) - range.baseArrayLayer;
-//	range.layerCount = Q_MAX(a1.baseMipLevel + a1.levelCount , a2.baseMipLevel + a2.levelCount) - range.baseMipLevel;
-//	return range;
-//} 
-
 
 void RI_ResourceEndCopyTexture( struct RIDevice_s *device, struct RIResourceUploader_s *res, struct RIResourceTextureTransaction_s *trans )
 {

@@ -9,7 +9,7 @@
 struct RIResourceUploader_s;
 
 namespace hpl {
-struct RIBoostrap;
+struct RIBootstrap;
 class cBitmap;
 
 RI_Format to_image_supported_format(ePixelFormat format); 

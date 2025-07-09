@@ -1,18 +1,18 @@
-#include "graphics/RIBoostrap.h"
+#include "graphics/RIBootstrap.h"
 #include "graphics/RIRenderer.h"
 #include "graphics/RISwapchain.h"
 #include "graphics/RIVK.h"
 
 namespace hpl {
 
-RIBoostrap RI = RIBoostrap{};
+RIBootstrap RI = RIBootstrap{};
 
-void RIBoostrap::IncrementFrame() {
+void RIBootstrap::IncrementFrame() {
   frameIndex++;
 }
 
-void RIBoostrap::CloseAndSubmitActiveSet() {
-  RIBoostrap::FrameContext *cntx = RI.GetActiveSet();
+void RIBootstrap::CloseAndSubmitActiveSet() {
+  RIBootstrap::FrameContext *cntx = RI.GetActiveSet();
   struct RIQueue_s *graphicsQueue = &RI.device.queues[RI_QUEUE_GRAPHICS];
   {
     VkImageMemoryBarrier2 imageBarriers[1] = {};
@@ -70,8 +70,8 @@ void RIBoostrap::CloseAndSubmitActiveSet() {
   }
   RI.IncrementFrame();
 }
-void RIBoostrap::BeginActiveSet() {
-  RIBoostrap::FrameContext *cntx = RI.GetActiveSet();
+void RIBootstrap::BeginActiveSet() {
+  RIBootstrap::FrameContext *cntx = RI.GetActiveSet();
   struct RIQueue_s *graphicsQueue = &RI.device.queues[RI_QUEUE_GRAPHICS];
 
   if (RI.frameIndex >= RI_NUMBER_FRAMES_FLIGHT) {
@@ -139,7 +139,7 @@ void RIBoostrap::BeginActiveSet() {
   }
 }
 
-void RIBoostrap::UpdateFrameUBO(RIDescriptor_s *descriptor, void *data,
+void RIBootstrap::UpdateFrameUBO(RIDescriptor_s *descriptor, void *data,
                                 size_t size) {
   auto *activeSet = GetActiveSet();
   const hash_t hash =
@@ -158,7 +158,7 @@ void RIBoostrap::UpdateFrameUBO(RIDescriptor_s *descriptor, void *data,
   }
 }
 
-RIDescriptor_s *RIBoostrap::resolve_filter_descriptor(eTextureWrap wrapS,
+RIDescriptor_s *RIBootstrap::resolve_filter_descriptor(eTextureWrap wrapS,
                                                       eTextureWrap wrapT,
                                                       eTextureWrap wrapR,
                                                       eTextureFilter filter) {
@@ -196,7 +196,6 @@ RIDescriptor_s *RIBoostrap::resolve_filter_descriptor(eTextureWrap wrapS,
       if (cachedFilters[index].cookie == hash) {
         return &cachedFilters[index];
       } else if (RI_IsEmptyDescriptor(&cachedFilters[index])) {
-        cachedFilters[index].cookie = hash;
         cachedFilters[index].vk.type = VK_DESCRIPTOR_TYPE_SAMPLER;
         cachedFilters[index].vk.image.imageView = VK_NULL_HANDLE;
         cachedFilters[index].vk.image.imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -204,6 +203,7 @@ RIDescriptor_s *RIBoostrap::resolve_filter_descriptor(eTextureWrap wrapS,
         VK_WrapResult(vkCreateSampler(device.vk.device, &info, NULL,
                                       &cachedFilters[index].vk.image.sampler));
         RIFinalizeDescriptor(&device, &cachedFilters[index]);
+        cachedFilters[index].cookie = hash;
         return &cachedFilters[index];
       }
       index = (index + 1) % cachedFilters.size();

@@ -38,6 +38,8 @@ struct RIResourceUploader_s {
 	struct RIQueue_s *copyQueue;
 	struct RIResourcePostImageBarrier_s* postImageBarriers;
 	struct RIResourcePostBufferBarrier_s* postBufferBarriers;
+	size_t imageBarrierTransitionIndex;
+	size_t bufferBarrierTransitionIndex;
 	size_t tailOffset;
 	size_t remaningSpace;
 	size_t reservedSpacePerSet[RI_RESOURCE_NUM_COMMAND_SETS];

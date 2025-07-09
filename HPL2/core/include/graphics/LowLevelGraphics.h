@@ -22,9 +22,9 @@
 #ifndef HPL_LOWLEVELGRAPHICS_H
 #define HPL_LOWLEVELGRAPHICS_H
 
-#include "graphics/RIBoostrap.h"
+#include "graphics/RIBootstrap.h"
 #include "graphics/GraphicsTypes.h"
-#include "graphics/RIBoostrap.h"
+#include "graphics/RIBootstrap.h"
 #include "math/MathTypes.h"
 #include "system/SystemTypes.h"
 

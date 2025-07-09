@@ -3,7 +3,6 @@
 namespace hpl {
 
 Image::Image() : iResourceBase("", _W(""), 0) {
-  // m_textures = std::make_shared(Texture{0})
 }
 
 void Image::SetImage(SingleImage &&singleImage) {

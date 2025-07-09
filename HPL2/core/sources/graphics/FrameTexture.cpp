@@ -68,7 +68,7 @@ Image* cFrameTexture::GetTexture()
 
 		mlPicCount++;
 
-        const cVector3l& vSourceSize = mpTexture->GetSize();
+    const cVector3l& vSourceSize = cVector3l(mpTexture->GetWidth(), mpTexture->GetHeight(), 1);
 		cVector2f vDestPos = cVector2f((float)avPixelPos.x / (float)vSourceSize.x,(float)avPixelPos.y / (float)vSourceSize.y );
 		cVector2f vDestSize = cVector2f((float)avPixelSize.x / (float)vSourceSize.x,(float)avPixelSize.y / (float)vSourceSize.y );
 

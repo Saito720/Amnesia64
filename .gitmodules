@@ -28,3 +28,6 @@
 [submodule "extern/DevIL"]
 	path = extern/DevIL
 	url = https://github.com/OSS-Cosmic/DevIL.git
+[submodule "extern/MathLib"]
+	path = extern/MathLib
+	url = https://github.com/NVIDIA-RTX/MathLib.git

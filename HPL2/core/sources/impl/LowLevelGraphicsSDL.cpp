@@ -22,16 +22,6 @@
 #include "graphics/RIRenderer.h"
 #include "graphics/RISwapchain.h"
 #include "graphics/RITypes.h"
-#ifdef _WIN32
-#pragma comment(lib, "OpenGL32.lib")
-#pragma comment(lib, "GLu32.lib")
-// #pragma comment(lib, "GLaux.lib")
-// #pragma comment(lib, "Cg.lib")
-// #pragma comment(lib, "CgGL.lib")
-// #pragma comment(lib, "SDL_ttf.lib")
-// #pragma comment(lib, "TaskKeyHook.lib")
-#endif
-
 #include <assert.h>
 #include <stdlib.h>
 
@@ -50,6 +40,8 @@
 #include "impl/OcclusionQueryOGL.h"
 #include "impl/VertexBufferOGL_Array.h"
 #include "impl/VertexBufferOGL_VBO.h"
+
+#include "graphics/VertexBuffer_RI.h"
 
 #include "graphics/Bitmap.h"
 
@@ -734,22 +726,23 @@ iVertexBuffer *cLowLevelGraphicsSDL::CreateVertexBuffer(
     eVertexBufferType aType, eVertexBufferDrawType aDrawType,
     eVertexBufferUsageType aUsageType, int alReserveVtxSize,
     int alReserveIdxSize) {
-  ;
 
-  // return hplNew( cVertexBufferVBO,(this,
-  // aFlags,aDrawType,aUsageType,alReserveVtxSize,alReserveIdxSize) ); return
-  // hplNew( cVertexBufferOGL, (this,
-  // aFlags,aDrawType,aUsageType,alReserveVtxSize,alReserveIdxSize) );
+  return new VertexBuffer_RI(this, aType, aDrawType, aUsageType,
+                         alReserveVtxSize, alReserveIdxSize);
+  //// return hplNew( cVertexBufferVBO,(this,
+  //// aFlags,aDrawType,aUsageType,alReserveVtxSize,alReserveIdxSize) ); return
+  //// hplNew( cVertexBufferOGL, (this,
+  //// aFlags,aDrawType,aUsageType,alReserveVtxSize,alReserveIdxSize) );
 
-  if (GetCaps(eGraphicCaps_VertexBufferObject) &&
-      aType == eVertexBufferType_Hardware) {
-    return hplNew(cVertexBufferOGL_VBO, (this, aDrawType, aUsageType,
-                                         alReserveVtxSize, alReserveIdxSize));
-  } else {
-    // Error("VBO is not supported, using Vertex array!\n");
-    return hplNew(cVertexBufferOGL_Array, (this, aDrawType, aUsageType,
-                                           alReserveVtxSize, alReserveIdxSize));
-  }
+  //if (GetCaps(eGraphicCaps_VertexBufferObject) &&
+  //    aType == eVertexBufferType_Hardware) {
+  //  return hplNew(cVertexBufferOGL_VBO, (this, aDrawType, aUsageType,
+  //                                       alReserveVtxSize, alReserveIdxSize));
+  //} else {
+  //  // Error("VBO is not supported, using Vertex array!\n");
+  //  return hplNew(cVertexBufferOGL_Array, (this, aDrawType, aUsageType,
+  //                                         alReserveVtxSize, alReserveIdxSize));
+  //}
 }
 
 //-----------------------------------------------------------------------

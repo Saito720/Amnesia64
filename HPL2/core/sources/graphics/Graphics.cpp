@@ -40,6 +40,7 @@
 #include "graphics/RIResourceUploader.h"
 #include "graphics/RITypes.h"
 #include "graphics/RIVK.h"
+#include "graphics/HybridRenderer.h"
 
 #include "resources/LowLevelResources.h"
 #include "resources/Resources.h"
@@ -348,9 +349,9 @@ namespace hpl {
       // Check feature support
       apResources->GetGpuShaderManager()->CheckFeatureSupport();
 
-			//mvRenderers.resize(eRenderer_LastEnum, NULL);
+			mvRenderers.resize(eRenderer_LastEnum, NULL);
 
-			//mvRenderers[eRenderer_Main] = hplNew(cRendererDeferred, (this, apResources));
+			mvRenderers[eRenderer_Main] = hplNew(cHybridRenderer, (this, apResources));
 			//mvRenderers[eRenderer_WireFrame] = hplNew(cRendererWireFrame, (this, apResources));
 			//mvRenderers[eRenderer_Simple] = hplNew(cRendererSimple, (this, apResources));
 

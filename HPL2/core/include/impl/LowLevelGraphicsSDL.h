@@ -146,7 +146,8 @@ namespace hpl {
 		iFontData* CreateFontData(const tString &asName);
 
 		iTexture* CreateTexture(const tString &asName, eTextureType aType, eTextureUsage aUsage);
-
+		
+	[[deprecated("will replace with VertexBuffer_RI")]]
 		iVertexBuffer* CreateVertexBuffer(	eVertexBufferType aType,
 											eVertexBufferDrawType aDrawType,
 											eVertexBufferUsageType aUsageType,

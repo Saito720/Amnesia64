@@ -204,6 +204,33 @@ namespace hpl {
 			for(; viewIt != mlstViewports.end(); ++viewIt)
 			{
 					cViewport *pViewPort = *viewIt;
+					if(pViewPort->IsVisible()==false) continue;
+            
+          iRenderer* pRenderer = pViewPort->GetRenderer();
+      		cCamera* pCamera = pViewPort->GetCamera();
+          cFrustum* pFrustum = pCamera ? pCamera->GetFrustum() : NULL;
+			
+					if(alFlags & tSceneRenderFlag_World)
+					{
+						pViewPort->RunViewportCallbackMessage(eViewportMessage_OnPreWorldDraw);
+            if (pRenderer && pViewPort->GetWorld() && pFrustum) {
+              pRenderer->Draw(
+                  cntx,
+                  pViewPort,
+                  afFrameTime,
+                  pFrustum,
+                  pViewPort->GetWorld(),
+                  pViewPort->GetRenderSettings(),
+                  false);
+        		}
+            pViewPort->RunViewportCallbackMessage(eViewportMessage_OnPostWorldDraw);
+            // Render 3D GuiSets
+            //  Should this really be here? Or perhaps send in a frame buffer depending on the renderer.
+            START_TIMING(Render3DGui)
+            Render3DGui(pViewPort, pFrustum, afFrameTime);
+            STOP_TIMING(Render3DGui)
+					}
+
 		 			// render frame ...
 					if(alFlags & tSceneRenderFlag_Gui)
 					{
@@ -415,7 +442,7 @@ namespace hpl {
 		typedef std::multimap<int, cGuiSet*> tPrioMap;
 		tPrioMap mapSortedSets;
 
-        cGuiSetListIterator it = apViewPort->GetGuiSetIterator();	
+    cGuiSetListIterator it = apViewPort->GetGuiSetIterator();	
 		while(it.HasNext())
 		{
 			cGuiSet *pSet = it.Next();

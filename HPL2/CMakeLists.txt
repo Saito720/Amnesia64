@@ -95,6 +95,7 @@ file(GLOB impl_sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
     core/sources/impl/GLSLShader.cpp
     core/sources/impl/OcclusionQueryOGL.cpp
     core/sources/impl/FrameBufferGL.cpp
+    core/sources/impl/VertexBuffer_RI.cpp
     core/sources/impl/VertexBufferOGL_VBO.cpp
     core/sources/impl/VertexBufferOpenGL.cpp
     core/sources/impl/VertexBufferOGL_Array.cpp

@@ -748,7 +748,7 @@ namespace hpl {
 	typedef std::vector<iRenderable*> tRenderableVec;
 	typedef tRenderableVec::iterator tRenderableVecIt;
 
-	typedef std::list<iRenderable*> tRenderableList;
+	typedef std::vector<iRenderable*> tRenderableList;
 	typedef tRenderableList::iterator tRenderableListIt;
 
 	typedef std::set<iRenderable*> tRenderableSet;

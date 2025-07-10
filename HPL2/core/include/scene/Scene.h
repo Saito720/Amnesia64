@@ -31,6 +31,7 @@
 #include "scene/Camera.h"
 
 #include "resources/MeshLoader.h"
+#include "graphics/HybridRenderer.h"
 
 namespace hpl {
 

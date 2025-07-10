@@ -24,6 +24,7 @@
 #include "graphics/GraphicsTypes.h"
 #include "system/SystemTypes.h"
 #include "scene/SceneTypes.h"
+#include <span>
 
 namespace hpl {
 
@@ -77,10 +78,12 @@ namespace hpl {
 		virtual void UpdateBeforeUse(){}
 
 		inline tRenderableContainerNodeList* GetChildNodeList(){ return &mlstChildNodes; }
+		inline std::span<iRenderableContainerNode*> GetChildNodes(){ return mlstChildNodes; }
 		inline bool HasChildNodes(){ return mlstChildNodes.empty() == false; }
 
 		inline tRenderableList* GetObjectList() { return &mlstObjects; }
 		inline bool HasObjects() { return mlstObjects.empty() == false; }
+		inline std::span<iRenderable*> GetObjects() { return mlstObjects; }
 
 		inline iRenderableContainerNode* GetParent(){ return mpParent;}
 		inline void SetParent(iRenderableContainerNode* apParent){ mpParent = apParent;}

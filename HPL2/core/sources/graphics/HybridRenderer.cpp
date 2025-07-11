@@ -6,6 +6,7 @@
 #include "math/Math.h"
 
 #include "scene/RenderableContainer.h"
+#include "scene/World.h"
 
 #include <functional>
 
@@ -108,6 +109,19 @@ void cHybridRenderer::Draw(
         cRenderSettings* apSettings,
         bool abSendFrameBufferToPostEffects) {
 
+  {
+    auto* dynamicContainer = apWorld->GetRenderableContainer(eWorldContainerType_Dynamic);
+    auto* staticContainer = apWorld->GetRenderableContainer(eWorldContainerType_Static);
+    dynamicContainer->UpdateBeforeRendering();
+    staticContainer->UpdateBeforeRendering();
+    auto prepareObjectHandler = [&](iRenderable* pObject) {
+        if (!IsObjectIsVisible(pObject, eRenderableFlag_VisibleInNonReflection, {})) 
+            return;
+        //m_rendererList.AddObject(pObject);
+    };
+    WalkAndPrepareRenderList(dynamicContainer, apFrustum, prepareObjectHandler, eRenderableFlag_VisibleInNonReflection);
+    WalkAndPrepareRenderList(staticContainer, apFrustum, prepareObjectHandler, eRenderableFlag_VisibleInNonReflection);
+  }
 } 
 
 cHybridRenderer::~cHybridRenderer() {}

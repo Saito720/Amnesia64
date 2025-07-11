@@ -1,3 +1,6 @@
+#ifndef HPL_DRAWPACKET_H
+#define HPL_DRAWPACKET_H
+
 #include <cassert>
 #include <graphics/VertexBuffer.h>
 #include <graphics/RITypes.h>
@@ -16,14 +19,14 @@ public:
 
   struct VertexElement {
   public:
-    std::shared_ptr<RIBuffer_s> m_buffer;
-    eVertexBufferElementFormat m_format =
+    std::shared_ptr<RIBuffer_s> buffer;
+    eVertexBufferElementFormat format =
         eVertexBufferElementFormat::eVertexBufferElementFormat_Float;
-    eVertexBufferElement m_type =
+    eVertexBufferElement type =
         eVertexBufferElement::eVertexBufferElement_Position;
-    tVertexElementFlag m_flag = 0;
-    size_t m_num = 0;
-    int m_programVarIndex = 0; // for legacy behavior
+    tVertexElementFlag flag = 0;
+    size_t num = 0;
+    int programVarIndex = 0; // for legacy behavior
 
     size_t Stride() const;
     size_t NumElements() const;
@@ -148,3 +151,6 @@ protected:
   friend struct VertexElement;
 };
 } // namespace hpl
+
+
+#endif

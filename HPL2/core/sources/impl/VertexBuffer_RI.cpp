@@ -93,11 +93,11 @@ void VertexBuffer_RI::PushVertexElements(
     std::span<const float> values, eVertexBufferElement elementType,
     std::span<VertexBuffer_RI::VertexElement> elements) {
   for (auto &element : elements) {
-    if (element.m_type == elementType) {
+    if (element.type == elementType) {
       auto &buffer = element.m_shadowData;
-      switch (element.m_format) {
+      switch (element.format) {
       case eVertexBufferElementFormat_Float: {
-        for (size_t i = 0; i < element.m_num; i++) {
+        for (size_t i = 0; i < element.num; i++) {
           union {
             float f;
             unsigned char b[sizeof(float)];
@@ -106,7 +106,7 @@ void VertexBuffer_RI::PushVertexElements(
         }
       } break;
       case eVertexBufferElementFormat_Int: {
-        for (size_t i = 0; i < element.m_num; i++) {
+        for (size_t i = 0; i < element.num; i++) {
           union {
             int f;
             unsigned char b[sizeof(int)];
@@ -115,7 +115,7 @@ void VertexBuffer_RI::PushVertexElements(
         }
       } break;
       case eVertexBufferElementFormat_Byte: {
-        for (size_t i = 0; i < element.m_num; i++) {
+        for (size_t i = 0; i < element.num; i++) {
           buffer.emplace_back(i < values.size() ? static_cast<char>(values[i])
                                                 : 0);
         }
@@ -129,7 +129,7 @@ void VertexBuffer_RI::PushVertexElements(
 }
 
 size_t VertexBuffer_RI::VertexElement::Stride() const {
-  return GetSizeFromHPL(m_format) * m_num;
+  return GetSizeFromHPL(format) * num;
 }
 
 size_t VertexBuffer_RI::VertexElement::NumElements() const {
@@ -174,12 +174,12 @@ void VertexBuffer_RI::Transform(const cMatrixf &mtxTransform) {
   auto positionElement =
       std::find_if(m_vertexElements.begin(), m_vertexElements.end(),
                    [](const auto &element) {
-                     return element.m_type == eVertexBufferElement_Position;
+                     return element.type == eVertexBufferElement_Position;
                    });
   if (positionElement != m_vertexElements.end()) {
-    assert(positionElement->m_format == eVertexBufferElementFormat_Float &&
+    assert(positionElement->format == eVertexBufferElementFormat_Float &&
            "Only float format supported");
-    assert(positionElement->m_num >= 3 && "Only 3 component format supported");
+    assert(positionElement->num >= 3 && "Only 3 component format supported");
     struct PackedVec3 {
       float x;
       float y;
@@ -196,12 +196,12 @@ void VertexBuffer_RI::Transform(const cMatrixf &mtxTransform) {
   auto normalElement =
       std::find_if(m_vertexElements.begin(), m_vertexElements.end(),
                    [](const auto &element) {
-                     return element.m_type == eVertexBufferElement_Normal;
+                     return element.type == eVertexBufferElement_Normal;
                    });
   if (normalElement != m_vertexElements.end()) {
-    assert(normalElement->m_format == eVertexBufferElementFormat_Float &&
+    assert(normalElement->format == eVertexBufferElementFormat_Float &&
            "Only float format supported");
-    assert(normalElement->m_num >= 3 && "Only 3 component format supported");
+    assert(normalElement->num >= 3 && "Only 3 component format supported");
     struct PackedVec3 {
       float x;
       float y;
@@ -218,12 +218,12 @@ void VertexBuffer_RI::Transform(const cMatrixf &mtxTransform) {
   auto tangentElement = std::find_if(
       m_vertexElements.begin(), m_vertexElements.end(),
       [](const auto &element) {
-        return element.m_type == eVertexBufferElement_Texture1Tangent;
+        return element.type == eVertexBufferElement_Texture1Tangent;
       });
   if (tangentElement != m_vertexElements.end()) {
-    assert(tangentElement->m_format == eVertexBufferElementFormat_Float &&
+    assert(tangentElement->format == eVertexBufferElementFormat_Float &&
            "Only float format supported");
-    assert(tangentElement->m_num >= 3 && "Only 4 component format supported");
+    assert(tangentElement->num >= 3 && "Only 4 component format supported");
     struct PackedVec3 {
       float x;
       float y;
@@ -253,9 +253,9 @@ void VertexBuffer_RI::Transform(const cMatrixf &mtxTransform) {
 int VertexBuffer_RI::GetElementNum(eVertexBufferElement aElement) {
   auto element = std::find_if(
       m_vertexElements.begin(), m_vertexElements.end(),
-      [aElement](const auto &element) { return element.m_type == aElement; });
+      [aElement](const auto &element) { return element.type == aElement; });
   if (element != m_vertexElements.end()) {
-    return element->m_num;
+    return element->num;
   }
   return 0;
 }
@@ -264,9 +264,9 @@ eVertexBufferElementFormat
 VertexBuffer_RI::GetElementFormat(eVertexBufferElement aElement) {
   auto element = std::find_if(
       m_vertexElements.begin(), m_vertexElements.end(),
-      [aElement](const auto &element) { return element.m_type == aElement; });
+      [aElement](const auto &element) { return element.type == aElement; });
   if (element != m_vertexElements.end()) {
-    return element->m_format;
+    return element->format;
   }
   return eVertexBufferElementFormat_LastEnum;
 }
@@ -274,9 +274,9 @@ VertexBuffer_RI::GetElementFormat(eVertexBufferElement aElement) {
 int VertexBuffer_RI::GetElementProgramVarIndex(eVertexBufferElement aElement) {
   auto element = std::find_if(
       m_vertexElements.begin(), m_vertexElements.end(),
-      [aElement](const auto &element) { return element.m_type == aElement; });
+      [aElement](const auto &element) { return element.type == aElement; });
   if (element != m_vertexElements.end()) {
-    return element->m_programVarIndex;
+    return element->programVarIndex;
   }
   return 0;
 }
@@ -288,22 +288,22 @@ bool VertexBuffer_RI::Compile(tVertexCompileFlag aFlags) {
     auto positionElement =
         std::find_if(m_vertexElements.begin(), m_vertexElements.end(),
                      [](const auto &element) {
-                       return element.m_type == eVertexBufferElement_Position;
+                       return element.type == eVertexBufferElement_Position;
                      });
     auto normalElement =
         std::find_if(m_vertexElements.begin(), m_vertexElements.end(),
                      [](const auto &element) {
-                       return element.m_type == eVertexBufferElement_Normal;
+                       return element.type == eVertexBufferElement_Normal;
                      });
     auto textureElement =
         std::find_if(m_vertexElements.begin(), m_vertexElements.end(),
                      [](const auto &element) {
-                       return element.m_type == eVertexBufferElement_Texture0;
+                       return element.type == eVertexBufferElement_Texture0;
                      });
     auto tangentElement = std::find_if(
         m_vertexElements.begin(), m_vertexElements.end(),
         [](const auto &element) {
-          return element.m_type == eVertexBufferElement_Texture1Tangent;
+          return element.type == eVertexBufferElement_Texture1Tangent;
         });
 
     assert(positionElement != m_vertexElements.end() &&
@@ -314,18 +314,18 @@ bool VertexBuffer_RI::Compile(tVertexCompileFlag aFlags) {
            "No texture element found");
     assert(tangentElement != m_vertexElements.end() &&
            "No tangent element found");
-    assert(positionElement->m_format == eVertexBufferElementFormat_Float &&
+    assert(positionElement->format == eVertexBufferElementFormat_Float &&
            "Only float format supported");
-    assert(normalElement->m_format == eVertexBufferElementFormat_Float &&
+    assert(normalElement->format == eVertexBufferElementFormat_Float &&
            "Only float format supported");
-    assert(textureElement->m_format == eVertexBufferElementFormat_Float &&
+    assert(textureElement->format == eVertexBufferElementFormat_Float &&
            "Only float format supported");
-    assert(tangentElement->m_format == eVertexBufferElementFormat_Float &&
+    assert(tangentElement->format == eVertexBufferElementFormat_Float &&
            "Only float format supported");
-    assert(positionElement->m_num >= 3 && "Only 3 component format supported");
-    assert(normalElement->m_num >= 3 && "Only 3 component format supported");
-    assert(textureElement->m_num >= 2 && "Only 2 component format supported");
-    assert(tangentElement->m_num >= 4 && "Only 4 component format supported");
+    assert(positionElement->num >= 3 && "Only 3 component format supported");
+    assert(normalElement->num >= 3 && "Only 3 component format supported");
+    assert(textureElement->num >= 2 && "Only 2 component format supported");
+    assert(tangentElement->num >= 4 && "Only 4 component format supported");
 
     ResizeArray(eVertexBufferElement_Texture1Tangent, GetVertexNum() * 4);
 
@@ -333,7 +333,7 @@ bool VertexBuffer_RI::Compile(tVertexCompileFlag aFlags) {
         reinterpret_cast<float *>(tangentElement->m_shadowData.data()),
         m_indices.data(), m_indices.size(),
         reinterpret_cast<float *>(positionElement->m_shadowData.data()),
-        positionElement->m_num,
+        positionElement->num,
         reinterpret_cast<float *>(textureElement->m_shadowData.data()),
         reinterpret_cast<float *>(normalElement->m_shadowData.data()),
         positionElement->NumElements());
@@ -341,7 +341,7 @@ bool VertexBuffer_RI::Compile(tVertexCompileFlag aFlags) {
   // SyncToken token = {};
 
   for (auto &element : m_vertexElements) {
-    m_updateFlags |= element.m_flag;
+    m_updateFlags |= element.flag;
   }
   m_updateIndices = true;
   return true;
@@ -355,7 +355,7 @@ void VertexBuffer_RI::UpdateData(tVertexElementFlag aTypes, bool abIndices) {
 float *VertexBuffer_RI::GetFloatArray(eVertexBufferElement aElement) {
   auto element = std::find_if(
       m_vertexElements.begin(), m_vertexElements.end(),
-      [aElement](const auto &element) { return element.m_type == aElement; });
+      [aElement](const auto &element) { return element.type == aElement; });
   if (element != m_vertexElements.end()) {
     return reinterpret_cast<float *>(element->m_shadowData.data());
   }
@@ -365,7 +365,7 @@ float *VertexBuffer_RI::GetFloatArray(eVertexBufferElement aElement) {
 int *VertexBuffer_RI::GetIntArray(eVertexBufferElement aElement) {
   auto element = std::find_if(
       m_vertexElements.begin(), m_vertexElements.end(),
-      [aElement](const auto &element) { return element.m_type == aElement; });
+      [aElement](const auto &element) { return element.type == aElement; });
   if (element != m_vertexElements.end()) {
     return reinterpret_cast<int *>(element->m_shadowData.data());
   }
@@ -375,7 +375,7 @@ int *VertexBuffer_RI::GetIntArray(eVertexBufferElement aElement) {
 unsigned char *VertexBuffer_RI::GetByteArray(eVertexBufferElement aElement) {
   auto element = std::find_if(
       m_vertexElements.begin(), m_vertexElements.end(),
-      [aElement](const auto &element) { return element.m_type == aElement; });
+      [aElement](const auto &element) { return element.type == aElement; });
   if (element != m_vertexElements.end()) {
     return element->m_shadowData.data();
   }
@@ -387,10 +387,10 @@ unsigned int *VertexBuffer_RI::GetIndices() { return m_indices.data(); }
 void VertexBuffer_RI::ResizeArray(eVertexBufferElement aElement, int alSize) {
   auto element = std::find_if(
       m_vertexElements.begin(), m_vertexElements.end(),
-      [aElement](const auto &element) { return element.m_type == aElement; });
+      [aElement](const auto &element) { return element.type == aElement; });
   if (element != m_vertexElements.end()) {
-    m_updateFlags |= element->m_flag;
-    element->m_shadowData.resize(alSize * GetSizeFromHPL(element->m_format));
+    m_updateFlags |= element->flag;
+    element->m_shadowData.resize(alSize * GetSizeFromHPL(element->format));
   }
 }
 
@@ -403,7 +403,7 @@ const VertexBuffer_RI::VertexElement *
 VertexBuffer_RI::GetElement(eVertexBufferElement elementType) {
   auto element = std::find_if(m_vertexElements.begin(), m_vertexElements.end(),
                               [elementType](const auto &element) {
-                                return element.m_type == elementType;
+                                return element.type == elementType;
                               });
   if (element != m_vertexElements.end()) {
     return &(*element);
@@ -424,11 +424,11 @@ void VertexBuffer_RI::CreateElementArray(eVertexBufferElement aType,
   mVertexFlags |= elementFlag;
 
   VertexElement element;
-  element.m_type = aType;
-  element.m_flag = elementFlag;
-  element.m_format = aFormat;
-  element.m_num = alElementNum;
-  element.m_programVarIndex = alProgramVarIndex;
+  element.type = aType;
+  element.flag = elementFlag;
+  element.format = aFormat;
+  element.num = alElementNum;
+  element.programVarIndex = alProgramVarIndex;
   m_vertexElements.push_back(std::move(element));
 }
 
@@ -436,7 +436,7 @@ int VertexBuffer_RI::GetVertexNum() {
   auto positionElement =
       std::find_if(m_vertexElements.begin(), m_vertexElements.end(),
                    [](const auto &element) {
-                     return element.m_type == eVertexBufferElement_Position;
+                     return element.type == eVertexBufferElement_Position;
                    });
   assert(positionElement != m_vertexElements.end() &&
          "No position element found");
@@ -457,14 +457,14 @@ cBoundingVolume VertexBuffer_RI::CreateBoundingVolume() {
   auto positionElement =
       std::find_if(m_vertexElements.begin(), m_vertexElements.end(),
                    [](const auto &element) {
-                     return element.m_type == eVertexBufferElement_Position;
+                     return element.type == eVertexBufferElement_Position;
                    });
 
   if (positionElement == m_vertexElements.end()) {
     return bv;
   }
 
-  if (positionElement->m_format != eVertexBufferElementFormat_Float) {
+  if (positionElement->format != eVertexBufferElementFormat_Float) {
     Warning("Could not breate bounding volume since postion was not for format "
             "float in buffer %d!\n",
             this);
@@ -474,7 +474,7 @@ cBoundingVolume VertexBuffer_RI::CreateBoundingVolume() {
   bv.AddArrayPoints(
       reinterpret_cast<float *>(positionElement->m_shadowData.data()),
       GetVertexNum());
-  bv.CreateFromPoints(positionElement->m_num);
+  bv.CreateFromPoints(positionElement->num);
 
   return bv;
 }
@@ -494,7 +494,7 @@ void VertexBuffer_RI::Draw(eVertexBufferDrawType aDrawType) {}
 //                 ((element.m_activeCopy + 1) % ForgeRenderer::SwapChainLength)
 //                 : 0; size_t minimumSize = element.m_shadowData.size() *
 //                 (isDynamicAccess ? ForgeRenderer::SwapChainLength: 1); if
-//                 (!isDynamicAccess || element.m_buffer.m_handle == nullptr ||
+//                 (!isDynamicAccess || elemenm_programVarIndex t.m_buffer.m_handle == nullptr ||
 //                 element.m_buffer.m_handle->mSize > minimumSize) {
 //                     // wait for any buffers updating before creating a new
 //                     buffer waitForToken(&m_bufferSync);
@@ -605,7 +605,7 @@ iVertexBuffer *VertexBuffer_RI::CreateCopy(eVertexBufferType aType,
   vertexBuffer->m_indices = m_indices;
 
   for (auto element : m_vertexElements) {
-    if (element.m_flag & alVtxToCopy) {
+    if (element.flag & alVtxToCopy) {
       auto &vb = vertexBuffer->m_vertexElements.emplace_back(element);
       //vb.m_buffer.TryFree();
     }

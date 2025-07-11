@@ -40,7 +40,7 @@ static void vkDescriptorSetAlloc( struct RIDevice_s *device, struct RIDescriptor
   VK_WrapResult( vkCreateDescriptorPool( device->vk.device, &info, NULL, &poolSlot.vk.handle ) );
   arrpush( alloc->pools, poolSlot );
   for( size_t i = 0; i < DESCRIPTOR_MAX_SIZE; i++ ) {
-  	struct RIDescriptorSetSlot* slot = alloc_descriptor_set_slot( alloc );
+  	struct RIDescriptorSetSlot* slot = allocDescriptorSetSlot( alloc );
   	VkDescriptorSetAllocateInfo info = { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO };
   	info.pNext = NULL;
   	info.descriptorPool = poolSlot.vk.handle;

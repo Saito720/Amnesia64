@@ -2,7 +2,7 @@
 #include "system/stb_ds.h"
 #include <cassert>
 
-struct RIDescriptorSetSlot *alloc_descriptor_set_slot( struct RIDescriptorSetAlloc *alloc )
+struct RIDescriptorSetSlot *allocDescriptorSetSlot( struct RIDescriptorSetAlloc *alloc )
 {
 	if( alloc->blocks == NULL || alloc->blockIndex == RESERVE_BLOCK_SIZE ) {
 		struct RIDescriptorSetSlot *block = (struct RIDescriptorSetSlot*)calloc( RESERVE_BLOCK_SIZE, sizeof( struct RIDescriptorSetSlot ) );
@@ -13,7 +13,7 @@ struct RIDescriptorSetSlot *alloc_descriptor_set_slot( struct RIDescriptorSetAll
 	return alloc->blocks[arrlen( alloc->blocks ) - 1] + ( alloc->blockIndex++ );
 }
 
-void attach_descriptor_slot( struct RIDescriptorSetAlloc *alloc, struct RIDescriptorSetSlot *slot )
+void attachDescriptorSlot( struct RIDescriptorSetAlloc *alloc, struct RIDescriptorSetSlot *slot )
 {
 	assert( slot );
 	{
@@ -39,7 +39,7 @@ void attach_descriptor_slot( struct RIDescriptorSetAlloc *alloc, struct RIDescri
 	}
 }
 
-void detach_descriptor_slot( struct RIDescriptorSetAlloc *alloc, struct RIDescriptorSetSlot *slot )
+void detachDescriptorSlot( struct RIDescriptorSetAlloc *alloc, struct RIDescriptorSetSlot *slot )
 {
 	assert( slot );
 	// remove from queue
@@ -120,10 +120,10 @@ struct RIDescriptorSetResult resolveDescriptorSetAlloc( struct RIDevice_s *devic
 
 	if( alloc->queue_begin && frameCount > alloc->queue_begin->frameCount + alloc->framesInFlight) {
 		struct RIDescriptorSetSlot *slot = alloc->queue_begin;
-		detach_descriptor_slot( alloc, slot );
+		detachDescriptorSlot( alloc, slot );
 		slot->frameCount = frameCount;
 		slot->hash = hash;
-		attach_descriptor_slot( alloc, slot );
+		attachDescriptorSlot( alloc, slot );
 		result.set = slot;
 		result.found = false;
 		assert(result.set);
@@ -137,14 +137,14 @@ struct RIDescriptorSetResult resolveDescriptorSetAlloc( struct RIDevice_s *devic
 	struct RIDescriptorSetSlot *slot = arrpop( alloc->reservedSlots );
 	slot->hash = hash;
 	slot->frameCount = frameCount;
-	attach_descriptor_slot( alloc, slot );
+	attachDescriptorSlot( alloc, slot );
 	result.set = slot;
 	result.found = false;
 	assert(result.set);
 	return result;
 }
 
-void free_descriptor_set_alloc( struct RIDevice_s *device, struct RIDescriptorSetAlloc *alloc )
+void freeDescriptorSetAlloc( struct RIDevice_s *device, struct RIDescriptorSetAlloc *alloc )
 {
 #if ( DEVICE_IMPL_VULKAN )
 	for( size_t i = 0; i < arrlen( alloc->blocks ); i++ ) {

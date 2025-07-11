@@ -79,7 +79,7 @@ cGuiGfxElement* cLuxPreMenuSection::CreateBackground(cGui* apGui, cTextureManage
 	}
 	else
 	{
-		iTexture* pTex = apTexMgr->Create2D(msBackgroundFile, false, eTextureType_Rect);
+		Image* pTex = apTexMgr->Create2DImage(msBackgroundFile, false, eTextureType_Rect);
 		if(pTex) pBG = apGui->CreateGfxTexture(pTex, true, eGuiMaterial_Alpha);
 	}
 

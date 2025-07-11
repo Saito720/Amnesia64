@@ -89,7 +89,7 @@ namespace hpl {
 	
 	//-----------------------------------------------------------------------
 
-	iTexture *cFrameSubImage::GetTexture()const{return mpFrameTexture->GetTexture();}
+	Image *cFrameSubImage::GetTexture()const{return mpFrameTexture->GetTexture();}
 
 	//-----------------------------------------------------------------------
 	

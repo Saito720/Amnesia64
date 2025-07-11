@@ -36,10 +36,16 @@
 #include "graphics/MaterialType.h"
 #include "graphics/Texture.h"
 #include "graphics/GPUProgram.h"
+#include "graphics/RIRenderer.h"
+#include "graphics/RIResourceUploader.h"
+#include "graphics/RITypes.h"
+#include "graphics/RIVK.h"
+#include "graphics/HybridRenderer.h"
 
 #include "resources/LowLevelResources.h"
 #include "resources/Resources.h"
 #include "resources/GpuShaderManager.h"
+#include "resources/FileSearcher.h"
 
 #include "graphics/MaterialType_BasicSolid.h"
 #include "graphics/MaterialType_BasicTranslucent.h"
@@ -54,6 +60,11 @@
 #include "graphics/RendererDeferred.h"
 #include "graphics/RendererWireFrame.h"
 #include "graphics/RendererSimple.h"
+#include "graphics/RIScratchAlloc.h"
+#include <cassert>
+#include <vulkan/vulkan_core.h>
+
+#include "graphics/RIBootstrap.h"
 
 namespace hpl {
 
@@ -72,8 +83,6 @@ namespace hpl {
 		mpTextureCreator = NULL;
 		mpDecalCreator = NULL;
 	}
-
-	//-----------------------------------------------------------------------
 
 	cGraphics::~cGraphics()
 	{
@@ -115,14 +124,6 @@ namespace hpl {
 		Log("--------------------------------------------------------\n\n");
 	}
 
-	//-----------------------------------------------------------------------
-
-	//////////////////////////////////////////////////////////////////////////
-	// PUBLIC METHODS
-	//////////////////////////////////////////////////////////////////////////
-
-	//-----------------------------------------------------------------------
-	
 	bool cGraphics::Init(	int alWidth, int alHeight, int alDisplay, int alBpp, int abFullscreen, 
 							int alMultisampling,eGpuProgramFormat aGpuProgramFormat,
 							const tString &asWindowCaption, const cVector2l &avWindowPos,
@@ -139,7 +140,9 @@ namespace hpl {
 		apResources->AddResourceDir(_W("core/shaders"),false);
 		apResources->AddResourceDir(_W("core/textures"),false);
 		apResources->AddResourceDir(_W("core/models"),false);
-		
+		apResources->AddResourceDir(_W("compiled_shaders"),false);
+
+
 		////////////////////////////////////////////////
 		// LowLevel Init
 		if(alHplSetupFlags & eHplSetup_Screen)
@@ -153,42 +156,215 @@ namespace hpl {
 		{
 			mbScreenIsSetup = false;
 		}
-		
+		{
+		struct RIBackendInit_s backendInit = { 0 };
+		backendInit.api = RI_DEVICE_API_VK;
+		backendInit.applicationName = "HPL2";
+#ifndef NDEBUG
+		backendInit.vk.enableValidationLayer = true;
+#else
+		backendInit.vk.enableValidationLayer = false;
+#endif
 
+		if(InitRIRenderer(&backendInit, &RI.renderer) != RI_SUCCESS) {
+			return false;
+		}
+
+		uint32_t numAdapters = 0;
+		if( EnumerateRIAdapters( &RI.renderer, NULL, &numAdapters ) != RI_SUCCESS ) {
+			return false;
+		}
+		assert(numAdapters > 0);
+		auto physicalAdapters = std::vector<RIPhysicalAdapter_s>();
+		physicalAdapters.reserve(numAdapters);
+
+		if(EnumerateRIAdapters(&RI.renderer, physicalAdapters.data(), &numAdapters) != RI_SUCCESS) {
+			return false;
+		}
+		uint32_t selectedAdapterIdx = 0;
+		for( size_t i = 1; i < numAdapters; i++ ) {
+			if( physicalAdapters[i].type > physicalAdapters[selectedAdapterIdx].type )
+				selectedAdapterIdx = i;
+			if( physicalAdapters[i].type < physicalAdapters[selectedAdapterIdx].type )
+				continue;
+
+			if( physicalAdapters[i].presetLevel > physicalAdapters[selectedAdapterIdx].presetLevel ) 
+				selectedAdapterIdx = i;
+			if( physicalAdapters[i].presetLevel < physicalAdapters[selectedAdapterIdx].presetLevel )
+				continue;
+			
+			if(physicalAdapters[i].videoMemorySize > physicalAdapters[selectedAdapterIdx].videoMemorySize) 
+				selectedAdapterIdx = i;
+		}
+		struct RIDeviceDesc_s deviceInit = { 0 };
+		deviceInit.physicalAdapter = &physicalAdapters[selectedAdapterIdx];
+		InitRIDevice(&RI.renderer, &deviceInit, &RI.device );
+		RI_InitResourceUploader(&RI.device, &RI.uploader);
+		struct RIWindowHandle_s windowHandle = mpLowLevelGraphics->GetWindowHandle(); 
+		if(windowHandle.type == RI_WINDOW_UNKNOWN) {
+			printf("failed to find valid window handle");
+			return false;
+		}
+		struct RISwapchainDesc_s swapchainInit = { 0 };
+		swapchainInit.windowHandle = &windowHandle;
+		swapchainInit.imageCount = RI_NUMBER_FRAMES_FLIGHT;
+		swapchainInit.queue = &RI.device.queues[RI_QUEUE_GRAPHICS];
+		swapchainInit.width = alWidth;
+		swapchainInit.height = alHeight;
+		swapchainInit.format = RI_SWAPCHAIN_BT709_G22_8BIT;
+		RI.depthFormat = RI_FORMAT_D32_SFLOAT;
+		InitRISwapchain(&RI.device, &swapchainInit, &RI.swapchain);
+
+		{
+			uint32_t queueFamilies[RI_QUEUE_LEN] = { 0 };
+			assert( RI.swapchain.imageCount > 0 );
+			for( uint32_t i = 0; i < RI.swapchain.imageCount; i++ ) {
+				VmaAllocationCreateInfo mem_reqs = { 0 };
+				mem_reqs.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+
+				{
+					VkImageViewUsageCreateInfo usageInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO };
+					VkImageViewCreateInfo createInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+					createInfo.pNext = &usageInfo;
+					createInfo.subresourceRange = (VkImageSubresourceRange){
+						VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1,
+					};
+					usageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+					createInfo.image = RI.swapchain.vk.images[i];
+					createInfo.format = RIFormatToVK( RI.swapchain.format );
+					createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+					RI.colorAttachment[i].flags |= RI_VK_DESC_OWN_IMAGE_VIEW;
+					RI.colorAttachment[i].texture = &RI.swapchain.textures[i];
+					RI.colorAttachment[i].vk.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+					RI.colorAttachment[i].vk.image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+					VK_WrapResult( vkCreateImageView( RI.device.vk.device, &createInfo, NULL, &RI.colorAttachment[i].vk.image.imageView ) );
+					RIFinalizeDescriptor( &RI.device, &RI.colorAttachment[i] );
+				}
+				{
+					VkImageCreateInfo info = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+					info.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
+					info.imageType = VK_IMAGE_TYPE_2D;
+					info.extent.width = RI.swapchain.width;
+					info.extent.height = RI.swapchain.height;
+					info.extent.depth = 1;
+					info.mipLevels = 1;
+					info.arrayLayers = 1;
+					info.samples = VK_SAMPLE_COUNT_1_BIT;
+					info.tiling = VK_IMAGE_TILING_OPTIMAL;
+					info.pQueueFamilyIndices = queueFamilies;
+					VK_ConfigureImageQueueFamilies( &info, RI.device.queues, RI_QUEUE_LEN, queueFamilies, RI_QUEUE_LEN );
+					info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+					info.format = RIFormatToVK( RI.depthFormat);
+					info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+					VK_WrapResult( vmaCreateImage( RI.device.vk.vmaAllocator, &info, &mem_reqs, &RI.depthTextures[i].vk.image, &RI.vk.depthAlloc[i], NULL ) );
+				}
+				{
+					VkImageViewCreateInfo createInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+					createInfo.format = RIFormatToVK( RI.depthFormat );
+					createInfo.subresourceRange = (VkImageSubresourceRange){
+						VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1,
+					};
+					createInfo.image = RI.depthTextures[i].vk.image;
+					createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; //| VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+					
+					RI.depthAttachment[i].flags |= RI_VK_DESC_OWN_IMAGE_VIEW;
+					RI.depthAttachment[i].texture = &RI.depthTextures[i];
+					RI.depthAttachment[i].vk.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+					RI.depthAttachment[i].vk.image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+					VK_WrapResult( vkCreateImageView( RI.device.vk.device, &createInfo, NULL, &RI.depthAttachment[i].vk.image.imageView ) );
+					RIFinalizeDescriptor( &RI.device, &RI.depthAttachment[i] );
+				}
+			}
+		}
+
+		struct RIQueue_s *graphicsQueue = &RI.device.queues[RI_QUEUE_GRAPHICS];
+		for(auto& set: RI.frameSets) {
+			{
+				VkCommandPoolCreateInfo cmdPoolCreateInfo = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
+				cmdPoolCreateInfo.queueFamilyIndex = graphicsQueue->vk.queueFamilyIdx;
+				cmdPoolCreateInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+				VK_WrapResult( vkCreateCommandPool( RI.device.vk.device, &cmdPoolCreateInfo, NULL, &set.vk.pool ) );
+			}
+			{
+				VkCommandBufferAllocateInfo cmdAllocInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+				cmdAllocInfo.commandPool = set.vk.pool;
+				cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+				cmdAllocInfo.commandBufferCount = 1;
+				set.cmd.vk.pool = set.vk.pool;
+				VK_WrapResult( vkAllocateCommandBuffers( RI.device.vk.device, &cmdAllocInfo, &set.cmd.vk.cmd ) );
+			}
+
+			struct RIScratchAllocDesc_s scratchDesc = { 
+					.blockSize = 256 * 128, 
+					.alignmentReq = 256, 
+					.alloc = RIUniformScratchAllocHandler };
+				InitRIScratchAlloc( &RI.device, &set.uboScratchAlloc, &scratchDesc );
+			}
+
+			{
+				VkSemaphoreTypeCreateInfo semaphoreTypeCreateInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO };
+				semaphoreTypeCreateInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+				VkSemaphoreCreateInfo semaphoreCreateInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+				semaphoreCreateInfo.pNext = &semaphoreTypeCreateInfo;
+				VK_WrapResult( vkCreateSemaphore( RI.device.vk.device, &semaphoreCreateInfo, NULL, &RI.vk.frameSemaphore) );
+			}
+		}
+		{
+			RIBootstrap::FrameContext* cntx = RI.GetActiveSet();
+			VkCommandBufferBeginInfo info = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+			info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+			vkBeginCommandBuffer( cntx->cmd.vk.cmd, &info );
+			if(!RINulTexture::Create2DNulWhite(&cntx->cmd,&RI.device, &RI.whiteTexture2D)) {
+				printf("failed to create white texture");
+				return false;
+			}
+			vkEndCommandBuffer(cntx->cmd.vk.cmd);
+			VkCommandBufferSubmitInfo cmdSubmitInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO };
+			cmdSubmitInfo.commandBuffer = cntx->cmd.vk.cmd;
+
+			VkSubmitInfo2 submitInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO_2 };
+			submitInfo.pCommandBufferInfos = &cmdSubmitInfo;
+			submitInfo.commandBufferInfoCount = 1;
+			VK_WrapResult( vkQueueSubmit2( RI.device.queues[RI_QUEUE_GRAPHICS].vk.queue, 1, &submitInfo, VK_NULL_HANDLE ) );
+			WaitRIQueueIdle(&RI.device, &RI.device.queues[RI_QUEUE_GRAPHICS]);
+		}
+		{
+			auto vert_stage = RIProgram::loadShaderStage(apResources->GetFileSearcher(), "gui.vert.spv");
+			auto frag_stage = RIProgram::loadShaderStage(apResources->GetFileSearcher(), "gui.frag.spv");
+			std::array<RIProgram::ModuleStage, 2> stages = {
+				RIProgram::ModuleStage{RIProgram::PROGRAM_STAGE_VERTEX, vert_stage},
+				RIProgram::ModuleStage{RIProgram::PROGRAM_STAGE_FRAGMENT, frag_stage}
+			};
+			RI.gui.initialize(&RI.device, stages);
+		}
 		////////////////////////////////////////////////
 		// Create systems
 		mpMeshCreator = hplNew( cMeshCreator,(mpLowLevelGraphics, apResources));
 		mpTextureCreator  = hplNew( cTextureCreator,(mpLowLevelGraphics, apResources));
 		mpDecalCreator = hplNew( cDecalCreator,(mpLowLevelGraphics, apResources));
 
-		////////////////////////////////////////////////
 		// Create Renderers
 		if(alHplSetupFlags & eHplSetup_Screen)
 		{
-            ////////////////////////////////////////////////
-            // Check feature support
-            apResources->GetGpuShaderManager()->CheckFeatureSupport();
+      // Check feature support
+      apResources->GetGpuShaderManager()->CheckFeatureSupport();
 
 			mvRenderers.resize(eRenderer_LastEnum, NULL);
 
-			mvRenderers[eRenderer_Main] = hplNew(cRendererDeferred, (this, apResources));
-			mvRenderers[eRenderer_WireFrame] = hplNew(cRendererWireFrame, (this, apResources));
-			mvRenderers[eRenderer_Simple] = hplNew(cRendererSimple, (this, apResources));
+			mvRenderers[eRenderer_Main] = hplNew(cHybridRenderer, (this, apResources));
+			//mvRenderers[eRenderer_WireFrame] = hplNew(cRendererWireFrame, (this, apResources));
+			//mvRenderers[eRenderer_Simple] = hplNew(cRendererSimple, (this, apResources));
 
-			for(size_t i=0; i<mvRenderers.size(); ++i)
-			{
-				if(mvRenderers[i])
-				{
-					if(mvRenderers[i]->LoadData()==false)
-					{
-						FatalError("Renderer #%d could not be initialized! Make sure your graphic card drivers are up to date. Check log file for more information.\n", i);
-					}
-				}
-			}
-		}
-		else
-		{
-			
+			//for(size_t i=0; i<mvRenderers.size(); ++i)
+			//{
+			//	if(mvRenderers[i])
+			//	{
+			//		if(mvRenderers[i]->LoadData()==false)
+			//		{
+			//			FatalError("Renderer #%d could not be initialized! Make sure your graphic card drivers are up to date. Check log file for more information.\n", i);
+			//		}
+			//	}
+			//}
 		}
 		
 		////////////////////////////////////////////////
@@ -218,6 +394,7 @@ namespace hpl {
 		
 		return true;
 	}
+	
 
 	//-----------------------------------------------------------------------
 
@@ -304,7 +481,7 @@ namespace hpl {
 		pTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
 
 		//Create frame buffer
-        iFrameBuffer *pFrameBuffer = CreateFrameBuffer("TempBuffer"+sNameSuffix);
+    iFrameBuffer *pFrameBuffer = CreateFrameBuffer("TempBuffer"+sNameSuffix);
 		pFrameBuffer->SetTexture2D(0, pTexture);
 		if(pFrameBuffer->CompileAndValidate()==false)
 		{
@@ -471,7 +648,7 @@ namespace hpl {
 		pProgram->SetShader(eGpuShaderType_Fragment, pFragShader);
 		pProgram->Link();
 
-        return pProgram;		
+    return pProgram;		
 	}
 	
 	void cGraphics::DestroyGpuProgram(iGpuProgram* apProgram)

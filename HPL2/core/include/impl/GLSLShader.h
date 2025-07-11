@@ -52,7 +52,7 @@ namespace hpl {
 		bool CreateFromString(const char *apStringData, const tString& asEntry="main", bool abPrintInfoIfFail=true);
 
 		//GLSL Specific
-		GLuint GetHandle(){ return mlHandle;}
+		GLuint GetHandle(){ return 0;}
 	
 	protected:
 		void LogShaderInfoLog();
@@ -60,8 +60,6 @@ namespace hpl {
 		GLenum GetGLShaderType(eGpuShaderType aType);
 
 		iLowLevelGraphics *mpLowLevelGraphics;
-		
-		GLuint mlHandle;
 	};
 };
 #endif // HPL_GLSL_SHADER_H

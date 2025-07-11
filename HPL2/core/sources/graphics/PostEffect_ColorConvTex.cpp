@@ -123,7 +123,7 @@ namespace hpl {
 		}
 
 		mpColorConvTex = mpResources->GetTextureManager()->Create1D(mParams.msTextureFile,false);
-		mpColorConvTex->SetWrapSTR(eTextureWrap_ClampToEdge);
+//		mpColorConvTex->SetWrapSTR(eTextureWrap_ClampToEdge);
 	}
 
 	//-----------------------------------------------------------------------

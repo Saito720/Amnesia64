@@ -32,6 +32,7 @@
 #include "LuxJournal.h"
 #include "LuxGlobalDataHandler.h"
 #include "LuxAchievementHandler.h"
+#include "system/MemoryManager.h"
 
 
 //////////////////////////////////////////////////////////////////////////
@@ -1545,12 +1546,13 @@ void cLuxInventory::CreateScreenTextures()
 	cVector3l vTexSize = pLowGfx->GetScreenSizeInt();
 	vTexSize.z = 0;
 
-	mpScreenTexture = mpGraphics->CreateTexture("Screen",eTextureType_Rect,eTextureUsage_RenderTarget);
-	mpScreenTexture->CreateFromRawData(vTexSize,ePixelFormat_RGBA,NULL);
-	mpScreenTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
+	mpScreenTexture = hplNew(Image, ());// mpGraphics->CreateTexture("Screen",eTextureType_Rect,eTextureUsage_RenderTarget);
+	mpScreenTexture->SetImage(Image::SingleImage{std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete)}); 
+	//mpScreenTexture->CreateFromRawData(vTexSize,ePixelFormat_RGBA,NULL);
+	//mpScreenTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
 
-	mpScreenBgTexture = mpGraphics->CreateTexture("ScreenBlur",eTextureType_Rect,eTextureUsage_RenderTarget);
-	mpScreenBgTexture->CreateFromRawData(vTexSize,ePixelFormat_RGBA,NULL);
+	mpScreenBgTexture = hplNew(Image, ()); //mpGraphics->CreateTexture("ScreenBlur",eTextureType_Rect,eTextureUsage_RenderTarget);
+	mpScreenBgTexture->SetImage(Image::SingleImage{std::shared_ptr<HPLTexture>(new HPLTexture{}, HPLTexture::HPLTexture_Delete)}); 
 
 	mpScreenGfx = mpGui->CreateGfxTexture(mpScreenTexture,false,eGuiMaterial_Diffuse);
 	mpScreenBgGfx = mpGui->CreateGfxTexture(mpScreenBgTexture,false,eGuiMaterial_Alpha);
@@ -1560,62 +1562,63 @@ void cLuxInventory::CreateScreenTextures()
 
 void cLuxInventory::RenderBackgroundImage()
 {
-	iLowLevelGraphics *pLowGfx = mpGraphics->GetLowLevel();
+	assert(false);
+	//iLowLevelGraphics *pLowGfx = mpGraphics->GetLowLevel();
 
-	//////////////////////////////
-	// Create frame buffers
-	iFrameBuffer *pEffectBuffer  = mpGraphics->CreateFrameBuffer("InventoryEffectbuffer");
-	pEffectBuffer->SetTexture2D(0,mpScreenBgTexture);
-	pEffectBuffer->CompileAndValidate();
-	
-	//////////////////////////////
-	// Render
+	////////////////////////////////
+	//// Create frame buffers
+	//iFrameBuffer *pEffectBuffer  = mpGraphics->CreateFrameBuffer("InventoryEffectbuffer");
+	//pEffectBuffer->SetTexture2D(0,mpScreenBgTexture);
+	//pEffectBuffer->CompileAndValidate();
+	//
+	////////////////////////////////
+	//// Render
 
-	//Render scene again without gui.
-	gpBase->mpHelpFuncs->RenderBackgroundScreen(false);
-	
-	//Set up main states
-	pLowGfx->SetBlendActive(false);
-	pLowGfx->SetDepthTestActive(false);
-	pLowGfx->SetDepthWriteActive(false);
+	////Render scene again without gui.
+	//gpBase->mpHelpFuncs->RenderBackgroundScreen(false);
+	//
+	////Set up main states
+	//pLowGfx->SetBlendActive(false);
+	//pLowGfx->SetDepthTestActive(false);
+	//pLowGfx->SetDepthWriteActive(false);
 
-	pLowGfx->SetOrthoProjection(mvScreenSize,-1000,1000);
-	pLowGfx->SetIdentityMatrix(eMatrix_ModelView);
+	//pLowGfx->SetOrthoProjection(mvScreenSize,-1000,1000);
+	//pLowGfx->SetIdentityMatrix(eMatrix_ModelView);
 
-	//Copy screen to screen texture
-	pLowGfx->CopyFrameBufferToTexure(mpScreenTexture,0,pLowGfx->GetScreenSizeInt(),0);
+	////Copy screen to screen texture
+	//pLowGfx->CopyFrameBufferToTexure(mpScreenTexture,0,pLowGfx->GetScreenSizeInt(),0);
 
-	//Bind shader and draw
-	mpEffectProgram->Bind();
-	pLowGfx->SetCurrentFrameBuffer(pEffectBuffer);
+	////Bind shader and draw
+	//mpEffectProgram->Bind();
+	//pLowGfx->SetCurrentFrameBuffer(pEffectBuffer);
 
-	pLowGfx->SetTexture(0,mpScreenTexture);
+	//pLowGfx->SetTexture(0,mpScreenTexture);
 
-	pLowGfx->DrawQuad(0,mvScreenSize,cVector2f(0, mvScreenSize.y),cVector2f(mvScreenSize.x,0),cColor(1,1));
-	mpEffectProgram->UnBind();
+	//pLowGfx->DrawQuad(0,mvScreenSize,cVector2f(0, mvScreenSize.y),cVector2f(mvScreenSize.x,0),cColor(1,1));
+	//mpEffectProgram->UnBind();
 
-	//Copy a copy of the full gui with all HUD!
-	pLowGfx->SetCurrentFrameBuffer(NULL);
-	pLowGfx->SetTexture(0,NULL);
+	////Copy a copy of the full gui with all HUD!
+	//pLowGfx->SetCurrentFrameBuffer(NULL);
+	//pLowGfx->SetTexture(0,NULL);
 
-	gpBase->mpHelpFuncs->RenderBackgroundScreen(true);
-	pLowGfx->CopyFrameBufferToTexure(mpScreenTexture,0,pLowGfx->GetScreenSizeInt(),0);
+	//gpBase->mpHelpFuncs->RenderBackgroundScreen(true);
+	//pLowGfx->CopyFrameBufferToTexure(mpScreenTexture,0,pLowGfx->GetScreenSizeInt(),0);
 
-	
-	///////////////////////
-	// Exit
+	//
+	/////////////////////////
+	//// Exit
 
-	//Render states
-	pLowGfx->SetTexture(0,NULL);
-	pLowGfx->SetCurrentFrameBuffer(NULL);
-	pLowGfx->SetDepthTestActive(true);
+	////Render states
+	//pLowGfx->SetTexture(0,NULL);
+	//pLowGfx->SetCurrentFrameBuffer(NULL);
+	//pLowGfx->SetDepthTestActive(true);
 
-	//Flush the rendering
-	pLowGfx->FlushRendering();
-	pLowGfx->WaitAndFinishRendering();
+	////Flush the rendering
+	//pLowGfx->FlushRendering();
+	//pLowGfx->WaitAndFinishRendering();
 
-	//Destroy data
-	mpGraphics->DestroyFrameBuffer(pEffectBuffer);
+	////Destroy data
+	//mpGraphics->DestroyFrameBuffer(pEffectBuffer);
 }	
 
 //-----------------------------------------------------------------------
@@ -1623,9 +1626,9 @@ void cLuxInventory::RenderBackgroundImage()
 void cLuxInventory::DestroyBackground()
 {
 	if(mpScreenGfx) mpGui->DestroyGfx(mpScreenGfx);
-	if(mpScreenTexture) mpGraphics->DestroyTexture(mpScreenTexture);
+	if(mpScreenTexture) hplFree(mpScreenTexture);
 	if(mpScreenBgGfx) mpGui->DestroyGfx(mpScreenBgGfx);
-	if(mpScreenBgTexture) mpGraphics->DestroyTexture(mpScreenBgTexture);
+	if(mpScreenBgTexture) hplFree(mpScreenBgTexture);
 
 	mpScreenGfx = NULL;
 	mpScreenTexture = NULL;

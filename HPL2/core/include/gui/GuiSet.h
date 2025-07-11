@@ -79,14 +79,14 @@ namespace hpl {
 	class cGuiRenderObject
 	{
 	public:
-		cGuiRenderObject() : mpGfx(NULL), mvPos(0), mvSize(0), mColor(0,0), mpCustomMaterial(NULL), mpClipRegion(NULL), mbRotated(false), mfAngle(0.0f), mvPivot(0.0f)
+		cGuiRenderObject() : mpGfx(NULL), mvPos(0), mvSize(0), mColor(0,0), mpCustomMaterial(eGuiMaterial_LastEnum), mpClipRegion(NULL), mbRotated(false), mfAngle(0.0f), mvPivot(0.0f)
 		{}
 
 		cGuiGfxElement *mpGfx;
 		cVector3f mvPos;
 		cVector2f mvSize;
 		cColor mColor;
-		iGuiMaterial *mpCustomMaterial;
+		eGuiMaterial mpCustomMaterial;
 		cGuiClipRegion *mpClipRegion;
 
 		bool mbRotated;

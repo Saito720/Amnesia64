@@ -78,12 +78,12 @@ namespace hpl {
 		virtual void Bind()=0;
 		virtual void UnBind()=0;
 
-        virtual iVertexBuffer* CreateCopy(	eVertexBufferType aType,eVertexBufferUsageType aUsageType,
-											tVertexElementFlag alVtxToCopy)=0;
-			
-        virtual cBoundingVolume CreateBoundingVolume()=0;
+    virtual iVertexBuffer* CreateCopy(	eVertexBufferType aType,eVertexBufferUsageType aUsageType,
+									tVertexElementFlag alVtxToCopy)=0;
+	
+    virtual cBoundingVolume CreateBoundingVolume()=0;
 
-        virtual int GetElementNum(eVertexBufferElement aElement)=0;		
+    virtual int GetElementNum(eVertexBufferElement aElement)=0;		
 		virtual eVertexBufferElementFormat GetElementFormat(eVertexBufferElement aElement)=0;
 		virtual int GetElementProgramVarIndex(eVertexBufferElement aElement)=0;
 		virtual float* GetFloatArray(eVertexBufferElement aElement)=0;

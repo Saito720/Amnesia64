@@ -28,6 +28,8 @@
 #include "graphics/FrameSubImage.h"
 #include "graphics/FrameBitmap.h"
 #include "graphics/FrameTexture.h"
+#include "graphics/Image.h"
+
 #include "resources/LowLevelResources.h"
 #include "resources/Resources.h"
 #include "resources/BitmapLoaderHandler.h"
@@ -151,7 +153,7 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	cFrameTexture* cImageManager::CreateCustomFrame(iTexture *apTexture)
+	cFrameTexture* cImageManager::CreateCustomFrame(Image *apTexture)
 	{
 		cFrameTexture *pTFrame = hplNew( cFrameTexture, (apTexture,mlFrameHandle,this,true) );
 		
@@ -419,8 +421,8 @@ namespace hpl {
 	
 	cFrameBitmap *cImageManager::CreateBitmapFrame(cVector2l avSize)
 	{
-		iTexture *pTex = mpLowLevelGraphics->CreateTexture("ImageFrame",eTextureType_2D,eTextureUsage_Normal);
-		cFrameTexture *pTFrame = hplNew( cFrameTexture, (pTex,mlFrameHandle,this,false) );
+		Image* pImg = hplNew(Image, ());
+		cFrameTexture *pTFrame = hplNew( cFrameTexture, (pImg, mlFrameHandle,this,false) );
 		cBitmap *pBmp = hplNew(cBitmap, () );
 		pBmp->CreateData(cVector3l(avSize.x, avSize.y,1),ePixelFormat_RGBA,0,0);
 
@@ -439,7 +441,7 @@ namespace hpl {
 		}
 
 		mlFrameHandle++;
-        return pBFrame;
+    return pBFrame;
 	}
 
 

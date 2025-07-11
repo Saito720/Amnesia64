@@ -25,6 +25,7 @@
 #include "scene/SceneTypes.h"
 
 #include "graphics/RenderFunctions.h"
+#include "graphics/RIBootstrap.h"
 
 namespace hpl {
 
@@ -47,6 +48,7 @@ namespace hpl {
 	class iRenderableContainer;
 	class iRenderableContainerNode;
 	class cVisibleRCNodeTracker;
+	class cViewport;
 
 	//---------------------------------------------
 
@@ -252,6 +254,15 @@ namespace hpl {
 					bool abSendFrameBufferToPostEffects, tRendererCallbackList *apCallbackList);
 
 		void Update(float afTimeStep);
+
+    virtual void Draw(
+    		RIBootstrap::FrameContext* cntx,
+        cViewport* viewport,
+        float afFrameTime,
+        cFrustum* apFrustum,
+        cWorld* apWorld,
+        cRenderSettings* apSettings,
+        bool abSendFrameBufferToPostEffects) {}
 
 		inline static int GetRenderFrameCount()  { return mlRenderFrameCount;}
 		inline static void IncRenderFrameCount() { ++mlRenderFrameCount;}

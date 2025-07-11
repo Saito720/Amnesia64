@@ -570,7 +570,7 @@ namespace hpl {
 		if(pHighChild && (int)pHighChild->mlstObjects.size() < mlMinLeafObjects && pIntersectChild && fHigh_LongestSide < mfMaxSideLength)
 		{
 			if(bLog) Log("%s moving high to intersected!\n",GetSpaces(alLevel));
-			pIntersectChild->mlstObjects.splice(pIntersectChild->mlstObjects.end(),pHighChild->mlstObjects);		
+			pIntersectChild->mlstObjects.insert(pIntersectChild->mlstObjects.begin(),pHighChild->mlstObjects.begin(),pHighChild->mlstObjects.end());
 			STLFindAndDelete(apNode->mlstChildren, pHighChild);
 			pHighChild = NULL;
 			bMovedObjects = true;
@@ -579,7 +579,7 @@ namespace hpl {
 		if(pLowChild && (int)pLowChild->mlstObjects.size() < mlMinLeafObjects && pIntersectChild && fLow_LongestSide < mfMaxSideLength)
 		{
 			if(bLog) Log("%s moving low to intersected!\n",GetSpaces(alLevel));
-			pIntersectChild->mlstObjects.splice(pIntersectChild->mlstObjects.end(),pLowChild->mlstObjects);		
+			pIntersectChild->mlstObjects.insert(pIntersectChild->mlstObjects.begin(),pLowChild->mlstObjects.begin(),pLowChild->mlstObjects.end());
 			STLFindAndDelete(apNode->mlstChildren, pLowChild);
 			pLowChild = NULL;
 			bMovedObjects = true;

@@ -18,9 +18,10 @@
  */
 
 #include "graphics/FrameTexture.h"
-#include "graphics/Texture.h"
 #include "graphics/FrameSubImage.h"
 #include "resources/ImageManager.h"
+
+#include "graphics/Image.h"
 
 namespace hpl {
 
@@ -30,7 +31,7 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	cFrameTexture::cFrameTexture(iTexture *apTex, int alHandle,cImageManager *apImageManager, bool abIsCustom) : iFrameBase()
+cFrameTexture::cFrameTexture(Image *apTex, int alHandle,cImageManager *apImageManager, bool abIsCustom) : iFrameBase()
 	{
 		mpTexture = apTex;
 		mlHandle =alHandle;
@@ -54,7 +55,7 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 	
-	iTexture* cFrameTexture::GetTexture()
+Image* cFrameTexture::GetTexture()
 	{
 		return mpTexture;
 	}
@@ -67,7 +68,7 @@ namespace hpl {
 
 		mlPicCount++;
 
-        const cVector3l& vSourceSize = mpTexture->GetSize();
+    const cVector3l& vSourceSize = cVector3l(mpTexture->GetWidth(), mpTexture->GetHeight(), 1);
 		cVector2f vDestPos = cVector2f((float)avPixelPos.x / (float)vSourceSize.x,(float)avPixelPos.y / (float)vSourceSize.y );
 		cVector2f vDestSize = cVector2f((float)avPixelSize.x / (float)vSourceSize.x,(float)avPixelSize.y / (float)vSourceSize.y );
 

@@ -33,6 +33,7 @@ namespace hpl {
 	class cBitmap;
 	class cBitmapLoaderHandler;
 	class iTexture;
+	class Image;
 
 	typedef std::list<cFrameBitmap*> tFrameBitmapList;
 	typedef tFrameBitmapList::iterator tFrameBitmapListIt;
@@ -65,7 +66,7 @@ namespace hpl {
 
 		cFrameSubImage* CreateFromBitmap(const tString &asName,cBitmap* apBmp, int alFrameHandle=-1);
 
-		cFrameTexture* CreateCustomFrame(iTexture *apTexture);
+		cFrameTexture* CreateCustomFrame(Image *apTexture);
 
 		cFrameTexture* GetFrameTexture(int alHandle);
 		

@@ -69,7 +69,7 @@ o->hide();}
       }
     }
     Fl_Window LauncherWindow {
-      label {Amnesia: Pád Do Temnoty} open
+      label {Amnesia: Pï¿½d Do Temnoty} open
       xywh {-32000 -32000 694 554} type Single box NO_BOX color 228 when 0 hide
       code0 {LauncherWindow->position(((float)(Fl::w()-LauncherWindow->w()))*0.5f, ((float)(Fl::h()-LauncherWindow->h()))*0.5f);} modal
     } {

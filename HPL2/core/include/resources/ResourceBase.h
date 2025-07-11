@@ -59,7 +59,6 @@ namespace hpl {
 		
 		unsigned long GetTime(){return mlTime;}
 		unsigned long GetPrio(){return mlPrio;}
-		unsigned long GetSize(){return mlSize;}
 
 		void SetLogDestruction(bool abX){ mbLogDestruction = abX;}
 		

@@ -650,12 +650,13 @@ namespace hpl {
 				vByteArray[i] = FloatColorToUChar(1.0f-i*fStep);
 			}
 
-			iTexture* pHoriMarkerTexture = mpGraphics->GetLowLevel()->CreateTexture("AlphaSlider", eTextureType_1D, eTextureUsage_Normal);
-			pHoriMarkerTexture->CreateFromRawData(cVector3l(256,0,0), ePixelFormat_Luminance, vByteArray);
+			//iTexture* pHoriMarkerTexture = mpGraphics->GetLowLevel()->CreateTexture("AlphaSlider", eTextureType_1D, eTextureUsage_Normal);
+			//pHoriMarkerTexture->CreateFromRawData(cVector3l(256,0,0), ePixelFormat_Luminance, vByteArray);
 
-			mpGfxVMarker = mpSet->GetGui()->CreateGfxFilledRect(cColor(1,1), eGuiMaterial_Diffuse);
-			mpGfxVMarker->AddTexture(pHoriMarkerTexture, cVector2f(1,0), cVector2f(1,1), cVector2f(0,1), cVector2f(0,0));
-			mpGfxVMarker->SetDestroyTexture(true);
+			//mpGfxVMarker = mpSet->GetGui()->CreateGfxFilledRect(cColor(1,1), eGuiMaterial_Diffuse);
+			//mpGfxVMarker->AddTexture(pHoriMarkerTexture, cVector2f(1,0), cVector2f(1,1), cVector2f(0,1), cVector2f(0,0));
+			//mpGfxVMarker->SetDestroyTexture(true);
+			assert(false);
 		}
 		
 		Init();
@@ -1193,29 +1194,30 @@ namespace hpl {
 		// Init Color map and slider texture
 		cGuiGfxElement* pImg = NULL;
 
-		pImg = mpSet->GetGui()->CreateGfxTexture(mpColorBoxTexture, false, eGuiMaterial_Diffuse);
-		mpImgColorBox = mpSet->CreateWidgetImage("", vPos, 256, eGuiMaterial_Diffuse, false, mpWindow);
-		mpImgColorBox->AddCallback(eGuiMessage_MouseDown, this, kGuiCallback(Img_OnMouseDown));
-		mpImgColorBox->AddCallback(eGuiMessage_MouseDown, this, kGuiCallback(ColorBox_OnMouseMove));
-		mpImgColorBox->AddCallback(eGuiMessage_MouseUp, this, kGuiCallback(Img_OnMouseUp));
-		mpImgColorBox->AddCallback(eGuiMessage_MouseMove, this, kGuiCallback(ColorBox_OnMouseMove));
-		mpImgColorBox->AddCallback(eGuiMessage_OnDraw, this, kGuiCallback(ColorBox_OnDraw));
-		mpImgColorBox->SetImage(pImg);
-		
-		vPos.x += 255 + 25;
+		assert(false); // TODO migrate
+		//pImg = mpSet->GetGui()->CreateGfxTexture(mpColorBoxTexture, false, eGuiMaterial_Diffuse);
+		//mpImgColorBox = mpSet->CreateWidgetImage("", vPos, 256, eGuiMaterial_Diffuse, false, mpWindow);
+		//mpImgColorBox->AddCallback(eGuiMessage_MouseDown, this, kGuiCallback(Img_OnMouseDown));
+		//mpImgColorBox->AddCallback(eGuiMessage_MouseDown, this, kGuiCallback(ColorBox_OnMouseMove));
+		//mpImgColorBox->AddCallback(eGuiMessage_MouseUp, this, kGuiCallback(Img_OnMouseUp));
+		//mpImgColorBox->AddCallback(eGuiMessage_MouseMove, this, kGuiCallback(ColorBox_OnMouseMove));
+		//mpImgColorBox->AddCallback(eGuiMessage_OnDraw, this, kGuiCallback(ColorBox_OnDraw));
+		//mpImgColorBox->SetImage(pImg);
+		//
+		//vPos.x += 255 + 25;
 
-		pImg = mpSet->GetGui()->CreateGfxFilledRect(cColor(1,1), eGuiMaterial_Diffuse);
-		pImg->AddTexture(mpColorSliderTexture, cVector2f(1,0), cVector2f(1,1), cVector2f(0,1), cVector2f(0,0));
-		pImg->SetDestroyTexture(false);
-		mpImgColorSlider = mpSet->CreateWidgetImage("", vPos, cVector2f(20, 256), eGuiMaterial_Diffuse, false, mpWindow);
-		mpImgColorSlider->SetUserData((void*)kGuiCallback(ColorSlider_OnMouseMove));
-		mpImgColorSlider->AddCallback(eGuiMessage_MouseDown, this, kGuiCallback(Img_OnMouseDown));
-		mpImgColorSlider->AddCallback(eGuiMessage_MouseDown, this, kGuiCallback(Slider_OnMouseMove));
-		mpImgColorSlider->AddCallback(eGuiMessage_MouseUp, this, kGuiCallback(Img_OnMouseUp));
-		mpImgColorSlider->AddCallback(eGuiMessage_MouseMove, this, kGuiCallback(Slider_OnMouseMove));
-		mpImgColorSlider->AddCallback(eGuiMessage_OnDraw, this, kGuiCallback(ColorSlider_OnDraw));
-		mpImgColorSlider->SetImage(pImg);
-		vPos.x += 20 + 25;
+		//pImg = mpSet->GetGui()->CreateGfxFilledRect(cColor(1,1), eGuiMaterial_Diffuse);
+		//pImg->AddTexture(mpColorSliderTexture, cVector2f(1,0), cVector2f(1,1), cVector2f(0,1), cVector2f(0,0));
+		//pImg->SetDestroyTexture(false);
+		//mpImgColorSlider = mpSet->CreateWidgetImage("", vPos, cVector2f(20, 256), eGuiMaterial_Diffuse, false, mpWindow);
+		//mpImgColorSlider->SetUserData((void*)kGuiCallback(ColorSlider_OnMouseMove));
+		//mpImgColorSlider->AddCallback(eGuiMessage_MouseDown, this, kGuiCallback(Img_OnMouseDown));
+		//mpImgColorSlider->AddCallback(eGuiMessage_MouseDown, this, kGuiCallback(Slider_OnMouseMove));
+		//mpImgColorSlider->AddCallback(eGuiMessage_MouseUp, this, kGuiCallback(Img_OnMouseUp));
+		//mpImgColorSlider->AddCallback(eGuiMessage_MouseMove, this, kGuiCallback(Slider_OnMouseMove));
+		//mpImgColorSlider->AddCallback(eGuiMessage_OnDraw, this, kGuiCallback(ColorSlider_OnDraw));
+		//mpImgColorSlider->SetImage(pImg);
+		//vPos.x += 20 + 25;
 
 		// Create alpha slider
 		{
@@ -1228,12 +1230,13 @@ namespace hpl {
 				vByteArray[i*3] = vByteArray[i*3+1] = vByteArray[i*3+2] = FloatColorToUChar(float(i)*fStep);
 			}
 
-			iTexture* pAlphaSliderTexture = mpGraphics->GetLowLevel()->CreateTexture("AlphaSlider", eTextureType_1D, eTextureUsage_Normal);
-			pAlphaSliderTexture->CreateFromRawData(cVector3l(256,0,0), ePixelFormat_RGB, vByteArray);
+			//iTexture* pAlphaSliderTexture = mpGraphics->GetLowLevel()->CreateTexture("AlphaSlider", eTextureType_1D, eTextureUsage_Normal);
+			//pAlphaSliderTexture->CreateFromRawData(cVector3l(256,0,0), ePixelFormat_RGB, vByteArray);
 
-			pImg = mpSet->GetGui()->CreateGfxFilledRect(cColor(1,1), eGuiMaterial_Diffuse);
-			pImg->AddTexture(pAlphaSliderTexture, cVector2f(1,0), cVector2f(1,1), cVector2f(0,1), cVector2f(0,0));
-			pImg->SetDestroyTexture(true);
+			//pImg = mpSet->GetGui()->CreateGfxFilledRect(cColor(1,1), eGuiMaterial_Diffuse);
+			//pImg->AddTexture(pAlphaSliderTexture, cVector2f(1,0), cVector2f(1,1), cVector2f(0,1), cVector2f(0,0));
+			//pImg->SetDestroyTexture(true);
+			assert(false);
 		}
 
 		mpImgAlphaSlider = mpSet->CreateWidgetImage("", vPos, cVector2f(20, 256), eGuiMaterial_Diffuse, false, mpWindow);

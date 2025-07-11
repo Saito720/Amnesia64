@@ -19,13 +19,20 @@
 
 #include "gui/GuiSet.h"
 
+#include "graphics/GraphicsTypes.h"
+#include "graphics/Image.h"
+#include "graphics/RIScratchAlloc.h"
+#include "graphics/RITypes.h"
+#include "gui/GuiTypes.h"
 #include "math/Math.h"
+#include "system/Hasher.h"
 #include "system/LowLevelSystem.h"
 #include "system/String.h"
 
 #include "graphics/LowLevelGraphics.h"
 #include "graphics/Graphics.h"
 #include "graphics/FontData.h"
+#include "graphics/RIRenderer.h"
 
 #include "resources/Resources.h"
 #include "resources/TextureManager.h"
@@ -33,6 +40,7 @@
 #include "graphics/FrameSubImage.h"
 #include "graphics/FrameBitmap.h"
 #include "resources/FileSearcher.h"
+#include "graphics/HPLTexture.h"
 
 #include "scene/Scene.h"
 #include "scene/Camera.h"
@@ -69,13 +77,26 @@
 #include "gui/WidgetTabFrame.h"
 #include "gui/WidgetGroup.h"
 #include "gui/WidgetDummy.h"
+#include "system/Types.h"
 
 #include <stdarg.h>
 #include <stdlib.h>
 
 #include <algorithm>
+#include <vulkan/vulkan_core.h>
 
 namespace hpl {
+	struct GuiPass {
+		float mvp[4 * 4];
+		float clipPlanes[4][4];
+		int textureCfg;
+	};
+
+	struct PositionTexColor {
+		float position[3];
+		float texCoords[2];
+		float color[4];
+	};
 
 	//-----------------------------------------------------------------------
 
@@ -119,16 +140,16 @@ namespace hpl {
 		}
 		
 		//Material
-		iGuiMaterial *pMaterialA = aObjectA.mpCustomMaterial ? aObjectA.mpCustomMaterial : aObjectA.mpGfx->mpMaterial;
-		iGuiMaterial *pMaterialB = aObjectB.mpCustomMaterial ? aObjectB.mpCustomMaterial : aObjectB.mpGfx->mpMaterial;
+		eGuiMaterial pMaterialA = aObjectA.mpCustomMaterial != eGuiMaterial_LastEnum ? aObjectA.mpCustomMaterial : aObjectA.mpGfx->mpMaterial;
+		eGuiMaterial pMaterialB = aObjectB.mpCustomMaterial != eGuiMaterial_LastEnum ? aObjectB.mpCustomMaterial : aObjectB.mpGfx->mpMaterial;
 		if(pMaterialA != pMaterialB)
 		{
 			return pMaterialA > pMaterialB;
 		}
 		
 		//Texture
-		iTexture *pTextureA = aObjectA.mpGfx->mvTextures[0];
-		iTexture *pTextureB = aObjectB.mpGfx->mvTextures[0];
+		Image *pTextureA = aObjectA.mpGfx->mvTextures[0];
+		Image *pTextureB = aObjectB.mpGfx->mvTextures[0];
 		if(pTextureA != pTextureB)
 		{
 			return pTextureA > pTextureB;
@@ -505,68 +526,462 @@ namespace hpl {
 		}
 	}
 
-	//-----------------------------------------------------------------------
-
-	//TODO: Support multi textures
 	void cGuiSet::Render(cFrustum *apFrustum)
 	{
-		iLowLevelGraphics *pLowLevelGraphics = mpGraphics->GetLowLevel();
+		if(m_setRenderObjects.empty()) {
+			return;
+		}
+
+		RIBootstrap::FrameContext* cntx = RI.GetActiveSet();
+
+		const size_t numVerts = m_setRenderObjects.size() * 4;;
+		const size_t numIndecies = m_setRenderObjects.size() * 6;;
+		RISegmentReq_s vtxReq = {};
+		RISegmentReq_s idxReq = {};
+		if(!IsRIBufferValid(&RI.renderer, &RI.guiVertexBuffer) || !RI.guiVertexAlloc.request(RI.frameIndex, numVerts, &vtxReq)) {
+		  struct RISegmentAllocDesc_s segmentAllocDesc = { 0 };
+		  segmentAllocDesc.numSegments = RI_NUMBER_FRAMES_FLIGHT;
+		  segmentAllocDesc.elementStride = sizeof(PositionTexColor);
+		  segmentAllocDesc.maxElements = std::max<size_t>(RI.guiVertexAlloc.maxElements, 1024);
+		  do {
+			  segmentAllocDesc.maxElements = ( segmentAllocDesc.maxElements + ( segmentAllocDesc.maxElements >> 1 ) );
+		  } while( segmentAllocDesc.maxElements < m_setRenderObjects.size() * 4);
+		  RI.guiVertexAlloc = RISegmentAlloc<RI_NUMBER_FRAME_SEGMENTS>( &segmentAllocDesc );
+		  bool res = RI.guiVertexAlloc.request( RI.frameIndex, numVerts, &vtxReq);
+			assert(res);
+
+			uint32_t queueFamilies[RI_QUEUE_LEN] = { 0 };
+		  VkBufferCreateInfo vertexBufferCreateInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+		  VK_ConfigureBufferQueueFamilies( &vertexBufferCreateInfo , RI.device.queues, RI_QUEUE_LEN, queueFamilies, RI_QUEUE_LEN );
+		  vertexBufferCreateInfo.pNext = NULL;
+		  vertexBufferCreateInfo.flags = 0;
+		  vertexBufferCreateInfo.size = segmentAllocDesc.maxElements * segmentAllocDesc.elementStride; 
+		  vertexBufferCreateInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+		  VmaAllocationInfo allocationInfo = { 0 };
+		  VmaAllocationCreateInfo allocInfo = { 0 };
+		  allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+		  allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+		  
+			if( RI.guiVertexBuffer.vk.buffer) {
+				cntx->freelist.push_back(RIFree(RI.guiVertexBuffer.vk.buffer));
+				cntx->freelist.push_back(RIFree(RI.guiVertexBuffer.vk.alloc));
+			}
+			VK_WrapResult( vmaCreateBuffer( RI.device.vk.vmaAllocator, &vertexBufferCreateInfo, &allocInfo, &RI.guiVertexBuffer.vk.buffer, &RI.guiVertexBuffer.vk.alloc, &allocationInfo ) );
+			RI.guiVertexBuffer.mappedAddress = allocationInfo.pMappedData;
+		}
+
+		if(!IsRIBufferValid(&RI.renderer, &RI.guiIndexBuffer) || !RI.guiIndexAlloc.request(RI.frameIndex, numIndecies, &idxReq)) {
+			struct RISegmentAllocDesc_s segmentAllocDesc = { 0 };
+			segmentAllocDesc.numSegments = RI_NUMBER_FRAMES_FLIGHT;
+			segmentAllocDesc.elementStride = sizeof(uint32_t);
+			segmentAllocDesc.maxElements = std::max<size_t>(RI.guiIndexAlloc.maxElements, 1024);
+			do {
+				segmentAllocDesc.maxElements = ( segmentAllocDesc.maxElements + ( segmentAllocDesc.maxElements >> 1 ) );
+			} while( segmentAllocDesc.maxElements < m_setRenderObjects.size() * 6);
+			RI.guiIndexAlloc = RISegmentAlloc<RI_NUMBER_FRAME_SEGMENTS>( &segmentAllocDesc );
+			
+			uint32_t queueFamilies[RI_QUEUE_LEN] = { 0 };
+		  VkBufferCreateInfo indexBufferCreateInfo = { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+		  VK_ConfigureBufferQueueFamilies( &indexBufferCreateInfo , RI.device.queues, RI_QUEUE_LEN, queueFamilies, RI_QUEUE_LEN );
+		  indexBufferCreateInfo.pNext = NULL;
+		  indexBufferCreateInfo.flags = 0;
+		  indexBufferCreateInfo.size = segmentAllocDesc.maxElements * segmentAllocDesc.elementStride; 
+		  indexBufferCreateInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+		  
+			VmaAllocationInfo allocationInfo = { 0 };
+		  VmaAllocationCreateInfo allocInfo = { 0 };
+		  allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+		  allocInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT | VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
+			
+			if( RI.guiIndexBuffer.vk.buffer) {
+				cntx->freelist.push_back(RIFree(RI.guiIndexBuffer.vk.buffer));
+				cntx->freelist.push_back(RIFree(RI.guiIndexBuffer.vk.alloc));
+			}
+
+			VK_WrapResult( vmaCreateBuffer( RI.device.vk.vmaAllocator, &indexBufferCreateInfo, &allocInfo, &RI.guiIndexBuffer.vk.buffer, &RI.guiIndexBuffer.vk.alloc, &allocationInfo ) );
+			RI.guiIndexBuffer.mappedAddress = allocationInfo.pMappedData;
+		}
+
+		ml::float4x4 projectionMtx = ml::float4x4::Identity();
+	  ml::float4x4 viewMtx = ml::float4x4::Identity();
+	  ml::float4x4 modelMtx = ml::float4x4::Identity();
+	  if(mbIs3D)
+	  {
+	  	//Invert the y coordinate: = -y, this also get the gui into the correct position.
+	  	//Also scale to size
+	  	cVector3f vPreScale = cVector3f(mv3DSize.x / mvVirtualSize.x,
+	  									-mv3DSize.y / mvVirtualSize.y,
+	  									mv3DSize.z / (mfVirtualMaxZ - mfVirtualMinZ));
+	  	cMatrixf mtxPreMul = cMath::MatrixScale(vPreScale);
+	  	//note: Offset needs to be converted to shape coords (done by multiplying with pre scale)
+	  	mtxPreMul.SetTranslation(cVector3f(mvVirtualSizeOffset.x*vPreScale.x, mvVirtualSizeOffset.y*vPreScale.y, 0));
+
+	  	//Create the final model matrix
+	  	modelMtx = cMath::ToFloat4x4(cMath::MatrixMul(m_mtx3DTransform, mtxPreMul));
+	  	projectionMtx = cMath::ToFloat4x4(apFrustum->GetProjectionMatrix().GetTranspose());
+	  	viewMtx = cMath::ToFloat4x4(apFrustum->GetViewMatrix().GetTranspose());
+	  }
+	  //Screen projection
+	  else
+	  {
+	  	//Set up min and max for orth projection
+	  	projectionMtx.SetupByOrthoProjection(-mvVirtualSizeOffset.x, mvVirtualSize.x-mvVirtualSizeOffset.x, 
+	  																		 	 mvVirtualSize.y - mvVirtualSizeOffset.y, -mvVirtualSizeOffset.y, 
+	  																		 	mfVirtualMinZ, mfVirtualMaxZ);
 	
-		///////////////////////////////////
-		// Init rendering
+	  }
+		const VkDeviceSize vkOffset = vtxReq.elementOffset * vtxReq.elementStride; 
+		const VkDeviceSize idxOffset = idxReq.elementOffset * idxReq.elementStride;
 
-		//3D projection
-		if(mbIs3D)
-		{
-			pLowLevelGraphics->SetDepthTestActive(true);
-			pLowLevelGraphics->SetDepthWriteActive(false);
+  	void *vboMemory = ( (uint8_t *)RI.guiVertexBuffer.mappedAddress ) + vkOffset;
+  	void *eleMemory = ( (uint8_t *)RI.guiIndexBuffer.mappedAddress) + idxOffset ;
 
-			//Invert the y coordinate: = -y, this also get the gui into the correct position.
-			//Also scale to size
-			cVector3f vPreScale = cVector3f(mv3DSize.x / mvVirtualSize.x,
-											-mv3DSize.y / mvVirtualSize.y,
-											mv3DSize.z / (mfVirtualMaxZ - mfVirtualMinZ));
-			cMatrixf mtxPreMul = cMath::MatrixScale(vPreScale);
-			//note: Offset needs to be converted to shape coords (done by multiplying with pre scale)
-			mtxPreMul.SetTranslation(cVector3f(mvVirtualSizeOffset.x*vPreScale.x, mvVirtualSizeOffset.y*vPreScale.y, 0));
-			
-			//Create the final model matrix
-			cMatrixf mtxModel = cMath::MatrixMul(m_mtx3DTransform, mtxPreMul);
-			mtxModel = cMath::MatrixMul(apFrustum->GetViewMatrix(), mtxModel);
-			
-			pLowLevelGraphics->SetMatrix(eMatrix_ModelView, mtxModel);
+    auto it = m_setRenderObjects.begin();
 
-			//No need for projection matrix, should be setup, right? :)
+		eGuiMaterial pLastMaterial = eGuiMaterial_LastEnum;
+		Image* pLastTexture = NULL;
+		cGuiClipRegion *pLastClipRegion = NULL;
 
-			pLowLevelGraphics->SetCullActive(mbCullBackface);
-		}
-		//Screen projection
-		else
-		{
-			pLowLevelGraphics->SetDepthTestActive(false);
-			pLowLevelGraphics->SetDepthWriteActive(false);
-			pLowLevelGraphics->SetIdentityMatrix(eMatrix_ModelView);
+		cGuiGfxElement *pGfx = it->mpGfx;
+		eGuiMaterial materialType = it->mpCustomMaterial != eGuiMaterial_LastEnum ? it->mpCustomMaterial : pGfx->mpMaterial;
+		Image* pTexture = pGfx->mvTextures[0];
+		cGuiClipRegion *pClipRegion = it->mpClipRegion;
 
-			//Set up min and max for orth projection
-			cVector3f vProjMin(-mvVirtualSizeOffset.x, -mvVirtualSizeOffset.y, mfVirtualMinZ);
-			cVector3f vProjMax(mvVirtualSize.x-mvVirtualSizeOffset.x, mvVirtualSize.y-mvVirtualSizeOffset.y, mfVirtualMaxZ);
+		VkViewport viewports[] = {
+			{0,(float)RI.swapchain.height, (float)RI.swapchain.width, -(float)RI.swapchain.height, 0.0f, 1.0f}
+		};
+		VkRect2D scissors[] = {
+			{ {0, 0}, {RI.swapchain.width, RI.swapchain.height} }
+		};
+		vkCmdSetViewport(cntx->cmd.vk.cmd, 0, ARRAY_COUNT(viewports), viewports);
+		vkCmdSetScissor( cntx->cmd.vk.cmd, 0, ARRAY_COUNT(scissors), scissors );
 
-			pLowLevelGraphics->SetOrthoProjection(vProjMin,vProjMax);
-		}
+		size_t vertexBufferOffset = 0;
+		size_t indexBufferOffset = 0;
+		while(it != m_setRenderObjects.end()) {
+			size_t vertexBufferIndex = 0;
+			size_t indexBufferIndex = 0;
+
+			GuiPass uniformBlock = {};
+			const bool hasClip = pClipRegion && pClipRegion->mRect.w > 0.0f;
+			if(hasClip)
+			{
+				cRect2f& clipRect = pClipRegion->mRect;
+				cPlanef plane;
+				//Bottom
+				plane.FromNormalPoint(cVector3f(0,-1,0),cVector3f(0,clipRect.y+clipRect.h,0));
+				{
+					const float clipPlane[4] = {plane.a, plane.b, plane.c, plane.d};
+					memcpy(uniformBlock.clipPlanes[0], clipPlane, sizeof(float) * 4);
+				}
+
+				//Top
+				plane.FromNormalPoint(cVector3f(0,1,0),cVector3f(0,clipRect.y,0));
+				{
+					const float clipPlane[4] = {plane.a, plane.b, plane.c, plane.d};
+					memcpy(uniformBlock.clipPlanes[1], clipPlane, sizeof(float) * 4);
+				}
+
+				//Right
+				plane.FromNormalPoint(cVector3f(1,0,0),cVector3f(clipRect.x,0,0));
+				{
+					const float clipPlane[4] = {plane.a, plane.b, plane.c, plane.d};
+					memcpy(uniformBlock.clipPlanes[2], clipPlane, sizeof(float) * 4);
+				}
+
+				//Left
+				plane.FromNormalPoint(cVector3f(-1,0,0),cVector3f(clipRect.x+clipRect.w,0,0));
+				{
+					const float clipPlane[4] = {plane.a, plane.b, plane.c, plane.d};
+					memcpy(uniformBlock.clipPlanes[3], clipPlane, sizeof(float) * 4);
+				}
+				uniformBlock.textureCfg |= (1 << 1); // Has clip planes
+			}
+
+			struct RIProgram::DescriptorBinding bindings[4] = { 0 };
+			size_t numBindings = 0;
+			if(pTexture) {
+				std::shared_ptr<HPLTexture> texture = pTexture->GetTexture();
+				uniformBlock.textureCfg |= (1 << 0); // Has texture
+				bindings[numBindings].descriptor = texture->binding;
+				cntx->textureLink.push_back(texture);
+			} else {
+				bindings[numBindings].descriptor = RI.whiteTexture2D.binding;
+			}
+			bindings[numBindings++].handle = DescriptorBindingID::Create("diffuseMap");
+
+			memcpy(uniformBlock.mvp, ((projectionMtx * viewMtx) * modelMtx).a, sizeof(float) * 16);
+			RI.UpdateFrameUBO(&bindings[numBindings].descriptor, (void*)&uniformBlock, sizeof(GuiPass));		
+			bindings[numBindings++].handle = DescriptorBindingID::Create("pass");
+
+			RIDescriptor_s* desc = 	RI.resolve_filter_descriptor(eTextureWrap_ClampToEdge, eTextureWrap_ClampToEdge, eTextureWrap_ClampToEdge, eTextureFilter_Nearest);
+			assert(desc);
+			bindings[numBindings].descriptor = *desc;
+			bindings[numBindings++].handle = DescriptorBindingID::Create("diffuseSampler");
+
+			hash_t hash = hash_u32(HASH_INITIAL_VALUE, materialType);
+			hash = hash_u32(hash, RI.depthFormat);
+			hash = hash_u32(hash, RI.swapchain.format);
+			hash = hash_u32(hash, mbIs3D);
+			VkPipelineVertexInputStateCreateInfo vertexInputState = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+			VkVertexInputAttributeDescription vertextbindingDesc[] = {
+				{ 0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(PositionTexColor, position) },
+				{ 1, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(PositionTexColor, texCoords) },
+				{ 2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(PositionTexColor, color) }
+			};
+			VkVertexInputBindingDescription vertexInputStreamsDesc[] = {
+			 	{ 0, sizeof(PositionTexColor), VK_VERTEX_INPUT_RATE_VERTEX }
+			};
+			vertexInputState.pVertexAttributeDescriptions = vertextbindingDesc;
+			vertexInputState.vertexAttributeDescriptionCount = ARRAY_COUNT(vertextbindingDesc);
+			vertexInputState.pVertexBindingDescriptions = vertexInputStreamsDesc;
+			vertexInputState.vertexBindingDescriptionCount = ARRAY_COUNT(vertexInputStreamsDesc);
+
+			VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
+			inputAssemblyState.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+			VkPipelineRasterizationStateCreateInfo rasterizationState = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
+			rasterizationState.polygonMode = VK_POLYGON_MODE_FILL;
+			rasterizationState.cullMode = VK_CULL_MODE_NONE;
+			rasterizationState.depthBiasEnable = VK_FALSE;
+			rasterizationState.lineWidth = 1.0f;
 		
+			VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+			VkPipelineDynamicStateCreateInfo dynamicState = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
+			dynamicState.dynamicStateCount = ARRAY_COUNT(dynamicStates);
+			dynamicState.pDynamicStates = dynamicStates;
+
+			VkPipelineRenderingCreateInfo pipelineRenderingCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
+			pipelineRenderingCreateInfo.colorAttachmentCount = 1;
+			VkFormat colorFormats[1] = { RIFormatToVK( RI.swapchain.format) };
+			pipelineRenderingCreateInfo.pColorAttachmentFormats = colorFormats;
+			pipelineRenderingCreateInfo.depthAttachmentFormat = RIFormatToVK( RI.depthFormat );
+			pipelineRenderingCreateInfo.stencilAttachmentFormat = VK_FORMAT_UNDEFINED; 
+
+			VkPipelineViewportStateCreateInfo viewportState = { VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
+			viewportState.viewportCount = 1;
+			viewportState.scissorCount = 1;
+
+			VkPipelineMultisampleStateCreateInfo multisampleState = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
+			multisampleState.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+		
+			VkPipelineDepthStencilStateCreateInfo depthStencilState = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
+			depthStencilState.minDepthBounds = 0.0f;
+			depthStencilState.maxDepthBounds = 1.0f;
+			if (mbIs3D) {
+				depthStencilState.depthTestEnable = VK_TRUE;
+				depthStencilState.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+			}
+
+			VkGraphicsPipelineCreateInfo pipelineCreateInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
+			pipelineCreateInfo.pNext = &pipelineRenderingCreateInfo;
+			pipelineCreateInfo.pVertexInputState = &vertexInputState;
+			pipelineCreateInfo.pRasterizationState = &rasterizationState;
+			pipelineCreateInfo.pDynamicState = &dynamicState;
+			pipelineCreateInfo.pInputAssemblyState = &inputAssemblyState;
+			pipelineCreateInfo.pViewportState = &viewportState;
+			pipelineCreateInfo.pDepthStencilState = &depthStencilState;
+			pipelineCreateInfo.pMultisampleState = &multisampleState;
+			
+			switch(materialType)
+			{
+				case eGuiMaterial_FontNormal: 
+				case eGuiMaterial_Alpha: {
+					VkPipelineColorBlendAttachmentState blendAttachmentState[] = { 
+						VK_TRUE,
+						VK_BLEND_FACTOR_SRC_ALPHA,
+					  VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+						VK_BLEND_OP_ADD,
+						VK_BLEND_FACTOR_SRC_ALPHA,
+						VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+						VK_BLEND_OP_ADD,
+				  	VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+					};
+					VkPipelineColorBlendStateCreateInfo colorBlendState = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
+					colorBlendState.attachmentCount = ARRAY_COUNT(blendAttachmentState);
+					colorBlendState.pAttachments = blendAttachmentState;
+				 	pipelineCreateInfo.pColorBlendState = &colorBlendState;
+					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash,"gui.eGuiMaterial_Alpha", &pipelineCreateInfo);
+				}
+				case eGuiMaterial_Additive: {
+					VkPipelineColorBlendAttachmentState blendAttachmentState[] = { 
+						VK_TRUE,
+						VK_BLEND_FACTOR_ONE,
+					  VK_BLEND_FACTOR_ONE,
+						VK_BLEND_OP_ADD,
+						VK_BLEND_FACTOR_ONE,
+					  VK_BLEND_FACTOR_ONE,
+						VK_BLEND_OP_ADD,
+				  	VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+					};
+					VkPipelineColorBlendStateCreateInfo colorBlendState = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
+					colorBlendState.attachmentCount = ARRAY_COUNT(blendAttachmentState);
+					colorBlendState.pAttachments = blendAttachmentState;
+				 	pipelineCreateInfo.pColorBlendState = &colorBlendState;
+					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash,"gui.eGuiMaterial_Additive", &pipelineCreateInfo);
+					break;	
+				}
+				case eGuiMaterial_Modulative: {
+					VkPipelineColorBlendAttachmentState blendAttachmentState[] = { 
+						VK_TRUE,
+						VK_BLEND_FACTOR_DST_COLOR,
+					  VK_BLEND_FACTOR_ZERO,
+						VK_BLEND_OP_ADD,
+						VK_BLEND_FACTOR_DST_ALPHA,
+					  VK_BLEND_FACTOR_ZERO,
+						VK_BLEND_OP_ADD,
+				  	VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+					};
+					VkPipelineColorBlendStateCreateInfo colorBlendState = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
+					colorBlendState.attachmentCount = ARRAY_COUNT(blendAttachmentState);
+					colorBlendState.pAttachments = blendAttachmentState;
+				 	pipelineCreateInfo.pColorBlendState = &colorBlendState;
+					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash,"gui.eGuiMaterial_Modulative", &pipelineCreateInfo);
+					break;	
+				}
+				case eGuiMaterial_PremulAlpha: {
+					VkPipelineColorBlendAttachmentState blendAttachmentState[] = { 
+						VK_TRUE,
+						VK_BLEND_FACTOR_ONE,
+					  VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+						VK_BLEND_OP_ADD,
+						VK_BLEND_FACTOR_ONE,
+					  VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+						VK_BLEND_OP_ADD,
+				  	VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+					};
+					VkPipelineColorBlendStateCreateInfo colorBlendState = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
+					colorBlendState.attachmentCount = ARRAY_COUNT(blendAttachmentState);
+					colorBlendState.pAttachments = blendAttachmentState;
+				 	pipelineCreateInfo.pColorBlendState = &colorBlendState;
+					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash,"gui.eGuiMaterial_PremulAlpha", &pipelineCreateInfo);
+					break;	
+				}
+				case eGuiMaterial_Diffuse:{
+				default:
+					VkPipelineColorBlendAttachmentState blendAttachmentState[] = { 
+						VK_TRUE,
+						VK_BLEND_FACTOR_ONE,
+					  VK_BLEND_FACTOR_ZERO,
+						VK_BLEND_OP_ADD,
+						VK_BLEND_FACTOR_ONE,
+					  VK_BLEND_FACTOR_ZERO,
+						VK_BLEND_OP_ADD,
+				  	VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT
+					};
+					VkPipelineColorBlendStateCreateInfo colorBlendState = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
+					colorBlendState.attachmentCount = ARRAY_COUNT(blendAttachmentState);
+					colorBlendState.pAttachments = blendAttachmentState;
+				 	pipelineCreateInfo.pColorBlendState = &colorBlendState;
+					RI.gui.bindPipeline(&RI.device, &cntx->cmd, hash,"gui.eGuiMaterial_Diffuse", &pipelineCreateInfo);
+					break;
+				}
+			}
+			RI.gui.bindDescriptors(&RI.device, &cntx->cmd, RI.frameIndex, bindings, numBindings);
+			do
+			{
+				const cGuiRenderObject &object = *it;
+				cGuiGfxElement *pGfx = object.mpGfx;
+
+				if(object.mbRotated)
+				{
+					for(int i=0; i<4; ++i)
+					{
+
+						cVertex &vtx = pGfx->mvVtx[i];
+						cVector3f vVtxPos = vtx.pos;
+						const cVector3f& vPos = object.mvPos;
+						const cColor color = vtx.col * object.mColor;
+
+						//Scale
+						vVtxPos.x *= object.mvSize.x;
+						vVtxPos.y *= object.mvSize.y;
+
+						//Rotate
+						vVtxPos.x -= object.mvPivot.x;
+						vVtxPos.y -= object.mvPivot.y;
+						vVtxPos = cMath::MatrixMul(cMath::MatrixRotateZ(object.mfAngle), vVtxPos);
+						vVtxPos.x += object.mvPivot.x;
+						vVtxPos.y += object.mvPivot.y;
+
+						reinterpret_cast<PositionTexColor*>(vboMemory)[vertexBufferOffset + (vertexBufferIndex++)] = {
+							{vVtxPos.x + vPos.x, vVtxPos.y + vPos.y, vPos.z},
+							{ vtx.tex.x, vtx.tex.y},
+							{color.r, color.g, color.b, color.a}
+						};
+
+					}
+				}
+				else
+				{
+					for(int i=0; i<4; ++i)
+					{
+						cVertex &vtx = pGfx->mvVtx[i];
+						cVector3f& vVtxPos = vtx.pos;
+						const cVector3f& vPos = object.mvPos;
+						const cColor color = vtx.col * object.mColor;
+
+						reinterpret_cast<PositionTexColor*>(vboMemory)[vertexBufferOffset + (vertexBufferIndex++)] = {
+							{vVtxPos.x * object.mvSize.x + vPos.x, vVtxPos.y * object.mvSize.y + vPos.y, vPos.z},
+							{ vtx.tex.x, vtx.tex.y},
+							{color.r, color.g, color.b, color.a}
+						};
+
+					}
+				}
+
+				reinterpret_cast<uint32_t*>(eleMemory)[indexBufferOffset + (indexBufferIndex++)] = vertexBufferIndex - 4;
+				reinterpret_cast<uint32_t*>(eleMemory)[indexBufferOffset + (indexBufferIndex++)] = vertexBufferIndex - 3;
+				reinterpret_cast<uint32_t*>(eleMemory)[indexBufferOffset + (indexBufferIndex++)] = vertexBufferIndex - 2;
+
+				reinterpret_cast<uint32_t*>(eleMemory)[indexBufferOffset + (indexBufferIndex++)] = vertexBufferIndex - 4;
+				reinterpret_cast<uint32_t*>(eleMemory)[indexBufferOffset + (indexBufferIndex++)] = vertexBufferIndex - 2;
+				reinterpret_cast<uint32_t*>(eleMemory)[indexBufferOffset + (indexBufferIndex++)] = vertexBufferIndex - 1;
+
+
+				///////////////////////////
+				//Set last texture
+				pLastMaterial =  materialType;
+				pLastTexture =  pTexture;
+				pLastClipRegion = pClipRegion;
+
+				/////////////////////////////
+				//Get next object
+				++it; if(it == m_setRenderObjects.end()) break;
+
+				pGfx = it->mpGfx;
+				materialType = it->mpCustomMaterial != eGuiMaterial_LastEnum ? it->mpCustomMaterial : pGfx->mpMaterial;
+				pTexture = it->mpGfx->mvTextures[0];
+				pClipRegion = it->mpClipRegion;
+			}
+			while(pTexture == pLastTexture &&
+				materialType == pLastMaterial &&
+				pClipRegion == pLastClipRegion);
+
+			uint64_t vbOffset = vkOffset + vertexBufferOffset * sizeof(PositionTexColor);
+			uint64_t ibOffset = idxOffset + indexBufferOffset * sizeof(uint32_t);
+			vkCmdBindVertexBuffers(cntx->cmd.vk.cmd, 0, 1, &RI.guiVertexBuffer.vk.buffer, &vbOffset);
+			vkCmdBindIndexBuffer(cntx->cmd.vk.cmd, RI.guiIndexBuffer.vk.buffer, ibOffset, VK_INDEX_TYPE_UINT32);
+			vkCmdDrawIndexed(cntx->cmd.vk.cmd, indexBufferIndex, 1, 0, 0, 0);
+
+			vertexBufferOffset += vertexBufferIndex;
+			indexBufferOffset += indexBufferIndex;
+
+		}
 		///////////////////////////////
 		// Render all clip regions
 		
-		RenderClipRegion();
+		//RenderClipRegion();
 
 		///////////////////////////////
 		//Clear the render object set
 		mBaseClipRegion.Clear();
 
-		if(mbIs3D)
-		{
-			if(mbCullBackface==false) pLowLevelGraphics->SetCullActive(true);
-		}
+		//if(mbIs3D)
+		//{
+		//	if(mbCullBackface==false) pLowLevelGraphics->SetCullActive(true);
+		//}
 	}
 
 	//-----------------------------------------------------------------------
@@ -628,8 +1043,8 @@ namespace hpl {
 		
 		///////////////////////////
 		//Material
-		if(aMaterial != eGuiMaterial_LastEnum)	object.mpCustomMaterial = mpGui->GetMaterial(aMaterial);
-		else									object.mpCustomMaterial = NULL;	
+		if(aMaterial != eGuiMaterial_LastEnum)	object.mpCustomMaterial = aMaterial;
+		else									object.mpCustomMaterial = eGuiMaterial_LastEnum;	
 
 		///////////////////////////
 		//Rotation
@@ -1549,183 +1964,183 @@ namespace hpl {
 
 	void cGuiSet::RenderClipRegion()
 	{
-		iLowLevelGraphics *pLowLevelGraphics = mpGraphics->GetLowLevel();
+	 // iLowLevelGraphics *pLowLevelGraphics = mpGraphics->GetLowLevel();
 
-		if(kLogRender)Log("-------------------\n");
+	 // if(kLogRender)Log("-------------------\n");
 
-		///////////////////////////////////////
-		//See if there is anything to draw
-		tGuiRenderObjectSet &setRenderObjects = m_setRenderObjects;
-		if(setRenderObjects.empty())
-		{
-			if(kLogRender) Log("------------------------\n");
-			return;
-		}
-		
-		//////////////////////////////////
-		// Graphics setup
-		pLowLevelGraphics->SetTexture(0,NULL);
+	 // ///////////////////////////////////////
+	 // //See if there is anything to draw
+	 // tGuiRenderObjectSet &setRenderObjects = m_setRenderObjects;
+	 // if(setRenderObjects.empty())
+	 // {
+	 // 	if(kLogRender) Log("------------------------\n");
+	 // 	return;
+	 // }
+	 // 
+	 // //////////////////////////////////
+	 // // Graphics setup
+	 // pLowLevelGraphics->SetTexture(0,NULL);
 
-		//////////////////////////////////
-		// Set up variables
-		
-		tGuiRenderObjectSetIt it = setRenderObjects.begin();
-		
-		iGuiMaterial *pLastMaterial = NULL;
-		iTexture *pLastTexture = NULL;
-		cGuiClipRegion *pLastClipRegion = NULL;
+	 // //////////////////////////////////
+	 // // Set up variables
+	 // 
+	 // tGuiRenderObjectSetIt it = setRenderObjects.begin();
+	 // 
+	 // iGuiMaterial *pLastMaterial = NULL;
+	 // iTexture *pLastTexture = NULL;
+	 // cGuiClipRegion *pLastClipRegion = NULL;
 
-		cGuiGfxElement *pGfx = it->mpGfx;
-		iGuiMaterial *pMaterial = it->mpCustomMaterial ? it->mpCustomMaterial : pGfx->mpMaterial;
-		iTexture *pTexture = pGfx->mvTextures[0];
-		cGuiClipRegion *pClipRegion = it->mpClipRegion;
+	 // cGuiGfxElement *pGfx = it->mpGfx;
+	 // iGuiMaterial *pMaterial = it->mpCustomMaterial ? it->mpCustomMaterial : pGfx->mpMaterial;
+	 // iTexture *pTexture = pGfx->mvTextures[0];
+	 // cGuiClipRegion *pClipRegion = it->mpClipRegion;
 
-		int lIdxAdd=0;
+	 // int lIdxAdd=0;
 
-		//Log("bug:Rendering objects!\n");
+	 // //Log("bug:Rendering objects!\n");
 
-		///////////////////////////////////
-		// Iterate objects
-		while(it != setRenderObjects.end())
-		{
-			///////////////////////////////
-			//Start rendering
-			if(pLastMaterial != pMaterial){
-				pMaterial->BeforeRender();
-				if(kLogRender)Log("Material %s before\n",pMaterial->GetName().c_str());
-			}
+	 // ///////////////////////////////////
+	 // // Iterate objects
+	 // while(it != setRenderObjects.end())
+	 // {
+	 // 	///////////////////////////////
+	 // 	//Start rendering
+	 // 	if(pLastMaterial != pMaterial){
+	 // 		pMaterial->BeforeRender();
+	 // 		if(kLogRender)Log("Material %s before\n",pMaterial->GetName().c_str());
+	 // 	}
 
-			////////////////////////////
-			// SetClip area
-			if(pLastClipRegion != pClipRegion)
-			{
-				SetClipArea(pLowLevelGraphics,pClipRegion);
-			}
-			
-			pLowLevelGraphics->SetTexture(0,pTexture);
-			if(kLogRender)Log("Texture %d\n",pTexture);
+	 // 	////////////////////////////
+	 // 	// SetClip area
+	 // 	if(pLastClipRegion != pClipRegion)
+	 // 	{
+	 // 		SetClipArea(pLowLevelGraphics,pClipRegion);
+	 // 	}
+	 // 	
+	 // 	pLowLevelGraphics->SetTexture(0,pTexture);
+	 // 	if(kLogRender)Log("Texture %d\n",pTexture);
 
-			//////////////////////////
-			//Iterate for all with same texture and material
-			do 
-			{
-				const cGuiRenderObject &object = *it;
-				cGuiGfxElement *pGfx = object.mpGfx;
+	 // 	//////////////////////////
+	 // 	//Iterate for all with same texture and material
+	 // 	do 
+	 // 	{
+	 // 		const cGuiRenderObject &object = *it;
+	 // 		cGuiGfxElement *pGfx = object.mpGfx;
 
-				//Log("bug: gfx: %p\n",pGfx);
+	 // 		//Log("bug: gfx: %p\n",pGfx);
 
-				if(kLogRender)
-				{
-					if(pGfx->mvImages[0])
-						Log(" gfx: %d '%s'\n",pGfx,pGfx->mvImages[0]->GetName().c_str());
-					else
-						Log(" gfx: %d 'null'\n");
-				}
+	 // 		if(kLogRender)
+	 // 		{
+	 // 			if(pGfx->mvImages[0])
+	 // 				Log(" gfx: %d '%s'\n",pGfx,pGfx->mvImages[0]->GetName().c_str());
+	 // 			else
+	 // 				Log(" gfx: %d 'null'\n");
+	 // 		}
 
-				//DEBUG!
-				/*if(pGfx->GetImage(0) && pGfx->GetImage(0)->GetName()=="_temp_hand.tga")
-				{
-					Log("Drawing: %d (%s):(%s) %d (%s)\n", object.mpGfx, object.mvPos.ToString().c_str(), object.mvSize.ToString().c_str(),
-															object.mpClipRegion, object.mColor.ToString().c_str());
-				}*/
+	 // 		//DEBUG!
+	 // 		/*if(pGfx->GetImage(0) && pGfx->GetImage(0)->GetName()=="_temp_hand.tga")
+	 // 		{
+	 // 			Log("Drawing: %d (%s):(%s) %d (%s)\n", object.mpGfx, object.mvPos.ToString().c_str(), object.mvSize.ToString().c_str(),
+	 // 													object.mpClipRegion, object.mColor.ToString().c_str());
+	 // 		}*/
 
-				///////////////////////////
-				// Add object to batch
-				if(object.mbRotated)
-				{
-					for(int i=0; i<4; ++i)
-					{
-						cVertex &vtx = pGfx->mvVtx[i];
-						cVector3f vVtxPos = vtx.pos;
-						const cVector3f& vPos = object.mvPos;
+	 // 		///////////////////////////
+	 // 		// Add object to batch
+	 // 		if(object.mbRotated)
+	 // 		{
+	 // 			for(int i=0; i<4; ++i)
+	 // 			{
+	 // 				cVertex &vtx = pGfx->mvVtx[i];
+	 // 				cVector3f vVtxPos = vtx.pos;
+	 // 				const cVector3f& vPos = object.mvPos;
 
-						//Scale
-						vVtxPos.x *= object.mvSize.x;
-						vVtxPos.y *= object.mvSize.y;
+	 // 				//Scale
+	 // 				vVtxPos.x *= object.mvSize.x;
+	 // 				vVtxPos.y *= object.mvSize.y;
 
-						//Rotate
-						vVtxPos.x -= object.mvPivot.x;
-						vVtxPos.y -= object.mvPivot.y;
-						vVtxPos = cMath::MatrixMul(cMath::MatrixRotateZ(object.mfAngle), vVtxPos); 
-						vVtxPos.x += object.mvPivot.x;
-						vVtxPos.y += object.mvPivot.y;
-						
-						pLowLevelGraphics->AddVertexToBatch_Raw(
-							cVector3f(	vVtxPos.x + vPos.x,
-										vVtxPos.y + vPos.y,
-										vPos.z),
-							vtx.col * object.mColor,
-							vtx.tex);
-					}
-				}
-				else
-				{
-					for(int i=0; i<4; ++i)
-					{
-						cVertex &vtx = pGfx->mvVtx[i];
-						cVector3f& vVtxPos = vtx.pos;
-						const cVector3f& vPos = object.mvPos;
-						pLowLevelGraphics->AddVertexToBatch_Raw(
-							cVector3f(	vVtxPos.x * object.mvSize.x + vPos.x,
-										vVtxPos.y * object.mvSize.y + vPos.y,
-										vPos.z),
-							vtx.col * object.mColor,
-							vtx.tex);
-					}
-				}
+	 // 				//Rotate
+	 // 				vVtxPos.x -= object.mvPivot.x;
+	 // 				vVtxPos.y -= object.mvPivot.y;
+	 // 				vVtxPos = cMath::MatrixMul(cMath::MatrixRotateZ(object.mfAngle), vVtxPos); 
+	 // 				vVtxPos.x += object.mvPivot.x;
+	 // 				vVtxPos.y += object.mvPivot.y;
+	 // 				
+	 // 				pLowLevelGraphics->AddVertexToBatch_Raw(
+	 // 					cVector3f(	vVtxPos.x + vPos.x,
+	 // 								vVtxPos.y + vPos.y,
+	 // 								vPos.z),
+	 // 					vtx.col * object.mColor,
+	 // 					vtx.tex);
+	 // 			}
+	 // 		}
+	 // 		else
+	 // 		{
+	 // 			for(int i=0; i<4; ++i)
+	 // 			{
+	 // 				cVertex &vtx = pGfx->mvVtx[i];
+	 // 				cVector3f& vVtxPos = vtx.pos;
+	 // 				const cVector3f& vPos = object.mvPos;
+	 // 				pLowLevelGraphics->AddVertexToBatch_Raw(
+	 // 					cVector3f(	vVtxPos.x * object.mvSize.x + vPos.x,
+	 // 								vVtxPos.y * object.mvSize.y + vPos.y,
+	 // 								vPos.z),
+	 // 					vtx.col * object.mColor,
+	 // 					vtx.tex);
+	 // 			}
+	 // 		}
 
-				for(int i=0;i<4;i++)
-					pLowLevelGraphics->AddIndexToBatch(lIdxAdd + i);
+	 // 		for(int i=0;i<4;i++)
+	 // 			pLowLevelGraphics->AddIndexToBatch(lIdxAdd + i);
 
-				lIdxAdd += 4;
+	 // 		lIdxAdd += 4;
 
-				///////////////////////////
-				//Set last texture
-				pLastMaterial =  pMaterial;
-				pLastTexture =   pTexture;
-				pLastClipRegion = pClipRegion;
+	 // 		///////////////////////////
+	 // 		//Set last texture
+	 // 		pLastMaterial =  pMaterial;
+	 // 		pLastTexture =   pTexture;
+	 // 		pLastClipRegion = pClipRegion;
 
-				/////////////////////////////
-				//Get next object
-				++it; if(it == setRenderObjects.end()) break;
+	 // 		/////////////////////////////
+	 // 		//Get next object
+	 // 		++it; if(it == setRenderObjects.end()) break;
 
-				pGfx = it->mpGfx;
-				pMaterial = it->mpCustomMaterial ? it->mpCustomMaterial : pGfx->mpMaterial;
-				pTexture = it->mpGfx->mvTextures[0];
-				pClipRegion = it->mpClipRegion;
-			} 
-			while(	pTexture == pLastTexture &&
-					pMaterial == pLastMaterial &&
-					pClipRegion == pLastClipRegion);
+	 // 		pGfx = it->mpGfx;
+	 // 		pMaterial = it->mpCustomMaterial ? it->mpCustomMaterial : pGfx->mpMaterial;
+	 // 		pTexture = it->mpGfx->mvTextures[0];
+	 // 		pClipRegion = it->mpClipRegion;
+	 // 	} 
+	 // 	while(	pTexture == pLastTexture &&
+	 // 			pMaterial == pLastMaterial &&
+	 // 			pClipRegion == pLastClipRegion);
 
-			//////////////////////////////
-			// Render batch
-			pLowLevelGraphics->FlushQuadBatch(	eVtxBatchFlag_Position | eVtxBatchFlag_Texture0 | 
-												eVtxBatchFlag_Color0,false);
-			pLowLevelGraphics->ClearBatch();
-			lIdxAdd=0;
+	 // 	//////////////////////////////
+	 // 	// Render batch
+	 // 	pLowLevelGraphics->FlushQuadBatch(	eVtxBatchFlag_Position | eVtxBatchFlag_Texture0 | 
+	 // 										eVtxBatchFlag_Color0,false);
+	 // 	pLowLevelGraphics->ClearBatch();
+	 // 	lIdxAdd=0;
 
-			/////////////////////////////////
-			//Clip region end
-			if(pLastClipRegion  != pClipRegion  || it == setRenderObjects.end())
-			{
-				if(pLastClipRegion->mRect.w >0)
-				{
-					for(int i=0; i<4; ++i) pLowLevelGraphics->SetClipPlaneActive(i, false);
-				}
-			}
-			
-			/////////////////////////////////
-			//Material end
-			if(pLastMaterial != pMaterial || it == setRenderObjects.end())
-			{
-				pLastMaterial->AfterRender();
-				if(kLogRender)Log("Material %d '%s' after. new: %d '%s'\n",	pLastMaterial,pLastMaterial->GetName().c_str(),
-																		pMaterial,pMaterial->GetName().c_str());
-			}
-		}
-		
-		if(kLogRender)Log("---------- END %d -----------\n");
+	 // 	/////////////////////////////////
+	 // 	//Clip region end
+	 // 	if(pLastClipRegion  != pClipRegion  || it == setRenderObjects.end())
+	 // 	{
+	 // 		if(pLastClipRegion->mRect.w >0)
+	 // 		{
+	 // 			for(int i=0; i<4; ++i) pLowLevelGraphics->SetClipPlaneActive(i, false);
+	 // 		}
+	 // 	}
+	 // 	
+	 // 	/////////////////////////////////
+	 // 	//Material end
+	 // 	if(pLastMaterial != pMaterial || it == setRenderObjects.end())
+	 // 	{
+	 // 		pLastMaterial->AfterRender();
+	 // 		if(kLogRender)Log("Material %d '%s' after. new: %d '%s'\n",	pLastMaterial,pLastMaterial->GetName().c_str(),
+	 // 																pMaterial,pMaterial->GetName().c_str());
+	 // 	}
+	 // }
+	 // 
+	 // if(kLogRender)Log("---------- END %d -----------\n");
 	}
 	//-----------------------------------------------------------------------
 

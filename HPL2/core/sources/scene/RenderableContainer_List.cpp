@@ -22,6 +22,7 @@
 #include "system/LowLevelSystem.h"
 
 #include "graphics/Renderable.h"
+#include <algorithm>
 
 namespace hpl {
 
@@ -78,7 +79,9 @@ namespace hpl {
 
 	void cRenderableContainer_List::Remove(iRenderable *apRenderable)
 	{
-		mRoot.mlstObjects.remove(apRenderable);
+		mRoot.mlstObjects.erase(
+			std::remove_if(mRoot.mlstObjects.begin(), mRoot.mlstObjects.end(),
+			[apRenderable](auto* p) { return p == apRenderable; }));
 	}
 
 	//-----------------------------------------------------------------------

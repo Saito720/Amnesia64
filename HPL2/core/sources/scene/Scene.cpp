@@ -181,85 +181,146 @@ namespace hpl {
 	{
 		//Increase the frame count (do this at top, so render count is valid until this Render is called again!)
 		iRenderer::IncRenderFrameCount();
-
-
-		///////////////////////////////////////////
-		// Iterate all viewports and render
-		tViewportListIt viewIt = mlstViewports.begin();
-		for(; viewIt != mlstViewports.end(); ++viewIt)
 		{
-			cViewport *pViewPort = *viewIt;
-			if(pViewPort->IsVisible()==false) continue;
-
-			//////////////////////////////////////////////
-			//Init vars
-			cPostEffectComposite *pPostEffectComposite = pViewPort->GetPostEffectComposite();
-			bool bPostEffects = false;
-			iRenderer *pRenderer = pViewPort->GetRenderer();
-			cCamera *pCamera = pViewPort->GetCamera();
-			cFrustum *pFrustum = pCamera ? pCamera->GetFrustum() : NULL;
-
-			//////////////////////////////////////////////
-			//Render world and call callbacks
-			if(alFlags & tSceneRenderFlag_World)
-			{
-				pViewPort->RunViewportCallbackMessage(eViewportMessage_OnPreWorldDraw);
-				
-				if(pPostEffectComposite && (alFlags & tSceneRenderFlag_PostEffects)) 
-				{
-					bPostEffects = pPostEffectComposite->HasActiveEffects();
-				}
-				
-				if(pRenderer && pViewPort->GetWorld() && pFrustum)
-				{
-					START_TIMING(RenderWorld)
-					pRenderer->Render(	afFrameTime,pFrustum,
-										pViewPort->GetWorld(),pViewPort->GetRenderSettings(), 
-										pViewPort->GetRenderTarget(),
-										bPostEffects,
-										pViewPort->GetRendererCallbackList());
-					STOP_TIMING(RenderWorld)
-				}
-				else
-				{
-					//If no renderer sets up viewport do that by our selves.
-					cRenderTarget* pRenderTarget = pViewPort->GetRenderTarget();
-					mpGraphics->GetLowLevel()->SetCurrentFrameBuffer(	pRenderTarget->mpFrameBuffer,
-																		pRenderTarget->mvPos,
-																		pRenderTarget->mvSize);
-				}
-				pViewPort->RunViewportCallbackMessage(eViewportMessage_OnPostWorldDraw);
-
-				//////////////////////////////////////////////
-				//Render 3D GuiSets
-				// Should this really be here? Or perhaps send in a frame buffer depending on the renderer.
-				START_TIMING(Render3DGui)
-				Render3DGui(pViewPort,pFrustum, afFrameTime);
-				STOP_TIMING(Render3DGui)
-			}
-
-			//////////////////////////////////////////////
-			//Render Post effects
-			if(bPostEffects)
-			{
-				//TODO: If renderer is null get texture from frame buffer and if frame buffer is NULL, then copy to a texture.
-				//		Or this is solved?
-				iTexture *pInputTexture = pRenderer->GetPostEffectTexture();
-
-				START_TIMING(RenderPostEffects)
-				pPostEffectComposite->Render(afFrameTime, pFrustum, pInputTexture,pViewPort->GetRenderTarget());
-				STOP_TIMING(RenderPostEffects)
-			}
+			RIBootstrap::FrameContext* cntx = RI.GetActiveSet();
+			RI_InsertTransitionBarriers( &RI.device, &RI.uploader, &cntx->cmd );
+			tViewportListIt viewIt = mlstViewports.begin();
 			
-			//////////////////////////////////////////////
-			//Render Screen GUI
-			if(alFlags & tSceneRenderFlag_Gui)
+			VkRenderingAttachmentInfo colorAttachment = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+			RI_VK_FillColorAttachment( &colorAttachment, &cntx->colorAttachment , true );
+
+			VkRenderingAttachmentInfo depthStencil = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
+			RI_VK_FillDepthAttachment( &depthStencil, &cntx->depthAttachment, true );
+			VkRenderingInfo renderingInfo = { VK_STRUCTURE_TYPE_RENDERING_INFO };
+			renderingInfo.flags = 0;
+			renderingInfo.renderArea = (VkRect2D){ { 0, 0 }, { RI.swapchain.width, RI.swapchain.height } };
+			renderingInfo.layerCount = 1;
+			renderingInfo.viewMask = 0;
+			renderingInfo.colorAttachmentCount = 1;
+			renderingInfo.pColorAttachments = &colorAttachment;
+			renderingInfo.pDepthAttachment = &depthStencil;
+			renderingInfo.pStencilAttachment = NULL;
+			vkCmdBeginRendering( cntx->cmd.vk.cmd , &renderingInfo );
+			for(; viewIt != mlstViewports.end(); ++viewIt)
 			{
-				START_TIMING(RenderGUI)
-				RenderScreenGui(pViewPort, afFrameTime);
-				STOP_TIMING(RenderGUI)
+					cViewport *pViewPort = *viewIt;
+					if(pViewPort->IsVisible()==false) continue;
+            
+          iRenderer* pRenderer = pViewPort->GetRenderer();
+      		cCamera* pCamera = pViewPort->GetCamera();
+          cFrustum* pFrustum = pCamera ? pCamera->GetFrustum() : NULL;
+			
+					if(alFlags & tSceneRenderFlag_World)
+					{
+						pViewPort->RunViewportCallbackMessage(eViewportMessage_OnPreWorldDraw);
+            if (pRenderer && pViewPort->GetWorld() && pFrustum) {
+              pRenderer->Draw(
+                  cntx,
+                  pViewPort,
+                  afFrameTime,
+                  pFrustum,
+                  pViewPort->GetWorld(),
+                  pViewPort->GetRenderSettings(),
+                  false);
+        		}
+            pViewPort->RunViewportCallbackMessage(eViewportMessage_OnPostWorldDraw);
+            // Render 3D GuiSets
+            //  Should this really be here? Or perhaps send in a frame buffer depending on the renderer.
+            START_TIMING(Render3DGui)
+            Render3DGui(pViewPort, pFrustum, afFrameTime);
+            STOP_TIMING(Render3DGui)
+					}
+
+		 			// render frame ...
+					if(alFlags & tSceneRenderFlag_Gui)
+					{
+						START_TIMING(RenderGUI)
+						RenderScreenGui(pViewPort, afFrameTime);
+						STOP_TIMING(RenderGUI)
+					}
 			}
+			vkCmdEndRendering( cntx->cmd.vk.cmd );
 		}
+
+
+		/////////////////////////////////////////////
+		//// Iterate all viewports and render
+		//tViewportListIt viewIt = mlstViewports.begin();
+		//for(; viewIt != mlstViewports.end(); ++viewIt)
+		//{
+		//	cViewport *pViewPort = *viewIt;
+		//	if(pViewPort->IsVisible()==false) continue;
+
+		//	//////////////////////////////////////////////
+		//	//Init vars
+		//	cPostEffectComposite *pPostEffectComposite = pViewPort->GetPostEffectComposite();
+		//	bool bPostEffects = false;
+		//	iRenderer *pRenderer = pViewPort->GetRenderer();
+		//	cCamera *pCamera = pViewPort->GetCamera();
+		//	cFrustum *pFrustum = pCamera ? pCamera->GetFrustum() : NULL;
+
+		//	//////////////////////////////////////////////
+		//	//Render world and call callbacks
+		//	if(alFlags & tSceneRenderFlag_World)
+		//	{
+		//		pViewPort->RunViewportCallbackMessage(eViewportMessage_OnPreWorldDraw);
+		//		
+		//		if(pPostEffectComposite && (alFlags & tSceneRenderFlag_PostEffects)) 
+		//		{
+		//			bPostEffects = pPostEffectComposite->HasActiveEffects();
+		//		}
+		//		
+		//		if(pRenderer && pViewPort->GetWorld() && pFrustum)
+		//		{
+		//			START_TIMING(RenderWorld)
+		//			pRenderer->Render(	afFrameTime,pFrustum,
+		//								pViewPort->GetWorld(),pViewPort->GetRenderSettings(), 
+		//								pViewPort->GetRenderTarget(),
+		//								bPostEffects,
+		//								pViewPort->GetRendererCallbackList());
+		//			STOP_TIMING(RenderWorld)
+		//		}
+		//		else
+		//		{
+		//			//If no renderer sets up viewport do that by our selves.
+		//			cRenderTarget* pRenderTarget = pViewPort->GetRenderTarget();
+		//			mpGraphics->GetLowLevel()->SetCurrentFrameBuffer(	pRenderTarget->mpFrameBuffer,
+		//																pRenderTarget->mvPos,
+		//																pRenderTarget->mvSize);
+		//		}
+		//		pViewPort->RunViewportCallbackMessage(eViewportMessage_OnPostWorldDraw);
+
+		//		//////////////////////////////////////////////
+		//		//Render 3D GuiSets
+		//		// Should this really be here? Or perhaps send in a frame buffer depending on the renderer.
+		//		START_TIMING(Render3DGui)
+		//		Render3DGui(pViewPort,pFrustum, afFrameTime);
+		//		STOP_TIMING(Render3DGui)
+		//	}
+
+		//	//////////////////////////////////////////////
+		//	//Render Post effects
+		//	if(bPostEffects)
+		//	{
+		//		//TODO: If renderer is null get texture from frame buffer and if frame buffer is NULL, then copy to a texture.
+		//		//		Or this is solved?
+		//		iTexture *pInputTexture = pRenderer->GetPostEffectTexture();
+
+		//		START_TIMING(RenderPostEffects)
+		//		pPostEffectComposite->Render(afFrameTime, pFrustum, pInputTexture,pViewPort->GetRenderTarget());
+		//		STOP_TIMING(RenderPostEffects)
+		//	}
+		//	
+		//	//////////////////////////////////////////////
+		//	//Render Screen GUI
+		//	if(alFlags & tSceneRenderFlag_Gui)
+		//	{
+		//		START_TIMING(RenderGUI)
+		//		RenderScreenGui(pViewPort, afFrameTime);
+		//		STOP_TIMING(RenderGUI)
+		//	}
+		//}
+
 	}
 
 	//-----------------------------------------------------------------------
@@ -381,7 +442,7 @@ namespace hpl {
 		typedef std::multimap<int, cGuiSet*> tPrioMap;
 		tPrioMap mapSortedSets;
 
-        cGuiSetListIterator it = apViewPort->GetGuiSetIterator();	
+    cGuiSetListIterator it = apViewPort->GetGuiSetIterator();	
 		while(it.HasNext())
 		{
 			cGuiSet *pSet = it.Next();

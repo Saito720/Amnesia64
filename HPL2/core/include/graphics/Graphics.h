@@ -22,8 +22,16 @@
 
 #include "system/SystemTypes.h"
 #include "math/MathTypes.h"
-#include "graphics/GraphicsTypes.h"
 #include "engine/Updateable.h"
+#include "graphics/RIResourceUploader.h"
+
+#include "graphics/RIProgram.h"
+#include "graphics/RIScratchAlloc.h"
+#include "graphics/RITypes.h"
+#include "graphics/GraphicsTypes.h"
+#include "graphics/RIVK.h"
+
+#include <memory>
 
 namespace hpl {
 
@@ -46,8 +54,6 @@ namespace hpl {
 	class iGpuProgram;
 	class cParserVarContainer;
 
-	//------------------------------------------------------
-	
 	class cTempFrameBuffer
 	{
 	public:
@@ -56,8 +62,6 @@ namespace hpl {
 		ePixelFormat mPixelFormat;
 		int mlIndex;
 	};
-
-	//------------------------------------------------------
 
 	typedef std::list<iFrameBuffer*> tFrameBufferList;
 	typedef tFrameBufferList::iterator tFrameBufferListIt;
@@ -78,10 +82,10 @@ namespace hpl {
 	typedef tMaterialTypeMap::iterator tMaterialTypeMapIt;
 
 	//------------------------------------------------------
-
 	class cGraphics : public iUpdateable
 	{
 	public:
+
 		cGraphics(iLowLevelGraphics *apLowLevelGraphics,iLowLevelResources *apLowLevelResources);
 		~cGraphics();
 
@@ -134,7 +138,7 @@ namespace hpl {
 		cDecalCreator* GetDecalCreator() {return mpDecalCreator;}
 		
 		bool GetScreenIsSetUp(){ return mbScreenIsSetup;}
-	
+
 	private:
 		iLowLevelGraphics *mpLowLevelGraphics;
 		iLowLevelResources *mpLowLevelResources;
@@ -144,7 +148,6 @@ namespace hpl {
 		cResources *mpResources;
 
 		std::vector<cTempFrameBuffer> mvTempFrameBuffers;
-		
 		std::vector<iRenderer*> mvRenderers;
 		std::vector<iPostEffectType*> mvPostEffectTypes;
 
@@ -155,6 +158,7 @@ namespace hpl {
 		tGpuProgramList mlstGpuPrograms;
 		tMaterialTypeMap m_mapMaterialTypes;
 		tPostEffectList mlstPostEffects;
+
 
 		bool mbScreenIsSetup;
 	};

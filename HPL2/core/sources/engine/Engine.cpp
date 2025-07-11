@@ -427,6 +427,7 @@ namespace hpl {
 		
 		//cMemoryManager::SetLogCreation(true);
 
+		RI.BeginActiveSet();
 		while(!GetGameIsDone())
 		{
 			//////////////////////////
@@ -504,16 +505,12 @@ namespace hpl {
 			if(bBufferSwap)
 			{
 				bBufferSwap = false;
-				START_TIMING(WaitAndFinishRendering)
-				//mpGraphics->GetLowLevel()->WaitAndFinishRendering();
-				STOP_TIMING(WaitAndFinishRendering)
-
-				START_TIMING(SwapBuffers)
-				mpGraphics->GetLowLevel()->SwapBuffers();
-				STOP_TIMING(SwapBuffers)
+			
 				
 				//Log("Swap done: %d\n", cPlatform::GetApplicationTime());
+				RI.CloseAndSubmitActiveSet();
 				mpUpdater->RunMessage(eUpdateableMessage_OnPostBufferSwap);
+				RI.BeginActiveSet();
 				bSwappedOnce =true;
 				if(mbRenderOnce) continue;
 			}
@@ -524,8 +521,7 @@ namespace hpl {
 			// Render frame
 			if(mbLimitFPS==false || bIsUpdated)
 			{
-				///////////////////////////////////////
-           		//Get the the from the last frame.
+        //Get the the from the last frame.
 				UpdateFrameTimer();
 
 				//On draw callback sending that to gui, etc

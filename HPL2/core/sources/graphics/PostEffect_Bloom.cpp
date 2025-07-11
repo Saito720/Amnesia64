@@ -105,12 +105,12 @@ namespace hpl {
 	{
 		cVector2l vSize = mpLowLevelGraphics->GetScreenSizeInt();
 		
-		for(int i=0;i<2; ++i)
-		{
-			mpBlurBuffer[i] = mpGraphics->GetTempFrameBuffer(vSize/4,ePixelFormat_RGBA,i);
-			if(mpBlurBuffer[i])
-				mpBlurTexture[i] = mpBlurBuffer[i]->GetColorBuffer(0)->ToTexture();
-		}
+	 // for(int i=0;i<2; ++i)
+	 // {
+	 // 	mpBlurBuffer[i] = mpGraphics->GetTempFrameBuffer(vSize/4,ePixelFormat_RGBA,i);
+	 // 	if(mpBlurBuffer[i])
+	 // 		mpBlurTexture[i] = mpBlurBuffer[i]->GetColorBuffer(0)->ToTexture();
+	 // }
 
 		mpBloomType = static_cast<cPostEffectType_Bloom*>(mpType);
 	}

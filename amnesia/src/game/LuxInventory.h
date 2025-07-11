@@ -23,6 +23,7 @@
 //----------------------------------------------
 
 #include "LuxBase.h"
+#include "graphics/Image.h"
 
 //----------------------------------------------
 
@@ -426,9 +427,9 @@ private:
 	cVector2f mvGuiSetOffset;
 	cVector3f mvGuiSetStartPos;
 
-	iTexture *mpScreenTexture;
+	Image *mpScreenTexture;
 	cGuiGfxElement *mpScreenGfx;
-	iTexture *mpScreenBgTexture;
+	Image *mpScreenBgTexture;
 	cGuiGfxElement *mpScreenBgGfx;
 
 	cGuiGfxElement* mpFrameHealthCorners[4];

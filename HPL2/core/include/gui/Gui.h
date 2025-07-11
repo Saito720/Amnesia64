@@ -41,6 +41,7 @@ namespace hpl {
 
 	class iGuiMaterial;
 	class iTexture;
+	class Image;
 
 	//------------------------------------------------
 
@@ -113,10 +114,10 @@ namespace hpl {
 											bool abMipMaps=false,
 											bool abAddToList=true);
 		
-		cGuiGfxElement* CreateGfxTexture(	iTexture *apTexture, bool abAutoDestroyTexture, 
+		cGuiGfxElement* CreateGfxTexture(	Image* apTexture, bool abAutoDestroyTexture, 
 											eGuiMaterial aMaterial,
 											const cColor& aColor=cColor(1,1),bool abAddToList=true,
-											const cVector2f& avStartUV=0, const cVector2f& avEndUV=1);
+											const cVector2f& avStartUV=0, const cVector2f& avEndUV=1, bool filpUVY = false);
 		
 		
 		/**

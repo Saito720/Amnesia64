@@ -33,6 +33,7 @@ namespace hpl {
 	class cFrameBitmap;
 	class iTexture;
 	class cFBitmapImage;
+	class Image;
 
 	//----------------------------------------------------
 
@@ -63,7 +64,7 @@ namespace hpl {
 		int GetSourceWidth()const{return mvSourceSize.x;}
 		int GetSourceHeight()const{return mvSourceSize.y;}
 
-		iTexture *GetTexture()const;
+		Image *GetTexture()const;
 
 		cFrameTexture *GetFrameTexture()const{return mpFrameTexture;}
 		cFrameBitmap *GetFrameBitmap()const{return mpFrameBitmap;}

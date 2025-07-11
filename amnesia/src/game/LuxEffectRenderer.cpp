@@ -48,19 +48,19 @@ cLuxEffectRenderer::cLuxEffectRenderer() : iLuxUpdateable("LuxEffectRenderer")
 
 	/////////////////////////////
 	//Get deferred renderer stuff
-	cRendererDeferred *pRendererDeferred = static_cast<cRendererDeferred*>(pGraphics->GetRenderer(eRenderer_Main));
+	//cRendererDeferred *pRendererDeferred = static_cast<cRendererDeferred*>(pGraphics->GetRenderer(eRenderer_Main));
 
-	mpDeferredAccumBuffer = pRendererDeferred->GetAccumBuffer();
+	//mpDeferredAccumBuffer = pRendererDeferred->GetAccumBuffer();
 
 	/////////////////////////////
 	//Create Outline color buffer
-	mpOutlineColorTexture = pGraphics->GetTempFrameBuffer(vScreenSize,ePixelFormat_RGBA,0)->GetColorBuffer(0)->ToTexture();
+	//mpOutlineColorTexture = pGraphics->GetTempFrameBuffer(vScreenSize,ePixelFormat_RGBA,0)->GetColorBuffer(0)->ToTexture();
 
-	mpFrameBufferColor = pGraphics->CreateFrameBuffer("OutlineColor");
-	mpFrameBufferColor->SetDepthStencilBuffer(pRendererDeferred->GetDepthStencilBuffer());
-	mpFrameBufferColor->SetTexture2D(0,mpOutlineColorTexture);
+	//mpFrameBufferColor = pGraphics->CreateFrameBuffer("OutlineColor");
+	////mpFrameBufferColor->SetDepthStencilBuffer(pRendererDeferred->GetDepthStencilBuffer());
+	//mpFrameBufferColor->SetTexture2D(0,mpOutlineColorTexture);
 
-	mpFrameBufferColor->CompileAndValidate();	
+	//mpFrameBufferColor->CompileAndValidate();	
 
 	cParserVarContainer programVars;
 
@@ -104,20 +104,20 @@ cLuxEffectRenderer::cLuxEffectRenderer() : iLuxUpdateable("LuxEffectRenderer")
 
 	///////////////////////////
 	// Load Blur Programs
-	mlBlurSizeDiv = 4;
-	for(int i=0; i<2; ++i)
-	{
-		cParserVarContainer vars;
-		if(i==1) vars.Add("BlurHorisontal");
-		mpBlurProgram[i] = pGraphics->CreateGpuProgramFromShaders("BloomBlur","posteffect_bloom_blur_vtx.glsl", "posteffect_bloom_blur_frag.glsl", &vars);
+	//mlBlurSizeDiv = 4;
+	//for(int i=0; i<2; ++i)
+	//{
+	//	cParserVarContainer vars;
+	//	if(i==1) vars.Add("BlurHorisontal");
+	//	mpBlurProgram[i] = pGraphics->CreateGpuProgramFromShaders("BloomBlur","posteffect_bloom_blur_vtx.glsl", "posteffect_bloom_blur_frag.glsl", &vars);
 
-		if(mpBlurProgram[i])
-			mpBlurProgram[i]->GetVariableAsId("afBlurSize",kVar_afBlurSize);
+	//	if(mpBlurProgram[i])
+	//		mpBlurProgram[i]->GetVariableAsId("afBlurSize",kVar_afBlurSize);
 
-		mpBlurBuffer[i] = pGraphics->GetTempFrameBuffer(vScreenSize/mlBlurSizeDiv,ePixelFormat_RGBA,i);
-		if(mpBlurBuffer[i])
-			mpBlurTexture[i] = mpBlurBuffer[i]->GetColorBuffer(0)->ToTexture();
-	}
+	//	mpBlurBuffer[i] = pGraphics->GetTempFrameBuffer(vScreenSize/mlBlurSizeDiv,ePixelFormat_RGBA,i);
+	//	if(mpBlurBuffer[i])
+	//		mpBlurTexture[i] = mpBlurBuffer[i]->GetColorBuffer(0)->ToTexture();
+	//}
 
 
 	///////////////////////////

@@ -26,6 +26,9 @@
 
 #include "graphics/Color.h"
 
+#define ML_NAMESPACE 
+#include <ml.h>
+
 namespace hpl {
 
 	//---------------------------------------------
@@ -39,7 +42,28 @@ namespace hpl {
 	class cMath
 	{
 	public:
-		 //////////////////////////////////////////////////////
+		static ml::float4x4 ToFloat4x4(const cMatrixf& mat) {
+			return ml::float4x4 (
+				mat.m[0][0], mat.m[1][0], mat.m[2][0], mat.m[3][0],
+				mat.m[0][1], mat.m[1][1], mat.m[2][1], mat.m[3][1],
+				mat.m[0][2], mat.m[1][2], mat.m[2][2], mat.m[3][2],
+				mat.m[0][3], mat.m[1][3], mat.m[2][3], mat.m[3][3]
+			);
+		}
+
+    static ml::float3 ToFloat3(const cVector3f& vec) {
+        return ml::float3(vec.x, vec.y, vec.z);
+    }
+
+    static ml::float2 ToFloat2(const cVector2f& vec) {
+        return ml::float2(vec.x, vec.y);
+    }
+
+    static ml::float4 ToFloat4(const cColor& vec) {
+        return ml::float4(vec.r, vec.g, vec.b, vec.a);
+    }
+
+		//////////////////////////////////////////////////////
 		////////// RANDOM GENERATION ////////////////////////
 		//////////////////////////////////////////////////////
 		/**

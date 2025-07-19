@@ -1,5 +1,6 @@
 #include "gui/ImGuiHPL.h"
 
+#include <imgui.h>
 #include "impl/imgui_impl_sdl2.h"
 #include "impl/imgui_impl_opengl3.h"
 

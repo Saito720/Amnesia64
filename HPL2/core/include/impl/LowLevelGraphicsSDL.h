@@ -179,6 +179,7 @@ namespace hpl {
 		void WaitAndFinishRendering();
 		void FlushRendering();
 		void SwapBuffers();
+		void RenderImGuiFrame();
 		
 		void SetCurrentFrameBuffer(iFrameBuffer* apFrameBuffer, const cVector2l &avPos = 0, const cVector2l& avSize = -1);
 		iFrameBuffer* GetCurrentFrameBuffer() { return mpFrameBuffer; }
@@ -313,6 +314,7 @@ namespace hpl {
 		CGcontext GetGC_Context(){ return mCG_Context;}
 #endif
 		void SetupGL();
+		void SetupImGui();
 
 	private:
         cVector2l mvScreenSize;

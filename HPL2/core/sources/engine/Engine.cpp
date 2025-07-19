@@ -26,6 +26,7 @@
 #include "resources/Resources.h"
 #include "graphics/Graphics.h"
 #include "gui/Gui.h"
+#include "gui/ImGuiHPL.h"
 #include "haptic/Haptic.h"
 #include "scene/Scene.h"
 #include "generate/Generate.h"
@@ -249,6 +250,7 @@ namespace hpl {
 
 		Log(" Creating gui module\n");
 		mpGui = hplNew(cGui,());
+		mpImGui = hplNew(cImGui,());
 
 		Log(" Creating generate module\n");
 		mpGenerate = hplNew(cGenerate,());
@@ -325,6 +327,7 @@ namespace hpl {
 		mpUpdater->AddGlobalUpdate(mpSound);
 		mpUpdater->AddGlobalUpdate(mpAI);
 		mpUpdater->AddGlobalUpdate(mpGui);
+		mpUpdater->AddGlobalUpdate(mpImGui);
 		mpUpdater->AddGlobalUpdate(mpResources);
 		if(mpHaptic) mpUpdater->AddGlobalUpdate(mpHaptic);
 

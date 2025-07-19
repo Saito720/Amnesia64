@@ -40,6 +40,7 @@ namespace hpl {
 	class cAI;
 	class cHaptic;
 	class cGui;
+	class cImGui;
 	class cGenerate;
 	class cEngine;
 	class cEngineInitVars;
@@ -125,6 +126,7 @@ namespace hpl {
 		cPhysics* GetPhysics(){ return mpPhysics;}
 		cAI* GetAI(){ return mpAI;}
 		cGui* GetGui(){ return mpGui;}
+		cImGui* GetImGui(){ return mpImGui;}
 		cHaptic* GetHaptic(){ return mpHaptic;}
 		cGenerate* GetGenerate(){ return mpGenerate;}
 		
@@ -235,6 +237,7 @@ namespace hpl {
 		cAI *mpAI;
 		cHaptic *mpHaptic;
 		cGui *mpGui;
+		cImGui *mpImGui;
 		cGenerate* mpGenerate;
 	};
 

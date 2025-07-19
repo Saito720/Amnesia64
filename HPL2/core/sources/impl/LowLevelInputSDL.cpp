@@ -23,6 +23,7 @@
 #include "impl/KeyboardSDL.h"
 #include "impl/GamepadSDL.h"
 #include "impl/GamepadSDL2.h"
+#include "impl/imgui_impl_sdl2.h"
 
 #include "system/LowLevelSystem.h"
 #include "graphics/LowLevelGraphics.h"
@@ -147,10 +148,12 @@ namespace hpl {
             if (sdlEvent.type==SDL_QUIT)
             {
                 mbQuitMessagePosted = true;
-            } else
-				mlstEvents.push_back(sdlEvent);
-		}
-	}
+            } else {
+                mlstEvents.push_back(sdlEvent);
+                ImGui_ImplSDL2_ProcessEvent(&sdlEvent);
+            }
+        }
+    }
 	
 	//-----------------------------------------------------------------------
 

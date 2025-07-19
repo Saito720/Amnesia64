@@ -45,6 +45,8 @@
 #include "impl/VertexBufferOGL_VBO.h"
 #include "impl/FrameBufferGL.h"
 #include "impl/OcclusionQueryOGL.h"
+#include "impl/imgui_impl_sdl2.h"
+#include "impl/imgui_impl_opengl3.h"
 
 #include "graphics/Bitmap.h"
 
@@ -158,7 +160,12 @@ namespace hpl {
 #if SDL_VERSION_ATLEAST(2, 0, 0)
         SDL_DestroyWindow(mpScreen);
 #endif
-	}
+
+        //ImGui
+        ImGui_ImplOpenGL3_Shutdown();
+        ImGui_ImplSDL2_Shutdown();
+        ImGui::DestroyContext();
+    }
 
 	//-----------------------------------------------------------------------
 
@@ -358,6 +365,10 @@ namespace hpl {
 		Log(" Setting up OpenGL\n");
 		SetupGL();
 
+		//ImGui
+		Log(" Setting up ImGui\n");
+		SetupImGui();
+
 #if SDL_VERSION_ATLEAST(2, 0, 0)
         SDL_GL_SwapWindow(mpScreen);
 #else
@@ -524,6 +535,16 @@ namespace hpl {
 		Log("  OGL ATIFragmentShader: %d\n",GetCaps(eGraphicCaps_OGL_ATIFragmentShader));
 
 	}
+	//-----------------------------------------------------------------------
+
+	void cLowLevelGraphicsSDL::SetupImGui()
+	{
+		ImGui::CreateContext();
+		ImGui_ImplSDL2_InitForOpenGL(mpScreen, mGLContext);
+		ImGui_ImplOpenGL3_Init();
+		ImGui::StyleColorsDark();
+	}
+
 	//-----------------------------------------------------------------------
 
 	int cLowLevelGraphicsSDL::GetCaps(eGraphicCaps aType)

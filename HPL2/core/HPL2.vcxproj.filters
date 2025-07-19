@@ -73,6 +73,9 @@
     <Filter Include="Resources">
       <UniqueIdentifier>{0276fcca-4f7b-4ed6-9450-82896f0b1ffc}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Gui\imgui">
+      <UniqueIdentifier>{43beebc3-73b4-41b5-849d-4708edf62c17}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\system\BinTree.h">
@@ -1063,6 +1066,36 @@
     <ClInclude Include="include\impl\GamepadSDL2.h">
       <Filter>Impl\Input</Filter>
     </ClInclude>
+    <ClInclude Include="include\impl\imgui_impl_sdl2.h">
+      <Filter>Impl\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\imgui\imconfig.h">
+      <Filter>Gui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\imgui\imgui.h">
+      <Filter>Gui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\imgui\imgui_internal.h">
+      <Filter>Gui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\imgui\imstb_rectpack.h">
+      <Filter>Gui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\imgui\imstb_textedit.h">
+      <Filter>Gui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\imgui\imstb_truetype.h">
+      <Filter>Gui\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="include\impl\imgui_impl_opengl3.h">
+      <Filter>Impl\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="include\impl\imgui_impl_opengl3_loader.h">
+      <Filter>Impl\Graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="include\gui\ImGuiHPL.h">
+      <Filter>Gui</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="sources\system\Container.cpp">
@@ -1937,6 +1970,30 @@
     </ClCompile>
     <ClCompile Include="sources\impl\GamepadSDL2.cpp">
       <Filter>Impl\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\impl\imgui_impl_sdl2.cpp">
+      <Filter>Impl\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\sources\imgui\imgui.cpp">
+      <Filter>Gui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\sources\imgui\imgui_demo.cpp">
+      <Filter>Gui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\sources\imgui\imgui_draw.cpp">
+      <Filter>Gui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\sources\imgui\imgui_tables.cpp">
+      <Filter>Gui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\sources\imgui\imgui_widgets.cpp">
+      <Filter>Gui\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\impl\imgui_impl_opengl3.cpp">
+      <Filter>Impl\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\gui\ImGuiHPL.cpp">
+      <Filter>Gui</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

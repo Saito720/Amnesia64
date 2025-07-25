@@ -1025,12 +1025,42 @@ void cLuxMainMenu_Options::AddSoundOptions(cWidgetTab* apTab)
 	//mpLVolume = mpGuiSet->CreateWidgetLabel(cVector3f(mpSVolume->GetSize().x*0.5f,2,1), -1, _W(""), mpSVolume);
 	//mpLVolume->SetTextAlign(eFontAlign_Center);
 
-	mpCBSndDevice->SetFocusNavigation(eUIArrow_Down, mpSVolume);
+	vPos.y += mpSVolume->GetSize().y + 38;
 
+	/////////////////////////////
+	// HRTF
+	mpChBHRTF = mpGuiSet->CreateWidgetCheckBox(vPos, 0, _W("OpenAL Soft HRTF"), apTab);
+
+	// Tip translations (This is not ideal, but it prevents needing to ship the external language files.)
+	tString sCurrentLang = gpBase->GetCurrentLanguage();
+	tWString sHRTFTip;
+
+	if (sCurrentLang == "brazilian_portuguese.lang")
+		sHRTFTip = cString::ParseUnicodeString("[u68][u101][u115][u97][u98][u105][u108][u105][u116][u97][u114][u32][u105][u115][u115][u111][u32][u112][u111][u100][u101][u32][u114][u101][u115][u111][u108][u118][u101][u114][u32][u112][u114][u111][u98][u108][u101][u109][u97][u115][u32][u100][u101][u32][u225][u117][u100][u105][u111][u32][u101][u109][u32][u97][u108][u103][u117][u109][u97][u115][u32][u99][u111][u110][u102][u105][u103][u117][u114][u97][u231][u245][u101][u115][u46]");
+	else if (sCurrentLang == "chinese.lang")
+		sHRTFTip = cString::ParseUnicodeString("[u31105][u30008][u27492][u21151][u33021][u21487][u20197][u35299][u20915][u26578][u20123][u35774][u32622][u19978][u30340][u38899][u39057][u38382][u39064][u12290]");
+	else if (sCurrentLang == "french.lang")
+		sHRTFTip = cString::ParseUnicodeString("[u76][u97][u32][u100][u233][u115][u97][u99][u116][u105][u118][u97][u116][u105][u111][u110][u32][u100][u101][u32][u99][u101][u116][u116][u101][u32][u111][u112][u116][u105][u111][u110][u32][u112][u101][u117][u116][u32][u114][u233][u115][u111][u117][u100][u114][u101][u32][u108][u101][u115][u32][u112][u114][u111][u98][u108][u232][u109][u101][u115][u32][u97][u117][u100][u105][u111][u32][u115][u117][u114][u32][u99][u101][u114][u116][u97][u105][u110][u101][u115][u32][u99][u111][u110][u102][u105][u103][u117][u114][u97][u116][u105][u111][u110][u115][u46]");
+	else if (sCurrentLang == "german.lang")
+		sHRTFTip = cString::ParseUnicodeString("[u68][u117][u114][u99][u104][u32][u68][u101][u97][u107][u116][u105][u118][u105][u101][u114][u101][u110][u32][u100][u105][u101][u115][u101][u114][u32][u79][u112][u116][u105][u111][u110][u32][u107][u246][u110][u110][u101][u110][u32][u98][u101][u105][u32][u101][u105][u110][u105][u103][u101][u110][u32][u83][u101][u116][u117][u112][u115][u32][u65][u117][u100][u105][u111][u112][u114][u111][u98][u108][u101][u109][u101][u32][u98][u101][u104][u111][u98][u101][u110][u32][u119][u101][u114][u100][u101][u110][u46]");
+	else if (sCurrentLang == "italian.lang")
+		sHRTFTip = cString::ParseUnicodeString("[u68][u105][u115][u97][u116][u116][u105][u118][u97][u110][u100][u111][u32][u113][u117][u101][u115][u116][u97][u32][u111][u112][u122][u105][u111][u110][u101][u32][u232][u32][u112][u111][u115][u115][u105][u98][u105][u108][u101][u32][u114][u105][u115][u111][u108][u118][u101][u114][u101][u32][u105][u32][u112][u114][u111][u98][u108][u101][u109][u105][u32][u97][u117][u100][u105][u111][u32][u105][u110][u32][u97][u108][u99][u117][u110][u101][u32][u99][u111][u110][u102][u105][u103][u117][u114][u97][u122][u105][u111][u110][u105][u46]");
+	else if (sCurrentLang == "russian.lang")
+		sHRTFTip = cString::ParseUnicodeString("[u1054][u1090][u1082][u1083][u1102][u1095][u1077][u1085][u1080][u1077][u32][u1101][u1090][u1086][u1081][u32][u1092][u1091][u1085][u1082][u1094][u1080][u1080][u32][u1084][u1086][u1078][u1077][u1090][u32][u1088][u1077][u1096][u1080][u1090][u1100][u32][u1087][u1088][u1086][u1073][u1083][u1077][u1084][u1099][u32][u1089][u1086][u32][u1079][u1074][u1091][u1082][u1086][u1084][u32][u1074][u32][u1085][u1077][u1082][u1086][u1090][u1086][u1088][u1099][u1093][u32][u1082][u1086][u1085][u1092][u1080][u1075][u1091][u1088][u1072][u1094][u1080][u1103][u1093][u46]");
+	else if (sCurrentLang == "spanish.lang")
+		sHRTFTip = _W("Deshabilitar esto puede resolver problemas de audio en algunas configuraciones.");
+	else
+		sHRTFTip = _W("Disabling this can resolve audio issues on some setups."); // English default
+
+	SetUpInput(NULL, mpChBHRTF, true, sHRTFTip);
+
+	mpCBSndDevice->SetFocusNavigation(eUIArrow_Down, mpSVolume);
 	mpSVolume->SetFocusNavigation(eUIArrow_Up, mpCBSndDevice);
-	mpSVolume->SetFocusNavigation(eUIArrow_Down, mpBOK);
+	mpSVolume->SetFocusNavigation(eUIArrow_Down, mpChBHRTF);
+	mpChBHRTF->SetFocusNavigation(eUIArrow_Up, mpSVolume);
+	mpChBHRTF->SetFocusNavigation(eUIArrow_Down, mpBOK);
 	
-	apTab->SetUserData(mpSVolume);
+	apTab->SetUserData(mpChBHRTF);
 	apTab->GetTabLabel()->SetUserData(mpCBSndDevice);
 
 	PopulateSoundDevices();
@@ -1334,6 +1364,8 @@ void cLuxMainMenu_Options::SetInputValues(cResourceVarsObject& aObj)
         mpCBSndDevice->SetSelectedItem(mpCBSndDevice->GetItemNum()-1, true, false);
 	else
 		mpCBSndDevice->SetSelectedItem(lSndDevIdx, true, false);
+
+	mpChBHRTF->SetChecked(aObj.GetVarBool("HRTFActive"), false);
 #endif
 
 	mbSettingInitialValues = false;
@@ -1513,10 +1545,11 @@ void cLuxMainMenu_Options::ApplyChanges()
 	gpBase->mpInputHandler->SetInvertGamepadLook(mpChBGamepadInvertLook->IsChecked());
 #endif
 
-	/*
 	/////////////////////////////
     // Sound
-	gpBase->mpEngine->GetSound()->GetLowLevel()->SetVolume(GetVolume());
+	pCfgHdr->mbHRTFActive = mpChBHRTF->IsChecked();
+	
+	/* gpBase->mpEngine->GetSound()->GetLowLevel()->SetVolume(GetVolume());
 	cWidgetItem* pItem = mpCBSndDevice->GetItem(mpCBSndDevice->GetSelectedItem());
 	if(pItem)
 	{
@@ -1811,6 +1844,7 @@ void cLuxMainMenu_Options::DumpInitialValues(cResourceVarsObject &aObj)
 	// Sound
 	aObj.AddVarFloat("SoundVolume", gpBase->mpEngine->GetSound()->GetLowLevel()->GetVolume());
 	aObj.AddVarInt("SoundDeviceID", gpBase->mpConfigHandler->mlSoundDevID);
+	aObj.AddVarBool("HRTFActive", gpBase->mpConfigHandler->mbHRTFActive);
 }
 
 //-----------------------------------------------------------------------

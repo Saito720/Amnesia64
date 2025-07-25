@@ -16,10 +16,13 @@
 #include "OpenAL/OAL_Filter.h"
 #include "OpenAL/OAL_Effect_Reverb.h"
 
+#include "AL/alext.h"
+
 #include "system/String.h"
 #include "system/LowLevelSystem.h"
 #include <algorithm>
 #include <cstring>
+#include <vector>
 
 //-------------------------------------------------------------------------
 
@@ -108,7 +111,7 @@ bool cOAL_Device::Init( cOAL_Init_Params& acParams )
 		}
 	}
 
-	ALCint lAttrList[] = 
+	/* ALCint lAttrList[] =
 	{
 		ALC_FREQUENCY,		acParams.mlOutputFreq,
 		#ifdef __APPLE__
@@ -118,11 +121,32 @@ bool cOAL_Device::Init( cOAL_Init_Params& acParams )
 		#endif
 		ALC_MAX_AUXILIARY_SENDS, acParams.mlNumSendsHint,
 		0,
-	};
+	}; */
 
-	LogMsg("",eOAL_LogVerbose_Low, eOAL_LogMsg_Info, "Creating context\n");
-	// Create and set a context
-	mpContext = RUN_ALC_FUNC(alcCreateContext ( mpDevice, lAttrList ));
+	std::vector<ALCint> attributes;
+
+	attributes.push_back(ALC_FREQUENCY);
+	attributes.push_back(acParams.mlOutputFreq);
+
+#ifndef __APPLE__
+	attributes.push_back(ALC_MONO_SOURCES);
+	attributes.push_back(acParams.mbVoiceManagement ? 256 : acParams.mlMinMonoSourcesHint);
+	attributes.push_back(ALC_STEREO_SOURCES);
+	attributes.push_back(acParams.mbVoiceManagement ? 0 : acParams.mlMinStereoSourcesHint);
+#endif
+
+	attributes.push_back(ALC_MAX_AUXILIARY_SENDS);
+	attributes.push_back(acParams.mlNumSendsHint);
+
+	if (acParams.mbUseHRTF)
+	{
+		attributes.push_back(ALC_HRTF_SOFT);
+		attributes.push_back(ALC_TRUE);
+	}
+	attributes.push_back(0);
+
+	LogMsg("", eOAL_LogVerbose_Low, eOAL_LogMsg_Info, "Creating context\n");
+	mpContext = RUN_ALC_FUNC(alcCreateContext(mpDevice, attributes.data()));
 
 	RUN_ALC_FUNC(alcMakeContextCurrent ( mpContext ));
 

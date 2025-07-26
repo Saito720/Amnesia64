@@ -138,10 +138,10 @@ bool cOAL_Device::Init( cOAL_Init_Params& acParams )
 	attributes.push_back(ALC_MAX_AUXILIARY_SENDS);
 	attributes.push_back(acParams.mlNumSendsHint);
 
-	if (acParams.mbUseHRTF)
+	if (!acParams.mbUseHRTF)
 	{
 		attributes.push_back(ALC_HRTF_SOFT);
-		attributes.push_back(ALC_TRUE);
+		attributes.push_back(ALC_FALSE);
 	}
 	attributes.push_back(0);
 

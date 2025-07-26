@@ -1945,6 +1945,7 @@ void cLuxMainMenu_Options::DumpCurrentValues(cResourceVarsObject &aObj)
 	}
 
 	aObj.AddVarInt("SoundDeviceID", lDevID);			
+	aObj.AddVarBool("HRTFActive", mpChBHRTF->IsChecked());
 }
 
 

@@ -101,6 +101,7 @@ enum eLuxInputState
 	eLuxInputState_Inventory,
 	eLuxInputState_Journal,
 	eLuxInputState_Debug,
+	eLuxInputState_Console,
 	eLuxInputState_PreMenu,
 	eLuxInputState_Credits,
 	eLuxInputState_DemoEnd,
@@ -391,6 +392,7 @@ enum eLuxAction
 	eLuxAction_UIClear,
 
 	eLuxAction_OpenDebug,
+	eLuxAction_OpenConsole,
 	eLuxAction_ReloadMap,
 	eLuxAction_QuickSave,
 	eLuxAction_QuickLoad,

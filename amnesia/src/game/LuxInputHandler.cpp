@@ -75,6 +75,7 @@ static cLuxAction gvLuxActions[] =
 	cLuxAction("UIClear", eLuxAction_UIClear,		false, eLuxActionCategory_System),
 
 	cLuxAction("OpenDebug",eLuxAction_OpenDebug,	false, eLuxActionCategory_System),
+	cLuxAction("OpenConsole",eLuxAction_OpenConsole,	false, eLuxActionCategory_System),
 	cLuxAction("ReloadMap",eLuxAction_ReloadMap,	false, eLuxActionCategory_System),
 	cLuxAction("QuickSave",eLuxAction_QuickSave,	false, eLuxActionCategory_System),
 	cLuxAction("QuickLoad",eLuxAction_QuickLoad,	false, eLuxActionCategory_System),
@@ -184,6 +185,7 @@ static cLuxInput gvLuxInputs[] =
 	cLuxInput("Keyboard", eKey_Return, eLuxAction_UIPrimary),
 
 	cLuxInput("Keyboard", eKey_F1, eLuxAction_OpenDebug),
+	cLuxInput("Keyboard", eKey_1, eLuxAction_OpenConsole),
 	cLuxInput("Keyboard", eKey_F2, eLuxAction_ReloadMap),
 	cLuxInput("Keyboard", eKey_F4, eLuxAction_QuickSave),
 	cLuxInput("Keyboard", eKey_F5, eLuxAction_QuickLoad),
@@ -322,6 +324,7 @@ cLuxInputHandler::cLuxInputHandler() : iLuxUpdateable("LuxInputHandler")
 	// Get needed engine modules
 	mpInput = gpBase->mpEngine->GetInput();
 	mpGraphics = gpBase->mpEngine->GetGraphics();
+	mpImGui = gpBase->mpEngine->GetImGui();
 
 	////////////////////////////////////
 	// Game settings init
@@ -501,6 +504,8 @@ void cLuxInputHandler::Update(float afTimeStep)
 	case eLuxInputState_Journal: UpdateJournalInput(); break;
 	//Debug
 	case eLuxInputState_Debug: UpdateDebugInput(); break;
+	//ImGui Console
+	case eLuxInputState_Console: UpdateConsoleInput(); break;
 	//Credits
 	case eLuxInputState_Credits: UpdateCreditsInput(); break;
 	//Demo End
@@ -915,6 +920,17 @@ void cLuxInputHandler::UpdateGameInput()
 	if(mpInput->BecameTriggerd(eLuxAction_OpenDebug))
 	{
 		gpBase->mpDebugHandler->SetDebugWindowActive(true);
+	}
+	//ImGui Console
+	if (mpInput->BecameTriggerd(eLuxAction_OpenConsole))
+	{
+		mpImGui->SetConsoleActive(true);
+		gpBase->mpInputHandler->ChangeState(eLuxInputState_Console);
+
+		if (gpBase->mpConfigHandler->mbFullscreen == false) {
+			mpInput->GetLowLevel()->LockInput(false);
+			mpInput->GetLowLevel()->RelativeMouse(false);
+		}
 	}
 	if(mpInput->BecameTriggerd(eLuxAction_ReloadMap) && gpBase->mpConfigHandler->mbLoadDebugMenu)
 	{
@@ -1385,6 +1401,22 @@ void cLuxInputHandler::UpdateDebugInput()
 	if(mpInput->BecameTriggerd(eLuxAction_OpenDebug))
 	{
 		gpBase->mpDebugHandler->SetDebugWindowActive(false);
+	}
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxInputHandler::UpdateConsoleInput()
+{
+	if (mpInput->BecameTriggerd(eLuxAction_OpenConsole))
+	{
+		mpImGui->SetConsoleActive(false);
+		gpBase->mpInputHandler->ChangeState(eLuxInputState_Game);
+
+		if (gpBase->mpConfigHandler->mbFullscreen == false) {
+			mpInput->GetLowLevel()->LockInput(true);
+			mpInput->GetLowLevel()->RelativeMouse(true);
+		}
 	}
 }
 

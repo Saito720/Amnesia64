@@ -52,6 +52,8 @@ class cLuxProgressLogHandler;
 class cLuxLoadScreenHandler;
 class iLuxAchievementHandler;
 
+class cLuxMultiplayer;
+
 class cLuxInventory;
 
 class cLuxCredits;
@@ -242,6 +244,7 @@ public:
 	cLuxCredits *mpCredits;
 	cLuxDemoEnd* mpDemoEnd;
 	iLuxAchievementHandler* mpAchievementHandler;
+	cLuxMultiplayer* mpMultiplayer;
 
 	tString msGameName;
 	tWString msErrorMessage;

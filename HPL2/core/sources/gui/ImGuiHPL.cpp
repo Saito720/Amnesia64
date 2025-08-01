@@ -5,21 +5,58 @@
 #include "impl/imgui_impl_opengl3.h"
 
 namespace hpl {
-	cImGui::cImGui() : iUpdateable("ImGui_HPL") {}
+	cImGui::cImGui() : iUpdateable("ImGui_HPL")
+	{
+		mbConsoleActive = false;
+		strcpy_s(msAddress, sizeof(msAddress), "localhost");
+		mlPort = 1234;
+		mbSessionActive = false;
+		mbHost = false;
+		mbJoin = false;
+		mbDisconnect = false;
+	}
 
 	cImGui::~cImGui() {}
 
 	void cImGui::OnPostRender(float afFrameTime)
 	{
-		ImGui_ImplOpenGL3_NewFrame();
-		ImGui_ImplSDL2_NewFrame();
-		ImGui::NewFrame();
+		mbHost = false;
+		mbJoin = false;
+		mbDisconnect = false;
 
-		ImGui::Begin("HPL2 Engine Debug");
-		ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-		ImGui::End();
-		ImGui::Render();
+		if (mbConsoleActive)
+		{
+			ImGui_ImplOpenGL3_NewFrame();
+			ImGui_ImplSDL2_NewFrame();
+			ImGui::NewFrame();
 
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+			ImGui::SetNextWindowSize(ImVec2(400, 250), ImGuiCond_Once);
+			ImGui::Begin("Multiplayer Game");
+			ImGui::BeginDisabled(mbSessionActive);
+			{
+				ImGui::InputText("Address", msAddress, sizeof(msAddress));
+				ImGui::InputInt("Port", &mlPort, 0);
+
+				if (ImGui::Button("Host")) {
+					mbHost = true;
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("Join")) {
+					mbJoin = true;
+				}
+			}
+			ImGui::EndDisabled();
+
+			if (mbSessionActive) {
+				ImGui::SameLine();
+				if (ImGui::Button("Disconnect")) {
+					mbDisconnect = true;
+				}
+			}
+
+			ImGui::End();
+			ImGui::Render();
+			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+		}
 	}
 }

@@ -155,6 +155,15 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\dependencies\include\enet\callbacks.h" />
+    <ClInclude Include="..\dependencies\include\enet\enet.h" />
+    <ClInclude Include="..\dependencies\include\enet\list.h" />
+    <ClInclude Include="..\dependencies\include\enet\protocol.h" />
+    <ClInclude Include="..\dependencies\include\enet\time.h" />
+    <ClInclude Include="..\dependencies\include\enet\types.h" />
+    <ClInclude Include="..\dependencies\include\enet\unix.h" />
+    <ClInclude Include="..\dependencies\include\enet\utility.h" />
+    <ClInclude Include="..\dependencies\include\enet\win32.h" />
     <ClInclude Include="..\dependencies\include\imgui\imconfig.h" />
     <ClInclude Include="..\dependencies\include\imgui\imgui.h" />
     <ClInclude Include="..\dependencies\include\imgui\imgui_internal.h" />
@@ -174,6 +183,13 @@
     <ClInclude Include="include\input\ActionGamepadButton.h" />
     <ClInclude Include="include\input\ActionGamepadHat.h" />
     <ClInclude Include="include\input\Gamepad.h" />
+    <ClInclude Include="include\networking\Client.h" />
+    <ClInclude Include="include\networking\ENetHPL.h" />
+    <ClInclude Include="include\networking\MultiplayerHandler.h" />
+    <ClInclude Include="include\networking\NetworkTypes.h" />
+    <ClInclude Include="include\networking\Peer.h" />
+    <ClInclude Include="include\networking\Server.h" />
+    <ClInclude Include="include\networking\Session.h" />
     <ClInclude Include="include\system\BinTree.h" />
     <ClInclude Include="include\system\Container.h" />
     <ClInclude Include="include\system\LogicTimer.h" />
@@ -514,6 +530,11 @@
     <ClCompile Include="sources\input\ActionGamepadButton.cpp" />
     <ClCompile Include="sources\input\ActionGamepadHat.cpp" />
     <ClCompile Include="sources\input\Gamepad.cpp" />
+    <ClCompile Include="sources\networking\Client.cpp" />
+    <ClCompile Include="sources\networking\ENetHPL.cpp" />
+    <ClCompile Include="sources\networking\Peer.cpp" />
+    <ClCompile Include="sources\networking\Server.cpp" />
+    <ClCompile Include="sources\networking\Session.cpp" />
     <ClCompile Include="sources\system\Container.cpp" />
     <ClCompile Include="sources\system\LogicTimer.cpp" />
     <ClCompile Include="sources\system\MemoryManager.cpp" />

@@ -138,6 +138,7 @@ private:
 	void UpdateInventoryInput();
 	void UpdateJournalInput();
 	void UpdateDebugInput();
+	void UpdateConsoleInput();
 	void UpdateCreditsInput();
 	void UpdateDemoEndInput();
 	void UpdateLoadScreenInput();
@@ -160,6 +161,7 @@ private:
 
 	cGraphics *mpGraphics;
 	cInput *mpInput;
+	cImGui *mpImGui;
 
 	cLuxPlayer *mpPlayer;
 

@@ -94,6 +94,8 @@
 #include "math/PidController.h"
 #include "math/CRC.h"
 
+#include "networking/MultiplayerHandler.h"
+
 #include "resources/Resources.h"
 #include "resources/LowLevelResources.h"
 #include "resources/FileSearcher.h"
@@ -183,6 +185,7 @@
 #include "gui/GuiMaterial.h"
 #include "gui/GuiGfxElement.h"
 #include "gui/GuiPopUp.h"
+#include "gui/ImGuiHPL.h"
 #include "gui/Widget.h"
 #include "gui/WidgetWindow.h"
 #include "gui/WidgetFrame.h"

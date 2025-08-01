@@ -41,6 +41,9 @@ namespace hpl {
 	class cHaptic;
 	class cGui;
 	class cImGui;
+	class cENet;
+	class cSession;
+	class iMultiplayerHandler;
 	class cGenerate;
 	class cEngine;
 	class cEngineInitVars;
@@ -115,6 +118,8 @@ namespace hpl {
 		 */
 		void Exit();
 		bool GetGameIsDone();
+
+		void SetMultiplayerHandler(iMultiplayerHandler* apHandler);
 		
 		cScene* GetScene(){ return mpScene;}
 		cResources* GetResources(){ return mpResources;}
@@ -238,6 +243,9 @@ namespace hpl {
 		cHaptic *mpHaptic;
 		cGui *mpGui;
 		cImGui *mpImGui;
+		cENet *mpENet;
+		cSession *mpSession;
+		iMultiplayerHandler *mpMultiplayerHandler;
 		cGenerate* mpGenerate;
 	};
 

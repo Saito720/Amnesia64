@@ -27,6 +27,8 @@
 #include "graphics/Graphics.h"
 #include "gui/Gui.h"
 #include "gui/ImGuiHPL.h"
+#include "networking/ENetHPL.h"
+#include "networking/Session.h"
 #include "haptic/Haptic.h"
 #include "scene/Scene.h"
 #include "generate/Generate.h"
@@ -252,6 +254,10 @@ namespace hpl {
 		mpGui = hplNew(cGui,());
 		mpImGui = hplNew(cImGui,());
 
+		Log(" Creating networking module\n");
+		mpENet = hplNew(cENet,());
+		mpSession = NULL;
+
 		Log(" Creating generate module\n");
 		mpGenerate = hplNew(cGenerate,());
 
@@ -378,6 +384,9 @@ namespace hpl {
 		hplDelete(mpUpdater);
 		
 		hplDelete(mpGui);
+		hplDelete(mpImGui);
+		if(mpSession != NULL) hplDelete(mpSession);
+		hplDelete(mpENet);
 		hplDelete(mpGenerate);
 		hplDelete(mpScene);
 		if(mpHaptic) hplDelete(mpHaptic);
@@ -488,6 +497,17 @@ namespace hpl {
 				
 					//Increase game time.
 					mfGameTime += GetStepSize();
+
+					if (mpSession != NULL)
+					{
+						mpSession->Update();
+					}
+
+					if (mpSession && mpSession->IsPendingKill())
+					{
+						hplDelete(mpSession);
+						mpSession = NULL;
+					}
 				}
 				mpLogicTimer->EndUpdateLoop();
 			}
@@ -545,6 +565,58 @@ namespace hpl {
 				START_TIMING(PostRender)
 				mpUpdater->RunMessage(eUpdateableMessage_OnPostRender, mfFrameTime);
 				STOP_TIMING(PostRender)
+
+				if (mpImGui != NULL)
+				{
+					mpImGui->SetSessionStatus(mpSession != NULL);
+
+					if (mpImGui->ShouldDisconnect())
+					{
+						if (mpSession != NULL)
+						{
+							if (mpMultiplayerHandler)
+							{
+								mpMultiplayerHandler->OnSessionExit();
+							}
+
+							mpSession->Disconnect();
+						}
+					}
+					else if (mpImGui->ShouldHost())
+					{
+						if (mpSession != NULL) hplDelete(mpSession);
+						mpSession = hplNew(cSession, (eSessionType_Host, "", mpImGui->GetPort()));
+
+						if (mpSession && mpSession->IsValid())
+						{
+							mpSession->SetMultiplayerHandler(mpMultiplayerHandler);
+							mpMultiplayerHandler->OnSessionStart(eSessionType_Host);
+						}
+						else
+						{
+							Error("  Failed to create host session.\n");
+							hplDelete(mpSession);
+							mpSession = NULL;
+						}
+					}
+					else if (mpImGui->ShouldJoin())
+					{
+						if (mpSession != NULL) hplDelete(mpSession);
+						mpSession = hplNew(cSession, (eSessionType_Client, mpImGui->GetAddress(), mpImGui->GetPort()));
+
+						if (mpSession && mpSession->IsValid())
+						{
+							mpSession->SetMultiplayerHandler(mpMultiplayerHandler);
+							mpMultiplayerHandler->OnSessionStart(eSessionType_Client);
+						}
+						else
+						{
+							Error("  Failed to create and connect client session.\n");
+							hplDelete(mpSession);
+							mpSession = NULL;
+						}
+					}
+				}
 				
 				START_TIMING(FlushRender)
 				mpGraphics->GetLowLevel()->FlushRendering();
@@ -598,6 +670,13 @@ namespace hpl {
 
 		return bDone;
 	}
+	//-----------------------------------------------------------------------
+
+	void cEngine::SetMultiplayerHandler(iMultiplayerHandler* apHandler)
+	{
+		mpMultiplayerHandler = apHandler;
+	}
+
 	//-----------------------------------------------------------------------
 
 	void cEngine::ResetLogicTimer()

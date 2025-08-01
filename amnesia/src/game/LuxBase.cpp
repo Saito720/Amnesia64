@@ -43,6 +43,8 @@
 #include "LuxProgressLogHandler.h"
 #include "LuxLoadScreenHandler.h"
 
+#include "LuxMultiplayer.h"
+
 #include "LuxInventory.h"
 
 #include "LuxCredits.h"
@@ -1266,6 +1268,11 @@ bool cLuxBase::InitGame()
 	mpSaveHandler = CreateGlobalModule( cLuxSaveHandler);
 	mpScriptHandler = CreateGlobalModule( cLuxScriptHandler);
 	mpProgressLogHandler = CreateGlobalModule( cLuxProgressLogHandler);
+	mpMultiplayer = (cLuxMultiplayer*)AddGlobalModule(hplNew(cLuxMultiplayer, ()));
+	if (mpEngine && mpMultiplayer)
+	{
+		mpEngine->SetMultiplayerHandler(mpMultiplayer);
+	}
 	
 	//Default
 	mpMapHandler = CreateModule( cLuxMapHandler, "Default");

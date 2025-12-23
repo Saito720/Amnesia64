@@ -71,7 +71,7 @@ namespace hpl {
 
 	GLenum PixelFormatToGLFormat(ePixelFormat aFormat);
 	GLenum PixelFormatToGLInternalFormat(ePixelFormat aFormat);
-	GLenum GetGLCompressionFormatFromPixelFormat(ePixelFormat aFormat);
+	GLenum GetGLCompressionFormatFromPixelFormat(ePixelFormat aFormat, bool srgb);
 
 	GLenum TextureTypeToGLTarget(eTextureType aType);
     
@@ -147,7 +147,7 @@ namespace hpl {
 
 		iFontData* CreateFontData(const tString &asName);
 
-		iTexture* CreateTexture(const tString &asName, eTextureType aType, eTextureUsage aUsage);
+		iTexture* CreateTexture(const tString &asName, eTextureType aTexType, eTextureUsage aUsage, eMaterialTexture aMatType);
 
 		iVertexBuffer* CreateVertexBuffer(	eVertexBufferType aType,
 											eVertexBufferDrawType aDrawType,
@@ -184,6 +184,8 @@ namespace hpl {
 		iFrameBuffer* GetCurrentFrameBuffer() { return mpFrameBuffer; }
 
 		void SetFrameBufferDrawTargets(int *apTargets, int alNumOfTargets);
+
+		void SetFrameBufferSRGB(bool abActive);
 		
 		/////////////////////////////////////////////////////
 		/////////// RENDER STATE ////////////////////////////

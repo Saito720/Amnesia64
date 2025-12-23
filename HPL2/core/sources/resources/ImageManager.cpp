@@ -419,7 +419,7 @@ namespace hpl {
 	
 	cFrameBitmap *cImageManager::CreateBitmapFrame(cVector2l avSize)
 	{
-		iTexture *pTex = mpLowLevelGraphics->CreateTexture("ImageFrame",eTextureType_2D,eTextureUsage_Normal);
+		iTexture *pTex = mpLowLevelGraphics->CreateTexture("ImageFrame",eTextureType_2D,eTextureUsage_Normal, eMaterialTexture_LastEnum);
 		cFrameTexture *pTFrame = hplNew( cFrameTexture, (pTex,mlFrameHandle,this,false) );
 		cBitmap *pBmp = hplNew(cBitmap, () );
 		pBmp->CreateData(cVector3l(avSize.x, avSize.y,1),ePixelFormat_RGBA,0,0);

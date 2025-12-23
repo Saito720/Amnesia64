@@ -110,7 +110,7 @@ namespace hpl {
 		virtual iGpuProgram* CreateGpuProgram(const tString& asName)=0;
 		virtual iGpuShader* CreateGpuShader(const tString& asName, eGpuShaderType aType)=0;
 		
-		virtual iTexture* CreateTexture(const tString &asName,eTextureType aType,  eTextureUsage aUsage)=0;
+		virtual iTexture* CreateTexture(const tString &asName,eTextureType aTexType,  eTextureUsage aUsage, eMaterialTexture aMatType)=0;
 		
 		virtual iVertexBuffer* CreateVertexBuffer(	eVertexBufferType aType,
 													eVertexBufferDrawType aDrawType,
@@ -172,6 +172,8 @@ namespace hpl {
 		 * \param alNumOfTargets 
 		 */
 		virtual void SetFrameBufferDrawTargets(int *apTargets, int alNumOfTargets)=0;
+
+		virtual void SetFrameBufferSRGB(bool abActive)=0;
 		
 		/////////////////////////////////////////////////////
 		/////////// RENDER STATE ////////////////////////////

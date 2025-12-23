@@ -73,31 +73,31 @@ namespace hpl {
 	//-----------------------------------------------------------------------
 
 	iTexture* cTextureManager::Create1D(const tString& asName,bool abUseMipMaps, 
-										eTextureUsage aUsage, unsigned int alTextureSizeLevel)
+										eTextureUsage aUsage, eMaterialTexture aMatType, unsigned int alTextureSizeLevel)
 	{
-		return CreateSimpleTexture(asName,abUseMipMaps,aUsage, eTextureType_1D,alTextureSizeLevel);
+		return CreateSimpleTexture(asName,abUseMipMaps,aUsage, eTextureType_1D,aMatType,alTextureSizeLevel);
 	}
 
 	//-----------------------------------------------------------------------
 
-	iTexture* cTextureManager::Create2D(const tString& asName,bool abUseMipMaps, eTextureType aType,
-										eTextureUsage aUsage, unsigned int alTextureSizeLevel)
+	iTexture* cTextureManager::Create2D(const tString& asName,bool abUseMipMaps, eTextureType aTexType,
+										eTextureUsage aUsage, eMaterialTexture aMatType, unsigned int alTextureSizeLevel)
 	{
-		return CreateSimpleTexture(asName,abUseMipMaps,aUsage, aType,alTextureSizeLevel);
+		return CreateSimpleTexture(asName,abUseMipMaps,aUsage, aTexType,aMatType,alTextureSizeLevel);
 	}
 
 	//-----------------------------------------------------------------------
 
-	iTexture* cTextureManager::Create3D(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage,
+	iTexture* cTextureManager::Create3D(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage, eMaterialTexture aMatType,
 										unsigned int alTextureSizeLevel)
 	{
-		return CreateSimpleTexture(asName,abUseMipMaps,aUsage, eTextureType_3D,alTextureSizeLevel);
+		return CreateSimpleTexture(asName,abUseMipMaps,aUsage, eTextureType_3D,aMatType,alTextureSizeLevel);
 	}
 
 	//-----------------------------------------------------------------------
 
-	iTexture* cTextureManager::CreateAnim(const tString& asFirstFrameName,bool abUseMipMaps,eTextureType aType,
-											eTextureUsage aUsage, unsigned int alTextureSizeLevel)
+	iTexture* cTextureManager::CreateAnim(const tString& asFirstFrameName,bool abUseMipMaps,eTextureType aTexType,
+											eTextureUsage aUsage, eMaterialTexture aMatType, unsigned int alTextureSizeLevel)
 	{
 		BeginLoad(asFirstFrameName);
 		
@@ -192,7 +192,7 @@ namespace hpl {
 			}
 			
 			//Create the animated texture
-			pTexture = mpGraphics->GetLowLevel()->CreateTexture(sBaseName, aType, aUsage);
+			pTexture = mpGraphics->GetLowLevel()->CreateTexture(sBaseName, aTexType, aUsage, aMatType);
 			pTexture->SetFullPath(sFakeFullPath);
 			
 			pTexture->SetSizeDownScaleLevel(alTextureSizeLevel);
@@ -223,7 +223,7 @@ namespace hpl {
 	//-----------------------------------------------------------------------
 	
 	iTexture* cTextureManager::CreateCubeMap(const tString& asPathName,bool abUseMipMaps, 
-											eTextureUsage aUsage,
+											eTextureUsage aUsage, eMaterialTexture aMatType,
 											unsigned int alTextureSizeLevel)
 	{
 		tString sExt = cString::ToLowerCase(cString::GetFileExt(asPathName));
@@ -232,7 +232,7 @@ namespace hpl {
 		// Load Cubemap from single file
 		if(sExt == "dds")
 		{
-			return CreateSimpleTexture(asPathName,abUseMipMaps,aUsage,eTextureType_CubeMap,alTextureSizeLevel);	
+			return CreateSimpleTexture(asPathName,abUseMipMaps,aUsage,eTextureType_CubeMap,aMatType,alTextureSizeLevel);
 		}
 		/////////////////////////////////////////////////////////
 		// Load Cubemap from multiple files
@@ -287,7 +287,7 @@ namespace hpl {
 				}
 
 				//Create the cubemap
-				pTexture = mpGraphics->GetLowLevel()->CreateTexture(sName,eTextureType_CubeMap, aUsage);
+				pTexture = mpGraphics->GetLowLevel()->CreateTexture(sName,eTextureType_CubeMap, aUsage, aMatType);
 				pTexture->SetFullPath(sFakeFullPath);
 				
 				pTexture->SetUseMipMaps(abUseMipMaps);
@@ -362,7 +362,7 @@ namespace hpl {
 	//-----------------------------------------------------------------------
 
 	iTexture* cTextureManager::CreateSimpleTexture(	const tString& asName,bool abUseMipMaps, 
-													eTextureUsage aUsage, eTextureType aType,
+													eTextureUsage aUsage, eTextureType aTexType, eMaterialTexture aMatType,
 													unsigned int alTextureSizeLevel)
 	{
 		tWString sPath;
@@ -385,7 +385,7 @@ namespace hpl {
 			}
 
 			//Create the texture and load from bitmap
-			pTexture = mpGraphics->GetLowLevel()->CreateTexture(asName,aType,aUsage);
+			pTexture = mpGraphics->GetLowLevel()->CreateTexture(asName,aTexType,aUsage,aMatType);
 			pTexture->SetFullPath(sPath);
 			
 			pTexture->SetUseMipMaps(abUseMipMaps);

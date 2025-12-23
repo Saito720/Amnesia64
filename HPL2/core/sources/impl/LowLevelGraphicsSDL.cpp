@@ -345,14 +345,14 @@ namespace hpl {
 		ShowCursor(false);
 
 		//Gamma
-		mfGammaCorrection = 1.0f;
+		/* mfGammaCorrection = 1.0f;
 #if SDL_VERSION_ATLEAST(2, 0, 0)
         SDL_SetWindowBrightness(mpScreen, mfGammaCorrection);
 #else
 		SDL_GetGammaRamp(mvStartGammaArray[0],mvStartGammaArray[1],mvStartGammaArray[2]);
 
 		SDL_SetGamma(mfGammaCorrection,mfGammaCorrection,mfGammaCorrection);
-#endif
+#endif */
 
 		//GL
 		Log(" Setting up OpenGL\n");
@@ -745,6 +745,8 @@ namespace hpl {
 	{
 		;
 
+		return;
+
 		mfGammaCorrection = afX;
 #if SDL_VERSION_ATLEAST(2, 0, 0)
         SDL_SetWindowBrightness(mpScreen, mfGammaCorrection);
@@ -811,11 +813,11 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	iTexture* cLowLevelGraphicsSDL::CreateTexture(const tString &asName,eTextureType aType,   eTextureUsage aUsage)
+	iTexture* cLowLevelGraphicsSDL::CreateTexture(const tString &asName,eTextureType aTexType,   eTextureUsage aUsage, eMaterialTexture aMatType)
 	{
 		;
 
-		cSDLTexture *pTexture = hplNew( cSDLTexture, (asName,aType, aUsage, this) );
+		cSDLTexture *pTexture = hplNew( cSDLTexture, (asName,aTexType, aUsage, aMatType, this) );
 
 		return pTexture;
 	}
@@ -1055,6 +1057,16 @@ namespace hpl {
 			vAttachmentVec.push_back(GL_COLOR_ATTACHMENT0_EXT + apTargets[i]);
 		}
 		glDrawBuffers(alNumOfTargets, &vAttachmentVec[0]);
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cLowLevelGraphicsSDL::SetFrameBufferSRGB(bool abActive)
+	{
+		if (abActive)
+			glEnable(GL_FRAMEBUFFER_SRGB);
+		else
+			glDisable(GL_FRAMEBUFFER_SRGB);
 	}
 
 	//-----------------------------------------------------------------------
@@ -2476,15 +2488,16 @@ namespace hpl {
 
 	//-------------------------------------------------
 
-	GLenum GetGLCompressionFormatFromPixelFormat(ePixelFormat aFormat)
+	GLenum GetGLCompressionFormatFromPixelFormat(ePixelFormat aFormat, bool srgb)
 	{
-		;
-
-		switch(aFormat)
+		switch (aFormat)
 		{
-		case ePixelFormat_DXT1:				return GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
-		case ePixelFormat_DXT3:				return GL_COMPRESSED_RGBA_S3TC_DXT3_EXT;
-		case ePixelFormat_DXT5:				return GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
+		case ePixelFormat_DXT1: return srgb ? GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT
+			: GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
+		case ePixelFormat_DXT3: return srgb ? GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT
+			: GL_COMPRESSED_RGBA_S3TC_DXT3_EXT;
+		case ePixelFormat_DXT5: return srgb ? GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT
+			: GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
 		}
 		return 0;
 	}

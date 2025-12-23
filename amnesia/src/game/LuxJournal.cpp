@@ -1847,11 +1847,11 @@ void cLuxJournal::CreateScreenTextures()
 	cVector3l vTexSize = pLowGfx->GetScreenSizeInt();
 	vTexSize.z = 0;
 
-	mpScreenTexture = mpGraphics->CreateTexture("Screen",eTextureType_Rect,eTextureUsage_RenderTarget);
+	mpScreenTexture = mpGraphics->CreateTexture("Screen",eTextureType_Rect,eTextureUsage_RenderTarget,eMaterialTexture_LastEnum);
 	mpScreenTexture->CreateFromRawData(vTexSize,ePixelFormat_RGBA,NULL);
 	mpScreenTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
 
-	mpScreenBgTexture = mpGraphics->CreateTexture("ScreenBlur",eTextureType_Rect,eTextureUsage_RenderTarget);
+	mpScreenBgTexture = mpGraphics->CreateTexture("ScreenBlur",eTextureType_Rect,eTextureUsage_RenderTarget,eMaterialTexture_LastEnum);
 	mpScreenBgTexture->CreateFromRawData(vTexSize,ePixelFormat_RGBA,NULL);
 
 	mpScreenGfx = mpGui->CreateGfxTexture(mpScreenTexture,false,eGuiMaterial_Diffuse);

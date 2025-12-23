@@ -296,6 +296,7 @@ namespace hpl {
 		iTexture *mpSSAOTexture;
 		iTexture *mpSSAOBlurTexture;
 		iTexture *mpSSAOScatterDisk;
+		iTexture *mpExposureTexture;
 		iTexture *mpEdgeSmooth_LinearDepthTexture;
 		iTexture *mpEdgeSmooth_TempAccum;
 
@@ -307,6 +308,7 @@ namespace hpl {
 		iGpuProgram *mpUnpackDepthProgram;
 		iGpuProgram *mpSSAOBlurProgram[2];
 		iGpuProgram *mpSSAORenderProgram;
+		iGpuProgram *mpExposureProgram;
 		iGpuProgram *mpEdgeSmooth_UnpackDepthProgram;
 		iGpuProgram *mpEdgeSmooth_RenderProgram;
 

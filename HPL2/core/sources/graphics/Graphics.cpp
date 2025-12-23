@@ -299,7 +299,7 @@ namespace hpl {
 
 		//Create texture
 		tString sNameSuffix = cString::ToString(avSize.x)+"x"+cString::ToString(avSize.y)+":"+cString::ToString((int)aPixelFormat);
-		iTexture *pTexture = CreateTexture("TempBufferTexture"+sNameSuffix, eTextureType_Rect, eTextureUsage_RenderTarget);
+		iTexture *pTexture = CreateTexture("TempBufferTexture"+sNameSuffix, eTextureType_Rect, eTextureUsage_RenderTarget, eMaterialTexture_LastEnum);
 		pTexture->CreateFromRawData(cVector3l(avSize.x, avSize.y,0),aPixelFormat,NULL);
 		pTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
 
@@ -385,9 +385,9 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	iTexture* cGraphics::CreateTexture(const tString &asName,eTextureType aType,   eTextureUsage aUsage)
+	iTexture* cGraphics::CreateTexture(const tString &asName,eTextureType aTexType,   eTextureUsage aUsage, eMaterialTexture aMatType)
 	{	
-		iTexture *pTexture = mpLowLevelGraphics->CreateTexture(asName,aType, aUsage);
+		iTexture *pTexture = mpLowLevelGraphics->CreateTexture(asName,aTexType, aUsage, aMatType);
 		mlstTextures.push_back(pTexture);
 		return pTexture;
 	}

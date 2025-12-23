@@ -895,7 +895,7 @@ namespace hpl {
 													eTextureFilter aFilter, eTextureType aType)
 	{
 		iTexture *pTexture =NULL;
-		pTexture = mpGraphics->CreateTexture(asName,aType,eTextureUsage_RenderTarget);
+		pTexture = mpGraphics->CreateTexture(asName,aType,eTextureUsage_RenderTarget,eMaterialTexture_LastEnum);
 		if(pTexture->CreateFromRawData(cVector3l(avSize.x, avSize.y,0),aPixelFormat, NULL)==false)
 		{
 			Error("Could not create texture '%s'\n", asName.c_str());

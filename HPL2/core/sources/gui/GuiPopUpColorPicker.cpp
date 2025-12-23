@@ -603,7 +603,7 @@ namespace hpl {
 		mpColorBoxBitmap->CreateData(cVector3l(256, 256, 1), ePixelFormat_RGB, 0, 0);
 		mpColorBoxBitmap->Clear(cColor(1,1,1,1), 0, 0);
 
-		mpColorBoxTexture = pLowLevelGfx->CreateTexture("ColorBox", eTextureType_2D, eTextureUsage_Normal);
+		mpColorBoxTexture = pLowLevelGfx->CreateTexture("ColorBox", eTextureType_2D, eTextureUsage_Normal, eMaterialTexture_LastEnum);
 		mpColorBoxTexture->SetUseMipMaps(false);
 		mpColorBoxTexture->CreateFromBitmap(mpColorBoxBitmap);
 		mpColorBoxTexture->SetWrapSTR(eTextureWrap_Clamp);
@@ -615,7 +615,7 @@ namespace hpl {
 		mpColorSliderBitmap->CreateData(cVector3l(256, 1, 1) , ePixelFormat_RGB, 0, 0);
 		mpColorSliderBitmap->Clear(cColor(1,1,1,1), 0, 0);
 
-		mpColorSliderTexture = pLowLevelGfx->CreateTexture("ColorSlider", eTextureType_1D, eTextureUsage_Normal);
+		mpColorSliderTexture = pLowLevelGfx->CreateTexture("ColorSlider", eTextureType_1D, eTextureUsage_Normal, eMaterialTexture_LastEnum);
 		mpColorSliderTexture->SetUseMipMaps(false);
 		mpColorSliderTexture->CreateFromBitmap(mpColorSliderBitmap);
 		mpColorSliderTexture->SetWrapSTR(eTextureWrap_Clamp);
@@ -650,7 +650,7 @@ namespace hpl {
 				vByteArray[i] = FloatColorToUChar(1.0f-i*fStep);
 			}
 
-			iTexture* pHoriMarkerTexture = mpGraphics->GetLowLevel()->CreateTexture("AlphaSlider", eTextureType_1D, eTextureUsage_Normal);
+			iTexture* pHoriMarkerTexture = mpGraphics->GetLowLevel()->CreateTexture("AlphaSlider", eTextureType_1D, eTextureUsage_Normal, eMaterialTexture_LastEnum);
 			pHoriMarkerTexture->CreateFromRawData(cVector3l(256,0,0), ePixelFormat_Luminance, vByteArray);
 
 			mpGfxVMarker = mpSet->GetGui()->CreateGfxFilledRect(cColor(1,1), eGuiMaterial_Diffuse);
@@ -1228,7 +1228,7 @@ namespace hpl {
 				vByteArray[i*3] = vByteArray[i*3+1] = vByteArray[i*3+2] = FloatColorToUChar(float(i)*fStep);
 			}
 
-			iTexture* pAlphaSliderTexture = mpGraphics->GetLowLevel()->CreateTexture("AlphaSlider", eTextureType_1D, eTextureUsage_Normal);
+			iTexture* pAlphaSliderTexture = mpGraphics->GetLowLevel()->CreateTexture("AlphaSlider", eTextureType_1D, eTextureUsage_Normal, eMaterialTexture_LastEnum);
 			pAlphaSliderTexture->CreateFromRawData(cVector3l(256,0,0), ePixelFormat_RGB, vByteArray);
 
 			pImg = mpSet->GetGui()->CreateGfxFilledRect(cColor(1,1), eGuiMaterial_Diffuse);

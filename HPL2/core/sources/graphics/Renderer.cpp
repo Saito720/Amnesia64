@@ -702,7 +702,7 @@ namespace hpl {
 		cShadowMapData *pData = hplNew(cShadowMapData, ());
 		pData->mlFrameCount = -1;
 
-		pData->mpTexture = mpGraphics->CreateTexture(sName+"_Texture",eTextureType_2D, eTextureUsage_RenderTarget);
+		pData->mpTexture = mpGraphics->CreateTexture(sName+"_Texture",eTextureType_2D, eTextureUsage_RenderTarget, eMaterialTexture_LastEnum);
 		pData->mpTexture->CreateFromRawData(avSize, aFormat, NULL);
 		pData->mpTexture->SetCompareMode(eTextureCompareMode_RToTexture);
 		pData->mpTexture->SetCompareFunc(eTextureCompareFunc_LessOrEqual);
@@ -712,7 +712,7 @@ namespace hpl {
 		//Hack to avoid ATI drier failure:
 		if(mpLowLevelGraphics->GetCaps(eGraphicCaps_OGL_ATIFragmentShader))
 		{
-			pData->mpTempDiffTexture = mpGraphics->CreateTexture(sName+"_TempDiff",eTextureType_2D, eTextureUsage_RenderTarget);
+			pData->mpTempDiffTexture = mpGraphics->CreateTexture(sName+"_TempDiff",eTextureType_2D, eTextureUsage_RenderTarget, eMaterialTexture_LastEnum);
 			pData->mpTempDiffTexture->CreateFromRawData(avSize, ePixelFormat_Alpha, NULL);
 		}
 		else

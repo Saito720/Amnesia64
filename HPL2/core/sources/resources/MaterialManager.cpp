@@ -402,7 +402,7 @@ namespace hpl {
 
 			if(animMode != eTextureAnimMode_None)
 			{
-				pTex = mpResources->GetTextureManager()->CreateAnim(sFile,bMipMaps,type,eTextureUsage_Normal,mlTextureSizeDownScaleLevel);
+				pTex = mpResources->GetTextureManager()->CreateAnim(sFile,bMipMaps,type,eTextureUsage_Normal,pUsedTexture->mType,mlTextureSizeDownScaleLevel);
 			}
 			else
 			{
@@ -410,26 +410,26 @@ namespace hpl {
 				if(type == eTextureType_1D)
 				{
 					pTex = mpResources->GetTextureManager()->Create1D(sFile,bMipMaps,
-																			eTextureUsage_Normal,
+																			eTextureUsage_Normal, pUsedTexture->mType,
 																			mlTextureSizeDownScaleLevel);
 				}
 				else if(type == eTextureType_2D)
 				{
 					pTex = mpResources->GetTextureManager()->Create2D(sFile,bMipMaps, eTextureType_2D,
-																		eTextureUsage_Normal,
+																		eTextureUsage_Normal, pUsedTexture->mType,
 																		mlTextureSizeDownScaleLevel);
 				}
 				else if(type == eTextureType_3D)
 				{
 					pTex = mpResources->GetTextureManager()->Create3D(sFile,bMipMaps,
-																		eTextureUsage_Normal,
+																		eTextureUsage_Normal, pUsedTexture->mType,
 																		mlTextureSizeDownScaleLevel);
 				}
 				else if(type == eTextureType_CubeMap)
 				{
 					//Check for DDS ending and load cubemap as file.
 					pTex = mpResources->GetTextureManager()->CreateCubeMap(sFile,bMipMaps,
-																			eTextureUsage_Normal,
+																			eTextureUsage_Normal, pUsedTexture->mType,
 																			mlTextureSizeDownScaleLevel);
 				}
 			}

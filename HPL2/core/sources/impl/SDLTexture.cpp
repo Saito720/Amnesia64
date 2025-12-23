@@ -36,8 +36,8 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	cSDLTexture::cSDLTexture(const tString& asName, eTextureType aType, eTextureUsage aUsage, iLowLevelGraphics* apLowLevelGraphics)
-				: iTexture(asName,_W(""),aType, aUsage, apLowLevelGraphics)
+	cSDLTexture::cSDLTexture(const tString& asName, eTextureType aTexType, eTextureUsage aUsage, eMaterialTexture aMatType, iLowLevelGraphics* apLowLevelGraphics)
+				: iTexture(asName,_W(""),aTexType, aUsage, aMatType, apLowLevelGraphics)
 	{
 		mbContainsData = false;
 				
@@ -106,7 +106,7 @@ namespace hpl {
 
 		/////////////////////////////
 		//Check so everything is correct
-		if(mUsage == eTextureUsage_RenderTarget || mType != eTextureType_CubeMap)
+		if(mUsage == eTextureUsage_RenderTarget || mTexType != eTextureType_CubeMap)
 		{
 			return false;
 		}
@@ -155,7 +155,7 @@ namespace hpl {
 
 		//////////////////////////////
 		//Get gl properties
-		GLenum GLTarget = TextureTypeToGLTarget(mType);
+		GLenum GLTarget = TextureTypeToGLTarget(mTexType);
 		
 		//////////////////////////////////
 		//Create the texture data
@@ -195,23 +195,23 @@ namespace hpl {
 		if(mbContainsData==false) return;
 		if(apData==NULL) return;
 
-		GLenum GLTarget = TextureTypeToGLTarget(mType);
+		GLenum GLTarget = TextureTypeToGLTarget(mTexType);
 		GLenum GLFormat = PixelFormatToGLFormat(aPixelFormat);
 
 		glEnable(GLTarget);
 		glBindTexture(GLTarget, mvTextureHandles[0]);
 
-		if(mType == eTextureType_1D)
+		if(mTexType == eTextureType_1D)
 		{
 			glTexSubImage1D(GLTarget,alLevel,avOffset.x, avSize.x,
 							GLFormat,GL_UNSIGNED_BYTE,apData);
 		}
-		else if(mType == eTextureType_2D || mType == eTextureType_Rect)
+		else if(mTexType == eTextureType_2D || mTexType == eTextureType_Rect)
 		{
 			glTexSubImage2D(GLTarget,alLevel,avOffset.x,avOffset.y, avSize.x,avSize.y,
 							GLFormat,GL_UNSIGNED_BYTE,apData);
 		}
-		else if(mType == eTextureType_3D)
+		else if(mTexType == eTextureType_3D)
 		{
 			glTexSubImage3D(GLTarget,alLevel,avOffset.x,avOffset.y,avOffset.z, 
 							avSize.x,avSize.y,avSize.z,
@@ -352,14 +352,14 @@ namespace hpl {
 		mFilter = aFilter;
 		if(mbContainsData)
 		{
-			GLenum GLTarget = GetGLTextureTargetEnum(mType);
+			GLenum GLTarget = GetGLTextureTargetEnum(mTexType);
 
 			glEnable(GLTarget);
 			for(size_t i=0; i < mvTextureHandles.size(); ++i)
 			{
 				glBindTexture(GLTarget, mvTextureHandles[i]);
 
-				if(mbUseMipMaps && mType != eTextureType_Rect)
+				if(mbUseMipMaps && mTexType != eTextureType_Rect)
 				{
 					switch(mFilter)
 					{
@@ -414,7 +414,7 @@ namespace hpl {
 
 		mfAnisotropyDegree = afX;
 
-		GLenum GLTarget = GetGLTextureTargetEnum(mType);
+		GLenum GLTarget = GetGLTextureTargetEnum(mTexType);
 
 		glEnable(GLTarget);
 		for(size_t i=0; i < mvTextureHandles.size(); ++i)
@@ -431,7 +431,7 @@ namespace hpl {
 
 	void cSDLTexture::SetWrapS(eTextureWrap aMode)
 	{
-		if(mType == eTextureType_Rect) return; //Rect only has one mode! (clamp to edge)
+		if(mTexType == eTextureType_Rect) return; //Rect only has one mode! (clamp to edge)
 
 		;
 
@@ -439,7 +439,7 @@ namespace hpl {
 
 		if(mbContainsData==false) return;
 		
-		GLenum GLTarget = GetGLTextureTargetEnum(mType);
+		GLenum GLTarget = GetGLTextureTargetEnum(mTexType);
 
 		glEnable(GLTarget);
 		for(size_t i=0; i < mvTextureHandles.size(); ++i)
@@ -456,7 +456,7 @@ namespace hpl {
 
 	void cSDLTexture::SetWrapT(eTextureWrap aMode)
 	{
-		if(mType == eTextureType_Rect) return; //Rect only has one mode! (clamp to edge)
+		if(mTexType == eTextureType_Rect) return; //Rect only has one mode! (clamp to edge)
 
 		;
 
@@ -464,7 +464,7 @@ namespace hpl {
 
 		if(mbContainsData==false) return;
 		
-		GLenum GLTarget = GetGLTextureTargetEnum(mType);
+		GLenum GLTarget = GetGLTextureTargetEnum(mTexType);
 
 		glEnable(GLTarget);
 		for(size_t i=0; i < mvTextureHandles.size(); ++i)
@@ -481,7 +481,7 @@ namespace hpl {
 
 	void cSDLTexture::SetWrapR(eTextureWrap aMode)
 	{
-		if(mType == eTextureType_Rect) return; //Rect only has one mode! (clamp to edge)
+		if(mTexType == eTextureType_Rect) return; //Rect only has one mode! (clamp to edge)
 
 		;
 
@@ -489,7 +489,7 @@ namespace hpl {
 
 		if(mbContainsData==false) return;
 		
-		GLenum GLTarget = GetGLTextureTargetEnum(mType);
+		GLenum GLTarget = GetGLTextureTargetEnum(mTexType);
 
 		glEnable(GLTarget);
 		for(size_t i=0; i < mvTextureHandles.size(); ++i)
@@ -506,7 +506,7 @@ namespace hpl {
 
 	void cSDLTexture::SetWrapSTR(eTextureWrap aMode)
 	{
-		if(mType == eTextureType_Rect) return; //Rect only has one mode! (clamp to edge)
+		if(mTexType == eTextureType_Rect) return; //Rect only has one mode! (clamp to edge)
 
 		;
 
@@ -516,7 +516,7 @@ namespace hpl {
 
 		if(mbContainsData==false) return;
 
-		GLenum GLTarget = GetGLTextureTargetEnum(mType);
+		GLenum GLTarget = GetGLTextureTargetEnum(mTexType);
 
 		glEnable(GLTarget);
 		for(size_t i=0; i < mvTextureHandles.size(); ++i)
@@ -541,7 +541,7 @@ namespace hpl {
 
 		;
 
-		GLenum GLTarget = GetGLTextureTargetEnum(mType);
+		GLenum GLTarget = GetGLTextureTargetEnum(mTexType);
 		GLenum GLCompareMode = GetGLTextureCompareMode(mCompareMode);
 		
 		glEnable(GLTarget);
@@ -563,7 +563,7 @@ namespace hpl {
 
 		;
 
-		GLenum GLTarget = GetGLTextureTargetEnum(mType);
+		GLenum GLTarget = GetGLTextureTargetEnum(mTexType);
 		GLenum GLCompareFunc = GetGLTextureCompareFunc(mCompareFunc);
 
 		glEnable(GLTarget);
@@ -586,7 +586,7 @@ namespace hpl {
 
 		if(GLEW_EXT_framebuffer_object)
 		{
-			GLenum GLTarget = GetGLTextureTargetEnum(mType);
+			GLenum GLTarget = GetGLTextureTargetEnum(mTexType);
 
 			glEnable(GLTarget);
 			for(size_t i=0; i < mvTextureHandles.size(); ++i)
@@ -646,7 +646,7 @@ namespace hpl {
 	{
 		////////////////////////////
 		//Create Cubemap texture
-		if(mType == eTextureType_CubeMap)
+		if(mTexType == eTextureType_CubeMap)
 		{
 			//Check so there are at least 6 images.
 			if(apBmp->GetNumOfImages()<6)
@@ -693,7 +693,7 @@ namespace hpl {
 	{
 		/////////////////////////////
 		//Check so size is power of 2
-		if((!cMath::IsPow2(avSize.x) || !cMath::IsPow2(avSize.y)) && mType != eTextureType_Rect)
+		if((!cMath::IsPow2(avSize.x) || !cMath::IsPow2(avSize.y)) && mTexType != eTextureType_Rect)
 		{
 			Warning("Texture '%s' does not have a pow2 size!\n",msName.c_str());
 		}
@@ -706,7 +706,7 @@ namespace hpl {
 
 		//////////////////////////////
 		//Get gl properties
-		GLenum GLTarget = TextureTypeToGLTarget(mType);
+		GLenum GLTarget = TextureTypeToGLTarget(mTexType);
 		GLenum GLFormat = PixelFormatToGLFormat(aPixelFormat);
 		
 		//The mipmap level in the BitmapImage array that is top level in hierarchy
@@ -739,7 +739,7 @@ namespace hpl {
 			}
 			//////////////////////
 			//Resize by changing data (do only for 2D textures)
-			else if((mType == eTextureType_2D || mType == eTextureType_CubeMap) &&
+			else if((mTexType == eTextureType_2D || mTexType == eTextureType_CubeMap) &&
 					mvSize.x > mvMinDownScaleSize.x &&	mvSize.y > mvMinDownScaleSize.y )
 			{
 				//Shrink the size as much as possible until minimum is reached
@@ -865,15 +865,15 @@ namespace hpl {
 		}
 		else if(PixelFormatIsCompressed(aPixelFormat)==false)
 		{
-			if(mType == eTextureType_1D)
+			if(mTexType == eTextureType_1D)
 			{
 				gluBuild1DMipmaps(	aGLTarget,GLInternalFormat,avSize.x,
 									GLFormat, GL_UNSIGNED_BYTE, 
 									apData);
 			}
-			else if(mType == eTextureType_2D ||	mType == eTextureType_CubeMap)
+			else if(mTexType == eTextureType_2D ||	mTexType == eTextureType_CubeMap)
 			{
-				gluBuild2DMipmaps(	mType == eTextureType_CubeMap ?  
+				gluBuild2DMipmaps(	mTexType == eTextureType_CubeMap ?  
 									GL_TEXTURE_CUBE_MAP_POSITIVE_X_ARB + alFaceNum : aGLTarget,
 									GLInternalFormat,avSize.x,avSize.y,
 									GLFormat, GL_UNSIGNED_BYTE, 
@@ -906,7 +906,7 @@ namespace hpl {
 	bool cSDLTexture::CopyTextureDataToGL(	int alTextureHandle, int alLevel,unsigned char *apData,int alDataSize,
 											const cVector3l avSize, ePixelFormat aPixelFormat,int alFaceNum)
 	{
-		GLenum GLTarget = TextureTypeToGLTarget(mType);
+		GLenum GLTarget = TextureTypeToGLTarget(mTexType);
 		GLenum GLFormat = PixelFormatToGLFormat(aPixelFormat);
 		GLenum GLInternalFormat = PixelFormatToGLInternalFormat(aPixelFormat);
 		
@@ -921,25 +921,27 @@ namespace hpl {
 		// Load compressed data
 		if(PixelFormatIsCompressed(aPixelFormat))
 		{
-			GLenum GLCompressionFormat = GetGLCompressionFormatFromPixelFormat(aPixelFormat);
+		GLenum GLCompressionFormat = GetGLCompressionFormatFromPixelFormat(aPixelFormat, mMatType == eMaterialTexture_Diffuse ||
+																						 mMatType == eMaterialTexture_Illumination ||
+																						 mMatType == eMaterialTexture_CubeMap);
 
-			if(mType == eTextureType_1D)
+			if(mTexType == eTextureType_1D)
 			{
 				glCompressedTexImage1DARB(	GLTarget, alLevel, 
 					GLCompressionFormat, 
 					avSize.x,
 					0, alDataSize, apData);
 			}
-			else if(mType == eTextureType_2D || mType == eTextureType_CubeMap)
+			else if(mTexType == eTextureType_2D || mTexType == eTextureType_CubeMap)
 			{
-				glCompressedTexImage2DARB(	mType == eTextureType_CubeMap ?  
+				glCompressedTexImage2DARB(	mTexType == eTextureType_CubeMap ?  
 					GL_TEXTURE_CUBE_MAP_POSITIVE_X_ARB + alFaceNum : GLTarget, 
 					alLevel, 
 					GLCompressionFormat, 
 					avSize.x, avSize.y,
 					0, alDataSize, apData);
 			}
-			else if(mType == eTextureType_3D)
+			else if(mTexType == eTextureType_3D)
 			{
 				glCompressedTexImage3DARB(	GLTarget, alLevel, 
 					GLCompressionFormat, 
@@ -953,22 +955,22 @@ namespace hpl {
 		{
 			GLenum glType = PixelFormatIsFloatingPoint(aPixelFormat) ? GL_FLOAT : GL_UNSIGNED_BYTE;
 
-			if(mType == eTextureType_1D)
+			if(mTexType == eTextureType_1D)
 			{
 				glTexImage1D(	GLTarget, alLevel, GLInternalFormat, 
 					avSize.x,0,GLFormat,
 					glType, apData);
 			}
-			else if(mType == eTextureType_2D || mType == eTextureType_Rect ||
-				mType == eTextureType_CubeMap)
+			else if(mTexType == eTextureType_2D || mTexType == eTextureType_Rect ||
+				mTexType == eTextureType_CubeMap)
 			{
-				glTexImage2D(	mType == eTextureType_CubeMap ?  
+				glTexImage2D(	mTexType == eTextureType_CubeMap ?  
 					GL_TEXTURE_CUBE_MAP_POSITIVE_X_ARB + alFaceNum : GLTarget, 
 					alLevel, GLInternalFormat, 
 					avSize.x, avSize.y,
 					0, GLFormat, glType, apData);
 			}
-			else if(mType == eTextureType_3D)
+			else if(mTexType == eTextureType_3D)
 			{
 				glTexImage3D(	GLTarget, alLevel, 
 					GLInternalFormat, avSize.x, avSize.y,avSize.z,
@@ -988,14 +990,14 @@ namespace hpl {
 	{
 		if(mbContainsData==false) return;
 		
-		GLenum GLTarget = TextureTypeToGLTarget(mType);
+		GLenum GLTarget = TextureTypeToGLTarget(mTexType);
 
 		glEnable(GLTarget);
 		glBindTexture(GLTarget, alTextureHandle);
 
 		/////////////////////////////////////////
 		//Filtering
-		if(mbUseMipMaps && mType != eTextureType_Rect)
+		if(mbUseMipMaps && mTexType != eTextureType_Rect)
 		{
 			if(mFilter == eTextureFilter_Bilinear)
 				glTexParameteri(GLTarget, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
@@ -1010,7 +1012,7 @@ namespace hpl {
 
 		//////////////////////
 		// Rect (force clamp to edge skip anisotropy)
-        if(mType == eTextureType_Rect)
+        if(mTexType == eTextureType_Rect)
 		{
 			mWrapS = eTextureWrap_ClampToEdge;
 			mWrapT = eTextureWrap_ClampToEdge;

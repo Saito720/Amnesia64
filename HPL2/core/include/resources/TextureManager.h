@@ -43,24 +43,24 @@ namespace hpl {
 		cTextureManager(cGraphics* apGraphics,cResources *apResources);
 		~cTextureManager();
 
-		iTexture* Create1D(	const tString& asName,bool abUseMipMaps, eTextureUsage aUsage=eTextureUsage_Normal,
+		iTexture* Create1D(	const tString& asName,bool abUseMipMaps, eTextureUsage aUsage=eTextureUsage_Normal, eMaterialTexture aMatType=eMaterialTexture_LastEnum,
 							unsigned int alTextureSizeLevel=0);
 		
-		iTexture* Create2D(	const tString& asName,bool abUseMipMaps,eTextureType aType= eTextureType_2D,
-							eTextureUsage aUsage=eTextureUsage_Normal,unsigned int alTextureSizeLevel=0);
+		iTexture* Create2D(	const tString& asName,bool abUseMipMaps,eTextureType aTexType= eTextureType_2D,
+							eTextureUsage aUsage=eTextureUsage_Normal,eMaterialTexture aMatType=eMaterialTexture_LastEnum,unsigned int alTextureSizeLevel=0);
 
-		iTexture* Create3D(	const tString& asName,bool abUseMipMaps, eTextureUsage aUsage=eTextureUsage_Normal,
+		iTexture* Create3D(	const tString& asName,bool abUseMipMaps, eTextureUsage aUsage=eTextureUsage_Normal, eMaterialTexture aMatType=eMaterialTexture_LastEnum,
 							unsigned int alTextureSizeLevel=0);
 		
 		/**
 		 * Creates an animated texture. The name must be [name]01.[ext]. And then the textures in the animation must
 		 * be named [name]01.[ext], [name]02.[ext], etc 
 		 */
-		iTexture* CreateAnim(	const tString& asFirstFrameName,bool abUseMipMaps, eTextureType aType,
-								eTextureUsage aUsage=eTextureUsage_Normal,
+		iTexture* CreateAnim(	const tString& asFirstFrameName,bool abUseMipMaps, eTextureType aTexType,
+								eTextureUsage aUsage=eTextureUsage_Normal, eMaterialTexture aMatType=eMaterialTexture_LastEnum,
 								unsigned int alTextureSizeLevel=0);
 
-		iTexture* CreateCubeMap(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage=eTextureUsage_Normal,
+		iTexture* CreateCubeMap(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage=eTextureUsage_Normal, eMaterialTexture aMatType=eMaterialTexture_LastEnum,
 								unsigned int alTextureSizeLevel=0);
 
 
@@ -73,7 +73,7 @@ namespace hpl {
 
 	private:
 		iTexture* CreateSimpleTexture(const tString& asName,bool abUseMipMaps, 
-									eTextureUsage aUsage, eTextureType aType, 
+									eTextureUsage aUsage, eTextureType aTexType, eMaterialTexture aMatType,
 									unsigned int alTextureSizeLevel);
 
 		iTexture* FindTexture2D(const tString &asName, tWString &asFilePath);

@@ -164,6 +164,7 @@ namespace hpl {
 	#define kVar_afFalloffExp						20
 	#define kVar_afDepthDiffMul						21
 	#define kVar_afSkipEdgeLimit					22
+	#define kVar_afExposure							23
 
 
 	//////////////////////////////////////////////////////////////////////////
@@ -222,8 +223,7 @@ namespace hpl {
 		//Create G-Buffer textures
 		for(int i=0; i<mlNumOfGBufferTextures; ++i)
 		{
-			ePixelFormat pixelFormat = mGBufferType == eDeferredGBuffer_32Bit ? ePixelFormat_RGBA : ePixelFormat_RGBA16;
-			//ePixelFormat pixelFormat = ePixelFormat_RGBA16;
+			ePixelFormat pixelFormat = ePixelFormat_RGBA16;
 
 			tString sName = "G-BufferTexure"+cString::ToString(i);
 			mpGBufferTexture[0][i] = CreateRenderTexture(sName, mvScreenSize,pixelFormat,eTextureFilter_Nearest);
@@ -305,8 +305,8 @@ namespace hpl {
 		
 		////////////////////////////////////
 		//Create Accumulation texture
-		mpAccumBufferTexture = mpGraphics->CreateTexture("AccumBiffer",eTextureType_Rect,eTextureUsage_RenderTarget);
-		mpAccumBufferTexture->CreateFromRawData(cVector3l(mvScreenSize.x, mvScreenSize.y,0),ePixelFormat_RGBA, NULL);
+		mpAccumBufferTexture = mpGraphics->CreateTexture("AccumBiffer",eTextureType_Rect,eTextureUsage_RenderTarget, eMaterialTexture_LastEnum);
+		mpAccumBufferTexture->CreateFromRawData(cVector3l(mvScreenSize.x, mvScreenSize.y,0),ePixelFormat_RGBA16, NULL);
 		mpAccumBufferTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
 
 		////////////////////////////////////
@@ -319,12 +319,12 @@ namespace hpl {
 
 		////////////////////////////////////
 		//Create Refraction texture
-		mpRefractionTexture = mpGraphics->GetTempFrameBuffer(mvScreenSize,ePixelFormat_RGBA,0)->GetColorBuffer(0)->ToTexture();
+		mpRefractionTexture = mpGraphics->GetTempFrameBuffer(mvScreenSize,ePixelFormat_RGBA16,0)->GetColorBuffer(0)->ToTexture();
 		mpRefractionTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
 
 		////////////////////////////////////
 		//Create Reflection texture
-		mpReflectionTexture = CreateRenderTexture("ReflectionTexture",vRelfectionSize,ePixelFormat_RGBA);
+		mpReflectionTexture = CreateRenderTexture("ReflectionTexture",vRelfectionSize,ePixelFormat_RGBA16);
 		
 		////////////////////////////////////
 		//Create Reflection buffer
@@ -396,7 +396,7 @@ namespace hpl {
 		
 		if(mShadowMapQuality != eShadowMapQuality_Low)
 		{
-			mpShadowJitterTexture = mpGraphics->CreateTexture("ShadowOffset", eTextureType_2D, eTextureUsage_Normal);
+			mpShadowJitterTexture = mpGraphics->CreateTexture("ShadowOffset", eTextureType_2D, eTextureUsage_Normal, eMaterialTexture_LastEnum);
 			mpGraphics->GetTextureCreator()->GenerateScatterDiskMap2D(mpShadowJitterTexture,mlShadowJitterSize,mlShadowJitterSamples, true);
 		}
 		else
@@ -552,7 +552,7 @@ namespace hpl {
 			mpSSAOBlurBuffer->CompileAndValidate();
 
 			//Scatter disk
-			mpSSAOScatterDisk = mpGraphics->CreateTexture("SSAOScatterDisk", eTextureType_2D,eTextureUsage_Normal);
+			mpSSAOScatterDisk = mpGraphics->CreateTexture("SSAOScatterDisk", eTextureType_2D,eTextureUsage_Normal, eMaterialTexture_LastEnum);
 			mpGraphics->GetTextureCreator()->GenerateScatterDiskMap2D(mpSSAOScatterDisk,4, mlSSAONumOfSamples, false);
 			
 			
@@ -599,6 +599,22 @@ namespace hpl {
 				mpSSAORenderProgram->GetVariableAsId("afSkipEdgeLimit", kVar_afSkipEdgeLimit);
 			}
 		}
+
+		////////////////////////////////////
+		//Create exposure texture and program
+		{
+			// Texture
+			mpExposureTexture = CreateRenderTexture("ExposureTexture", mvScreenSize, ePixelFormat_RGBA16);
+
+			// Program
+			cParserVarContainer programVars;
+			mpExposureProgram = mpGraphics->CreateGpuProgramFromShaders("ExposureProgram", "exposure_vtx.glsl", "exposure_frag.glsl", &programVars);
+			if (mpExposureProgram)
+				mpExposureProgram->GetVariableAsId("afExposure", kVar_afExposure);
+			else
+				FatalError("Could not create exposure program!\n");
+		}
+
 
 		////////////////////////////////////
 		//Create Smooth Edge and textures
@@ -813,7 +829,13 @@ namespace hpl {
 
 		SetFlatProjection();
 
-		SetProgram(NULL);
+		if (mpExposureProgram)
+		{
+			mpExposureProgram->SetFloat(kVar_afExposure, 0.5f);
+			SetProgram(mpExposureProgram);
+		}
+		else
+			SetProgram(NULL);
 		SetTexture(0,mpAccumBufferTexture);
 		SetTextureRange(NULL, 1);
 
@@ -822,10 +844,12 @@ namespace hpl {
 		//Since the texture v coordinate is reversed, need to do some math.
 		cVector2f vViewportPos((float)mpCurrentRenderTarget->mvPos.x, (float)mpCurrentRenderTarget->mvPos.y);
 		cVector2f vViewportSize((float)mvRenderTargetSize.x, (float)mvRenderTargetSize.y);
+		mpLowLevelGraphics->SetFrameBufferSRGB(true);
 		DrawQuad(	cVector2f(0,0),1,
 					cVector2f(vViewportPos.x, (mvScreenSizeFloat.y - vViewportSize.y)-vViewportPos.y ), 
 					cVector2f(vViewportPos.x + vViewportSize.x,mvScreenSizeFloat.y - vViewportPos.y),
 					true);
+		mpLowLevelGraphics->SetFrameBufferSRGB(false);
 
 		END_RENDER_PASS();
 	}

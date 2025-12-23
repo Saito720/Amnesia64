@@ -108,7 +108,7 @@ namespace hpl {
 		iDepthStencilBuffer* FindDepthStencilBuffer(const cVector2l& avSize, int alMinDepthBits, int alMinStencilBits);
 		void DestoroyDepthStencilBuffer(iDepthStencilBuffer* apBuffer);
 		
-		iTexture* CreateTexture(const tString &asName,eTextureType aType,   eTextureUsage aUsage);
+		iTexture* CreateTexture(const tString &asName,eTextureType aTexType,   eTextureUsage aUsage, eMaterialTexture aMatType);
 		void DestroyTexture(iTexture *apTexture);
 
 		cPostEffectComposite* CreatePostEffectComposite();

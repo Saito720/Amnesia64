@@ -31,10 +31,11 @@ namespace hpl {
 	class iTexture : public iResourceBase, public iFrameBufferAttachment
 	{
 	public:
-		iTexture(const tString& asName, const tWString& asFullPath, eTextureType aType, eTextureUsage aUsage, iLowLevelGraphics* apLowLevelGraphics)
+		iTexture(const tString& asName, const tWString& asFullPath, eTextureType aTexType, eTextureUsage aUsage, eMaterialTexture aMatType, iLowLevelGraphics* apLowLevelGraphics)
 			: iResourceBase(asName,asFullPath,0),
 				mUsage(aUsage),
-				mType(aType),
+				mTexType(aTexType),
+				mMatType(aMatType),
 				mpLowLevelGraphics(apLowLevelGraphics),
 				mbUseMipMaps(false), 
 				mbIsCompressed(false),
@@ -105,7 +106,7 @@ namespace hpl {
 		void SetAnimMode(eTextureAnimMode aMode) {mAnimMode = aMode;};
 
 		eTextureUsage GetUsage(){ return mUsage; }
-		eTextureType GetType(){ return mType;}
+		eTextureType GetType(){ return mTexType;}
 		
 		void SetUseMipMaps(bool abX){mbUseMipMaps = abX;} 
 		bool UsesMipMaps(){ return mbUseMipMaps; }
@@ -127,7 +128,8 @@ namespace hpl {
 
 	protected:
 		eTextureUsage mUsage;
-		eTextureType mType;
+		eTextureType mTexType;
+		eMaterialTexture mMatType;
 
 		cVector3l mvSize;
 

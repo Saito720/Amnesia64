@@ -149,7 +149,7 @@ namespace hpl {
 			///////////////////////
 			//Create a texture from bitmap (do not want to load it from texture manager since that would delete the texture on its own).
 			tString sName = cString::SetFileExt(cString::To8Char(asFileName),"")+"_"+cString::ToString(lCount);
-			iTexture *pTexture = mpLowLevelGraphics->CreateTexture("",eTextureType_2D,eTextureUsage_Normal);
+			iTexture *pTexture = mpLowLevelGraphics->CreateTexture("",eTextureType_2D,eTextureUsage_Normal, eMaterialTexture_LastEnum);
 
 			pTexture->CreateFromBitmap(pBitmap);
 

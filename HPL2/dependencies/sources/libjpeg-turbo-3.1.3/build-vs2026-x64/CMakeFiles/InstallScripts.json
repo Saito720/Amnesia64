@@ -1,0 +1,9 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/Amnesia64/HPL2/dependencies/sources/libjpeg-turbo-3.1.3/build-vs2026-x64/cmake_install.cmake",
+		"C:/Amnesia64/HPL2/dependencies/sources/libjpeg-turbo-3.1.3/build-vs2026-x64/simd/cmake_install.cmake",
+		"C:/Amnesia64/HPL2/dependencies/sources/libjpeg-turbo-3.1.3/build-vs2026-x64/src/md5/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

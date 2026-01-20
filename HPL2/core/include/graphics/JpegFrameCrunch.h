@@ -4,7 +4,7 @@
 #include <vector>
 #include <cstdint>
 #include <GL/glew.h>
-#include "src/turbojpeg.h"
+#include <turbojpeg.h>
 
 class cJpegFrameCrunch
 {

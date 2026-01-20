@@ -1,5 +1,5 @@
 #include "graphics/JpegFrameCrunch.h"
-#include "src/turbojpeg.h"
+#include <turbojpeg.h>
 
 cJpegFrameCrunch::cJpegFrameCrunch()
 {

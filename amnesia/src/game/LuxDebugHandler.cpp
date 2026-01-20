@@ -394,6 +394,16 @@ void cLuxDebugHandler::OnDraw(float afFrameTime)
 	}
 
 	////////////////////
+	// JPEG
+	if (gpBase->mpEngine->GetGraphics()->GetRenderer(eRenderer_Main)->GetUseJpegCompression())
+	{
+		int lQuality = gpBase->mpEngine->GetGraphics()->GetRenderer(eRenderer_Main)->GetJpegQuality();
+		gpBase->mpGameDebugSet->DrawFont(gpBase->mpCustomFont, cVector3f(10, fY, 10), 28, cColor(1, 1),
+			_W("JPEG Quality: %d\n"), lQuality <= 1 ? 1 : lQuality);
+		fY += 13.0f;
+	}
+
+	////////////////////
 	// Messages
 	if(mbShowDebugMessages || mbShowErrorMessages)
 	{
@@ -961,7 +971,7 @@ void cLuxDebugHandler::CreateGuiWindow()
 
 	///////////////////////////
 	//Window
-	cVector2f vSize = cVector2f(250, 780);
+	cVector2f vSize = cVector2f(250, 835);
 	vGroupSize.x = vSize.x - 20;
 	cVector3f vPos = cVector3f(mpGuiSet->GetVirtualSize().x - vSize.x - 10, 10, 0);
 	mpDebugWindow = mpGuiSet->CreateWidgetWindow(0,vPos,vSize,_W("Debug Toolbar") );
@@ -1171,8 +1181,21 @@ void cLuxDebugHandler::CreateGuiWindow()
 		pSlider->SetValue(10, false);
 		pSlider->SetUserValue(14);
 		pSlider->AddCallback(eGuiMessage_SliderMove, this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 33;
+
+		//Enable JPEG compression
+		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos, vSize, _W("JPEG Compression"), pGroup);
+		pCheckBox->SetChecked(false);
+		pCheckBox->SetUserValue(15);
+		pCheckBox->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(ChangeDebugText));
 		vGroupPos.y += 22;
 
+		//Set JPEG quality
+		pSlider = mpGuiSet->CreateWidgetSlider(eWidgetSliderOrientation_Horizontal, vGroupPos, vSize, 100, pGroup, ("JPEG Quality"));
+		pSlider->SetValue(90, false);
+		pSlider->SetUserValue(16);
+		pSlider->AddCallback(eGuiMessage_SliderMove, this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;
 
 		//Group end
 		vGroupSize.y = vGroupPos.y + 15;
@@ -1577,6 +1600,9 @@ bool cLuxDebugHandler::ChangeDebugText(iWidget* apWidget, const cGuiMessageData&
 
 	else if(lNum == 13)  gpBase->mpPlayer->SetFreeCamActive(bActive);
 	else if(lNum == 14)  gpBase->mpPlayer->SetFreeCamSpeed( cMath::Max((float)aData.mlVal/ 100.0f, 0.001f) );
+
+	else if(lNum == 15)  gpBase->mpEngine->GetGraphics()->GetRenderer(eRenderer_Main)->SetUseJpegCompression(bActive);
+	else if(lNum == 16)  gpBase->mpEngine->GetGraphics()->GetRenderer(eRenderer_Main)->SetJpegQuality(aData.mlVal);
 
 	else if(lNum == 17)  SetFastForward(bActive);
 	

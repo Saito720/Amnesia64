@@ -25,6 +25,7 @@
 #include "ai/AI.h"
 #include "resources/Resources.h"
 #include "graphics/Graphics.h"
+#include "graphics/JpegFrameCrunch.h"
 #include "gui/Gui.h"
 #include "haptic/Haptic.h"
 #include "scene/Scene.h"
@@ -226,6 +227,10 @@ namespace hpl {
 		Log("--------------------------------------------------------\n");
 
 		//Create the modules that game connects to and init them!
+		Log(" Creating JPEG Turbo module\n");
+		mpJpegTurbo = mpGameSetup->CreateJpegTurbo();
+		if(mpJpegTurbo == NULL) FatalError("Failed to create JPEG Turbo module!\n");
+
 		Log(" Creating graphics module\n");
 		mpGraphics = mpGameSetup->CreateGraphics();
 		
@@ -280,7 +285,10 @@ namespace hpl {
 							apVars->mGraphics.mGpuProgramFormat,
 							apVars->mGraphics.msWindowCaption,
 							apVars->mGraphics.mvWindowPosition,
-							mpResources,alHplSetupFlags);
+							mpResources, mpJpegTurbo, alHplSetupFlags);
+
+		//Init JPEG Turbo
+		mpJpegTurbo->Init();
 		
 		//Init Sound
 		mpSound->Init(mpResources, apVars->mSound.mlSoundDeviceID,
@@ -385,6 +393,7 @@ namespace hpl {
 		hplDelete(mpPhysics);
 		hplDelete(mpAI);
 		hplDelete(mpSystem);
+		hplDelete(mpJpegTurbo);
 		
 		Log(" Deleting game setup provided by user\n");
 		hplDelete(mpGameSetup);

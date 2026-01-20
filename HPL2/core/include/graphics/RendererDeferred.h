@@ -277,6 +277,7 @@ namespace hpl {
 		
 		iTexture *mpGBufferTexture[2][4];	//[2] = reflection or not
 		iTexture *mpAccumBufferTexture;
+		iTexture *mpJpeggedTexture;
 		iTexture *mpRefractionTexture;
 		iTexture *mpReflectionTexture;
 		iDepthStencilBuffer* mpDepthStencil[2];	//[2] = reflection or not

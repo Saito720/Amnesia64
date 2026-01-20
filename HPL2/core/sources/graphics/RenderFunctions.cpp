@@ -45,6 +45,9 @@ namespace hpl {
 
 		mvScreenSize = mpLowLevelGraphics->GetScreenSizeInt();
 		mvScreenSizeFloat = mpLowLevelGraphics->GetScreenSizeFloat();
+
+		mbUseJpegCompression = false;
+		mlJpegQuality = 90;
 	}
 
 	//-----------------------------------------------------------------------

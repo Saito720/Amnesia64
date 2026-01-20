@@ -23,6 +23,8 @@
 #include "system/SystemTypes.h"
 #include "engine/EngineTypes.h"
 
+class cJpegFrameCrunch;
+
 namespace hpl {
 
 	class cUpdater;
@@ -229,6 +231,7 @@ namespace hpl {
 		cSystem *mpSystem;
 		cInput *mpInput;
 		cGraphics *mpGraphics;
+		cJpegFrameCrunch *mpJpegTurbo;
 		cScene *mpScene;
 		cSound *mpSound;
 		cPhysics *mpPhysics;

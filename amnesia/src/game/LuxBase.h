@@ -208,6 +208,7 @@ public:
 	cGuiSet *mpGameDebugSet;
 	cGuiSet *mpGameHudSet;
 	iFontData *mpDefaultFont;
+	iFontData *mpCustomFont;
 	cVector2f mvHudVirtualCenterSize;//This is size of what is inside a 4:3 ratio!
 	cVector2f mvHudVirtualSize;
 	cVector2f mvHudVirtualOffset;

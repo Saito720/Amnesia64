@@ -22,6 +22,7 @@
 #include "system/System.h"
 #include "input/Input.h"
 #include "graphics/Graphics.h"
+#include "graphics/JpegFrameCrunch.h"
 #include "resources/Resources.h"
 #include "scene/Scene.h"
 #include "sound/Sound.h"
@@ -225,6 +226,15 @@ namespace hpl {
 		cGraphics *pGraphics = hplNew( cGraphics, (mpLowLevelGraphics,mpLowLevelResources) );
 		return pGraphics;
 	}
+
+	//-----------------------------------------------------------------------
+
+	cJpegFrameCrunch* cSDLEngineSetup::CreateJpegTurbo()
+	{
+		cJpegFrameCrunch *pJpegTurbo = hplNew( cJpegFrameCrunch,() );
+		return pJpegTurbo;
+	}
+
 	//-----------------------------------------------------------------------
 	
 	cSound* cSDLEngineSetup::CreateSound()

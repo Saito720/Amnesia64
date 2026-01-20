@@ -36,6 +36,7 @@
 #include "graphics/MaterialType.h"
 #include "graphics/Texture.h"
 #include "graphics/GPUProgram.h"
+#include "graphics/JpegFrameCrunch.h"
 
 #include "resources/LowLevelResources.h"
 #include "resources/Resources.h"
@@ -126,13 +127,14 @@ namespace hpl {
 	bool cGraphics::Init(	int alWidth, int alHeight, int alDisplay, int alBpp, int abFullscreen, 
 							int alMultisampling,eGpuProgramFormat aGpuProgramFormat,
 							const tString &asWindowCaption, const cVector2l &avWindowPos,
-							cResources* apResources,
+							cResources* apResources, cJpegFrameCrunch* apJpegTurbo,
 							tFlag alHplSetupFlags)
 	{
 		Log("Initializing Graphics Module\n");
 		Log("--------------------------------------------------------\n");
 		
 		mpResources = apResources;
+		mpJpegTurbo = apJpegTurbo;
 
 		////////////////////////////////////////////////
 		//Setup the graphic directories:

@@ -95,6 +95,12 @@ namespace hpl {
 
 		void SetInvertCullMode(bool abX);
 
+		void SetUseJpegCompression(bool abX) { mbUseJpegCompression = abX; }
+		bool GetUseJpegCompression() const { return mbUseJpegCompression; }
+
+		void SetJpegQuality(int alQuality) { mlJpegQuality = alQuality; }
+		int  GetJpegQuality() const { return mlJpegQuality; }
+
 		void SetFrameBuffer(iFrameBuffer *apFrameBuffer, bool abUsePosAndSize=false, bool abUseGlobalScissor=true);
 		void ClearFrameBuffer(tClearFrameBufferFlag aFlags, bool abUsePosAndSize);
 
@@ -151,6 +157,8 @@ namespace hpl {
 		bool mbCurrentScissorActive;
 		eDepthTestFunc mCurrentDepthTestFunc;
 		bool mbCurrentCullActive;
+		bool mbUseJpegCompression;
+		int mlJpegQuality;
 		eCullMode mCurrentCullMode;
 		eMaterialChannelMode mCurrentChannelMode;
 		eMaterialAlphaMode mCurrentAlphaMode;

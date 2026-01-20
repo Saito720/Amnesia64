@@ -1245,6 +1245,8 @@ bool cLuxBase::InitGame()
 	else
 		mpDefaultFont = mpEngine->GetResources()->GetFontManager()->CreateFontData("font_default.fnt");
 
+	mpCustomFont = mpEngine->GetResources()->GetFontManager()->CreateFontData("JetBrainsMono-Regular.fnt");
+
 	///////////////////////////////////////
 	// Create updater containers
 	mpEngine->GetUpdater()->AddContainer("PreMenu");

@@ -23,6 +23,7 @@
 #include "system/SystemTypes.h"
 #include "math/MathTypes.h"
 #include "graphics/GraphicsTypes.h"
+#include "graphics/JpegFrameCrunch.h"
 #include "engine/Updateable.h"
 
 namespace hpl {
@@ -87,13 +88,14 @@ namespace hpl {
 
 		bool Init(int alWidth, int alHeight, int alDisplay, int alBpp, int abFullscreen, int alMultisampling,
 					eGpuProgramFormat aGpuProgramFormat,const tString &asWindowCaption, const cVector2l &avWindowPos,
-					cResources* apResources, tFlag alHplSetupFlags);
+					cResources* apResources, cJpegFrameCrunch* apJpegTurbo, tFlag alHplSetupFlags);
 
 		void Update(float afTimeStep);
 
 		cVideoMode* GetValidVideoMode(int alX);
 		
 		iLowLevelGraphics* GetLowLevel(){ return mpLowLevelGraphics;}
+		cJpegFrameCrunch* GetJpegTurbo(){ return mpJpegTurbo;}
 
 		iRenderer* GetRenderer(eRenderer aType);
 		void ReloadRendererData();
@@ -137,6 +139,7 @@ namespace hpl {
 	
 	private:
 		iLowLevelGraphics *mpLowLevelGraphics;
+		cJpegFrameCrunch *mpJpegTurbo;
 		iLowLevelResources *mpLowLevelResources;
 		cMeshCreator *mpMeshCreator;
 		cTextureCreator* mpTextureCreator;

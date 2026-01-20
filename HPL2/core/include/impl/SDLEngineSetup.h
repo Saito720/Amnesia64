@@ -42,6 +42,7 @@ namespace hpl {
 		cInput* CreateInput(cGraphics* apGraphics);
 		cSystem* CreateSystem();
 		cGraphics* CreateGraphics();
+		cJpegFrameCrunch* CreateJpegTurbo();
 		cResources* CreateResources(cGraphics* apGraphics);
 		cScene* CreateScene(cGraphics* apGraphics, cResources* apResources, cSound* apSound,
 							cPhysics *apPhysics, cSystem *apSystem,cAI *apAI,cGui *apGui,cHaptic *apHaptic);

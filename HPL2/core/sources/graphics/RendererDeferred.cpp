@@ -57,6 +57,8 @@
 #include "scene/MeshEntity.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <GL/glew.h>
 
 namespace hpl {
 
@@ -308,6 +310,12 @@ namespace hpl {
 		mpAccumBufferTexture = mpGraphics->CreateTexture("AccumBiffer",eTextureType_Rect,eTextureUsage_RenderTarget);
 		mpAccumBufferTexture->CreateFromRawData(cVector3l(mvScreenSize.x, mvScreenSize.y,0),ePixelFormat_RGBA, NULL);
 		mpAccumBufferTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
+
+		// Jpegged version
+		mpJpeggedTexture = mpGraphics->CreateTexture("JpeggedTexture",eTextureType_Rect,eTextureUsage_RenderTarget);
+		mpJpeggedTexture->CreateFromRawData(cVector3l(mvScreenSize.x, mvScreenSize.y,0),ePixelFormat_RGBA, NULL);
+		mpJpeggedTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
+
 
 		////////////////////////////////////
 		//Create Accumulation buffer
@@ -812,9 +820,17 @@ namespace hpl {
 		SetFrameBuffer(mpCurrentRenderTarget->mpFrameBuffer,true);
 
 		SetFlatProjection();
-
 		SetProgram(NULL);
-		SetTexture(0,mpAccumBufferTexture);
+		if (GetUseJpegCompression())
+		{
+			const uint8_t* jpegData = mpGraphics->GetJpegTurbo()->CrunchFromTexture(GL_TEXTURE_RECTANGLE, mpAccumBufferTexture->GetCurrentLowlevelHandle(), mvScreenSize.x, mvScreenSize.y, GetJpegQuality());
+			mpJpeggedTexture->SetRawData(0, cVector3l(0, 0, 0), cVector3l(mvScreenSize.x, mvScreenSize.y, 0), ePixelFormat_RGBA, (void*)jpegData);
+			SetTexture(0, mpJpeggedTexture);
+		}
+		else
+		{
+			SetTexture(0, mpAccumBufferTexture);
+		}
 		SetTextureRange(NULL, 1);
 
 		////////////////////////////////////

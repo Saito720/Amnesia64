@@ -1,5 +1,5 @@
 /* libjpeg-turbo build number */
-#define BUILD  "20260114"
+#define BUILD  "20260120"
 
 /* How to hide global symbols. */
 #define HIDDEN  

@@ -1,4 +1,5 @@
 #version 440
+#extension GL_GOOGLE_include_directive : require
 /// Copyright © 2009-2020 Frictional Games
 /// Copyright 2023 Michael Pollind
 /// SPDX-License-Identifier: GPL-3.0
@@ -12,7 +13,7 @@ layout(location = 4) in vec3 v_bitangent;
 layout(location = 5) flat in uint v_drawId;
 
 layout(location = 0) out vec4 out_diffuse;
-layout(location = 1) out vec4 out_test;
+layout(location = 1) out uint out_visibility;
 
 void main() {
     UniformObject   object     = sceneObjects[v_drawId];
@@ -80,6 +81,6 @@ void main() {
         }
     }
 
-    out_diffuse = result;
-    out_test    = vec4(0.0);
+    out_diffuse    = result;
+    out_visibility = (v_drawId << 16) | (uint(gl_PrimitiveID) & 0xffffu);
 }

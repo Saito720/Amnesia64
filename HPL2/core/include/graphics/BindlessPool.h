@@ -2,6 +2,7 @@
 
 #include "graphics/IndexPool.h"
 #include "graphics/ObjectPool.h"
+#include "system/Hasher.h"
 #include <cstdint>
 #include <vector>
 #include <array>
@@ -11,7 +12,7 @@ struct BindlessPool {
 public:
   struct BindlessPoolSlot {
     uint32_t frameIndex; // frame index when this slot was requested
-    uint32_t cookie;
+    hash_t cookie;
     uint32_t id;
 
 	  // queue
@@ -33,8 +34,8 @@ public:
   BindlessPool& operator=(const BindlessPool&) = delete;
 
   void reset(uint32_t numElements);
-  void free(uint32_t cookie);
-  BindlessPool::BindlessPoolReq  request(uint32_t cookie, uint32_t frameIndex);
+  void free(hash_t cookie);
+  BindlessPool::BindlessPoolReq  request(hash_t cookie, uint32_t frameIndex);
 private:
 
   void detachSlot(struct BindlessPoolSlot *slot );

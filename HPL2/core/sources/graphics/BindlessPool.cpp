@@ -18,7 +18,7 @@ void BindlessPool::reset(uint32_t numElements) {
   poolSlotPool.reset();
 }
 
-void BindlessPool::free(uint32_t cookie) {
+void BindlessPool::free(hash_t cookie) {
   const size_t hashIndex = cookie % hashSlots.size();
   for (BindlessPool::BindlessPoolSlot *c = hashSlots[hashIndex]; c;
        c = c->hNext) {
@@ -96,7 +96,7 @@ void BindlessPool::attachSlot(struct BindlessPoolSlot *slot) {
   }
 }
 
-BindlessPool::BindlessPoolReq  BindlessPool::request(uint32_t cookie, uint32_t frameIndex) {
+BindlessPool::BindlessPoolReq  BindlessPool::request(hash_t cookie, uint32_t frameIndex) {
   const size_t hashIndex = cookie % hashSlots.size();
   for (BindlessPool::BindlessPoolSlot *c = hashSlots[hashIndex]; c;
        c = c->hNext) {

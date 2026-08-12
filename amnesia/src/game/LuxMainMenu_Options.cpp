@@ -1498,9 +1498,6 @@ void cLuxMainMenu_Options::ApplyChanges()
 		pCfgHdr->mbWorldReflection = mpChBWorldReflection->IsChecked();
 		pCfgHdr->mbRefraction = mpChBRefraction->IsChecked();
 
-		//Update the viewport stuff
-		gpBase->mpMapHandler->UpdateViewportRenderProperties();
-
 		/////////////////////////
 		// Smoothing
 		{
@@ -1530,6 +1527,9 @@ void cLuxMainMenu_Options::ApplyChanges()
 		pCfgHdr->mbSSAOActive = mpChBSSAO->IsChecked();
 		pCfgHdr->mlSSAOSamples = GetSSAOSamplesFromIndex(mpCBSSAOSamples->GetSelectedItem());
 		pCfgHdr->mlSSAOResolution = mpCBSSAOResolution->GetSelectedItem();
+
+		//Update the viewport stuff
+		gpBase->mpMapHandler->UpdateViewportRenderProperties();
 	}
 	
 

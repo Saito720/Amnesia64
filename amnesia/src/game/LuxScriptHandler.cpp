@@ -78,6 +78,53 @@ int cLuxScriptHandler::mlRopeIdCount =0;
 
 string gsScriptNull="";
 
+class cLuxScriptCameraView
+{
+public:
+	cLuxScriptCameraView()
+	{
+		mpMap = NULL;
+		mpView = NULL;
+		mpGfx = NULL;
+		mvDrawPos = 0;
+		mfDrawScale = -1;
+		mbDraw = false;
+		mbUseRelativeCoordinates = false;
+	}
+
+	tString msName;
+	tString msEntityName;
+	cLuxMap *mpMap;
+	cLuxCameraView *mpView;
+	cGuiGfxElement *mpGfx;
+	cVector2f mvDrawPos;
+	float mfDrawScale;
+	bool mbDraw;
+	bool mbUseRelativeCoordinates;
+};
+
+static tString LuxCameraViewKey(const tString& asName)
+{
+	return cString::ToLowerCase(asName);
+}
+
+static cMatrixf LuxCameraViewRotationFromEntityMatrix(const cMatrixf& a_mtxWorld)
+{
+	cMatrixf mtxRotation = a_mtxWorld.GetRotation();
+	// Entity transforms store model axes in columns; camera matrix mode stores the inverse view rotation.
+	cVector3f vScaledRight(mtxRotation.m[0][0], mtxRotation.m[1][0], mtxRotation.m[2][0]);
+	cVector3f vScaledUp(mtxRotation.m[0][1], mtxRotation.m[1][1], mtxRotation.m[2][1]);
+	cVector3f vScaledForward(mtxRotation.m[0][2], mtxRotation.m[1][2], mtxRotation.m[2][2]);
+
+	cVector3f vRight, vUp, vForward;
+	cMath::Vector3OrthonormalizeBasis(vScaledRight, vScaledUp, vScaledForward,
+										vRight, vUp, vForward);
+
+	cMatrixf mtxEntityRotation = cMath::MatrixUnitVectors(vRight, vUp, vForward, 0);
+	cMatrixf mtxCameraRotation = cMath::MatrixMul(mtxEntityRotation, cMath::MatrixRotateY(kPif));
+	return cMath::MatrixInverse(mtxCameraRotation);
+}
+
 //-----------------------------------------------------------------------
 
 cLuxScriptHandler::cLuxScriptHandler() : iLuxUpdateable("LuxScriptHandler")
@@ -92,6 +139,7 @@ cLuxScriptHandler::cLuxScriptHandler() : iLuxUpdateable("LuxScriptHandler")
 
 cLuxScriptHandler::~cLuxScriptHandler()
 {
+	DestroyAllCameraViews();
 }
 
 //-----------------------------------------------------------------------
@@ -113,13 +161,14 @@ void cLuxScriptHandler::OnStart()
 
 void cLuxScriptHandler::Reset()
 {
-
+	DestroyAllCameraViews();
 }
 
 //-----------------------------------------------------------------------
 
 void cLuxScriptHandler::Update(float afTimeStep)
 {
+	UpdateCameraViews();
 }
 
 //-----------------------------------------------------------------------
@@ -127,7 +176,8 @@ void cLuxScriptHandler::Update(float afTimeStep)
 
 void cLuxScriptHandler::OnDraw(float afFrameTime)
 {
-	
+	UpdateCameraViews();
+	DrawCameraViews();
 }
 
 
@@ -153,6 +203,140 @@ void cLuxScriptHandler::OnDraw(float afFrameTime)
 void cLuxScriptHandler::AddFunc(const tString& asFunc, void *apFuncPtr)
 {
 	mpLowLevelSystem->AddScriptFunc(asFunc,apFuncPtr);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxScriptHandler::UpdateCameraViews()
+{
+	if(m_mapCameraViews.empty()) return;
+	if(gpBase == NULL || gpBase->mpMapHandler == NULL) return;
+
+	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if(pMap == NULL)
+	{
+		DestroyAllCameraViews();
+		return;
+	}
+
+	tLuxScriptCameraViewMapIt it = m_mapCameraViews.begin();
+	while(it != m_mapCameraViews.end())
+	{
+		cLuxScriptCameraView *pScriptView = it->second;
+		if(pScriptView == NULL || pScriptView->mpView == NULL || pScriptView->mpMap != pMap)
+		{
+			tLuxScriptCameraViewMapIt itDestroy = it++;
+			DestroyCameraViewEntry(itDestroy);
+			continue;
+		}
+
+		if(pScriptView->msEntityName.empty())
+		{
+			++it;
+			continue;
+		}
+
+		iLuxEntity *pEntity = pMap->GetEntityByName(pScriptView->msEntityName);
+		if(pEntity == NULL || pEntity->GetDestroyMe())
+		{
+			Warning("Camera view '%s' destroyed because entity '%s' no longer exists or is being destroyed.\n",
+					pScriptView->msName.c_str(), pScriptView->msEntityName.c_str());
+
+			tLuxScriptCameraViewMapIt itDestroy = it++;
+			DestroyCameraViewEntry(itDestroy);
+			continue;
+		}
+
+		iEntity3D *pAttachEntity = pEntity->GetAttachEntity();
+		if(pAttachEntity == NULL)
+		{
+			Warning("Camera view '%s' destroyed because entity '%s' has no attach entity.\n",
+					pScriptView->msName.c_str(), pScriptView->msEntityName.c_str());
+
+			tLuxScriptCameraViewMapIt itDestroy = it++;
+			DestroyCameraViewEntry(itDestroy);
+			continue;
+		}
+
+		cMatrixf mtxWorld = pAttachEntity->GetWorldMatrix();
+		cMatrixf mtxCameraRotation = LuxCameraViewRotationFromEntityMatrix(mtxWorld);
+
+		pScriptView->mpView->SetTransform(mtxWorld.GetTranslation(), mtxCameraRotation);
+
+		++it;
+	}
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxScriptHandler::DrawCameraViews()
+{
+	if(m_mapCameraViews.empty()) return;
+	if(gpBase == NULL || gpBase->mpGameHudSet == NULL) return;
+
+	tLuxScriptCameraViewMapIt it = m_mapCameraViews.begin();
+	for(; it != m_mapCameraViews.end(); ++it)
+	{
+		cLuxScriptCameraView *pScriptView = it->second;
+		if(pScriptView == NULL || pScriptView->mbDraw == false || pScriptView->mpGfx == NULL || pScriptView->mpView == NULL)
+			continue;
+
+		cVector2f vSize((float)pScriptView->mpView->GetResolution().x, (float)pScriptView->mpView->GetResolution().y);
+		if(pScriptView->mfDrawScale >= 0)
+		{
+			float fAspect = vSize.y / vSize.x;
+			vSize = cVector2f(pScriptView->mfDrawScale, pScriptView->mfDrawScale * fAspect);
+		}
+
+		cVector3f vPos = gpBase->mvHudVirtualStartPos;
+		if(pScriptView->mbUseRelativeCoordinates)
+		{
+			vPos.x += pScriptView->mvDrawPos.x * gpBase->mvHudVirtualSize.x;
+			vPos.y += pScriptView->mvDrawPos.y * gpBase->mvHudVirtualSize.y;
+		}
+		else
+		{
+			vPos.x += pScriptView->mvDrawPos.x;
+			vPos.y += pScriptView->mvDrawPos.y;
+		}
+		vPos.z = 2.9f;
+
+		gpBase->mpGameHudSet->DrawGfx(pScriptView->mpGfx, vPos, vSize, cColor(1,1));
+	}
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxScriptHandler::DestroyAllCameraViews()
+{
+	while(m_mapCameraViews.empty() == false)
+	{
+		DestroyCameraViewEntry(m_mapCameraViews.begin());
+	}
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxScriptHandler::DestroyCameraViewEntry(tLuxScriptCameraViewMapIt aIt)
+{
+	cLuxScriptCameraView *pScriptView = aIt->second;
+	m_mapCameraViews.erase(aIt);
+
+	if(pScriptView == NULL) return;
+
+	if(pScriptView->mpGfx && gpBase && gpBase->mpEngine && gpBase->mpEngine->GetGui())
+	{
+		gpBase->mpEngine->GetGui()->DestroyGfx(pScriptView->mpGfx);
+		pScriptView->mpGfx = NULL;
+	}
+
+	if(pScriptView->mpView && gpBase && gpBase->mpMapHandler)
+	{
+		gpBase->mpMapHandler->DestroyCameraView(pScriptView->mpView);
+		pScriptView->mpView = NULL;
+	}
+
+	hplDelete(pScriptView);
 }
 
 //-----------------------------------------------------------------------
@@ -558,6 +742,11 @@ void cLuxScriptHandler::InitScriptFunctions()
 	AddFunc("void CreateParticleSystemAtEntity(string &in asPSName, string &in asPSFile, string &in asEntity, bool abSavePS)",(void *)CreateParticleSystemAtEntity);
 	AddFunc("void CreateParticleSystemAtEntityExt(	string &in asPSName, string &in asPSFile, string &in asEntity, bool abSavePS, float afR, float afG, float afB, float afA, bool abFadeAtDistance, float afFadeMinEnd, float afFadeMinStart, float afFadeMaxStart, float afFadeMaxEnd)", (void *)CreateParticleSystemAtEntityExt);
 	AddFunc("void DestroyParticleSystem(string &in asName)",(void *)DestroyParticleSystem); 
+
+	AddFunc("void CreateCameraView(string &in asCVName, float afResX, float afResY)",(void *)CreateCameraView);
+	AddFunc("void AttachCameraViewToEntity(string &in asCVName, string &in asEntity)",(void *)AttachCameraViewToEntity);
+	AddFunc("void ShowCameraView(string &in asCVName, float afPosX, float afPosY, float afScale, bool abUseRelativeCoordinates)",(void *)ShowCameraView);
+	AddFunc("void DestroyCameraView(string &in asName)",(void *)DestroyCameraView);
 	
 	AddFunc("void PlaySoundAtEntity(string &in asSoundName, string &in asSoundFile, string &in asEntity, float afFadeSpeed, bool abSaveSound)",(void *)PlaySoundAtEntity);
 	AddFunc("void FadeInSound(string& asSoundName, float afFadeTime, bool abPlayStart)",(void *)FadeInSound);
@@ -2018,6 +2207,159 @@ void __stdcall cLuxScriptHandler::DestroyParticleSystem(string& asName)
 		}
 	}
 	if(bFound==false) Error("Could not find particle system '%s'\n", asName.c_str());
+}
+
+//-----------------------------------------------------------------------
+
+void __stdcall cLuxScriptHandler::CreateCameraView(string& asCVName, float afResX, float afResY)
+{
+	if(asCVName.empty())
+	{
+		Warning("Could not create camera view with empty name.\n");
+		return;
+	}
+
+	if(gpBase == NULL || gpBase->mpScriptHandler == NULL || gpBase->mpMapHandler == NULL || gpBase->mpEngine == NULL)
+		return;
+
+	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if(pMap == NULL)
+	{
+		Warning("Could not create camera view '%s'. No map was set.\n", asCVName.c_str());
+		return;
+	}
+
+	int lResX = cMath::RoundToInt(afResX);
+	int lResY = cMath::RoundToInt(afResY);
+	if(lResX <= 0 || lResY <= 0)
+	{
+		Warning("Could not create camera view '%s' with invalid resolution %dx%d.\n", asCVName.c_str(), lResX, lResY);
+		return;
+	}
+
+	DestroyCameraView(asCVName);
+
+	cLuxCameraViewDesc desc;
+	desc.mvResolution = cVector2l(lResX, lResY);
+	desc.mbVisible = false;
+	desc.mbActive = true;
+
+	cLuxCameraView *pView = gpBase->mpMapHandler->CreateCameraView(desc);
+	if(pView == NULL)
+	{
+		Warning("Could not create camera view '%s'.\n", asCVName.c_str());
+		return;
+	}
+
+	cGui *pGui = gpBase->mpEngine->GetGui();
+	cGuiGfxElement *pGfx = pGui ? pGui->CreateGfxTexture(pView->GetRenderTexture(), false, eGuiMaterial_Diffuse) : NULL;
+	if(pGfx == NULL)
+	{
+		gpBase->mpMapHandler->DestroyCameraView(pView);
+		Warning("Could not create GUI texture for camera view '%s'.\n", asCVName.c_str());
+		return;
+	}
+
+	cLuxScriptCameraView *pScriptView = hplNew(cLuxScriptCameraView, ());
+	pScriptView->msName = asCVName;
+	pScriptView->mpMap = pMap;
+	pScriptView->mpView = pView;
+	pScriptView->mpGfx = pGfx;
+
+	gpBase->mpScriptHandler->m_mapCameraViews[LuxCameraViewKey(asCVName)] = pScriptView;
+}
+
+//-----------------------------------------------------------------------
+
+void __stdcall cLuxScriptHandler::AttachCameraViewToEntity(string& asCVName, string& asEntity)
+{
+	if(gpBase == NULL || gpBase->mpScriptHandler == NULL || gpBase->mpMapHandler == NULL)
+		return;
+
+	tLuxScriptCameraViewMapIt it = gpBase->mpScriptHandler->m_mapCameraViews.find(LuxCameraViewKey(asCVName));
+	if(it == gpBase->mpScriptHandler->m_mapCameraViews.end())
+	{
+		Warning("Could not attach camera view '%s'. It has not been created.\n", asCVName.c_str());
+		return;
+	}
+
+	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if(pMap == NULL)
+	{
+		Warning("Could not attach camera view '%s'. No map was set.\n", asCVName.c_str());
+		return;
+	}
+
+	cLuxScriptCameraView *pScriptView = it->second;
+	if(pScriptView == NULL || pScriptView->mpView == NULL)
+		return;
+
+	if(pScriptView->mpMap != pMap)
+	{
+		Warning("Could not attach camera view '%s'. It was created for another map.\n", asCVName.c_str());
+		return;
+	}
+
+	iLuxEntity *pEntity = pMap->GetEntityByName(asEntity);
+	if(pEntity == NULL || pEntity->GetDestroyMe())
+	{
+		Warning("Could not attach camera view '%s'. Entity '%s' does not exist or is being destroyed.\n", asCVName.c_str(), asEntity.c_str());
+		return;
+	}
+
+	iEntity3D *pAttachEntity = pEntity->GetAttachEntity();
+	if(pAttachEntity == NULL)
+	{
+		Warning("Could not attach camera view '%s'. Entity '%s' has no attach entity.\n", asCVName.c_str(), asEntity.c_str());
+		return;
+	}
+
+	cMatrixf mtxWorld = pAttachEntity->GetWorldMatrix();
+	cMatrixf mtxCameraRotation = LuxCameraViewRotationFromEntityMatrix(mtxWorld);
+
+	pScriptView->msEntityName = asEntity;
+	pScriptView->mpView->SetTransform(mtxWorld.GetTranslation(), mtxCameraRotation);
+}
+
+//-----------------------------------------------------------------------
+
+void __stdcall cLuxScriptHandler::ShowCameraView(string& asCVName, float afPosX, float afPosY, float afScale, bool abUseRelativeCoordinates)
+{
+	if(gpBase == NULL || gpBase->mpScriptHandler == NULL)
+		return;
+
+	tLuxScriptCameraViewMapIt it = gpBase->mpScriptHandler->m_mapCameraViews.find(LuxCameraViewKey(asCVName));
+	if(it == gpBase->mpScriptHandler->m_mapCameraViews.end())
+	{
+		Warning("Could not show camera view '%s'. It has not been created.\n", asCVName.c_str());
+		return;
+	}
+
+	cLuxScriptCameraView *pScriptView = it->second;
+	if(pScriptView == NULL || pScriptView->mpView == NULL)
+		return;
+
+	pScriptView->mvDrawPos = cVector2f(afPosX, afPosY);
+	pScriptView->mfDrawScale = afScale;
+	pScriptView->mbUseRelativeCoordinates = abUseRelativeCoordinates;
+	pScriptView->mbDraw = true;
+
+	pScriptView->mpView->SetActive(true);
+	pScriptView->mpView->SetVisible(true);
+}
+
+//-----------------------------------------------------------------------
+
+void __stdcall cLuxScriptHandler::DestroyCameraView(string& asName)
+{
+	if(gpBase == NULL || gpBase->mpScriptHandler == NULL)
+		return;
+
+	tLuxScriptCameraViewMapIt it = gpBase->mpScriptHandler->m_mapCameraViews.find(LuxCameraViewKey(asName));
+	if(it == gpBase->mpScriptHandler->m_mapCameraViews.end())
+		return;
+
+	gpBase->mpScriptHandler->DestroyCameraViewEntry(it);
 }
 
 //-----------------------------------------------------------------------

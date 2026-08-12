@@ -29,9 +29,88 @@
 class cLuxMap;
 class cLuxSavedGameMapCollection;
 class cLuxModelCache;
+class cLuxMapHandler;
+class cLuxCameraView;
 
 typedef std::list<cLuxMap*> tLuxMapList;
 typedef tLuxMapList::iterator tLuxMapListIt;
+typedef std::list<cLuxCameraView*> tLuxCameraViewList;
+typedef tLuxCameraViewList::iterator tLuxCameraViewListIt;
+
+//----------------------------------------------
+
+class cLuxCameraViewDesc
+{
+public:
+	cLuxCameraViewDesc();
+
+	cVector2l mvResolution;
+	float mfFOV;
+	float mfNearClipPlane;
+	float mfFarClipPlane;
+	cVector3f mvPosition;
+	cMatrixf m_mtxRotation;
+	cWorld *mpWorld;
+	eRenderer mRenderer;
+	eCameraMoveMode mMoveMode;
+	bool mbActive;
+	bool mbVisible;
+	bool mbPushFront;
+};
+
+//----------------------------------------------
+
+class cLuxCameraView
+{
+friend class cLuxMapHandler;
+public:
+	cLuxCameraView(cLuxMapHandler *apMapHandler, const cLuxCameraViewDesc& aDesc);
+	~cLuxCameraView();
+
+	bool IsValid(){ return mbValid; }
+
+	cCamera* GetCamera(){ return mpCamera; }
+	cViewport* GetViewport(){ return mpViewport; }
+	iFrameBuffer* GetFrameBuffer(){ return mpFrameBuffer; }
+	iTexture* GetRenderTexture(){ return mpRenderTexture; }
+	const cVector2l& GetResolution(){ return mvResolution; }
+
+	void SetActive(bool abX);
+	bool IsActive(){ return mbActive; }
+	void SetVisible(bool abX);
+	bool IsVisible(){ return mbVisible; }
+
+	void SetWorld(cWorld *apWorld);
+	void SetUseCurrentMapWorld(bool abX);
+	bool UsesCurrentMapWorld(){ return mbUseCurrentMapWorld; }
+
+	void SetPosition(const cVector3f& avPosition);
+	void SetRotationMatrix(const cMatrixf& a_mtxRotation);
+	void SetTransform(const cVector3f& avPosition, const cMatrixf& a_mtxRotation);
+	void SetFOV(float afFOV);
+	void SetClipPlanes(float afNearClipPlane, float afFarClipPlane);
+
+private:
+	bool Init(const cLuxCameraViewDesc& aDesc);
+	void ApplyActiveState();
+	void SetContainerActive(bool abX);
+	void SetCurrentMapWorld(cWorld *apWorld);
+	void SetViewportWorld(cWorld *apWorld);
+	void DestroyResources();
+
+	cLuxMapHandler *mpMapHandler;
+	cCamera *mpCamera;
+	cViewport *mpViewport;
+	iFrameBuffer *mpFrameBuffer;
+	iTexture *mpRenderTexture;
+	iDepthStencilBuffer *mpDepthStencilBuffer;
+	cVector2l mvResolution;
+	bool mbActive;
+	bool mbVisible;
+	bool mbContainerActive;
+	bool mbUseCurrentMapWorld;
+	bool mbValid;
+};
 
 //----------------------------------------------
 
@@ -116,6 +195,10 @@ public:
 
 	cViewport* GetViewport(){ return mpViewport;}
 
+	cLuxCameraView* CreateCameraView(const cVector2l& avResolution);
+	cLuxCameraView* CreateCameraView(const cLuxCameraViewDesc& aDesc);
+	void DestroyCameraView(cLuxCameraView* apView);
+
 	const tString& GetMapFolder(){ return msMapFolder;}
 	void SetMapFolder(const tString& asFolder){ msMapFolder = asFolder;}
 
@@ -147,6 +230,9 @@ private:
 	void SaveMainConfig();
 
 	void CheckMapChange(float afTimeStep);
+	void ApplyViewportRenderProperties(cViewport *apViewport);
+	void SetCameraViewsContainerActive(bool abX);
+	void SetCurrentMapForCameraViews(cWorld *apWorld);
 
 	cLuxDebugRenderCallback mRenderCallback;
 
@@ -157,6 +243,7 @@ private:
 	cLuxMap* mpCurrentMap;
 
 	tLuxMapList mlstMaps;
+	tLuxCameraViewList mlstCameraViews;
 
 	cViewport *mpViewport;
 	cMapHandlerSoundCallback* mpSoundCallback;

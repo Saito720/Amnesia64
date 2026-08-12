@@ -145,6 +145,281 @@ void cLuxDebugRenderCallback::OnPostTranslucentDraw(cRendererCallbackFunctions* 
 
 //-----------------------------------------------------------------------
 
+//////////////////////////////////////////////////////////////////////////
+// CAMERA VIEW DESC
+//////////////////////////////////////////////////////////////////////////
+
+//-----------------------------------------------------------------------
+
+cLuxCameraViewDesc::cLuxCameraViewDesc()
+{
+	mvResolution = cVector2l(512, 512);
+	mfFOV = 0;
+	mfNearClipPlane = 0;
+	mfFarClipPlane = 0;
+	mvPosition = 0;
+	m_mtxRotation = cMatrixf::Identity;
+	mpWorld = NULL;
+	mRenderer = eRenderer_Main;
+	mMoveMode = eCameraMoveMode_Fly;
+	mbActive = true;
+	mbVisible = true;
+	mbPushFront = true;
+}
+
+//-----------------------------------------------------------------------
+
+//////////////////////////////////////////////////////////////////////////
+// CAMERA VIEW
+//////////////////////////////////////////////////////////////////////////
+
+//-----------------------------------------------------------------------
+
+cLuxCameraView::cLuxCameraView(cLuxMapHandler *apMapHandler, const cLuxCameraViewDesc& aDesc)
+{
+	mpMapHandler = apMapHandler;
+	mpCamera = NULL;
+	mpViewport = NULL;
+	mpFrameBuffer = NULL;
+	mpRenderTexture = NULL;
+	mpDepthStencilBuffer = NULL;
+	mvResolution = aDesc.mvResolution;
+	mbActive = aDesc.mbActive;
+	mbVisible = aDesc.mbVisible;
+	mbContainerActive = true;
+	mbUseCurrentMapWorld = aDesc.mpWorld == NULL;
+	mbValid = Init(aDesc);
+}
+
+//-----------------------------------------------------------------------
+
+cLuxCameraView::~cLuxCameraView()
+{
+	DestroyResources();
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCameraView::SetActive(bool abX)
+{
+	mbActive = abX;
+	ApplyActiveState();
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCameraView::SetVisible(bool abX)
+{
+	mbVisible = abX;
+	ApplyActiveState();
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCameraView::SetContainerActive(bool abX)
+{
+	mbContainerActive = abX;
+	ApplyActiveState();
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCameraView::SetWorld(cWorld *apWorld)
+{
+	mbUseCurrentMapWorld = false;
+	SetViewportWorld(apWorld);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCameraView::SetUseCurrentMapWorld(bool abX)
+{
+	mbUseCurrentMapWorld = abX;
+	if(mbUseCurrentMapWorld == false) return;
+
+	cWorld *pWorld = NULL;
+	if(mpMapHandler && mpMapHandler->GetCurrentMap())
+		pWorld = mpMapHandler->GetCurrentMap()->GetWorld();
+
+	SetViewportWorld(pWorld);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCameraView::SetPosition(const cVector3f& avPosition)
+{
+	if(mpCamera) mpCamera->SetPosition(avPosition);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCameraView::SetRotationMatrix(const cMatrixf& a_mtxRotation)
+{
+	if(mpCamera == NULL) return;
+
+	mpCamera->SetRotateMode(eCameraRotateMode_Matrix);
+	mpCamera->SetRotationMatrix(a_mtxRotation);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCameraView::SetTransform(const cVector3f& avPosition, const cMatrixf& a_mtxRotation)
+{
+	SetPosition(avPosition);
+	SetRotationMatrix(a_mtxRotation);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCameraView::SetFOV(float afFOV)
+{
+	if(mpCamera) mpCamera->SetFOV(afFOV);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCameraView::SetClipPlanes(float afNearClipPlane, float afFarClipPlane)
+{
+	if(mpCamera == NULL) return;
+
+	mpCamera->SetNearClipPlane(afNearClipPlane);
+	mpCamera->SetFarClipPlane(afFarClipPlane);
+}
+
+//-----------------------------------------------------------------------
+
+bool cLuxCameraView::Init(const cLuxCameraViewDesc& aDesc)
+{
+	if(gpBase == NULL || gpBase->mpEngine == NULL) return false;
+
+	if(aDesc.mvResolution.x <= 0 || aDesc.mvResolution.y <= 0)
+	{
+		Error("Could not create camera view with invalid resolution %dx%d\n", aDesc.mvResolution.x, aDesc.mvResolution.y);
+		return false;
+	}
+
+	cScene *pScene = gpBase->mpEngine->GetScene();
+	cGraphics *pGraphics = gpBase->mpEngine->GetGraphics();
+
+	mpRenderTexture = pGraphics->CreateTexture("LuxCameraViewTarget", eTextureType_Rect, eTextureUsage_RenderTarget);
+	if(mpRenderTexture == NULL) return false;
+
+	mpRenderTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
+	if(mpRenderTexture->CreateFromRawData(cVector3l(aDesc.mvResolution.x, aDesc.mvResolution.y, 0), ePixelFormat_RGBA, NULL) == false)
+		return false;
+
+	mpFrameBuffer = pGraphics->CreateFrameBuffer("LuxCameraView");
+	if(mpFrameBuffer == NULL) return false;
+
+	mpFrameBuffer->SetTexture2D(0, mpRenderTexture);
+
+	mpDepthStencilBuffer = pGraphics->CreateDepthStencilBuffer(aDesc.mvResolution, 24, 8, false);
+	if(mpDepthStencilBuffer == NULL) return false;
+
+	mpFrameBuffer->SetDepthStencilBuffer(mpDepthStencilBuffer);
+	if(mpFrameBuffer->CompileAndValidate() == false)
+		return false;
+
+	mpCamera = pScene->CreateCamera(aDesc.mMoveMode);
+	if(mpCamera == NULL) return false;
+
+	cCamera *pBaseCamera = (mpMapHandler && mpMapHandler->GetViewport()) ? mpMapHandler->GetViewport()->GetCamera() : NULL;
+	float fFOV = aDesc.mfFOV > 0 ? aDesc.mfFOV : (pBaseCamera ? pBaseCamera->GetFOV() : cMath::ToRad(70.0f));
+	float fNearClip = aDesc.mfNearClipPlane > 0 ? aDesc.mfNearClipPlane : (pBaseCamera ? pBaseCamera->GetNearClipPlane() : 0.05f);
+	float fFarClip = aDesc.mfFarClipPlane > 0 ? aDesc.mfFarClipPlane : (pBaseCamera ? pBaseCamera->GetFarClipPlane() : 1000.0f);
+
+	mpCamera->SetRotateMode(eCameraRotateMode_Matrix);
+	mpCamera->SetFOV(fFOV);
+	mpCamera->SetAspect((float)aDesc.mvResolution.x / (float)aDesc.mvResolution.y);
+	mpCamera->SetNearClipPlane(fNearClip);
+	mpCamera->SetFarClipPlane(fFarClip);
+	mpCamera->SetPosition(aDesc.mvPosition);
+	mpCamera->SetRotationMatrix(aDesc.m_mtxRotation);
+
+	cWorld *pWorld = aDesc.mpWorld;
+	if(pWorld == NULL && mpMapHandler && mpMapHandler->GetCurrentMap())
+		pWorld = mpMapHandler->GetCurrentMap()->GetWorld();
+
+	mpViewport = pScene->CreateViewport(mpCamera, pWorld, aDesc.mbPushFront);
+	if(mpViewport == NULL) return false;
+
+	mpViewport->SetRenderer(pGraphics->GetRenderer(aDesc.mRenderer));
+	mpViewport->SetFrameBuffer(mpFrameBuffer);
+	mpViewport->SetPosition(cVector2l(0, 0));
+	mpViewport->SetSize(aDesc.mvResolution);
+
+	ApplyActiveState();
+
+	return true;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCameraView::ApplyActiveState()
+{
+	if(mpViewport == NULL) return;
+
+	mpViewport->SetActive(mbActive && mbContainerActive);
+	mpViewport->SetVisible(mbVisible && mbContainerActive);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCameraView::SetCurrentMapWorld(cWorld *apWorld)
+{
+	SetViewportWorld(apWorld);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCameraView::SetViewportWorld(cWorld *apWorld)
+{
+	if(mpViewport) mpViewport->SetWorld(apWorld);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxCameraView::DestroyResources()
+{
+	if(gpBase == NULL || gpBase->mpEngine == NULL) return;
+
+	cScene *pScene = gpBase->mpEngine->GetScene();
+	cGraphics *pGraphics = gpBase->mpEngine->GetGraphics();
+
+	if(mpViewport)
+	{
+		mpViewport->SetFrameBuffer(NULL);
+		pScene->DestroyViewport(mpViewport);
+		mpViewport = NULL;
+	}
+
+	if(mpCamera)
+	{
+		pScene->DestroyCamera(mpCamera);
+		mpCamera = NULL;
+	}
+
+	if(mpFrameBuffer)
+	{
+		pGraphics->DestroyFrameBuffer(mpFrameBuffer);
+		mpFrameBuffer = NULL;
+	}
+
+	if(mpDepthStencilBuffer)
+	{
+		pGraphics->DestoroyDepthStencilBuffer(mpDepthStencilBuffer);
+		mpDepthStencilBuffer = NULL;
+	}
+
+	if(mpRenderTexture)
+	{
+		pGraphics->DestroyTexture(mpRenderTexture);
+		mpRenderTexture = NULL;
+	}
+}
+
+//-----------------------------------------------------------------------
+
 
 //////////////////////////////////////////////////////////////////////////
 // CONSTRUCTORS
@@ -219,6 +494,7 @@ cLuxMapHandler::cLuxMapHandler() : iLuxUpdateable("LuxMapHandler")
 
 cLuxMapHandler::~cLuxMapHandler()
 {
+	STLDeleteAll(mlstCameraViews);
 	hplDelete(mpSavedGame);
 	hplDelete(mpSavedGameMutex);
 	hplDelete(mpSoundCallback);
@@ -251,9 +527,13 @@ void cLuxMapHandler::OnStart()
 
 void cLuxMapHandler::UpdateViewportRenderProperties()
 {
-	cRenderSettings *pRenderSettings = mpViewport->GetRenderSettings();
-	pRenderSettings->mbRenderWorldReflection = gpBase->mpConfigHandler->mbWorldReflection;
-	pRenderSettings->mbRenderShadows = gpBase->mpConfigHandler->mbShadowsActive;
+	ApplyViewportRenderProperties(mpViewport);
+
+	tLuxCameraViewListIt it = mlstCameraViews.begin();
+	for(; it != mlstCameraViews.end(); ++it)
+	{
+		ApplyViewportRenderProperties((*it)->GetViewport());
+	}
 }
 
 //-----------------------------------------------------------------------
@@ -276,6 +556,9 @@ void cLuxMapHandler::Reset()
 	// Stop all sounds (deleting maps will stop world entries, but will let GUI ones live)
 	cSound *pSound = gpBase->mpEngine->GetSound();
 	pSound->GetSoundHandler()->StopAll(eSoundEntryType_All);
+
+	if(mpViewport) mpViewport->SetWorld(NULL);
+	SetCurrentMapForCameraViews(NULL);
 
 	STLDeleteAll(mlstMaps);
 	mpCurrentMap = NULL;
@@ -375,6 +658,7 @@ void cLuxMapHandler::OnEnterContainer(const tString& asOldContainer)
 {
 	mpViewport->SetActive(true);
 	mpViewport->SetVisible(true);
+	SetCameraViewsContainerActive(true);
 
 	if(mpCurrentMap) mpCurrentMap->GetWorld()->SetActive(true);
 
@@ -385,6 +669,7 @@ void cLuxMapHandler::OnLeaveContainer(const tString& asNewContainer)
 {
 	mpViewport->SetActive(false);
 	mpViewport->SetVisible(false);
+	SetCameraViewsContainerActive(false);
 
 	if(mpCurrentMap) mpCurrentMap->GetWorld()->SetActive(false);
 }
@@ -467,6 +752,7 @@ void cLuxMapHandler::SetCurrentMap(cLuxMap* apMap, bool abRunScript, bool abFirs
 
 		//Set this as world in viewport
 		mpViewport->SetWorld(mpCurrentMap->GetWorld());
+		SetCurrentMapForCameraViews(mpCurrentMap->GetWorld());
 
 		mRenderCallback.mpPhysicsWorld = mpCurrentMap->GetPhysicsWorld();
 		mRenderCallback.mpLowLevelGfx = gpBase->mpEngine->GetGraphics()->GetLowLevel();
@@ -475,6 +761,52 @@ void cLuxMapHandler::SetCurrentMap(cLuxMap* apMap, bool abRunScript, bool abFirs
 	{
 		//If no map, set NULL as world
 		mpViewport->SetWorld(NULL);
+		SetCurrentMapForCameraViews(NULL);
+	}
+}
+
+//-----------------------------------------------------------------------
+
+cLuxCameraView* cLuxMapHandler::CreateCameraView(const cVector2l& avResolution)
+{
+	cLuxCameraViewDesc desc;
+	desc.mvResolution = avResolution;
+
+	return CreateCameraView(desc);
+}
+
+//-----------------------------------------------------------------------
+
+cLuxCameraView* cLuxMapHandler::CreateCameraView(const cLuxCameraViewDesc& aDesc)
+{
+	cLuxCameraView *pView = hplNew(cLuxCameraView, (this, aDesc));
+	if(pView->IsValid() == false)
+	{
+		hplDelete(pView);
+		return NULL;
+	}
+
+	mlstCameraViews.push_back(pView);
+	ApplyViewportRenderProperties(pView->GetViewport());
+
+	return pView;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxMapHandler::DestroyCameraView(cLuxCameraView* apView)
+{
+	if(apView == NULL) return;
+
+	tLuxCameraViewListIt it = mlstCameraViews.begin();
+	for(; it != mlstCameraViews.end(); ++it)
+	{
+		if(*it == apView)
+		{
+			mlstCameraViews.erase(it);
+			hplDelete(apView);
+			return;
+		}
 	}
 }
 
@@ -552,8 +884,7 @@ void cLuxMapHandler::LoadMainConfig()
 	mpPostEffect_Sepia->SetDisabled(gpBase->mpMainConfig->GetBool("Graphics", "PostEffectSepia", true)==false);
 	mpPostEffect_RadialBlur->SetDisabled(gpBase->mpMainConfig->GetBool("Graphics", "PostEffectRadialBlur", true)==false);
 
-	cRenderSettings *pRenderSettings = mpViewport->GetRenderSettings();
-	pRenderSettings->mbUseEdgeSmooth = gpBase->mpConfigHandler->mbEdgeSmooth; //This is saved in config handler!
+	UpdateViewportRenderProperties();
 }
 
 void cLuxMapHandler::SaveMainConfig()
@@ -714,5 +1045,63 @@ void cLuxMapHandler::CheckMapChange(float afTimeStep)
 
 //-----------------------------------------------------------------------
 
+void cLuxMapHandler::ApplyViewportRenderProperties(cViewport *apViewport)
+{
+	if(apViewport == NULL) return;
 
+	cRenderSettings *pRenderSettings = apViewport->GetRenderSettings();
+	if(apViewport == mpViewport || mpViewport == NULL)
+	{
+		pRenderSettings->mbRenderWorldReflection = gpBase->mpConfigHandler->mbWorldReflection;
+		pRenderSettings->mbRenderShadows = gpBase->mpConfigHandler->mbShadowsActive;
+		pRenderSettings->mbUseEdgeSmooth = gpBase->mpConfigHandler->mbEdgeSmooth;
+		pRenderSettings->mbSSAOActive = gpBase->mpConfigHandler->mbSSAOActive;
+		pRenderSettings->mMaxShadowMapResolution = (eShadowMapResolution)gpBase->mpConfigHandler->mlShadowRes;
+		return;
+	}
 
+	cRenderSettings *pBaseRenderSettings = mpViewport->GetRenderSettings();
+
+	pRenderSettings->mbLog = pBaseRenderSettings->mbLog;
+	pRenderSettings->mClearColor = pBaseRenderSettings->mClearColor;
+
+	pRenderSettings->mlMinimumObjectsBeforeOcclusionTesting = pBaseRenderSettings->mlMinimumObjectsBeforeOcclusionTesting;
+	pRenderSettings->mlSampleVisiblilityLimit = pBaseRenderSettings->mlSampleVisiblilityLimit;
+	pRenderSettings->mbClipReflectionScreenRect = pBaseRenderSettings->mbClipReflectionScreenRect;
+	pRenderSettings->mbUseOcclusionCulling = pBaseRenderSettings->mbUseOcclusionCulling;
+	pRenderSettings->mbUseEdgeSmooth = pBaseRenderSettings->mbUseEdgeSmooth;
+	pRenderSettings->mbUseCallbacks = pBaseRenderSettings->mbUseCallbacks;
+	pRenderSettings->mMaxShadowMapResolution = pBaseRenderSettings->mMaxShadowMapResolution;
+
+	pRenderSettings->mbRenderWorldReflection = pBaseRenderSettings->mbRenderWorldReflection;
+	pRenderSettings->mbRenderShadows = pBaseRenderSettings->mbRenderShadows;
+	pRenderSettings->mfShadowMapBias = pBaseRenderSettings->mfShadowMapBias;
+	pRenderSettings->mfShadowMapSlopeScaleBias = pBaseRenderSettings->mfShadowMapSlopeScaleBias;
+	pRenderSettings->mbSSAOActive = pBaseRenderSettings->mbSSAOActive;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxMapHandler::SetCameraViewsContainerActive(bool abX)
+{
+	tLuxCameraViewListIt it = mlstCameraViews.begin();
+	for(; it != mlstCameraViews.end(); ++it)
+	{
+		(*it)->SetContainerActive(abX);
+	}
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxMapHandler::SetCurrentMapForCameraViews(cWorld *apWorld)
+{
+	tLuxCameraViewListIt it = mlstCameraViews.begin();
+	for(; it != mlstCameraViews.end(); ++it)
+	{
+		cLuxCameraView *pView = *it;
+		if(pView->UsesCurrentMapWorld())
+			pView->SetCurrentMapWorld(apWorld);
+	}
+}
+
+//-----------------------------------------------------------------------

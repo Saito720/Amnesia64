@@ -22,11 +22,20 @@
 
 //----------------------------------------------
 
+#include <map>
+
 #include "LuxBase.h"
 
 //----------------------------------------------
 
 using namespace std;
+
+class cLuxCameraView;
+class cLuxMap;
+
+class cLuxScriptCameraView;
+typedef std::map<tString, cLuxScriptCameraView*> tLuxScriptCameraViewMap;
+typedef tLuxScriptCameraViewMap::iterator tLuxScriptCameraViewMapIt;
 
 class cLuxScriptHandler : public iLuxUpdateable
 {
@@ -52,6 +61,10 @@ private:
 	// Helpers
 	void InitScriptFunctions();
 	void AddFunc(const tString& asFunc, void *apFuncPtr);
+	void UpdateCameraViews();
+	void DrawCameraViews();
+	void DestroyAllCameraViews();
+	void DestroyCameraViewEntry(tLuxScriptCameraViewMapIt aIt);
 
 	static bool GetEntities(const tString& asName,tLuxEntityList &alstEntities, eLuxEntityType aType, int alSubType);
 	static iLuxEntity* GetEntity(const tString& asName, eLuxEntityType aType, int alSubType);
@@ -316,6 +329,11 @@ private:
 															bool abFadeAtDistance, float afFadeMinEnd, float afFadeMinStart, float afFadeMaxStart, float afFadeMaxEnd);
 	static void __stdcall DestroyParticleSystem(string& asName);
 
+	static void __stdcall CreateCameraView(string& asCVName, float afResX, float afResY);
+	static void __stdcall AttachCameraViewToEntity(string& asCVName, string& asEntity);
+	static void __stdcall ShowCameraView(string& asCVName, float afPosX, float afPosY, float afScale, bool abUseRelativeCoordinates);
+	static void __stdcall DestroyCameraView(string& asName);
+
 	//asEntity can be "Player". If abSaveSound = true the sound is never attached to the entity! Also note that saving should on be used on looping sounds!
 	static void __stdcall PlaySoundAtEntity(string& asSoundName, string& asSoundFile, string& asEntity, float afFadeTime, bool abSaveSound);
 	static void __stdcall FadeInSound(string& asSoundName, float afFadeTime, bool abPlayStart);
@@ -534,6 +552,8 @@ private:
 	static int __stdcall ScriptStringToInt(string& asString);
 	static float __stdcall ScriptStringToFloat(string& asString);
 	static bool __stdcall ScriptStringToBool(string& asString);
+
+	tLuxScriptCameraViewMap m_mapCameraViews;
 };
 
 //----------------------------------------------

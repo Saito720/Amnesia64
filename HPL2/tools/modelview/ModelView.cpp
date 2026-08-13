@@ -514,7 +514,7 @@ public:
 		// Load extra
 
 		mpTexDiffuseNull = gpEngine->GetResources()->GetTextureManager()->Create2D("modelview_diffuse_null.jpg",true);
-		mpTexNMapNull = gpEngine->GetResources()->GetTextureManager()->Create2D("modelview_nmap_null.jpg",true);
+		mpTexNMapNull = gpEngine->GetResources()->GetTextureManager()->Create2D("modelview_nmap_null.dds",true);
 		
 		/////////////////////////////////
 		// Init variables

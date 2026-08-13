@@ -34,7 +34,8 @@ static tString gsTextureTypeStrings[] =
 	"2D",
 	"Rect",
 	"Cube",
-	"3D"
+	"3D",
+	"2DArray"
 };
 
 static tString gsWrapTypeStrings[] =
@@ -335,6 +336,9 @@ bool cTextureWrapper::CheckFileIsUpdated()
 
 eTextureType cTextureWrapper::GetTextureTypeFromBitmap(cBitmap* apBmp)
 {
+	if(apBmp->IsTextureArray())
+		return eTextureType_2DArray;
+
 	if(apBmp->GetNumOfImages()==6)
 		return eTextureType_CubeMap;
 
@@ -682,6 +686,9 @@ void cMaterialWrapper::UpdateMaterialInMemory(const tString& asName)
 				break;
 			case eTextureType_2D:
 				pNewTex = pTexMgr->Create2D(sName, bMipMaps);
+				break;
+			case eTextureType_2DArray:
+				pNewTex = pTexMgr->Create2DArray(sName, bMipMaps);
 				break;
 			case eTextureType_3D:
 				pNewTex = pTexMgr->Create3D(sName, bMipMaps);
@@ -1036,18 +1043,17 @@ void cTextureUnitPanel::Update()
 	cGuiGfxElement* pImg = mpImgThumb->GetImage();
 	if(pImg)
 		pGui->DestroyGfx(pImg);
+	pImg = NULL;
 
 	if(mpTextureWrapper->IsValid()==false)
 	{
 		mpInpFile->SetValue(_W(""), false);
-		pImg = NULL;
 	}
 	else
 	{
-		const tWString& sTextureFile = mpTextureWrapper->GetFile();
 		mpInpFile->SetValue(mpTextureWrapper->GetFile(), false);
 		iTexture* pTex = mpTextureWrapper->GetTexture();
-		if(pTex)
+		if(pTex && pTex->GetType()!=eTextureType_2DArray)
 			pImg = pGui->CreateGfxTexture(pTex, false, eGuiMaterial_Alpha);
 	}
 

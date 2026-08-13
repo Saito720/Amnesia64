@@ -78,6 +78,7 @@ namespace hpl {
 		void GenerateHandles(int alNumOfHandles);
 
 		bool CreateFromBitmapToIndex(cBitmap* apBmp, int alIdx);
+		bool CreateTextureArray(int alTextureHandle, cBitmap* apBitmap, bool abGenerateMipMaps);
 
 		bool CreateTexture(	int alTextureHandle,
 							cBitmapData* apBitmapImage, int alNumOfMipMaps,

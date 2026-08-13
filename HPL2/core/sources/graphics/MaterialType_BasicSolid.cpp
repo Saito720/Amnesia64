@@ -37,6 +37,7 @@
 #include "graphics/ProgramComboManager.h"
 #include "graphics/Renderable.h"
 #include "graphics/RendererDeferred.h"
+#include "graphics/Texture.h"
 
 
 namespace hpl {
@@ -55,6 +56,8 @@ namespace hpl {
 	#define kVar_afDissolveAmount				4
 	#define kVar_avFrenselBiasPow				5
 	#define kVar_a_mtxInvViewRotation			6
+	#define kVar_avDiffuseArrayTileGrid			7
+	#define kVar_avDiffuseArrayTileSize			8
 
 
 	//------------------------------
@@ -67,8 +70,9 @@ namespace hpl {
 	#define eFeature_Diffuse_Skeleton		eFlagBit_4
 	#define eFeature_Diffuse_EnvMap			eFlagBit_5
 	#define eFeature_Diffuse_CubeMapAlpha	eFlagBit_6
+	#define eFeature_Diffuse_Array			eFlagBit_7
 		
-	#define kDiffuseFeatureNum 7
+	#define kDiffuseFeatureNum 8
 
 	static cProgramComboFeature vDiffuseFeatureVec[] =
 	{
@@ -79,6 +83,7 @@ namespace hpl {
 		cProgramComboFeature("UseSkeleton",	kPC_VertexBit),	
 		cProgramComboFeature("UseEnvMap", kPC_VertexBit | kPC_FragmentBit),
 		cProgramComboFeature("UseCubeMapAlpha", kPC_FragmentBit),
+		cProgramComboFeature("UseDiffuseArray", kPC_FragmentBit),
 	};
 
 	//------------------------------
@@ -278,6 +283,8 @@ namespace hpl {
 		AddVarFloat("FrenselBias", 0.2f, "Bias for Fresnel term. values: 0-1. Higher means that more of reflection is seen when looking straight at object.");
 		AddVarFloat("FrenselPow", 8.0f, "The higher the 'sharper' the reflection is, meaning that it is only clearly seen at sharp angles.");
 		AddVarBool("AlphaDissolveFilter", false, "If alpha values between 0 and 1 should be used and dissolve the texture. This can be useful for things like hair.");
+		AddVarInt("DiffuseArrayTileColumns", 3, "Number of horizontal tiles in a 2D array diffuse texture.");
+		AddVarInt("DiffuseArrayTileRows", 2, "Number of vertical tiles in a 2D array diffuse texture.");
 	}
 	
 	//--------------------------------------------------------------------------
@@ -338,6 +345,8 @@ namespace hpl {
 		mpProgramManager->AddGenerateProgramVariableId("a_mtxUV",kVar_a_mtxUV,eMaterialRenderMode_Diffuse);
 		mpProgramManager->AddGenerateProgramVariableId("avFrenselBiasPow", kVar_avFrenselBiasPow,eMaterialRenderMode_Diffuse);
 		mpProgramManager->AddGenerateProgramVariableId("a_mtxInvViewRotation", kVar_a_mtxInvViewRotation,eMaterialRenderMode_Diffuse);
+		mpProgramManager->AddGenerateProgramVariableId("avDiffuseArrayTileGrid", kVar_avDiffuseArrayTileGrid,eMaterialRenderMode_Diffuse);
+		mpProgramManager->AddGenerateProgramVariableId("avDiffuseArrayTileSize", kVar_avDiffuseArrayTileSize,eMaterialRenderMode_Diffuse);
 
 		mpProgramManager->AddGenerateProgramVariableId("a_mtxUV",kVar_a_mtxUV,eMaterialRenderMode_Illumination);
 		mpProgramManager->AddGenerateProgramVariableId("afColorMul",kVar_afColorMul,eMaterialRenderMode_Illumination);
@@ -376,6 +385,14 @@ namespace hpl {
 		//////////////////////////////////
 		//Cubemap
 		if(apMaterial->GetTexture(eMaterialTexture_CubeMap))
+		{
+			apMaterial->SetHasSpecificSettings(eMaterialRenderMode_Diffuse,true);
+		}
+
+		//////////////////////////////////
+		//2D texture array diffuse map
+		if(apMaterial->GetTexture(eMaterialTexture_Diffuse) &&
+			apMaterial->GetTexture(eMaterialTexture_Diffuse)->GetType() == eTextureType_2DArray)
 		{
 			apMaterial->SetHasSpecificSettings(eMaterialRenderMode_Diffuse,true);
 		}
@@ -494,6 +511,11 @@ namespace hpl {
 				if(apMaterial->GetTexture(eMaterialTexture_CubeMapAlpha))	lFlags |= eFeature_Diffuse_CubeMapAlpha;
 			}
 			if(apMaterial->HasUvAnimation())							lFlags |= eFeature_Diffuse_UvAnimation;
+			if(apMaterial->GetTexture(eMaterialTexture_Diffuse) &&
+				apMaterial->GetTexture(eMaterialTexture_Diffuse)->GetType() == eTextureType_2DArray)
+			{
+				lFlags |= eFeature_Diffuse_Array;
+			}
 			
 
 			return mpProgramManager->GenerateProgram(aRenderMode,lFlags);
@@ -545,9 +567,20 @@ namespace hpl {
 			
 			if(aRenderMode == eMaterialRenderMode_Diffuse)
 			{
+				cMaterialType_SolidDiffuse_Vars* pVars = (cMaterialType_SolidDiffuse_Vars*)apMaterial->GetVars();
+
+				/////////////////////////
+				//Diffuse texture array
+				iTexture* pDiffuseTexture = apMaterial->GetTexture(eMaterialTexture_Diffuse);
+				if(pDiffuseTexture && pDiffuseTexture->GetType() == eTextureType_2DArray)
+				{
+					apProgram->SetVec2f(kVar_avDiffuseArrayTileGrid, (float)pVars->mlDiffuseArrayTileColumns, (float)pVars->mlDiffuseArrayTileRows);
+					const cVector3l& vDiffuseSize = pDiffuseTexture->GetSize();
+					apProgram->SetVec2f(kVar_avDiffuseArrayTileSize, (float)cMath::Max(1, vDiffuseSize.x), (float)cMath::Max(1, vDiffuseSize.y));
+				}
+
 				/////////////////////////
 				//Parallax
-				cMaterialType_SolidDiffuse_Vars* pVars = (cMaterialType_SolidDiffuse_Vars*)apMaterial->GetVars();
 				if(apMaterial->GetTexture(eMaterialTexture_Height) && iRenderer::GetParallaxEnabled())
 				{
 					apProgram->SetVec2f(kVar_avHeightMapScaleAndBias, pVars->mfHeightMapScale, pVars->mfHeightMapBias);
@@ -611,6 +644,8 @@ namespace hpl {
 		pVars->mfFrenselBias = apVars->GetVarFloat("FrenselBias", 0.2f);
 		pVars->mfFrenselPow = apVars->GetVarFloat("FrenselPow", 8.0f);
 		pVars->mbAlphaDissolveFilter = apVars->GetVarBool("AlphaDissolveFilter", false);
+		pVars->mlDiffuseArrayTileColumns = cMath::Max(1, apVars->GetVarInt("DiffuseArrayTileColumns", 3));
+		pVars->mlDiffuseArrayTileRows = cMath::Max(1, apVars->GetVarInt("DiffuseArrayTileRows", 2));
 
 	}
 
@@ -625,6 +660,8 @@ namespace hpl {
 		apVars->AddVarFloat("FrenselBias", pVars->mfFrenselBias);
 		apVars->AddVarFloat("FrenselPow", pVars->mfFrenselPow);
 		apVars->AddVarBool("AlphaDissolveFilter", pVars->mbAlphaDissolveFilter);
+		apVars->AddVarInt("DiffuseArrayTileColumns", pVars->mlDiffuseArrayTileColumns);
+		apVars->AddVarInt("DiffuseArrayTileRows", pVars->mlDiffuseArrayTileRows);
 	}
 
 	//--------------------------------------------------------------------------

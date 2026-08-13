@@ -269,6 +269,9 @@ void cEditorThumbnailBuilder::BuildThumbnailFromMesh(const tWString& asMeshFilen
 
 void cEditorThumbnailBuilder::BuildThumbnailFromImage(const tWString& asImageFilename, const tWString& asDestName)
 {
+	if(cString::ToLowerCaseW(cString::GetFileExtW(asImageFilename)) == _W("ktx2"))
+		return;
+
 	cResources* pRes = mpEditor->GetEngine()->GetResources();
 	cTextureManager* pManager = pRes->GetTextureManager();
 	iTexture* pTex = pManager->Create2D(cString::To8Char(asImageFilename), true, eTextureType_2D);

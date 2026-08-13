@@ -256,6 +256,7 @@ namespace hpl {
 	enum eGraphicCaps
 	{
 		eGraphicCaps_TextureTargetRectangle,
+		eGraphicCaps_TextureArray,
 		eGraphicCaps_VertexBufferObject,
 		eGraphicCaps_TwoSideStencil,
 
@@ -403,6 +404,7 @@ namespace hpl {
 		eTextureType_Rect,
 		eTextureType_CubeMap,
 		eTextureType_3D,
+		eTextureType_2DArray,
 		eTextureType_LastEnum
 	};
 

@@ -149,14 +149,18 @@ cEditorWindowEntityEditBox* iEntityWrapperPrimitive::CreateEditBox(cEditorEditMo
 
 void iEntityWrapperPrimitive::SetMaterial(const tString& asMaterial)
 {
-	cMaterial* pMat = NULL;
-	if(cEditorHelper::LoadResourceFile(eEditorResourceType_Material, asMaterial, NULL))
+	iEngineEntityMesh* pMesh = (iEngineEntityMesh*)mpEngineEntity;
+	if(pMesh && pMesh->IsCreated())
 	{
-		msMaterial = asMaterial;
-
-		iEngineEntityMesh* pMesh = (iEngineEntityMesh*)mpEngineEntity;
-		if(pMesh) pMesh->SetMaterial(asMaterial);
+		if(pMesh->SetMaterial(asMaterial))
+			msMaterial = asMaterial;
+		else
+			msMaterial = "";
+		return;
 	}
+
+	if(cEditorHelper::LoadResourceFile(eEditorResourceType_Material, asMaterial, NULL))
+		msMaterial = asMaterial;
 	else
 		msMaterial = "";
 }

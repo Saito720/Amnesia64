@@ -49,6 +49,9 @@ namespace hpl {
 		iTexture* Create2D(	const tString& asName,bool abUseMipMaps,eTextureType aType= eTextureType_2D,
 							eTextureUsage aUsage=eTextureUsage_Normal,unsigned int alTextureSizeLevel=0);
 
+		iTexture* Create2DArray(	const tString& asName,bool abUseMipMaps,
+									eTextureUsage aUsage=eTextureUsage_Normal,unsigned int alTextureSizeLevel=0);
+
 		iTexture* Create3D(	const tString& asName,bool abUseMipMaps, eTextureUsage aUsage=eTextureUsage_Normal,
 							unsigned int alTextureSizeLevel=0);
 		
@@ -76,7 +79,8 @@ namespace hpl {
 									eTextureUsage aUsage, eTextureType aType, 
 									unsigned int alTextureSizeLevel);
 
-		iTexture* FindTexture2D(const tString &asName, tWString &asFilePath);
+		iTexture* FindTexture2D(const tString &asName, tWString &asFilePath, eTextureType aType);
+		iTexture* FindLoadedTexture(const tWString &asFilePath, eTextureType aType);
 
 		tTextureAttenuationMap m_mapAttenuationTextures;
 		

@@ -88,6 +88,14 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
+	iTexture* cTextureManager::Create2DArray(const tString& asName,bool abUseMipMaps,
+												eTextureUsage aUsage, unsigned int alTextureSizeLevel)
+	{
+		return CreateSimpleTexture(asName,abUseMipMaps,aUsage, eTextureType_2DArray,alTextureSizeLevel);
+	}
+
+	//-----------------------------------------------------------------------
+
 	iTexture* cTextureManager::Create3D(const tString& asName,bool abUseMipMaps, eTextureUsage aUsage,
 										unsigned int alTextureSizeLevel)
 	{
@@ -230,7 +238,7 @@ namespace hpl {
 
 		/////////////////////////////////////////////////////////
 		// Load Cubemap from single file
-		if(sExt == "dds")
+		if(sExt == "dds" || sExt == "ktx2")
 		{
 			return CreateSimpleTexture(asPathName,abUseMipMaps,aUsage,eTextureType_CubeMap,alTextureSizeLevel);	
 		}
@@ -370,7 +378,7 @@ namespace hpl {
 		
 		BeginLoad(asName);
 
-		pTexture = FindTexture2D(asName,sPath);
+		pTexture = FindTexture2D(asName,sPath,aType);
 
 		if(pTexture==NULL && sPath!=_W(""))
 		{
@@ -415,7 +423,7 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 	
-	iTexture* cTextureManager::FindTexture2D(const tString &asName, tWString &asFilePath)
+	iTexture* cTextureManager::FindTexture2D(const tString &asName, tWString &asFilePath, eTextureType aType)
 	{
 		iTexture *pTexture=NULL;
 
@@ -442,18 +450,54 @@ namespace hpl {
 					if(lCount > lMaxCount)
 					{
 						lMaxCount = lCount;
-						asFilePath = sTempPath;
+						asFilePath = pTempTex ? pTempTex->GetFullPath() : sTempPath;
 						pTexture = pTempTex;
 					}
 				}
 			}
+
+			if(asFilePath!=_W(""))
+				pTexture = FindLoadedTexture(asFilePath, aType);
+			else if(pTexture && pTexture->GetType()!=aType)
+				pTexture = NULL;
 		}
 		else
 		{
 			pTexture = static_cast<iTexture*> (FindLoadedResource(asName, asFilePath));
+			if(pTexture && pTexture->GetType()!=aType)
+			{
+				tWString sLoadedPath = pTexture->GetFullPath();
+				pTexture = FindLoadedTexture(sLoadedPath, aType);
+				if(pTexture==NULL) asFilePath = sLoadedPath;
+			}
+			else if(asFilePath!=_W(""))
+			{
+				pTexture = FindLoadedTexture(asFilePath, aType);
+			}
 		}
 
 		return pTexture;
+	}
+
+	//-----------------------------------------------------------------------
+
+	iTexture* cTextureManager::FindLoadedTexture(const tWString &asFilePath, eTextureType aType)
+	{
+		if(asFilePath == _W("")) return NULL;
+
+		unsigned int lHash = cString::GetHashW(asFilePath);
+		tResourceBaseMapIt it = m_mapResources.find(lHash);
+		if(it == m_mapResources.end()) return NULL;
+
+		size_t lCount = m_mapResources.count(lHash);
+		for(size_t i=0; i<lCount; ++i, ++it)
+		{
+			iTexture *pTexture = static_cast<iTexture*>(it->second);
+			if(pTexture->GetFullPath() == asFilePath && pTexture->GetType() == aType)
+				return pTexture;
+		}
+
+		return NULL;
 	}
 
 

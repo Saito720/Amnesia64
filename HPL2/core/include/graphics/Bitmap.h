@@ -58,9 +58,11 @@ namespace hpl {
 		inline char GetBytesPerPixel() const { return mlBytesPerPixel; }
 		inline int GetNumOfMipMaps() const { return mlNumOfMipMaps;}
 		inline int GetNumOfImages() const { return mlNumOfImages;}
+		inline bool IsTextureArray() const { return mbIsTextureArray;}
 
 		void SetPixelFormat(ePixelFormat aFormat){ mPixelFormat = aFormat;}
 		void SetBytesPerPixel(char alBpp){ mlBytesPerPixel = alBpp;}
+		void SetIsTextureArray(bool abX) { mbIsTextureArray = abX;}
 		
 		cBitmapData* GetData(int alImage, int alMipMapLevel);
 		void SetUpData(int alNumOfImages, int alNumOfMipmaps);
@@ -93,6 +95,7 @@ namespace hpl {
 
 		std::vector<cBitmapData> mvImages;
 		bool mbDataIsCompressed;
+		bool mbIsTextureArray;
 
 		tWString msFileName;
 

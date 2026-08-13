@@ -491,6 +491,7 @@ namespace hpl {
 		Log("  Vendor: %s\n", glGetString(GL_VENDOR));
 		Log("  Renderer: %s\n", glGetString(GL_RENDERER));
 		Log("  Version: %s\n", glGetString(GL_VERSION));
+		Log("  Texture arrays: %d\n",GetCaps(eGraphicCaps_TextureArray));
 		Log("  Max texture image units: %d\n",GetCaps(eGraphicCaps_MaxTextureImageUnits));
 		Log("  Max texture coord units: %d\n",GetCaps(eGraphicCaps_MaxTextureCoordUnits));
 		Log("  Max user clip planes: %d\n",GetCaps(eGraphicCaps_MaxUserClipPlanes));
@@ -533,6 +534,7 @@ namespace hpl {
 		switch(aType)
 		{
 		case eGraphicCaps_TextureTargetRectangle:	return 1;//GLEW_ARB_texture_rectangle?1:0;
+		case eGraphicCaps_TextureArray:				return (GLEW_EXT_texture_array && GLEW_ARB_shader_texture_lod) ? 1 : 0;
 		
 		case eGraphicCaps_VertexBufferObject:		return GLEW_ARB_vertex_buffer_object?1:0;
 		case eGraphicCaps_TwoSideStencil:			
@@ -2500,6 +2502,7 @@ namespace hpl {
 		case eTextureType_Rect:		return GL_TEXTURE_RECTANGLE_NV;
 		case eTextureType_CubeMap:	return GL_TEXTURE_CUBE_MAP_ARB;
 		case eTextureType_3D:		return GL_TEXTURE_3D;
+		case eTextureType_2DArray:	return GL_TEXTURE_2D_ARRAY;
 		}
 		return 0;
 	}
@@ -2602,6 +2605,7 @@ namespace hpl {
 			}
 		case eTextureType_CubeMap:	return GL_TEXTURE_CUBE_MAP_ARB;
 		case eTextureType_3D:		return GL_TEXTURE_3D;
+		case eTextureType_2DArray:	return GL_TEXTURE_2D_ARRAY;
 		}
 		return 0;
 	}

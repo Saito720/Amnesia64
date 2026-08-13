@@ -73,6 +73,7 @@ namespace hpl {
 		mvImages.resize(1);
 		
 		mbDataIsCompressed = false;
+		mbIsTextureArray = false;
 
 		mvSize = 0;
 		mPixelFormat = ePixelFormat_Unknown;

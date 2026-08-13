@@ -368,6 +368,9 @@ namespace hpl{
 				case eTextureType_2D:			textureType = CG_SAMPLER2D; break;
 				case eTextureType_CubeMap:		textureType = CG_SAMPLERCUBE; break;
 				case eTextureType_Rect:			textureType = CG_SAMPLERRECT; break;
+				case eTextureType_2DArray:
+					Error("CG shaders do not support 2D texture arrays.\n");
+					return false;
 			}
 			
 			cSDLTexture* pSDLTex = static_cast<cSDLTexture*>(apTexture);

@@ -309,6 +309,7 @@ namespace hpl {
 		mvFileTypeExtensions[eFileBrowserFileType_Graphics].push_back(_W("bmp"));
 		mvFileTypeExtensions[eFileBrowserFileType_Graphics].push_back(_W("tga"));
 		mvFileTypeExtensions[eFileBrowserFileType_Graphics].push_back(_W("jpg"));
+		mvFileTypeExtensions[eFileBrowserFileType_Graphics].push_back(_W("ktx2"));
 
 		mvFileTypeExtensions[eFileBrowserFileType_Models].push_back(_W("dae"));
 		mvFileTypeExtensions[eFileBrowserFileType_Models].push_back(_W("ent"));

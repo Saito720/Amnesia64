@@ -419,6 +419,12 @@ namespace hpl {
 																		eTextureUsage_Normal,
 																		mlTextureSizeDownScaleLevel);
 				}
+				else if(type == eTextureType_2DArray)
+				{
+					pTex = mpResources->GetTextureManager()->Create2DArray(sFile,bMipMaps,
+																			eTextureUsage_Normal,
+																			mlTextureSizeDownScaleLevel);
+				}
 				else if(type == eTextureType_3D)
 				{
 					pTex = mpResources->GetTextureManager()->Create3D(sFile,bMipMaps,
@@ -495,10 +501,12 @@ namespace hpl {
 
 	eTextureType cMaterialManager::GetType(const tString& asType)
 	{
-		if(cString::ToLowerCase(asType) == "cube") return eTextureType_CubeMap;
-		else if(cString::ToLowerCase(asType) == "1d") return eTextureType_1D;
-		else if(cString::ToLowerCase(asType) == "2d") return eTextureType_2D;
-		else if(cString::ToLowerCase(asType) == "3d") return eTextureType_3D;
+		tString sType = cString::ToLowerCase(asType);
+		if(sType == "cube") return eTextureType_CubeMap;
+		else if(sType == "1d") return eTextureType_1D;
+		else if(sType == "2d") return eTextureType_2D;
+		else if(sType == "2darray" || sType == "2d_array" || sType == "array2d") return eTextureType_2DArray;
+		else if(sType == "3d") return eTextureType_3D;
 
 		return eTextureType_2D;
 	}

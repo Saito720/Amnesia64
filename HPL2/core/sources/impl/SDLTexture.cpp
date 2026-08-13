@@ -27,6 +27,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <limits>
 
 namespace hpl {
 
@@ -211,7 +212,7 @@ namespace hpl {
 			glTexSubImage2D(GLTarget,alLevel,avOffset.x,avOffset.y, avSize.x,avSize.y,
 							GLFormat,GL_UNSIGNED_BYTE,apData);
 		}
-		else if(mType == eTextureType_3D)
+		else if(mType == eTextureType_3D || mType == eTextureType_2DArray)
 		{
 			glTexSubImage3D(GLTarget,alLevel,avOffset.x,avOffset.y,avOffset.z, 
 							avSize.x,avSize.y,avSize.z,
@@ -432,6 +433,7 @@ namespace hpl {
 	void cSDLTexture::SetWrapS(eTextureWrap aMode)
 	{
 		if(mType == eTextureType_Rect) return; //Rect only has one mode! (clamp to edge)
+		if(mType == eTextureType_2DArray) aMode = eTextureWrap_ClampToEdge;
 
 		;
 
@@ -457,6 +459,7 @@ namespace hpl {
 	void cSDLTexture::SetWrapT(eTextureWrap aMode)
 	{
 		if(mType == eTextureType_Rect) return; //Rect only has one mode! (clamp to edge)
+		if(mType == eTextureType_2DArray) aMode = eTextureWrap_ClampToEdge;
 
 		;
 
@@ -482,6 +485,7 @@ namespace hpl {
 	void cSDLTexture::SetWrapR(eTextureWrap aMode)
 	{
 		if(mType == eTextureType_Rect) return; //Rect only has one mode! (clamp to edge)
+		if(mType == eTextureType_2DArray) aMode = eTextureWrap_ClampToEdge;
 
 		;
 
@@ -507,6 +511,7 @@ namespace hpl {
 	void cSDLTexture::SetWrapSTR(eTextureWrap aMode)
 	{
 		if(mType == eTextureType_Rect) return; //Rect only has one mode! (clamp to edge)
+		if(mType == eTextureType_2DArray) aMode = eTextureWrap_ClampToEdge;
 
 		;
 
@@ -645,9 +650,22 @@ namespace hpl {
 	bool cSDLTexture::CreateFromBitmapToIndex(cBitmap* apBmp, int alIdx)
 	{
 		////////////////////////////
-		//Create Cubemap texture
-		if(mType == eTextureType_CubeMap)
+		//Create 2D texture array
+		if(mType == eTextureType_2DArray)
 		{
+			bool bRet = CreateTextureArray(mvTextureHandles[alIdx], apBmp, mbUseMipMaps);
+			if(bRet == false) return false;
+		}
+		////////////////////////////
+		//Create Cubemap texture
+		else if(mType == eTextureType_CubeMap)
+		{
+			if(apBmp->IsTextureArray())
+			{
+				Error("Bitmap for cubemap '%s' is a 2D texture array.\n", msName.c_str());
+				return false;
+			}
+
 			//Check so there are at least 6 images.
 			if(apBmp->GetNumOfImages()<6)
 			{
@@ -679,6 +697,180 @@ namespace hpl {
 		}
 
 		SetupProperties(mvTextureHandles[alIdx]);
+
+		return true;
+	}
+
+	//-----------------------------------------------------------------------
+
+	bool cSDLTexture::CreateTextureArray(int alTextureHandle, cBitmap* apBitmap, bool abGenerateMipMaps)
+	{
+		if(mpLowLevelGraphics->GetCaps(eGraphicCaps_TextureArray)==0)
+		{
+			Error("Texture arrays are not supported by this OpenGL driver. Could not create '%s'\n", msName.c_str());
+			return false;
+		}
+
+		if(apBitmap->GetNumOfImages()<=0)
+		{
+			Error("Bitmap has no layers for 2D texture array '%s'\n", msName.c_str());
+			return false;
+		}
+
+		GLint lMaxLayers = 0;
+		glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS, &lMaxLayers);
+		if(lMaxLayers > 0 && apBitmap->GetNumOfImages() > lMaxLayers)
+		{
+			Error("Texture array '%s' has %d layers, but the driver supports only %d.\n",
+				msName.c_str(), apBitmap->GetNumOfImages(), lMaxLayers);
+			return false;
+		}
+
+		const cVector3l& vBitmapSize = apBitmap->GetSize();
+		if(!cMath::IsPow2(vBitmapSize.x) || !cMath::IsPow2(vBitmapSize.y))
+		{
+			Warning("Texture array '%s' does not have a pow2 layer size!\n",msName.c_str());
+		}
+
+		mPixelFormat = apBitmap->GetPixelFormat();
+		mbIsCompressed = PixelFormatIsCompressed(mPixelFormat);
+
+		GLenum GLTarget = TextureTypeToGLTarget(mType);
+		GLenum GLFormat = PixelFormatToGLFormat(mPixelFormat);
+		GLenum GLInternalFormat = PixelFormatToGLInternalFormat(mPixelFormat);
+		GLenum glType = PixelFormatIsFloatingPoint(mPixelFormat) ? GL_FLOAT : GL_UNSIGNED_BYTE;
+		GLenum GLCompressionFormat = GetGLCompressionFormatFromPixelFormat(mPixelFormat);
+
+		int lStartMipMapLevel = 0;
+		int lNumOfMipMaps = apBitmap->GetNumOfMipMaps();
+		if(mlSizeDownScaleLevel > 0 && lNumOfMipMaps > 1)
+		{
+			if(lNumOfMipMaps-1 < (int)mlSizeDownScaleLevel)
+				lStartMipMapLevel = lNumOfMipMaps-1;
+			else
+				lStartMipMapLevel = (int)mlSizeDownScaleLevel;
+		}
+
+		mvSize = cVector3l(vBitmapSize.x >> lStartMipMapLevel,
+							vBitmapSize.y >> lStartMipMapLevel,
+							apBitmap->GetNumOfImages());
+		if(mvSize.x==0) mvSize.x = 1;
+		if(mvSize.y==0) mvSize.y = 1;
+		if(mvSize.z==0) mvSize.z = 1;
+
+		glEnable(GLTarget);
+		glBindTexture(GLTarget, alTextureHandle);
+
+		bool bRet = true;
+		int lMipMapCount = abGenerateMipMaps ? lNumOfMipMaps : lStartMipMapLevel+1;
+		cVector3l vSize = mvSize;
+		for(int mip=lStartMipMapLevel; mip<lMipMapCount; ++mip)
+		{
+			if(vSize.x==0) vSize.x =1;
+			if(vSize.y==0) vSize.y =1;
+
+			int lLevel = mip - lStartMipMapLevel;
+			int lLevelDataSize = 0;
+			for(int layer=0; layer<apBitmap->GetNumOfImages(); ++layer)
+			{
+				cBitmapData* pLayer = apBitmap->GetData(layer, mip);
+				if(pLayer==NULL || pLayer->mpData==NULL)
+				{
+					Error("Texture array '%s' is missing layer %d mip %d data.\n", msName.c_str(), layer, mip);
+					bRet = false;
+					break;
+				}
+
+				if(pLayer->mlSize > (std::numeric_limits<int>::max)() - lLevelDataSize)
+				{
+					Error("Texture array '%s' mip %d is too large to upload.\n", msName.c_str(), mip);
+					bRet = false;
+					break;
+				}
+
+				lLevelDataSize += pLayer->mlSize;
+			}
+			if(bRet==false) break;
+
+			while(glGetError()!=GL_NO_ERROR);
+
+			if(mbIsCompressed)
+			{
+				glCompressedTexImage3DARB(	GLTarget, lLevel,
+					GLCompressionFormat,
+					vSize.x, vSize.y, apBitmap->GetNumOfImages(),
+					0, lLevelDataSize, NULL);
+
+				if(glGetError()!=GL_NO_ERROR)
+				{
+					bRet = false;
+					break;
+				}
+
+				for(int layer=0; layer<apBitmap->GetNumOfImages(); ++layer)
+				{
+					cBitmapData* pLayer = apBitmap->GetData(layer, mip);
+					glCompressedTexSubImage3DARB(	GLTarget, lLevel,
+						0, 0, layer,
+						vSize.x, vSize.y, 1,
+						GLCompressionFormat,
+						pLayer->mlSize, pLayer->mpData);
+				}
+			}
+			else
+			{
+				glTexImage3D(	GLTarget, lLevel,
+					GLInternalFormat, vSize.x, vSize.y, apBitmap->GetNumOfImages(),
+					0, GLFormat, glType, NULL);
+
+				if(glGetError()!=GL_NO_ERROR)
+				{
+					bRet = false;
+					break;
+				}
+
+				for(int layer=0; layer<apBitmap->GetNumOfImages(); ++layer)
+				{
+					cBitmapData* pLayer = apBitmap->GetData(layer, mip);
+					glTexSubImage3D(	GLTarget, lLevel,
+						0, 0, layer,
+						vSize.x, vSize.y, 1,
+						GLFormat, glType, pLayer->mpData);
+				}
+			}
+
+			if(glGetError()!=GL_NO_ERROR)
+			{
+				bRet = false;
+				break;
+			}
+
+			mlMemorySize += lLevelDataSize;
+			vSize.x >>= 1;
+			vSize.y >>= 1;
+		}
+
+		if(bRet==false)
+		{
+			glDisable(GLTarget);
+			Error("Could not create GL texture array %s\n",msName.c_str());
+			return false;
+		}
+
+		mbContainsData = true;
+		if(abGenerateMipMaps && lNumOfMipMaps <= 1)
+		{
+			if(GLEW_EXT_framebuffer_object)
+			{
+				glGenerateMipmapEXT(GLTarget);
+			}
+			else
+			{
+				mbUseMipMaps = false;
+			}
+		}
+
+		glDisable(GLTarget);
 
 		return true;
 	}
@@ -939,7 +1131,7 @@ namespace hpl {
 					avSize.x, avSize.y,
 					0, alDataSize, apData);
 			}
-			else if(mType == eTextureType_3D)
+			else if(mType == eTextureType_3D || mType == eTextureType_2DArray)
 			{
 				glCompressedTexImage3DARB(	GLTarget, alLevel, 
 					GLCompressionFormat, 
@@ -968,7 +1160,7 @@ namespace hpl {
 					avSize.x, avSize.y,
 					0, GLFormat, glType, apData);
 			}
-			else if(mType == eTextureType_3D)
+			else if(mType == eTextureType_3D || mType == eTextureType_2DArray)
 			{
 				glTexImage3D(	GLTarget, alLevel, 
 					GLInternalFormat, avSize.x, avSize.y,avSize.z,
@@ -1009,34 +1201,27 @@ namespace hpl {
 		glTexParameteri(GLTarget, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
 		//////////////////////
-		// Rect (force clamp to edge skip anisotropy)
-        if(mType == eTextureType_Rect)
+		// Rect and arrays force clamp to edge.
+		if(mType == eTextureType_Rect || mType == eTextureType_2DArray)
 		{
 			mWrapS = eTextureWrap_ClampToEdge;
 			mWrapT = eTextureWrap_ClampToEdge;
 			mWrapR = eTextureWrap_ClampToEdge;
-
-			glTexParameteri(GLTarget,GL_TEXTURE_WRAP_S,GetGLWrapEnum(mWrapS));
-			glTexParameteri(GLTarget,GL_TEXTURE_WRAP_T,GetGLWrapEnum(mWrapT));
-			glTexParameteri(GLTarget,GL_TEXTURE_WRAP_R,GetGLWrapEnum(mWrapR));
 		}
-		/////////////////////
-		// Normal
-		else
-		{
-			/////////////////////////////////////////
-			//Wrapping
-			glTexParameteri(GLTarget,GL_TEXTURE_WRAP_S,GetGLWrapEnum(mWrapS));
-			glTexParameteri(GLTarget,GL_TEXTURE_WRAP_T,GetGLWrapEnum(mWrapT));
-			glTexParameteri(GLTarget,GL_TEXTURE_WRAP_R,GetGLWrapEnum(mWrapR));
 
-			/////////////////////////////////////////
-			//Anisotropic filtering
-			if(	mpLowLevelGraphics->GetCaps(eGraphicCaps_AnisotropicFiltering) &&
-				(float) mpLowLevelGraphics->GetCaps(eGraphicCaps_MaxAnisotropicFiltering) >= mfAnisotropyDegree)
-			{
-				glTexParameterf(GLTarget,GL_TEXTURE_MAX_ANISOTROPY_EXT ,mfAnisotropyDegree);
-			}
+		/////////////////////////////////////////
+		//Wrapping
+		glTexParameteri(GLTarget,GL_TEXTURE_WRAP_S,GetGLWrapEnum(mWrapS));
+		glTexParameteri(GLTarget,GL_TEXTURE_WRAP_T,GetGLWrapEnum(mWrapT));
+		glTexParameteri(GLTarget,GL_TEXTURE_WRAP_R,GetGLWrapEnum(mWrapR));
+
+		/////////////////////////////////////////
+		//Anisotropic filtering
+		if(	mType != eTextureType_Rect &&
+			mpLowLevelGraphics->GetCaps(eGraphicCaps_AnisotropicFiltering) &&
+			(float) mpLowLevelGraphics->GetCaps(eGraphicCaps_MaxAnisotropicFiltering) >= mfAnisotropyDegree)
+		{
+			glTexParameterf(GLTarget,GL_TEXTURE_MAX_ANISOTROPY_EXT ,mfAnisotropyDegree);
 		}
 
 		glDisable(GLTarget);

@@ -572,12 +572,9 @@ bool cEditorInputFile::BrowseButton_OnPressed(iWidget* apWidget, const cGuiMessa
 			break;
 		case eEditorResourceType_Texture:
 		{
-			lstCatString.push_back(_W("jpg"));
-			lstCatString.push_back(_W("bmp"));
-			lstCatString.push_back(_W("png"));
-			lstCatString.push_back(_W("gif"));
-			lstCatString.push_back(_W("dds"));
-			lstCatString.push_back(_W("tga"));
+			tStringVec* pFilters = pEditor->GetEngine()->GetResources()->GetBitmapLoaderHandler()->GetSupportedTypes();
+			for(size_t i=0; i<pFilters->size(); ++i)
+				lstCatString.push_back(cString::To16Char((*pFilters)[i]));
 			pEditor->ShowTextureBrowser((eEditorTextureResourceType)mlBrowserSubtype, _W(""), msTempLoadedFile, this, kGuiCallback(Browser_OnOkay), lstCatString);
 			break;
 		}

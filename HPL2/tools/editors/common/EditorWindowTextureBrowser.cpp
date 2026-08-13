@@ -57,7 +57,7 @@ bool cEditorObjectIndexEntryTexture::CreateFromFile(const tWString& asFilename)
 	mvSize = pBmp->GetSize();
 	if(mvSize.y==1)
 		mType = eEditorTextureResourceType_1D;
-	else if(pBmp->GetNumOfImages()==6)
+	else if(pBmp->IsTextureArray()==false && pBmp->GetNumOfImages()==6)
 		mType = eEditorTextureResourceType_CubeMap;
 	else
 		mType = eEditorTextureResourceType_2D;
@@ -139,6 +139,12 @@ void cEditorObjectIndexEntryTexture::BuildThumbnail()
 	//tString sFilename = GetTextureFile();
 	tWString sFilenameFullPath = cString::To16Char(GetTextureFileFullPath());
 	tWString sThumbnailFilename = pTmbBuilder->GetThumbnailNameFromFileW(sFilenameFullPath);
+	if(cString::ToLowerCaseW(cString::GetFileExtW(sFilenameFullPath)) == _W("ktx2"))
+	{
+		if(cPlatform::FileExists(sThumbnailFilename))
+			cPlatform::RemoveFile(sThumbnailFilename);
+		return;
+	}
 
 	if(bIsUpdated || cPlatform::FileExists(sThumbnailFilename)==false)
 	{
@@ -370,16 +376,23 @@ cTextureBrowserIcon::cTextureBrowserIcon(cEditorWindowTextureBrowser* apBrowser,
 
 	cEditorThumbnailBuilder* pThbBuilder = pEditor->GetThumbnailBuilder();
 	tWString sThumbFile = pThbBuilder->GetThumbnailNameFromFileW(cString::To16Char(apEntry->GetTextureFileFullPath()));
-	iTexture* pTex = pGfx->CreateTexture("", eTextureType_2D, eTextureUsage_Normal);
-	cBitmap* pBmp = pRes->GetBitmapLoaderHandler()->LoadBitmap(sThumbFile, 0);
-
-	if(pTex && pTex->CreateFromBitmap(pBmp))
+	if(cPlatform::FileExists(sThumbFile))
 	{
-		cGuiGfxElement* pGfxElem = mpSet->GetGui()->CreateGfxTexture(pTex, false, eGuiMaterial_Diffuse);
-		mpTexture->SetImage(pGfxElem);
-	}
+		iTexture* pTex = pGfx->CreateTexture("", eTextureType_2D, eTextureUsage_Normal);
+		cBitmap* pBmp = pRes->GetBitmapLoaderHandler()->LoadBitmap(sThumbFile, 0);
 
-	hplDelete(pBmp);
+		if(pBmp && pTex && pTex->CreateFromBitmap(pBmp))
+		{
+			cGuiGfxElement* pGfxElem = mpSet->GetGui()->CreateGfxTexture(pTex, false, eGuiMaterial_Diffuse);
+			mpTexture->SetImage(pGfxElem);
+		}
+		else if(pTex)
+		{
+			pGfx->DestroyTexture(pTex);
+		}
+
+		hplDelete(pBmp);
+	}
 
 	mpTexture->AddCallback(eGuiMessage_MouseUp, this, kGuiCallback(Frame_OnMouseUp));
 	mpTexture->AddCallback(eGuiMessage_MouseDoubleClick, this, kGuiCallback(Frame_OnDoubleClick));
@@ -404,7 +417,9 @@ cTextureBrowserIcon::~cTextureBrowserIcon()
 		if(mpLabelType) mpSet->DestroyWidget(mpLabelType);
 		if(mpTexture)
 		{
-			mpBrowser->GetEditor()->GetEngine()->GetGraphics()->DestroyTexture(mpTexture->GetImage()->GetTexture(0));
+			cGuiGfxElement* pImg = mpTexture->GetImage();
+			if(pImg && pImg->GetTexture(0))
+				mpBrowser->GetEditor()->GetEngine()->GetGraphics()->DestroyTexture(pImg->GetTexture(0));
 			mpSet->DestroyWidget(mpTexture);
 		}
 

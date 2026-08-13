@@ -321,7 +321,9 @@
     <ClInclude Include="include\impl\BitmapLoaderKTX2.h" />
     <ClInclude Include="include\impl\LowLevelResourcesSDL.h" />
     <ClInclude Include="include\impl\MeshLoaderCollada.h" />
+    <ClInclude Include="include\impl\MeshLoaderGLTF.h" />
     <ClInclude Include="include\impl\MeshLoaderMSH.h" />
+    <ClInclude Include="..\dependencies\include\cgltf.h" />
     <ClInclude Include="include\impl\XmlDocumentTiny.h" />
     <ClInclude Include="include\impl\KeyboardSDL.h" />
     <ClInclude Include="include\impl\LowLevelInputSDL.h" />
@@ -633,6 +635,7 @@
     <ClCompile Include="sources\impl\MeshLoaderCollada.cpp" />
     <ClCompile Include="sources\impl\MeshLoaderColladaHelpers.cpp" />
     <ClCompile Include="sources\impl\MeshLoaderColladaLoader.cpp" />
+    <ClCompile Include="sources\impl\MeshLoaderGLTF.cpp" />
     <ClCompile Include="sources\impl\MeshLoaderMSH.cpp" />
     <ClCompile Include="sources\impl\XmlDocumentTiny.cpp" />
     <ClCompile Include="sources\impl\KeyboardSDL.cpp" />

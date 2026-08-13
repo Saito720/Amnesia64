@@ -546,7 +546,13 @@
     <ClInclude Include="include\impl\MeshLoaderCollada.h">
       <Filter>Resources</Filter>
     </ClInclude>
+    <ClInclude Include="include\impl\MeshLoaderGLTF.h">
+      <Filter>Resources</Filter>
+    </ClInclude>
     <ClInclude Include="include\impl\MeshLoaderMSH.h">
+      <Filter>Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="..\dependencies\include\cgltf.h">
       <Filter>Resources</Filter>
     </ClInclude>
     <ClInclude Include="include\impl\XmlDocumentTiny.h">
@@ -1474,6 +1480,9 @@
       <Filter>Resources</Filter>
     </ClCompile>
     <ClCompile Include="sources\impl\MeshLoaderColladaLoader.cpp">
+      <Filter>Resources</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\impl\MeshLoaderGLTF.cpp">
       <Filter>Resources</Filter>
     </ClCompile>
     <ClCompile Include="sources\impl\MeshLoaderMSH.cpp">

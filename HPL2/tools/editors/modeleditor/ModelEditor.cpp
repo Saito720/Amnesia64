@@ -175,6 +175,8 @@ bool cModelEditor::MainMenu_ItemClick(iWidget* apWidget, const cGuiMessageData& 
 	else if(apWidget==mpMainMenuImport)
 	{
 		tWStringList vFilters = tWStringList(1,_W("*.dae"));
+		vFilters.push_back(_W("*.gltf"));
+		vFilters.push_back(_W("*.glb"));
 		//vFilters.push_back(_W("*.fbx"));
 		ShowLoadFilePicker(mvLoadFilenames, msLastMeshPath,this, kGuiCallback(MeshImport_Callback), _W("Meshes"), vFilters);
 	}

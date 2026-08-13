@@ -300,7 +300,7 @@ namespace hpl {
 
 			for(int i=0; i<lAnimationNum; ++i)
 			{
-				cAnimation *pAnim = GetAnimation(&binBuff, asFile);
+				cAnimation *pAnim = GetAnimation(&binBuff, asFile, true);
 				pMesh->AddAnimation(pAnim);
 			}
 		}
@@ -523,7 +523,7 @@ namespace hpl {
 
 		/////////////////////////////////////////////////
 		// Animation
-		cAnimation *pAnimation = GetAnimation(&binBuff, asFile);
+		cAnimation *pAnimation = GetAnimation(&binBuff, asFile, false);
 		
 		return pAnimation;
 	}
@@ -603,7 +603,7 @@ namespace hpl {
 	
 	//-----------------------------------------------------------------------
 
-	cAnimation* cMeshLoaderMSH::GetAnimation(cBinaryBuffer* apBuffer, const tWString &asFullPath)
+	cAnimation* cMeshLoaderMSH::GetAnimation(cBinaryBuffer* apBuffer, const tWString &asFullPath, bool abUseStoredName)
 	{
 		/////////////////////////
 		// General Properties
@@ -612,7 +612,8 @@ namespace hpl {
 		float fLength = apBuffer->GetFloat32();
 		int lTrackNum = apBuffer->GetInt32();
 		
-		cAnimation *pAnimation = hplNew(cAnimation, (cString::To8Char(asFullPath), asFullPath, cString::GetFileName(cString::To8Char(asFullPath))));
+		tString sResourceName = abUseStoredName && sAnimName != "" ? sAnimName : cString::To8Char(asFullPath);
+		cAnimation *pAnimation = hplNew(cAnimation, (sResourceName, asFullPath, cString::GetFileName(cString::To8Char(asFullPath))));
 		pAnimation->SetLength(fLength);
 
 		if(gbLogMSHLoad) Log(" Animation %s: %f %d\n", pAnimation->GetName().c_str(), pAnimation->GetLength(), lTrackNum);

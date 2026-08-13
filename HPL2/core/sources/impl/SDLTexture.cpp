@@ -30,6 +30,34 @@
 #include <limits>
 
 namespace hpl {
+	namespace {
+		void SetTextureTargetEnabled(eTextureType aType, GLenum aTarget, bool abEnabled)
+		{
+			// Texture arrays are shader-only targets and are not valid glEnable capabilities.
+			if(aType == eTextureType_2DArray) return;
+
+			if(abEnabled) glEnable(aTarget);
+			else glDisable(aTarget);
+		}
+
+		class cScopedPixelUnpackAlignment
+		{
+		public:
+			cScopedPixelUnpackAlignment()
+			{
+				glGetIntegerv(GL_UNPACK_ALIGNMENT, &mlPreviousAlignment);
+				if(mlPreviousAlignment != 1) glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+			}
+
+			~cScopedPixelUnpackAlignment()
+			{
+				if(mlPreviousAlignment != 1) glPixelStorei(GL_UNPACK_ALIGNMENT, mlPreviousAlignment);
+			}
+
+		private:
+			GLint mlPreviousAlignment;
+		};
+	}
 
 	//////////////////////////////////////////////////////////////////////////
 	// CONSTRUCTORS
@@ -160,14 +188,14 @@ namespace hpl {
 		
 		//////////////////////////////////
 		//Create the texture data
-		glEnable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, true);
 		glBindTexture(GLTarget, mvTextureHandles[0]);
 
 		int lDataSize = avSize.x * avSize.y * avSize.z * GetBytesPerPixel(aPixelFormat);
 		bool bRet = CopyTextureDataToGL(mvTextureHandles[0],0,apData, lDataSize, avSize, aPixelFormat,0);
 		if(bRet==false)
 		{
-			glDisable(GLTarget);
+			SetTextureTargetEnabled(mType, GLTarget, false);
 			return false;
 		}
 
@@ -181,7 +209,7 @@ namespace hpl {
 
 		SetupProperties(mvTextureHandles[0]);
 
-		glDisable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, false);
 		
 		return true;
 	}
@@ -199,8 +227,9 @@ namespace hpl {
 		GLenum GLTarget = TextureTypeToGLTarget(mType);
 		GLenum GLFormat = PixelFormatToGLFormat(aPixelFormat);
 
-		glEnable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, true);
 		glBindTexture(GLTarget, mvTextureHandles[0]);
+		cScopedPixelUnpackAlignment unpackAlignment;
 
 		if(mType == eTextureType_1D)
 		{
@@ -219,7 +248,7 @@ namespace hpl {
 							GLFormat,GL_UNSIGNED_BYTE,apData);
 		}
 
-		glDisable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, false);
 	}
 
 	//-----------------------------------------------------------------------
@@ -355,7 +384,7 @@ namespace hpl {
 		{
 			GLenum GLTarget = GetGLTextureTargetEnum(mType);
 
-			glEnable(GLTarget);
+			SetTextureTargetEnabled(mType, GLTarget, true);
 			for(size_t i=0; i < mvTextureHandles.size(); ++i)
 			{
 				glBindTexture(GLTarget, mvTextureHandles[i]);
@@ -396,7 +425,7 @@ namespace hpl {
 				}
 			}
 
-			glDisable(GLTarget);
+			SetTextureTargetEnabled(mType, GLTarget, false);
 		}
 	}
 
@@ -417,7 +446,7 @@ namespace hpl {
 
 		GLenum GLTarget = GetGLTextureTargetEnum(mType);
 
-		glEnable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, true);
 		for(size_t i=0; i < mvTextureHandles.size(); ++i)
 		{
 			glBindTexture(GLTarget, mvTextureHandles[i]);
@@ -425,7 +454,7 @@ namespace hpl {
 			glTexParameterf(GLTarget,GL_TEXTURE_MAX_ANISOTROPY_EXT ,mfAnisotropyDegree);
 		}
 
-		glDisable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, false);
 	}
 
 	//-----------------------------------------------------------------------
@@ -443,7 +472,7 @@ namespace hpl {
 		
 		GLenum GLTarget = GetGLTextureTargetEnum(mType);
 
-		glEnable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, true);
 		for(size_t i=0; i < mvTextureHandles.size(); ++i)
 		{
 			glBindTexture(GLTarget, mvTextureHandles[i]);
@@ -451,7 +480,7 @@ namespace hpl {
 			glTexParameteri(GLTarget,GL_TEXTURE_WRAP_S,GetGLWrapEnum(aMode));
 		}
 
-		glDisable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, false);
 	}
 
 	//-----------------------------------------------------------------------
@@ -469,7 +498,7 @@ namespace hpl {
 		
 		GLenum GLTarget = GetGLTextureTargetEnum(mType);
 
-		glEnable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, true);
 		for(size_t i=0; i < mvTextureHandles.size(); ++i)
 		{
 			glBindTexture(GLTarget, mvTextureHandles[i]);
@@ -477,7 +506,7 @@ namespace hpl {
 			glTexParameteri(GLTarget,GL_TEXTURE_WRAP_T,GetGLWrapEnum(aMode));
 		}
 
-		glDisable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, false);
 	}
 
 	//-----------------------------------------------------------------------
@@ -495,7 +524,7 @@ namespace hpl {
 		
 		GLenum GLTarget = GetGLTextureTargetEnum(mType);
 
-		glEnable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, true);
 		for(size_t i=0; i < mvTextureHandles.size(); ++i)
 		{
 			glBindTexture(GLTarget, mvTextureHandles[i]);
@@ -503,7 +532,7 @@ namespace hpl {
 			glTexParameteri(GLTarget,GL_TEXTURE_WRAP_R,GetGLWrapEnum(aMode));
 		}
 
-		glDisable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, false);
 	}
 
 	//-----------------------------------------------------------------------
@@ -523,7 +552,7 @@ namespace hpl {
 
 		GLenum GLTarget = GetGLTextureTargetEnum(mType);
 
-		glEnable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, true);
 		for(size_t i=0; i < mvTextureHandles.size(); ++i)
 		{
 			glBindTexture(GLTarget, mvTextureHandles[i]);
@@ -533,7 +562,7 @@ namespace hpl {
 			glTexParameteri(GLTarget,GL_TEXTURE_WRAP_R,GetGLWrapEnum(aMode));
 		}
 
-		glDisable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, false);
 	}
 
 	//-----------------------------------------------------------------------
@@ -549,14 +578,14 @@ namespace hpl {
 		GLenum GLTarget = GetGLTextureTargetEnum(mType);
 		GLenum GLCompareMode = GetGLTextureCompareMode(mCompareMode);
 		
-		glEnable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, true);
 		for(size_t i=0; i < mvTextureHandles.size(); ++i)
 		{
 			glBindTexture(GLTarget, mvTextureHandles[i]);
 
 			glTexParameteri(GLTarget,GL_TEXTURE_COMPARE_MODE,GLCompareMode);			
 		}
-		glDisable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, false);
 	}
 	
 	
@@ -571,14 +600,14 @@ namespace hpl {
 		GLenum GLTarget = GetGLTextureTargetEnum(mType);
 		GLenum GLCompareFunc = GetGLTextureCompareFunc(mCompareFunc);
 
-		glEnable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, true);
 		for(size_t i=0; i < mvTextureHandles.size(); ++i)
 		{
 			glBindTexture(GLTarget, mvTextureHandles[i]);
 
 			glTexParameteri(GLTarget,GL_TEXTURE_COMPARE_FUNC,GLCompareFunc);			
 		}
-		glDisable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, false);
 	}
 
 	//-----------------------------------------------------------------------
@@ -593,14 +622,14 @@ namespace hpl {
 		{
 			GLenum GLTarget = GetGLTextureTargetEnum(mType);
 
-			glEnable(GLTarget);
+			SetTextureTargetEnabled(mType, GLTarget, true);
 			for(size_t i=0; i < mvTextureHandles.size(); ++i)
 			{
 				glBindTexture(GLTarget, mvTextureHandles[i]);
 				glGenerateMipmapEXT(GLTarget);
 			}
 
-			glDisable(GLTarget);
+			SetTextureTargetEnabled(mType, GLTarget, false);
 		}
 	}
 	
@@ -758,8 +787,9 @@ namespace hpl {
 		if(mvSize.y==0) mvSize.y = 1;
 		if(mvSize.z==0) mvSize.z = 1;
 
-		glEnable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, true);
 		glBindTexture(GLTarget, alTextureHandle);
+		cScopedPixelUnpackAlignment unpackAlignment;
 
 		bool bRet = true;
 		int lMipMapCount = abGenerateMipMaps ? lNumOfMipMaps : lStartMipMapLevel+1;
@@ -852,7 +882,7 @@ namespace hpl {
 
 		if(bRet==false)
 		{
-			glDisable(GLTarget);
+			SetTextureTargetEnabled(mType, GLTarget, false);
 			Error("Could not create GL texture array %s\n",msName.c_str());
 			return false;
 		}
@@ -870,7 +900,7 @@ namespace hpl {
 			}
 		}
 
-		glDisable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, false);
 
 		return true;
 	}
@@ -959,7 +989,7 @@ namespace hpl {
 
 		//////////////////////////////////
 		//Bind texture
-		glEnable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, true);
 		glBindTexture(GLTarget, alTextureHandle);
 
 		//Log("Texture: '%s' StartLevel: %d Mipmap num: %d GenerateMipmaps: %d\n", msName.c_str(), lStartMipMapLevel,alNumOfMipMaps, abGenerateMipMaps);
@@ -1006,7 +1036,7 @@ namespace hpl {
 		//Check for errors
 		if(bRet==false)
 		{
-			glDisable(GLTarget);
+			SetTextureTargetEnabled(mType, GLTarget, false);
 			Error("Could not create GL texture %s\n",msName.c_str());
 			return false;
 		}
@@ -1028,7 +1058,7 @@ namespace hpl {
 		if(pResizeData) hplDeleteArray(pResizeData);
 
 
-		glDisable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, false);
 
 		return true;
 	}
@@ -1098,6 +1128,8 @@ namespace hpl {
 	bool cSDLTexture::CopyTextureDataToGL(	int alTextureHandle, int alLevel,unsigned char *apData,int alDataSize,
 											const cVector3l avSize, ePixelFormat aPixelFormat,int alFaceNum)
 	{
+		cScopedPixelUnpackAlignment unpackAlignment;
+
 		GLenum GLTarget = TextureTypeToGLTarget(mType);
 		GLenum GLFormat = PixelFormatToGLFormat(aPixelFormat);
 		GLenum GLInternalFormat = PixelFormatToGLInternalFormat(aPixelFormat);
@@ -1182,7 +1214,7 @@ namespace hpl {
 		
 		GLenum GLTarget = TextureTypeToGLTarget(mType);
 
-		glEnable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, true);
 		glBindTexture(GLTarget, alTextureHandle);
 
 		/////////////////////////////////////////
@@ -1224,7 +1256,7 @@ namespace hpl {
 			glTexParameterf(GLTarget,GL_TEXTURE_MAX_ANISOTROPY_EXT ,mfAnisotropyDegree);
 		}
 
-		glDisable(GLTarget);
+		SetTextureTargetEnabled(mType, GLTarget, false);
 	}
 
 	//-----------------------------------------------------------------------

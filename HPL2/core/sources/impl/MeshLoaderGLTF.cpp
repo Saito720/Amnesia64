@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
 
 #include "system/LowLevelSystem.h"
 #include "system/String.h"
@@ -551,9 +552,10 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	static bool GetSamplerBounds(const cgltf_animation_sampler* apSampler, float afTime, size_t& alBefore, size_t& alAfter, float& afT)
+	static bool GetSamplerBounds(const cgltf_animation_sampler* apSampler, float afTime, size_t& alBefore, size_t& alAfter, float& afT, float& afDuration)
 	{
 		if(apSampler == NULL || apSampler->input == NULL || apSampler->output == NULL || apSampler->input->count == 0) return false;
+		afDuration = 0;
 
 		const cgltf_accessor* pInput = apSampler->input;
 		float fFirstTime = 0;
@@ -579,7 +581,8 @@ namespace hpl {
 
 				alBefore = i-1;
 				alAfter = i;
-				afT = fNextTime > fPrevTime ? (afTime - fPrevTime) / (fNextTime - fPrevTime) : 0;
+				afDuration = fNextTime - fPrevTime;
+				afT = afDuration > 0 ? (afTime - fPrevTime) / afDuration : 0;
 
 				if(apSampler->interpolation == cgltf_interpolation_type_step) afT = 0;
 				return true;
@@ -594,6 +597,21 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
+	static float CubicHermite(float afBefore, float afBeforeTangent, float afAfter, float afAfterTangent, float afT, float afDuration)
+	{
+		float fT2 = afT * afT;
+		float fT3 = fT2 * afT;
+		float fH00 = 2.0f * fT3 - 3.0f * fT2 + 1.0f;
+		float fH10 = fT3 - 2.0f * fT2 + afT;
+		float fH01 = -2.0f * fT3 + 3.0f * fT2;
+		float fH11 = fT3 - fT2;
+
+		return fH00 * afBefore + fH10 * afDuration * afBeforeTangent +
+			fH01 * afAfter + fH11 * afDuration * afAfterTangent;
+	}
+
+	//-----------------------------------------------------------------------
+
 	static bool ReadChannelVec3(const cgltf_animation_channel* apChannel, float afTime, const cVector3f& avDefault, cVector3f& avOutput)
 	{
 		avOutput = avDefault;
@@ -604,7 +622,8 @@ namespace hpl {
 		size_t lBefore = 0;
 		size_t lAfter = 0;
 		float fT = 0;
-		if(GetSamplerBounds(pSampler, afTime, lBefore, lAfter, fT)==false) return false;
+		float fDuration = 0;
+		if(GetSamplerBounds(pSampler, afTime, lBefore, lAfter, fT, fDuration)==false) return false;
 
 		cVector3f vBefore;
 		if(ReadAccessorVec3(pSampler->output, GetOutputValueIndex(pSampler, lBefore), vBefore)==false) return false;
@@ -618,8 +637,29 @@ namespace hpl {
 		cVector3f vAfter;
 		if(ReadAccessorVec3(pSampler->output, GetOutputValueIndex(pSampler, lAfter), vAfter)==false) return false;
 
+		if(pSampler->interpolation == cgltf_interpolation_type_cubic_spline)
+		{
+			cVector3f vBeforeTangent;
+			cVector3f vAfterTangent;
+			if(ReadAccessorVec3(pSampler->output, lBefore * 3 + 2, vBeforeTangent)==false) return false;
+			if(ReadAccessorVec3(pSampler->output, lAfter * 3, vAfterTangent)==false) return false;
+
+			avOutput.x = CubicHermite(vBefore.x, vBeforeTangent.x, vAfter.x, vAfterTangent.x, fT, fDuration);
+			avOutput.y = CubicHermite(vBefore.y, vBeforeTangent.y, vAfter.y, vAfterTangent.y, fT, fDuration);
+			avOutput.z = CubicHermite(vBefore.z, vBeforeTangent.z, vAfter.z, vAfterTangent.z, fT, fDuration);
+			return true;
+		}
+
 		avOutput = vBefore * (1.0f - fT) + vAfter * fT;
 		return true;
+	}
+
+	//-----------------------------------------------------------------------
+
+	static bool ReadAccessorQuatComponents(const cgltf_accessor* apAccessor, size_t alIndex, float* apOutput)
+	{
+		if(apAccessor == NULL || apOutput == NULL) return false;
+		return cgltf_accessor_read_float(apAccessor, alIndex, apOutput, 4) != 0;
 	}
 
 	//-----------------------------------------------------------------------
@@ -629,7 +669,7 @@ namespace hpl {
 		if(apAccessor == NULL) return false;
 
 		float vValue[4] = {0, 0, 0, 1};
-		if(cgltf_accessor_read_float(apAccessor, alIndex, vValue, 4)==0) return false;
+		if(ReadAccessorQuatComponents(apAccessor, alIndex, vValue)==false) return false;
 
 		aqOutput = cQuaternion(vValue[3], vValue[0], vValue[1], vValue[2]);
 		aqOutput.Normalize();
@@ -648,7 +688,8 @@ namespace hpl {
 		size_t lBefore = 0;
 		size_t lAfter = 0;
 		float fT = 0;
-		if(GetSamplerBounds(pSampler, afTime, lBefore, lAfter, fT)==false) return false;
+		float fDuration = 0;
+		if(GetSamplerBounds(pSampler, afTime, lBefore, lAfter, fT, fDuration)==false) return false;
 
 		cQuaternion qBefore;
 		if(ReadAccessorQuat(pSampler->output, GetOutputValueIndex(pSampler, lBefore), qBefore)==false) return false;
@@ -656,6 +697,28 @@ namespace hpl {
 		if(lBefore == lAfter || fT <= 0)
 		{
 			aqOutput = qBefore;
+			return true;
+		}
+
+		if(pSampler->interpolation == cgltf_interpolation_type_cubic_spline)
+		{
+			float vBefore[4] = {0, 0, 0, 1};
+			float vBeforeTangent[4] = {0, 0, 0, 0};
+			float vAfter[4] = {0, 0, 0, 1};
+			float vAfterTangent[4] = {0, 0, 0, 0};
+			if(ReadAccessorQuatComponents(pSampler->output, lBefore * 3 + 1, vBefore)==false) return false;
+			if(ReadAccessorQuatComponents(pSampler->output, lBefore * 3 + 2, vBeforeTangent)==false) return false;
+			if(ReadAccessorQuatComponents(pSampler->output, lAfter * 3 + 1, vAfter)==false) return false;
+			if(ReadAccessorQuatComponents(pSampler->output, lAfter * 3, vAfterTangent)==false) return false;
+
+			float vResult[4];
+			for(int i=0; i<4; ++i)
+			{
+				vResult[i] = CubicHermite(vBefore[i], vBeforeTangent[i], vAfter[i], vAfterTangent[i], fT, fDuration);
+			}
+
+			aqOutput = cQuaternion(vResult[3], vResult[0], vResult[1], vResult[2]);
+			aqOutput.Normalize();
 			return true;
 		}
 
@@ -1048,6 +1111,11 @@ namespace hpl {
 			Warning("Skipping glTF primitive on node '%s' because it has no positions.\n", GetMappedNodeName(apNode, aNodeNames).c_str());
 			return NULL;
 		}
+		if(pPosition->count > (size_t)(std::numeric_limits<int>::max)())
+		{
+			Warning("Skipping glTF primitive on node '%s' because it has too many vertices for HPL.\n", GetMappedNodeName(apNode, aNodeNames).c_str());
+			return NULL;
+		}
 
 		const cgltf_accessor* pNormal = FindAttributeAccessor(apPrimitive, cgltf_attribute_type_normal, 0);
 		const cgltf_accessor* pTexCoord = FindAttributeAccessor(apPrimitive, cgltf_attribute_type_texcoord, 0);
@@ -1087,7 +1155,8 @@ namespace hpl {
 				vTangents[i*4 + 0] = vtx.tan.x;
 				vTangents[i*4 + 1] = vtx.tan.y;
 				vTangents[i*4 + 2] = vtx.tan.z;
-				vTangents[i*4 + 3] = fW;
+				// HPL flips V on import, which also reverses the tangent-space bitangent.
+				vTangents[i*4 + 3] = -fW;
 			}
 		}
 
@@ -1095,6 +1164,11 @@ namespace hpl {
 		if(BuildPrimitiveIndices(apPrimitive, pPosition->count, vIndices)==false)
 		{
 			Warning("Skipping non-triangle glTF primitive on node '%s'.\n", GetMappedNodeName(apNode, aNodeNames).c_str());
+			return NULL;
+		}
+		if(vIndices.size() > (size_t)(std::numeric_limits<int>::max)())
+		{
+			Warning("Skipping glTF primitive on node '%s' because it has too many indices for HPL.\n", GetMappedNodeName(apNode, aNodeNames).c_str());
 			return NULL;
 		}
 
@@ -1110,17 +1184,22 @@ namespace hpl {
 			}
 		}
 
-		tString sSubMeshName = GetSubMeshName(apNode, alPrimitiveIndex, aNodeNames);
-		cSubMesh* pSubMesh = apMesh->CreateSubMesh(sSubMeshName);
-		pSubMesh->SetLocalTransform(apNode->mesh && apNode->mesh->primitives_count <= 1 ? GetNodeLocalMatrix(apNode) : cMatrixf::Identity);
-		pSubMesh->SetIsCollideShape(IsColliderMeshName(sSubMeshName));
-
 		iVertexBuffer *pVtxBuff = mpLowLevelGraphics->CreateVertexBuffer(
 			eVertexBufferType_Hardware,
 			eVertexBufferDrawType_Tri,
 			eVertexBufferUsageType_Static,
 			(int)vVertices.size(),
 			(int)vIndices.size());
+		if(pVtxBuff == NULL)
+		{
+			Error("Could not create a vertex buffer for glTF primitive on node '%s'.\n", GetMappedNodeName(apNode, aNodeNames).c_str());
+			return NULL;
+		}
+
+		tString sSubMeshName = GetSubMeshName(apNode, alPrimitiveIndex, aNodeNames);
+		cSubMesh* pSubMesh = apMesh->CreateSubMesh(sSubMeshName);
+		pSubMesh->SetLocalTransform(apNode->mesh && apNode->mesh->primitives_count <= 1 ? GetNodeLocalMatrix(apNode) : cMatrixf::Identity);
+		pSubMesh->SetIsCollideShape(IsColliderMeshName(sSubMeshName));
 
 		pVtxBuff->CreateElementArray(eVertexBufferElement_Position, eVertexBufferElementFormat_Float, 4);
 		pVtxBuff->CreateElementArray(eVertexBufferElement_Normal, eVertexBufferElementFormat_Float, 3);

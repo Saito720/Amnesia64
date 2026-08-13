@@ -14,6 +14,9 @@
 //#pragma comment(lib, "libvorbisfile.lib")
 //#pragma comment(lib, "alut.lib")
 #pragma comment(lib, "openal32.lib")
+#ifdef AL_LIBTYPE_STATIC
+#pragma comment(lib, "avrt.lib")
+#endif
 //#ifdef USE_SDL2
 //#pragma comment(lib, "SDL2.lib")
 //#else

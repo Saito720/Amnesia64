@@ -181,6 +181,17 @@ namespace hpl {
 				return false;
 			}
 
+			const ktx_uint32_t lMaxBitmapValue = (ktx_uint32_t)std::numeric_limits<int>::max();
+			if(apTexture->baseWidth > lMaxBitmapValue ||
+				apTexture->baseHeight > lMaxBitmapValue ||
+				apTexture->baseDepth > lMaxBitmapValue ||
+				apTexture->numLayers > lMaxBitmapValue ||
+				apTexture->numLevels > lMaxBitmapValue)
+			{
+				Error("KTX2 texture '%s' exceeds HPL bitmap dimension or count limits.\n", cString::To8Char(asFile).c_str());
+				return false;
+			}
+
 			return true;
 		}
 

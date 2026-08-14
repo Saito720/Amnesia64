@@ -80,6 +80,7 @@ namespace hpl {
 											mfFrenselBias(0.2f), mfFrenselPow(8.0f),
 											mbAlphaDissolveFilter(false),
 											mbUnlit(false),
+											mbUseEllipsoidNormals(false), mvEllipsoidRadii(1.0f),
 											mlDiffuseArrayTileColumns(3), mlDiffuseArrayTileRows(2) {}
 		~cMaterialType_SolidDiffuse_Vars(){}
 
@@ -89,6 +90,8 @@ namespace hpl {
 		float mfFrenselPow;
 		bool mbAlphaDissolveFilter;
 		bool mbUnlit;
+		bool mbUseEllipsoidNormals;
+		cVector3f mvEllipsoidRadii;
 		int mlDiffuseArrayTileColumns;
 		int mlDiffuseArrayTileRows;
 	};

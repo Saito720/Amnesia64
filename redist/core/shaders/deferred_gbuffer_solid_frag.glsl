@@ -226,7 +226,15 @@ void main()
 	//Normal
 	@ifdef UseNormalMapping
 		vec3 vNormal = texture2D(aNormalMap,vTexCoord).xyz - 0.5; //No need for full unpack x*2-1, becuase normal is normalized. (but now we do not normalize...)
-		vec3 vScreenNormal = normalize(vNormal.x * gvTangent + vNormal.y * gvBinormal + vNormal.z * gvNormal);
+		@ifdef UseEllipsoidNormals
+			vec3 vBaseNormal = normalize(gvNormal);
+			vec3 vTangent = normalize(gvTangent - vBaseNormal * dot(gvTangent, vBaseNormal));
+			vec3 vBinormal = normalize(cross(vBaseNormal, vTangent));
+			vBinormal *= dot(vBinormal, gvBinormal) < 0.0 ? -1.0 : 1.0;
+			vec3 vScreenNormal = normalize(vNormal.x * vTangent + vNormal.y * vBinormal + vNormal.z * vBaseNormal);
+		@else
+			vec3 vScreenNormal = normalize(vNormal.x * gvTangent + vNormal.y * gvBinormal + vNormal.z * gvNormal);
+		@endif
 	@else
 		vec3 vScreenNormal = normalize(gvNormal);
 	@endif

@@ -58,6 +58,7 @@ namespace hpl {
 	#define kVar_a_mtxInvViewRotation			6
 	#define kVar_avDiffuseArrayTileGrid			7
 	#define kVar_avDiffuseArrayTileSize			8
+	#define kVar_avEllipsoidNormalScale			9
 
 
 	//------------------------------
@@ -72,8 +73,9 @@ namespace hpl {
 	#define eFeature_Diffuse_CubeMapAlpha	eFlagBit_6
 	#define eFeature_Diffuse_Array			eFlagBit_7
 	#define eFeature_Diffuse_Unlit			eFlagBit_8
+	#define eFeature_Diffuse_EllipsoidNormals	eFlagBit_9
 		
-	#define kDiffuseFeatureNum 9
+	#define kDiffuseFeatureNum 10
 
 	static cProgramComboFeature vDiffuseFeatureVec[] =
 	{
@@ -86,6 +88,7 @@ namespace hpl {
 		cProgramComboFeature("UseCubeMapAlpha", kPC_FragmentBit),
 		cProgramComboFeature("UseDiffuseArray", kPC_FragmentBit),
 		cProgramComboFeature("UseUnlit", kPC_FragmentBit),
+		cProgramComboFeature("UseEllipsoidNormals", kPC_VertexBit | kPC_FragmentBit),
 	};
 
 	//------------------------------
@@ -288,6 +291,8 @@ namespace hpl {
 		AddVarFloat("FrenselPow", 8.0f, "The higher the 'sharper' the reflection is, meaning that it is only clearly seen at sharp angles.");
 		AddVarBool("AlphaDissolveFilter", false, "If alpha values between 0 and 1 should be used and dissolve the texture. This can be useful for things like hair.");
 		AddVarBool("Unlit", false, "Render the diffuse texture without scene lighting.");
+		AddVarBool("UseEllipsoidNormals", false, "Derive smooth normals from an origin-centered ellipsoid instead of using mesh normals.");
+		AddVarVec3("EllipsoidRadii", cVector3f(1.0f), "Relative local-space ellipsoid radii. Common scale does not matter.");
 		AddVarInt("DiffuseArrayTileColumns", 3, "Number of horizontal tiles in a 2D array diffuse texture.");
 		AddVarInt("DiffuseArrayTileRows", 2, "Number of vertical tiles in a 2D array diffuse texture.");
 	}
@@ -352,6 +357,7 @@ namespace hpl {
 		mpProgramManager->AddGenerateProgramVariableId("a_mtxInvViewRotation", kVar_a_mtxInvViewRotation,eMaterialRenderMode_Diffuse);
 		mpProgramManager->AddGenerateProgramVariableId("avDiffuseArrayTileGrid", kVar_avDiffuseArrayTileGrid,eMaterialRenderMode_Diffuse);
 		mpProgramManager->AddGenerateProgramVariableId("avDiffuseArrayTileSize", kVar_avDiffuseArrayTileSize,eMaterialRenderMode_Diffuse);
+		mpProgramManager->AddGenerateProgramVariableId("avEllipsoidNormalScale", kVar_avEllipsoidNormalScale,eMaterialRenderMode_Diffuse);
 
 		mpProgramManager->AddGenerateProgramVariableId("a_mtxUV",kVar_a_mtxUV,eMaterialRenderMode_Illumination);
 		mpProgramManager->AddGenerateProgramVariableId("afColorMul",kVar_afColorMul,eMaterialRenderMode_Illumination);
@@ -415,6 +421,13 @@ namespace hpl {
 			{
 				apMaterial->SetHasSpecificSettings(eMaterialRenderMode_Illumination,true);
 			}
+		}
+
+		//////////////////////////////////
+		//Analytic ellipsoid normals
+		if(pVars->mbUseEllipsoidNormals)
+		{
+			apMaterial->SetHasSpecificSettings(eMaterialRenderMode_Diffuse,true);
 		}
 
 		//////////////////////////////////
@@ -545,6 +558,10 @@ namespace hpl {
 			{
 				lFlags |= eFeature_Diffuse_Unlit;
 			}
+			if(pVars->mbUseEllipsoidNormals)
+			{
+				lFlags |= eFeature_Diffuse_EllipsoidNormals;
+			}
 			
 
 			return mpProgramManager->GenerateProgram(aRenderMode,lFlags);
@@ -612,6 +629,25 @@ namespace hpl {
 					apProgram->SetVec2f(kVar_avDiffuseArrayTileGrid, (float)pVars->mlDiffuseArrayTileColumns, (float)pVars->mlDiffuseArrayTileRows);
 					const cVector3l& vDiffuseSize = pDiffuseTexture->GetSize();
 					apProgram->SetVec2f(kVar_avDiffuseArrayTileSize, (float)cMath::Max(1, vDiffuseSize.x), (float)cMath::Max(1, vDiffuseSize.y));
+				}
+
+				/////////////////////////
+				//Analytic ellipsoid normals
+				if(pVars->mbUseEllipsoidNormals)
+				{
+					cVector3f vRadii(
+						cMath::Max(cMath::Abs(pVars->mvEllipsoidRadii.x), kEpsilonf),
+						cMath::Max(cMath::Abs(pVars->mvEllipsoidRadii.y), kEpsilonf),
+						cMath::Max(cMath::Abs(pVars->mvEllipsoidRadii.z), kEpsilonf));
+					const float fMaxRadius = cMath::Max(vRadii.x, cMath::Max(vRadii.y, vRadii.z));
+					vRadii.x = cMath::Max(vRadii.x / fMaxRadius, kEpsilonf);
+					vRadii.y = cMath::Max(vRadii.y / fMaxRadius, kEpsilonf);
+					vRadii.z = cMath::Max(vRadii.z / fMaxRadius, kEpsilonf);
+
+					apProgram->SetVec3f(kVar_avEllipsoidNormalScale,
+						1.0f / (vRadii.x * vRadii.x),
+						1.0f / (vRadii.y * vRadii.y),
+						1.0f / (vRadii.z * vRadii.z));
 				}
 
 				/////////////////////////
@@ -692,6 +728,8 @@ namespace hpl {
 		pVars->mbAlphaDissolveFilter = apVars->GetVarBool("AlphaDissolveFilter", false);
 		pVars->mbUnlit = apVars->GetVarBool("Unlit", false);
 		apMaterial->SetUnlit(pVars->mbUnlit);
+		pVars->mbUseEllipsoidNormals = apVars->GetVarBool("UseEllipsoidNormals", false);
+		pVars->mvEllipsoidRadii = apVars->GetVarVector3f("EllipsoidRadii", cVector3f(1.0f));
 		pVars->mlDiffuseArrayTileColumns = cMath::Max(1, apVars->GetVarInt("DiffuseArrayTileColumns", 3));
 		pVars->mlDiffuseArrayTileRows = cMath::Max(1, apVars->GetVarInt("DiffuseArrayTileRows", 2));
 
@@ -709,6 +747,8 @@ namespace hpl {
 		apVars->AddVarFloat("FrenselPow", pVars->mfFrenselPow);
 		apVars->AddVarBool("AlphaDissolveFilter", pVars->mbAlphaDissolveFilter);
 		apVars->AddVarBool("Unlit", pVars->mbUnlit);
+		apVars->AddVarBool("UseEllipsoidNormals", pVars->mbUseEllipsoidNormals);
+		apVars->AddVarVector3f("EllipsoidRadii", pVars->mvEllipsoidRadii);
 		apVars->AddVarInt("DiffuseArrayTileColumns", pVars->mlDiffuseArrayTileColumns);
 		apVars->AddVarInt("DiffuseArrayTileRows", pVars->mlDiffuseArrayTileRows);
 	}

@@ -103,6 +103,9 @@ namespace hpl {
 		void SetHasTranslucentIllumination(bool abX){ mbHasTranslucentIllumination = abX;}
 		bool HasTranslucentIllumination(){ return mbHasTranslucentIllumination;}
 
+		void SetUnlit(bool abX){ mbUnlit = abX; }
+		bool IsUnlit() const { return mbUnlit; }
+
 		void SetLargeTransperantSurface(bool abX){ mbLargeTransperantSurface = abX;}
 		bool GetLargeTransperantSurface(){ return mbLargeTransperantSurface;}
 
@@ -181,6 +184,7 @@ namespace hpl {
 		float mfMaxReflectionDistance;
 
 		bool mbHasTranslucentIllumination;
+		bool mbUnlit;
 
 		bool mbLargeTransperantSurface;
 

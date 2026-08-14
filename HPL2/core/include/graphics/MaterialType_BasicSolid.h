@@ -79,6 +79,7 @@ namespace hpl {
 		cMaterialType_SolidDiffuse_Vars() : mfHeightMapScale(0.05f), mfHeightMapBias(0.0f),
 											mfFrenselBias(0.2f), mfFrenselPow(8.0f),
 											mbAlphaDissolveFilter(false),
+											mbUnlit(false),
 											mlDiffuseArrayTileColumns(3), mlDiffuseArrayTileRows(2) {}
 		~cMaterialType_SolidDiffuse_Vars(){}
 
@@ -87,6 +88,7 @@ namespace hpl {
 		float mfFrenselBias;
 		float mfFrenselPow;
 		bool mbAlphaDissolveFilter;
+		bool mbUnlit;
 		int mlDiffuseArrayTileColumns;
 		int mlDiffuseArrayTileRows;
 	};

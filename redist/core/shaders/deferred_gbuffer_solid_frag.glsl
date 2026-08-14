@@ -213,9 +213,13 @@ void main()
 
 	//////////////////////////////////
 	//Set Diffuse color if no environemnt mapping is used.
+	@ifdef UseUnlit
+		gl_FragData[0] = vec4(0.0, 0.0, 0.0, vDiffuseColor.a);
+	@else
 	@ifdef UseEnvMap
 	@else
 		gl_FragData[0] = vDiffuseColor;
+	@endif
 	@endif
 
 	//////////////////////////////////
@@ -236,6 +240,8 @@ void main()
 
 	//////////////////////////////////
 	//Environment Map
+	@ifdef UseUnlit
+	@else
 	@ifdef UseEnvMap
 		vec3 vCameraSpaceEyeVec = normalize(gvVertexPos);
 
@@ -253,6 +259,7 @@ void main()
 		@endif
 
 		gl_FragData[0] = vDiffuseColor + vReflectionColor * fFresnel;
+	@endif
 	@endif
 
 
@@ -273,12 +280,20 @@ void main()
 	//////////////////////////////////
 	//Specular
 	@ifdef RenderTargets_4
+		@ifdef UseUnlit
+			gl_FragData[3].xy = vec2(0.0);
+		@else
 		@ifdef UseSpecular
 			gl_FragData[3].xy = texture2D(aSpecularMap, vTexCoord).xy;
 		@else
 			gl_FragData[3].xy = vec2(0.0);
 		@endif
+		@endif
 	@else
+		@ifdef UseUnlit
+			gl_FragData[1].w = 0.0;
+			gl_FragData[2].w = 0.0;
+		@else
 		@ifdef UseSpecular
 			vec2 vSpecVals = texture2D(aSpecularMap, vTexCoord).xy;
 			gl_FragData[1].w = vSpecVals.x;
@@ -286,6 +301,7 @@ void main()
 		@else
 			gl_FragData[1].w = 0.0;
 			gl_FragData[2].w = 0.0;
+		@endif
 		@endif
 	@endif
 }

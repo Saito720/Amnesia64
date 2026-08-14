@@ -946,7 +946,9 @@ public:
 		{
 			cSubMeshEntity *pSubEnt = gpEntity->GetSubMeshEntity(i);
 			cSubMesh *pSubMesh = pMesh->GetSubMesh(i);
-			int lPolygons = pSubMesh->GetVertexBuffer()->GetVertexNum()/3;
+			iVertexBuffer *pVtxBuffer = pSubMesh->GetVertexBuffer();
+			int lIndexNum = pVtxBuffer->GetIndexNum();
+			int lPolygons = (lIndexNum > 0 ? lIndexNum : pVtxBuffer->GetVertexNum()) / 3;
 			
 			Log("   Name: '%s' \n", pSubMesh->GetName().c_str());
 			Log("   Material: '%s' \n", pSubMesh->GetMaterialName().c_str());

@@ -68,6 +68,7 @@ namespace hpl {
 		mfMaxReflectionDistance = 0;
 
 		mbHasTranslucentIllumination = false; //If the material is translucent and also need an extra additive pass.
+		mbUnlit = false;
 
 		mbLargeTransperantSurface = false;
 
@@ -161,6 +162,7 @@ namespace hpl {
 		if(mpType==apType) return;
 
 		mpType = apType;
+		mbUnlit = false;
 
 		if(mpVars) hplDelete(mpVars);
 		if(mpType) mpVars = mpType->CreateSpecificVariables();

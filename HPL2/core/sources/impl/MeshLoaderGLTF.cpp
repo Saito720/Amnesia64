@@ -1143,7 +1143,6 @@ namespace hpl {
 			if(pTexCoord)
 			{
 				ReadAccessorVec2(pTexCoord, i, vtx.tex);
-				vtx.tex.y = 1.0f - vtx.tex.y;
 			}
 
 			if(pColor) ReadAccessorColor(pColor, i, vtx.col);

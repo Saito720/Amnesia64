@@ -1625,10 +1625,10 @@ namespace hpl {
 		int lID = apElement->GetAttributeInt("ID",-1);
 
 		//Make sure the transform is valid
-		if(CheckTransformValidity(sName, vPosition, vRotation, vScale)==false)
+		/* if (CheckTransformValidity(sName, vPosition, vRotation, vScale) == false)
 		{
 			return;
-		}
+		} */
 
 		////////////////////////////////
 		//Create mesh entity
@@ -1898,10 +1898,10 @@ namespace hpl {
 		cVector3f vRotation = apElement->GetAttributeVector3f("Rotation",0);
 
 		//Make sure the transform is valid
-		if(CheckTransformValidity(sName, vPosition, vRotation, vScale)==false)
+		/* if (CheckTransformValidity(sName, vPosition, vRotation, vScale) == false)
 		{
 			return;
-		}
+		} */
 
 		//////////////////////////////////
 		// Plane
@@ -2201,10 +2201,10 @@ namespace hpl {
 			cVector3f vRotation = apElement->GetAttributeVector3f("Rotation",0);
 
 			//Make sure the transform is valid
-			if(CheckTransformValidity(sName, vPosition, vRotation, vScale)==false)
+			/* if (CheckTransformValidity(sName, vPosition, vRotation, vScale) == false)
 			{
 				return;
-			}
+			} */
 
 			//////////////////////////
 			//Entity or Area

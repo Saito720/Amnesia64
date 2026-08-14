@@ -1167,7 +1167,7 @@ void cLuxDebugHandler::CreateGuiWindow()
 		vGroupPos.y += 22;
 
 		//Set fly camera speed
-		pSlider = mpGuiSet->CreateWidgetSlider(eWidgetSliderOrientation_Horizontal, vGroupPos, vSize, 100, pGroup, ("Fly camera speed"));
+		pSlider = mpGuiSet->CreateWidgetSlider(eWidgetSliderOrientation_Horizontal, vGroupPos, vSize, 10000000, pGroup, ("Fly camera speed"));
 		pSlider->SetValue(10, false);
 		pSlider->SetUserValue(14);
 		pSlider->AddCallback(eGuiMessage_SliderMove, this, kGuiCallback(ChangeDebugText));

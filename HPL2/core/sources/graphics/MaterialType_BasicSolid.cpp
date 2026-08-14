@@ -71,8 +71,9 @@ namespace hpl {
 	#define eFeature_Diffuse_EnvMap			eFlagBit_5
 	#define eFeature_Diffuse_CubeMapAlpha	eFlagBit_6
 	#define eFeature_Diffuse_Array			eFlagBit_7
+	#define eFeature_Diffuse_Unlit			eFlagBit_8
 		
-	#define kDiffuseFeatureNum 8
+	#define kDiffuseFeatureNum 9
 
 	static cProgramComboFeature vDiffuseFeatureVec[] =
 	{
@@ -84,6 +85,7 @@ namespace hpl {
 		cProgramComboFeature("UseEnvMap", kPC_VertexBit | kPC_FragmentBit),
 		cProgramComboFeature("UseCubeMapAlpha", kPC_FragmentBit),
 		cProgramComboFeature("UseDiffuseArray", kPC_FragmentBit),
+		cProgramComboFeature("UseUnlit", kPC_FragmentBit),
 	};
 
 	//------------------------------
@@ -91,13 +93,15 @@ namespace hpl {
 	//------------------------------
 	#define eFeature_Illum_UvAnimation	eFlagBit_0
 	#define eFeature_Illum_Skeleton		eFlagBit_1
+	#define eFeature_Illum_Array		eFlagBit_2
 
-	#define kIllumFeatureNum 2
+	#define kIllumFeatureNum 3
 
 	cProgramComboFeature vIllumFeatureVec[] =
 	{
 		cProgramComboFeature("UseUvAnimation", kPC_VertexBit),							
 		cProgramComboFeature("UseSkeleton",	kPC_VertexBit),							
+		cProgramComboFeature("UseDiffuseArray", kPC_FragmentBit),
 	};
 
 	//------------------------------
@@ -283,6 +287,7 @@ namespace hpl {
 		AddVarFloat("FrenselBias", 0.2f, "Bias for Fresnel term. values: 0-1. Higher means that more of reflection is seen when looking straight at object.");
 		AddVarFloat("FrenselPow", 8.0f, "The higher the 'sharper' the reflection is, meaning that it is only clearly seen at sharp angles.");
 		AddVarBool("AlphaDissolveFilter", false, "If alpha values between 0 and 1 should be used and dissolve the texture. This can be useful for things like hair.");
+		AddVarBool("Unlit", false, "Render the diffuse texture without scene lighting.");
 		AddVarInt("DiffuseArrayTileColumns", 3, "Number of horizontal tiles in a 2D array diffuse texture.");
 		AddVarInt("DiffuseArrayTileRows", 2, "Number of vertical tiles in a 2D array diffuse texture.");
 	}
@@ -350,6 +355,8 @@ namespace hpl {
 
 		mpProgramManager->AddGenerateProgramVariableId("a_mtxUV",kVar_a_mtxUV,eMaterialRenderMode_Illumination);
 		mpProgramManager->AddGenerateProgramVariableId("afColorMul",kVar_afColorMul,eMaterialRenderMode_Illumination);
+		mpProgramManager->AddGenerateProgramVariableId("avDiffuseArrayTileGrid", kVar_avDiffuseArrayTileGrid,eMaterialRenderMode_Illumination);
+		mpProgramManager->AddGenerateProgramVariableId("avDiffuseArrayTileSize", kVar_avDiffuseArrayTileSize,eMaterialRenderMode_Illumination);
 	}
 
 	//--------------------------------------------------------------------------
@@ -395,6 +402,19 @@ namespace hpl {
 			apMaterial->GetTexture(eMaterialTexture_Diffuse)->GetType() == eTextureType_2DArray)
 		{
 			apMaterial->SetHasSpecificSettings(eMaterialRenderMode_Diffuse,true);
+		}
+
+		//////////////////////////////////
+		//Unlit diffuse pass
+		if(pVars->mbUnlit && apMaterial->GetTexture(eMaterialTexture_Diffuse))
+		{
+			apMaterial->SetHasSpecificSettings(eMaterialRenderMode_Diffuse,true);
+			apMaterial->SetHasObjectSpecificsSettings(eMaterialRenderMode_Illumination,true);
+
+			if(apMaterial->GetTexture(eMaterialTexture_Diffuse)->GetType() == eTextureType_2DArray)
+			{
+				apMaterial->SetHasSpecificSettings(eMaterialRenderMode_Illumination,true);
+			}
 		}
 
 		//////////////////////////////////
@@ -453,7 +473,12 @@ namespace hpl {
 		{
 			switch(alUnit)
 			{
-			case 0: return apMaterial->GetTexture(eMaterialTexture_Illumination);
+			case 0:
+				if(pVars->mbUnlit && apMaterial->GetTexture(eMaterialTexture_Diffuse))
+				{
+					return apMaterial->GetTexture(eMaterialTexture_Diffuse);
+				}
+				return apMaterial->GetTexture(eMaterialTexture_Illumination);
 			}
 		}
 
@@ -516,6 +541,10 @@ namespace hpl {
 			{
 				lFlags |= eFeature_Diffuse_Array;
 			}
+			if(pVars->mbUnlit && apMaterial->GetTexture(eMaterialTexture_Diffuse))
+			{
+				lFlags |= eFeature_Diffuse_Unlit;
+			}
 			
 
 			return mpProgramManager->GenerateProgram(aRenderMode,lFlags);
@@ -526,6 +555,12 @@ namespace hpl {
 		{
 			tFlag lFlags =0;
 			if(apMaterial->HasUvAnimation())	lFlags |= eFeature_Illum_UvAnimation;
+			if(pVars->mbUnlit &&
+				apMaterial->GetTexture(eMaterialTexture_Diffuse) &&
+				apMaterial->GetTexture(eMaterialTexture_Diffuse)->GetType() == eTextureType_2DArray)
+			{
+				lFlags |= eFeature_Illum_Array;
+			}
 
 			return mpProgramManager->GenerateProgram(aRenderMode,lFlags);
 		}
@@ -596,6 +631,17 @@ namespace hpl {
 					apProgram->SetMatrixf(kVar_a_mtxInvViewRotation, mtxInvView.GetRotation());
 				}
 			}
+			else if(aRenderMode == eMaterialRenderMode_Illumination)
+			{
+				cMaterialType_SolidDiffuse_Vars* pVars = (cMaterialType_SolidDiffuse_Vars*)apMaterial->GetVars();
+				iTexture* pDiffuseTexture = pVars->mbUnlit ? apMaterial->GetTexture(eMaterialTexture_Diffuse) : NULL;
+				if(pDiffuseTexture && pDiffuseTexture->GetType() == eTextureType_2DArray)
+				{
+					apProgram->SetVec2f(kVar_avDiffuseArrayTileGrid, (float)pVars->mlDiffuseArrayTileColumns, (float)pVars->mlDiffuseArrayTileRows);
+					const cVector3l& vDiffuseSize = pDiffuseTexture->GetSize();
+					apProgram->SetVec2f(kVar_avDiffuseArrayTileSize, (float)cMath::Max(1, vDiffuseSize.x), (float)cMath::Max(1, vDiffuseSize.y));
+				}
+			}
 		}
 	}
 	
@@ -644,6 +690,8 @@ namespace hpl {
 		pVars->mfFrenselBias = apVars->GetVarFloat("FrenselBias", 0.2f);
 		pVars->mfFrenselPow = apVars->GetVarFloat("FrenselPow", 8.0f);
 		pVars->mbAlphaDissolveFilter = apVars->GetVarBool("AlphaDissolveFilter", false);
+		pVars->mbUnlit = apVars->GetVarBool("Unlit", false);
+		apMaterial->SetUnlit(pVars->mbUnlit);
 		pVars->mlDiffuseArrayTileColumns = cMath::Max(1, apVars->GetVarInt("DiffuseArrayTileColumns", 3));
 		pVars->mlDiffuseArrayTileRows = cMath::Max(1, apVars->GetVarInt("DiffuseArrayTileRows", 2));
 
@@ -660,6 +708,7 @@ namespace hpl {
 		apVars->AddVarFloat("FrenselBias", pVars->mfFrenselBias);
 		apVars->AddVarFloat("FrenselPow", pVars->mfFrenselPow);
 		apVars->AddVarBool("AlphaDissolveFilter", pVars->mbAlphaDissolveFilter);
+		apVars->AddVarBool("Unlit", pVars->mbUnlit);
 		apVars->AddVarInt("DiffuseArrayTileColumns", pVars->mlDiffuseArrayTileColumns);
 		apVars->AddVarInt("DiffuseArrayTileRows", pVars->mlDiffuseArrayTileRows);
 	}

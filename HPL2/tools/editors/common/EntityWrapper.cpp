@@ -1760,14 +1760,14 @@ void iEntityWrapper::Save(cXmlElement* apParentElement)
 
 	/////////////////////////////////////////////////////////////////////////////
 	// Check if the entity is inside the boundaries, if not add to warning list
-	const cVector3f& vPos = GetPosition();
+	/* const cVector3f& vPos = GetPosition();
 	const cVector3f& vMaxPos = GetEditorWorld()->GetMaxPosition();
 	const cVector3f& vMinPos = GetEditorWorld()->GetMinPosition();
 	for(int i=0;i<3;++i)
 	{
 		if(vPos.v[i]>vMaxPos.v[i] || vPos.v[i]<vMinPos.v[i])
 			GetEditorWorld()->AddOutlierEntity(this);
-	}
+	} */
 
 
 	iEntityWrapperData* pData = CreateCopyData();

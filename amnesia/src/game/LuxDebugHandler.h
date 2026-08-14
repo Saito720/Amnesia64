@@ -153,6 +153,7 @@ private:
 
 	cWidgetComboBox *mpCBInsanityEvents;
 	cWidgetComboBox *mpCBPlayerStarts;
+	cWidgetCheckBox *mpCBFlyCamera;
 
 	cWidgetWindow *mpDebugWindow;
 

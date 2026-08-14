@@ -991,7 +991,7 @@ void cLuxInputHandler::UpdateGamePlayerInput()
 
 	////////////////////
 	// High level
-	if(mpPlayer->GetCurrentStateData()->AllowPlayerMenus())
+	if(mpPlayer->IsSpectatorMode()==false && mpPlayer->GetCurrentStateData()->AllowPlayerMenus())
 	{
 		if(mpInput->BecameTriggerd(eLuxAction_Inventory))
 		{
@@ -1186,7 +1186,8 @@ void cLuxInputHandler::UpdateGamePlayerInput()
 
 				if(vAnalogLookAxis.Length() > 0)
 				{
-					mpPlayer->GetCharacterBody()->StopMovement();
+					iCharacterBody *pCharBody = mpPlayer->GetCharacterBody();
+					if(pCharBody) pCharBody->StopMovement();
 				}
 			}
 

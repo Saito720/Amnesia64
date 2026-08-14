@@ -449,6 +449,10 @@ void cLuxMap::OnRenderSolid(cRendererCallbackFunctions* apFunctions)
 
 void cLuxMap::PlacePlayerAtStartPos(const tString& asPosName)
 {
+	// Maps without player starts are spectator maps. The spectator camera is
+	// positioned separately, so an absent start is intentional in this case.
+	if(IsSpectatorMode()) return;
+
 	cLuxNode_PlayerStart *pNode = GetPlayerStart(asPosName);
 
 	if(pNode == NULL)

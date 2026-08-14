@@ -269,6 +269,11 @@ void cLuxProp_NPC::UpdateWakeState(float afTimeStep)
 
 void cLuxProp_NPC::UpdateCheckPlayerIsInArea(float afTimeStep)
 {
+	if(gpBase->mpPlayer->IsSpectatorMode())
+	{
+		mbPlayerIsInArea = false;
+		return;
+	}
 	if(mpFollowPlayerArea==NULL) return;
 
 	///////////////////////

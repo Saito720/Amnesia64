@@ -80,6 +80,7 @@ cLuxDebugHandler::cLuxDebugHandler() : iLuxUpdateable("LuxDebugHandler")
 	mpInspectMeshEntity = NULL;
 
 	mpCBPlayerStarts = NULL;
+	mpCBFlyCamera = NULL;
 
 	msCurrentFilePath = _W("");
 
@@ -227,8 +228,6 @@ static void PrintContainerNode(iRenderableContainerNode *apNode, int alLevel)
 
 void cLuxDebugHandler::Update(float afTimeStep)
 {
-	iCharacterBody *pCharBody = gpBase->mpPlayer->GetCharacterBody();
-	
 	if(mbFirstUpdateOnMap)// && mlTempCount>0)
 	{
 		mbFirstUpdateOnMap = false;
@@ -293,6 +292,13 @@ void cLuxDebugHandler::OnMapEnter(cLuxMap *apMap)
 		}
 		if(pMap->GetPlayerStartNodeNum()>0) mpCBPlayerStarts->SetSelectedItem(0);
 	}
+
+	if(mpCBFlyCamera)
+	{
+		const bool bSpectatorMode = apMap->IsSpectatorMode();
+		mpCBFlyCamera->SetChecked(gpBase->mpPlayer->IsFreeCamActive(), false);
+		mpCBFlyCamera->SetEnabled(!bSpectatorMode);
+	}
 }
 
 //-----------------------------------------------------------------------
@@ -305,6 +311,12 @@ void cLuxDebugHandler::OnMapLeave(cLuxMap *apMap)
 	{
 		mpCBPlayerStarts->ClearItems();
 		mpCBPlayerStarts->SetSelectedItem(-1);
+	}
+
+	if(mpCBFlyCamera)
+	{
+		mpCBFlyCamera->SetEnabled(true);
+		mpCBFlyCamera->SetChecked(false, false);
 	}
 }
 
@@ -413,94 +425,103 @@ void cLuxDebugHandler::OnDraw(float afFrameTime)
 	if(mbShowPlayerInfo)
 	{
 		cLuxPlayer *pPlayer = gpBase->mpPlayer;
-		iCharacterBody *pCharBody = pPlayer->GetCharacterBody();
-
-		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-			_W("Position: %ls OnGround: %d Moved: %d Mass: %f ActiveSize: %d\n"),cString::To16Char(pCharBody->GetPosition().ToString()).c_str(), 
-															pCharBody->IsOnGround(),pCharBody->GetMovedLastUpdate(),
-															pCharBody->GetMass(),
-															pCharBody->GetActiveSize());
-		fY+=15.0f;
-		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-			_W("MoveSpeed: %f, %f (%f) Mul: %f AvgSpeed: %f\n"), pCharBody->GetMoveSpeed(eCharDir_Forward), pCharBody->GetMoveSpeed(eCharDir_Right),
-																	pCharBody->GetVelocity(gpBase->mpEngine->GetStepSize()).Length(),
-																	pPlayer->GetInteractionMoveSpeedMul(),
-																	pPlayer->GetAvgSpeed());
-		fY+=15.0f;
-
-		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-			_W("Climbing: %d\n"), pCharBody->IsClimbing());
-		fY+=15.0f;
-
-		if(pPlayer->GetCurrentMoveState()==eLuxMoveState_Normal)
-		{
-			cLuxMoveState_Normal *pMoveNormal = static_cast<cLuxMoveState_Normal*>(pPlayer->GetCurrentMoveStateData());
-			gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-				_W("Crouching: %d Running: %d MoveSpeedMul %f RunSpeedMul %f\n"), pMoveNormal->IsCrouching(), pMoveNormal->IsRunning(), 
-								pMoveNormal->GetMoveSpeedMul(), pMoveNormal->GetRunSpeedMul());
-			fY+=15.0f;
-		}
-
-		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-			_W("ForceVel: %ls\n"), cString::To16Char(pCharBody->GetForceVelocity().ToString()).c_str());
-		fY+=15.0f;
-		//gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,0),12,cColor(1,1),
-		//							_W("Force Vel: %ls\n"), cString::To16Char(pCharBody->GetForceVelocity().ToString()).c_str() );
-
-		//fY+=13.0f;
-		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-							_W("ExtLightLevel: %f NormalLightlevel: %f\n"), pPlayer->GetHelperLightLevel()->GetExtendedLightLevel(), pPlayer->GetHelperLightLevel()->GetNormalLightLevel() );
-		fY+=15.0f;
-
-		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-							_W("Health: %f Terror: %f\n"), pPlayer->GetHealth(), pPlayer->GetTerror() );
-		fY+=15.0f;
-
-		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-							_W("Oil: %f Sanity: %f Tinderboxes: %d"), pPlayer->GetLampOil() , pPlayer->GetSanity(), pPlayer->GetTinderboxes());
-		fY+=15.0f;
-
-
-		//gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,0),12,cColor(1,1),
-		//					_W("FlashbackCount: %f Pulse: %f"), pPlayer->GetFlashbackCount() , pPlayer->GetFlashbackPulseCount());
-		//fY+=13.0f;
-
-		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-										_W("State: %d\n"), pPlayer->GetCurrentState() );
-		fY+=15.0f;
-
-		tString sHandAnim = pPlayer->GetHands()->GetCurrentAnimation();
-		cAnimationState *pAnim = pPlayer->GetHands()->GetHandsEntity()->GetAnimationStateFromName(sHandAnim);
-		if(pAnim)
+		if(pPlayer->IsSpectatorMode())
 		{
 			gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-				_W("HandAnim: '%ls' Time: %f/%f\n"), cString::To16Char(sHandAnim).c_str(), pAnim->GetTimePosition(), pAnim->GetRelativeTimePosition() );
-			fY+=15.0f;
+				_W("Spectator camera position: %ls\n"), cString::To16Char(pPlayer->GetCamera()->GetPosition().ToString()).c_str());
+			fY += 15.0f;
 		}
-
-
-		eLuxMoveState moveState = pPlayer->GetCurrentMoveState();
-		if(moveState == eLuxMoveState_Normal)
+		else
 		{
-			cLuxMoveState_Normal* pNormalMoveState = static_cast<cLuxMoveState_Normal*>(pPlayer->GetMoveStateData(moveState));
+			iCharacterBody *pCharBody = pPlayer->GetCharacterBody();
 
-			float fBob = pNormalMoveState->GetHeadBobCount();
 			gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-									_W("HeadBob: %f cos: %f sin: %f\n"), fBob, cos(fBob), sin(fBob) );
+				_W("Position: %ls OnGround: %d Moved: %d Mass: %f ActiveSize: %d\n"),cString::To16Char(pCharBody->GetPosition().ToString()).c_str(),
+														pCharBody->IsOnGround(),pCharBody->GetMovedLastUpdate(),
+														pCharBody->GetMass(),
+														pCharBody->GetActiveSize());
 			fY+=15.0f;
+			gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+				_W("MoveSpeed: %f, %f (%f) Mul: %f AvgSpeed: %f\n"), pCharBody->GetMoveSpeed(eCharDir_Forward), pCharBody->GetMoveSpeed(eCharDir_Right),
+																			pCharBody->GetVelocity(gpBase->mpEngine->GetStepSize()).Length(),
+																			pPlayer->GetInteractionMoveSpeedMul(),
+																			pPlayer->GetAvgSpeed());
+			fY+=15.0f;
+
+			gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+				_W("Climbing: %d\n"), pCharBody->IsClimbing());
+			fY+=15.0f;
+
+			if(pPlayer->GetCurrentMoveState()==eLuxMoveState_Normal)
+			{
+				cLuxMoveState_Normal *pMoveNormal = static_cast<cLuxMoveState_Normal*>(pPlayer->GetCurrentMoveStateData());
+				gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+					_W("Crouching: %d Running: %d MoveSpeedMul %f RunSpeedMul %f\n"), pMoveNormal->IsCrouching(), pMoveNormal->IsRunning(),
+									pMoveNormal->GetMoveSpeedMul(), pMoveNormal->GetRunSpeedMul());
+				fY+=15.0f;
+			}
+
+			gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+				_W("ForceVel: %ls\n"), cString::To16Char(pCharBody->GetForceVelocity().ToString()).c_str());
+			fY+=15.0f;
+			//gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,0),12,cColor(1,1),
+			//								_W("Force Vel: %ls\n"), cString::To16Char(pCharBody->GetForceVelocity().ToString()).c_str() );
+
+			//fY+=13.0f;
+			gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+								_W("ExtLightLevel: %f NormalLightlevel: %f\n"), pPlayer->GetHelperLightLevel()->GetExtendedLightLevel(), pPlayer->GetHelperLightLevel()->GetNormalLightLevel() );
+			fY+=15.0f;
+
+			gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+								_W("Health: %f Terror: %f\n"), pPlayer->GetHealth(), pPlayer->GetTerror() );
+			fY+=15.0f;
+
+			gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+								_W("Oil: %f Sanity: %f Tinderboxes: %d"), pPlayer->GetLampOil() , pPlayer->GetSanity(), pPlayer->GetTinderboxes());
+			fY+=15.0f;
+
+
+			//gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,0),12,cColor(1,1),
+			//							_W("FlashbackCount: %f Pulse: %f"), pPlayer->GetFlashbackCount() , pPlayer->GetFlashbackPulseCount());
+			//fY+=13.0f;
+
+			gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+											_W("State: %d\n"), pPlayer->GetCurrentState() );
+			fY+=15.0f;
+
+			tString sHandAnim = pPlayer->GetHands()->GetCurrentAnimation();
+			cAnimationState *pAnim = pPlayer->GetHands()->GetHandsEntity()->GetAnimationStateFromName(sHandAnim);
+			if(pAnim)
+			{
+				gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+					_W("HandAnim: '%ls' Time: %f/%f\n"), cString::To16Char(sHandAnim).c_str(), pAnim->GetTimePosition(), pAnim->GetRelativeTimePosition() );
+				fY+=15.0f;
+			}
+
+
+			eLuxMoveState moveState = pPlayer->GetCurrentMoveState();
+			if(moveState == eLuxMoveState_Normal)
+			{
+				cLuxMoveState_Normal* pNormalMoveState = static_cast<cLuxMoveState_Normal*>(pPlayer->GetMoveStateData(moveState));
+
+				float fBob = pNormalMoveState->GetHeadBobCount();
+				gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+										_W("HeadBob: %f cos: %f sin: %f\n"), fBob, cos(fBob), sin(fBob) );
+				fY+=15.0f;
+			}
+
+			gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+				_W("Sanity Between event time: %f AtLowSanityCount: %f\n"), gpBase->mpInsanityHandler->GetNewEventCount() , pPlayer->GetHelperSanity()->GetAtLowSanityCount());
+			fY+=15.0f;
+
+			////////////////////
+			// HARDMODE
+			gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+				_W("Hardcore mode: %d "), gpBase->mbHardMode);
+			fY+=15.0f;
+
+			fY = pPlayer->GetStateData(pPlayer->GetCurrentState())->DrawDebug(gpBase->mpGameDebugSet,gpBase->mpDefaultFont, fY);
 		}
-
-		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-			_W("Sanity Between event time: %f AtLowSanityCount: %f\n"), gpBase->mpInsanityHandler->GetNewEventCount() , pPlayer->GetHelperSanity()->GetAtLowSanityCount());
-		fY+=15.0f;
-
-		////////////////////
-		// HARDMODE
-		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-			_W("Hardcore mode: %d "), gpBase->mbHardMode);
-		fY+=15.0f;
-
-        fY = pPlayer->GetStateData(pPlayer->GetCurrentState())->DrawDebug(gpBase->mpGameDebugSet,gpBase->mpDefaultFont, fY);		
 	}
 
 	////////////////////
@@ -1160,10 +1181,10 @@ void cLuxDebugHandler::CreateGuiWindow()
 		vGroupPos.y += 22;
 
 		//Enable fly camera
-		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos, vSize, _W("Fly camera"), pGroup);
-		pCheckBox->SetChecked(false);
-		pCheckBox->SetUserValue(13);
-		pCheckBox->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(ChangeDebugText));
+		mpCBFlyCamera = mpGuiSet->CreateWidgetCheckBox(vGroupPos, vSize, _W("Fly camera"), pGroup);
+		mpCBFlyCamera->SetChecked(false);
+		mpCBFlyCamera->SetUserValue(13);
+		mpCBFlyCamera->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(ChangeDebugText));
 		vGroupPos.y += 22;
 
 		//Set fly camera speed
@@ -1258,9 +1279,9 @@ void cLuxDebugHandler::ReloadMap()
 
 	///////////////////
 	//Get char variables
-	iCharacterBody *pCharBody = gpBase->mpPlayer->GetCharacterBody();
-	cVector3f vPlayerPos = pCharBody->GetPosition();
 	cCamera *pCam = gpBase->mpPlayer->GetCamera();
+	iCharacterBody *pCharBody = gpBase->mpPlayer->GetCharacterBody();
+	cVector3f vPlayerPos = pCharBody ? pCharBody->GetPosition() : pCam->GetPosition();
 	cVector3f vCameraAngles = cVector3f(pCam->GetPitch(),pCam->GetYaw(), 0);
 
 	///////////////////
@@ -1284,8 +1305,15 @@ void cLuxDebugHandler::ReloadMap()
 		pCam->SetPitch(vCameraAngles.x);
 		pCam->SetYaw(vCameraAngles.y);
 		pCam->SetRoll(vCameraAngles.z);
-		pCharBody->SetPosition(vPlayerPos);
-		pCharBody->SetYaw(pCam->GetYaw());
+		if(pCharBody)
+		{
+			pCharBody->SetPosition(vPlayerPos);
+			pCharBody->SetYaw(pCam->GetYaw());
+		}
+		else
+		{
+			pCam->SetPosition(vPlayerPos);
+		}
 	}
 }
 
@@ -1316,9 +1344,9 @@ void cLuxDebugHandler::TestChangeMapSave()
 
 	///////////////////
 	//Get char variables
-	iCharacterBody *pCharBody = gpBase->mpPlayer->GetCharacterBody();
-	cVector3f vPlayerPos = pCharBody->GetPosition();
 	cCamera *pCam = gpBase->mpPlayer->GetCamera();
+	iCharacterBody *pCharBody = gpBase->mpPlayer->GetCharacterBody();
+	cVector3f vPlayerPos = pCharBody ? pCharBody->GetPosition() : pCam->GetPosition();
 	cVector3f vCameraAngles = cVector3f(pCam->GetPitch(),pCam->GetYaw(), 0);
 
 	///////////////////
@@ -1363,8 +1391,15 @@ void cLuxDebugHandler::TestChangeMapSave()
 		pCam->SetPitch(vCameraAngles.x);
 		pCam->SetYaw(vCameraAngles.y);
 		pCam->SetRoll(vCameraAngles.z);
-		pCharBody->SetPosition(vPlayerPos);
-		pCharBody->SetYaw(pCam->GetYaw());
+		if(pCharBody)
+		{
+			pCharBody->SetPosition(vPlayerPos);
+			pCharBody->SetYaw(pCam->GetYaw());
+		}
+		else
+		{
+			pCam->SetPosition(vPlayerPos);
+		}
 	}
 }
 

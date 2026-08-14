@@ -214,6 +214,8 @@ void iLuxProp_CritterBase::OnResetProperties()
 
 void iLuxProp_CritterBase::UpdatePropSpecific(float afTimeStep)
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
+
 	/////////////////////////////////////
 	//If pLayer is far away do not update
 	cVector3f vPlayerPos = gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition();

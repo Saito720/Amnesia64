@@ -155,11 +155,11 @@ public:
 	void AddSanity(float afX, bool abShowEffect=true);
 	void AddLampOil(float afX);
 
-	float GetHealth(){ return mfHealth; }
-	float GetSanity(){ return mfSanity; }
+	float GetHealth(){ return mbSpectatorMode ? 100.0f : mfHealth; }
+	float GetSanity(){ return mbSpectatorMode ? 100.0f : mfSanity; }
 	float GetLampOil(){ return mfLampOil; }
 
-	float GetTerror(){ return mfTerror; }
+	float GetTerror(){ return mbSpectatorMode ? 0.0f : mfTerror; }
 	
 	void SetTerror(float afX){ mfTerror=afX; }
 	void AddTerrorEnemy(iLuxEnemy *apEnemy);
@@ -167,8 +167,8 @@ public:
 	void ClearTerrorEnemies();
 	void StopTerrorSound();
 
-	int GetBodyNum(){ return 1;}
-	iPhysicsBody* GetBody(int alIdx){ return mpCharBody->GetCurrentBody();};
+	int GetBodyNum(){ return mpCharBody ? 1 : 0;}
+	iPhysicsBody* GetBody(int alIdx){ return mpCharBody && alIdx == 0 ? mpCharBody->GetCurrentBody() : NULL;};
 
 	bool IsInWater(){ return mbIsInWater;}
 	void SetIsInWater(bool abX){ mbIsInWater = abX;}
@@ -190,7 +190,7 @@ public:
 	void SetTinderboxes(int alX){ mlTinderboxes = alX; }
 	void AddTinderboxes(int alX){ mlTinderboxes += alX; }
 	
-	bool IsDead(){ return mfHealth <=0;}
+	bool IsDead(){ return mbSpectatorMode == false && mfHealth <=0;}
 
 	float GetDefaultMass() {return mfDefaultMass;}
 
@@ -269,7 +269,10 @@ public:
 	
 	////////////////////
 	// Free cam
+	void SetSpectatorMode(bool abX);
+	bool IsSpectatorMode(){ return mbSpectatorMode; }
 	void SetFreeCamActive(bool abX);
+	bool IsFreeCamActive(){ return mbFreeCameraActive; }
 	void SetFreeCamSpeed(float afSpeed);
 	
 	////////////////////
@@ -457,6 +460,7 @@ private:
 
 	//////////////////////
 	// Free camera
+	bool mbSpectatorMode;
 	bool mbFreeCameraActive;
 	float mfFreeCameraSpeed;
 };

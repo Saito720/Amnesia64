@@ -278,6 +278,8 @@ bool cLuxMapHelper::ShapeDamage(iCollideShape *apShape, const cMatrixf& a_mtxTra
 	//Set up
 	cWorld *pWorld = pCurrentMap->GetWorld();
 	iPhysicsWorld *pPhysicsWorld = pCurrentMap->GetPhysicsWorld();
+	iCharacterBody *pPlayerCharBody = gpBase->mpPlayer->GetCharacterBody();
+	iPhysicsBody *pPlayerBody = pPlayerCharBody ? pPlayerCharBody->GetCurrentBody() : NULL;
 
 	cBoundingVolume shapeBV =  apShape->GetBoundingVolume();
 	shapeBV.SetTransform(cMath::MatrixMul(a_mtxTransform, shapeBV.GetTransform()));
@@ -307,7 +309,7 @@ bool cLuxMapHelper::ShapeDamage(iCollideShape *apShape, const cMatrixf& a_mtxTra
 		if(pBody->GetUserData() && abCheckProps==false) continue;
 		if(pBody->IsCharacter())
 		{
-			if(pBody == gpBase->mpPlayer->GetCharacterBody()->GetCurrentBody())
+			if(pBody == pPlayerBody)
 			{
 				if(abCheckPlayer == false) continue;
 			}
@@ -429,7 +431,7 @@ bool cLuxMapHelper::ShapeDamage(iCollideShape *apShape, const cMatrixf& a_mtxTra
 		{
 			pEntity->GiveDamage(fDamage,alStrength);
 		}
-		else if(pBody == gpBase->mpPlayer->GetCharacterBody()->GetCurrentBody())
+		else if(pBody == pPlayerBody)
 		{
 			gpBase->mpPlayer->GiveDamage(fDamage,alStrength, aDamageType, true, abLethalForPlayer);
 			if(apHitPlayer) *apHitPlayer = true;

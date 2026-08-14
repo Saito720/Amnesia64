@@ -622,6 +622,7 @@ void iLuxEnemy::OnMapEnter()
 void iLuxEnemy::OnUpdate(float afTimeStep)
 {
 	if(mbDisabled) return;
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
 
 	//In case the update is called in save or anyhting else that just want a quick update, we do not want to be updated.
 	//Enemies can be disabled when player is not properly placed and the like.
@@ -712,6 +713,8 @@ void iLuxEnemy::OnUpdate(float afTimeStep)
 
 void iLuxEnemy::OnRenderSolid(cRendererCallbackFunctions* apFunctions)
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
+
 	//return;
 	iPhysicsWorld *pPhysicsWorld = mpMap->GetPhysicsWorld();
 
@@ -821,6 +824,8 @@ void iLuxEnemy::GiveDamage(float afAmount, int alStrength)
 
 void iLuxEnemy::ShowPlayerPosition()
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
+
 	mvLastKnownPlayerPos = gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition();
 }
 
@@ -1164,6 +1169,7 @@ string& iLuxEnemy::GetCurrentEnemyStateName()
 float iLuxEnemy::DrawDebug(cGuiSet *apSet,iFontData *apFont,float afStartY)
 {
 	if(mbDisabled) return afStartY;
+	if(gpBase->mpPlayer->IsSpectatorMode()) return afStartY;
 
     apSet->DrawFont(apFont, cVector3f(5,afStartY,10),13,cColor(1,1), _W("Name: '%ls'"),cString::To16Char(msName).c_str());
 	afStartY += 14;
@@ -1376,6 +1382,12 @@ void iLuxEnemy::UpdateCharBody(float afTimeStep)
 void iLuxEnemy::UpdateCanSeePlayer(float afTimeStep)
 {
 	cLuxPlayer *pPlayer = gpBase->mpPlayer;
+
+	if(pPlayer->IsSpectatorMode())
+	{
+		mbCanSeePlayer = false;
+		return;
+	}
 
 	if(pPlayer->IsDead()) return;
 	
@@ -1775,7 +1787,7 @@ void iLuxEnemy::UpdateAlignEntityWithGroundRay(float afTimeStep)
 
 bool iLuxEnemy::TriggersDisabled()
 {
-	return mbDisableTriggers || gpBase->mpPlayer->GetHelperFlashback()->IsActive();
+	return mbDisableTriggers || gpBase->mpPlayer->IsSpectatorMode() || gpBase->mpPlayer->GetHelperFlashback()->IsActive();
 }
 
 //-----------------------------------------------------------------------

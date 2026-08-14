@@ -380,6 +380,8 @@ void iLuxEntity::PreloadEntityModel(const tString &asFile)
 
 bool iLuxEntity::CollidesWithPlayer()
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return false;
+
 	iPhysicsWorld *pPhysicsWorld = mpMap->GetPhysicsWorld();
 	cCollideData collideData;
 	collideData.SetMaxSize(1);

@@ -147,6 +147,7 @@ public:
 	void AddPlayerStart(cLuxNode_PlayerStart *apNode);
 	cLuxNode_PlayerStart *GetPlayerStart(const tString & asName);
 	cLuxNode_PlayerStart *GetFirstPlayerStart();
+	bool IsSpectatorMode() const { return mvPlayerStartNodes.empty(); }
 	int GetPlayerStartNodeNum(){ return (int)mvPlayerStartNodes.size();}
 	cLuxNode_PlayerStart *GetPlayerStartNode(int alIdx){ return mvPlayerStartNodes[alIdx];}
 

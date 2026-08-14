@@ -1530,6 +1530,7 @@ void iLuxProp::CheckMoveCollision(cVector3f& avMoveVel, float &afSpeed, float af
 void iLuxProp::UpdateCheckIfOutsidePlayer(float afTimeStep)
 {
 	if(mbCheckOutsidePlayer==false) return;
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
 
 	///////////////////////
 	// Set up variables

@@ -645,7 +645,7 @@ void cLuxScriptHandler::InitScriptFunctions()
 	AddFunc("void InsanityEventIsActive()", (void *)InsanityEventIsActive);
 
 	AddFunc("void StartPlayerSpawnPS(string &in asSPSFile)", (void *)StartPlayerSpawnPS);
-	AddFunc("void StopPlayerSpawnPS()", (void *)StartPlayerSpawnPS);
+	AddFunc("void StopPlayerSpawnPS()", (void *)StopPlayerSpawnPS);
 
 	AddFunc("void PlayGuiSound(string &in asSoundFile, float afVolume)",(void *)PlayGuiSound);
 
@@ -1364,6 +1364,8 @@ void __stdcall cLuxScriptHandler::StartEffectEmotionFlash(string &asTextCat, str
 
 void __stdcall cLuxScriptHandler::SetInDarknessEffectsActive(bool abX)
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
+
 	gpBase->mpPlayer->GetHelperInDarkness()->SetActive(abX);
 }
 
@@ -1404,11 +1406,15 @@ bool __stdcall cLuxScriptHandler::GetEffectVoiceActive()
 
 void __stdcall cLuxScriptHandler::StartPlayerSpawnPS(string& asSPSFile)
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
+
 	gpBase->mpPlayer->GetHelperSpawnPS()->Start(asSPSFile);
 }
 
 void __stdcall cLuxScriptHandler::StopPlayerSpawnPS()
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
+
 	gpBase->mpPlayer->GetHelperSpawnPS()->Stop();
 }
 
@@ -1430,6 +1436,8 @@ void __stdcall cLuxScriptHandler::StartScreenShake(float afAmount, float afTime,
 
 bool __stdcall cLuxScriptHandler::GetFlashbackIsActive()
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return false;
+
 	return gpBase->mpPlayer->GetHelperFlashback()->IsActive();
 }
 
@@ -1548,6 +1556,8 @@ void __stdcall cLuxScriptHandler::ChangePlayerStateToNormal()
 
 void __stdcall cLuxScriptHandler::SetPlayerCrouching(bool abCrouch)
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
+
 	gpBase->mpPlayer->ChangeMoveState(eLuxMoveState_Normal);
 
 	cLuxMoveState_Normal *pState = static_cast<cLuxMoveState_Normal*>(gpBase->mpPlayer->GetMoveStateData(eLuxMoveState_Normal));
@@ -1558,6 +1568,8 @@ void __stdcall cLuxScriptHandler::SetPlayerCrouching(bool abCrouch)
 
 void __stdcall cLuxScriptHandler::AddPlayerBodyForce(float afX, float afY, float afZ, bool abUseLocalCoords)
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
+
 	iCharacterBody *pBody = gpBase->mpPlayer->GetCharacterBody();
 
 	cVector3f vForce;
@@ -1584,13 +1596,17 @@ void __stdcall cLuxScriptHandler::ShowPlayerCrossHairIcons(bool abX)
 
 void __stdcall cLuxScriptHandler::SetPlayerPos(float afX, float afY, float afZ)
 {
-	return gpBase->mpPlayer->GetCharacterBody()->SetFeetPosition(cVector3f(afX, afY, afZ));
+	if(gpBase->mpPlayer->IsSpectatorMode())
+		gpBase->mpPlayer->GetCamera()->SetPosition(cVector3f(afX, afY, afZ));
+	else
+		gpBase->mpPlayer->GetCharacterBody()->SetFeetPosition(cVector3f(afX, afY, afZ));
 }
 
 //-----------------------------------------------------------------------
 
 float __stdcall cLuxScriptHandler::GetPlayerPosX()
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return gpBase->mpPlayer->GetCamera()->GetPosition().x;
 	return gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition().x;
 }
 
@@ -1598,6 +1614,7 @@ float __stdcall cLuxScriptHandler::GetPlayerPosX()
 
 float __stdcall cLuxScriptHandler::GetPlayerPosY()
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return gpBase->mpPlayer->GetCamera()->GetPosition().y;
 	return gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition().y;
 }
 
@@ -1605,6 +1622,7 @@ float __stdcall cLuxScriptHandler::GetPlayerPosY()
 
 float __stdcall cLuxScriptHandler::GetPlayerPosZ()
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return gpBase->mpPlayer->GetCamera()->GetPosition().z;
 	return gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition().z;
 }
 
@@ -1659,6 +1677,7 @@ float __stdcall cLuxScriptHandler::GetPlayerLampOil()
 
 float __stdcall cLuxScriptHandler::GetPlayerSpeed()
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return 0;
 	return gpBase->mpPlayer->GetCharacterBody()->GetVelocity(1.0f/60.0f).Length();
 }
 
@@ -1666,6 +1685,7 @@ float __stdcall cLuxScriptHandler::GetPlayerSpeed()
 
 float __stdcall cLuxScriptHandler::GetPlayerYSpeed()
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return 0;
 	return gpBase->mpPlayer->GetCharacterBody()->GetVelocity(1.0f/60.0f).y;
 }
 
@@ -1673,7 +1693,10 @@ float __stdcall cLuxScriptHandler::GetPlayerYSpeed()
 
 void __stdcall cLuxScriptHandler::MovePlayerForward(float afAmount)
 {
-	gpBase->mpPlayer->GetCharacterBody()->Move(eCharDir_Forward, afAmount);
+	if(gpBase->mpPlayer->IsSpectatorMode())
+		gpBase->mpPlayer->GetCamera()->MoveForward(afAmount);
+	else
+		gpBase->mpPlayer->GetCharacterBody()->Move(eCharDir_Forward, afAmount);
 }
 
 void __stdcall cLuxScriptHandler::SetPlayerPermaDeathSound(string& asSound)
@@ -1769,6 +1792,8 @@ void __stdcall cLuxScriptHandler::MovePlayerHeadPos(float afX, float afY, float 
 
 void __stdcall cLuxScriptHandler::StartPlayerLookAt(string& asEntityName, float afSpeedMul, float afMaxSpeed, string & asAtTargetCallback)
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
+
 	iLuxEntity *pEntity = GetEntity(asEntityName, eLuxEntityType_LastEnum, -1);
 	if(pEntity==NULL) return;
 
@@ -1789,6 +1814,8 @@ void __stdcall cLuxScriptHandler::StartPlayerLookAt(string& asEntityName, float 
 
 void __stdcall cLuxScriptHandler::StopPlayerLookAt()
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
+
 	gpBase->mpPlayer->GetHelperLookAt()->SetActive(false);
 }
 
@@ -1835,6 +1862,8 @@ void __stdcall cLuxScriptHandler::SetPlayerFallDamageDisabled(bool abX)
 
 void __stdcall cLuxScriptHandler::TeleportPlayer(string &asStartPosName)
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
+
 	cLuxNode_PlayerStart *pNode = gpBase->mpMapHandler->GetCurrentMap()->GetPlayerStart(asStartPosName);
 	if(pNode==NULL)
 	{
@@ -1849,6 +1878,8 @@ void __stdcall cLuxScriptHandler::TeleportPlayer(string &asStartPosName)
 
 void __stdcall cLuxScriptHandler::SetLanternActive(bool abX, bool abUseEffects)
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
+
 	gpBase->mpPlayer->GetHelperLantern()->SetActive(abX, abUseEffects);
 }
 
@@ -1856,6 +1887,8 @@ void __stdcall cLuxScriptHandler::SetLanternActive(bool abX, bool abUseEffects)
 
 bool __stdcall cLuxScriptHandler::GetLanternActive()
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return false;
+
 	return gpBase->mpPlayer->GetHelperLantern()->IsActive();
 }
 
@@ -1863,6 +1896,8 @@ bool __stdcall cLuxScriptHandler::GetLanternActive()
 
 void __stdcall cLuxScriptHandler::SetLanternDisabled(bool abX)
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
+
 	gpBase->mpPlayer->GetHelperLantern()->SetDisabled(abX);
 }
 
@@ -2153,7 +2188,10 @@ void __stdcall cLuxScriptHandler::CreateParticleSystemAtEntityExt(	string& asPSN
 		pPS = pMap->GetWorld()->CreateParticleSystem(asPSName,asPSFile,1.0f);
 		if(pPS)
 		{
-			pPS->SetPosition(gpBase->mpPlayer->GetCharacterBody()->GetPosition());
+			if(gpBase->mpPlayer->IsSpectatorMode())
+				pPS->SetPosition(gpBase->mpPlayer->GetCamera()->GetPosition());
+			else
+				pPS->SetPosition(gpBase->mpPlayer->GetCharacterBody()->GetPosition());
 			pPS->SetIsSaved(abSavePS);
 			//gpBase->mpPlayer->GetCharacterBody()->
 		}

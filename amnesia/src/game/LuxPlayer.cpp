@@ -66,6 +66,7 @@ cLuxPlayer::cLuxPlayer() : iLuxUpdateable("LuxPlayer"), iLuxCollideCallbackConta
 	// Create and setup camera
 	mpCamera = gpBase->mpEngine->GetScene()->CreateCamera(eCameraMoveMode_Walk);
 
+	mbSpectatorMode = false;
 	mbFreeCameraActive = false;
 	mfFreeCameraSpeed = 0.1f;
 
@@ -332,6 +333,7 @@ void cLuxPlayer::Reset()
 
 	///////////////
 	// Free camera
+	mbSpectatorMode = false;
 	mbFreeCameraActive = false;
 	mfFreeCameraSpeed = 0.1f;
 
@@ -351,6 +353,8 @@ void cLuxPlayer::OnStart()
 
 void cLuxPlayer::Update(float afTimeStep)
 {
+	if(mbSpectatorMode) return;
+
 	////////////////////////
 	// Update current move state
 	mvMoveStates[mMoveState]->Update(afTimeStep);
@@ -392,6 +396,8 @@ void cLuxPlayer::Update(float afTimeStep)
 
 void cLuxPlayer::PostUpdate(float afTimeStep)
 {
+	if(mbSpectatorMode) return;
+
 	////////////////////////
 	// Run Helper message
 	RunHelperMessage(eUpdateableMessage_PostUpdate,afTimeStep);
@@ -405,6 +411,8 @@ void cLuxPlayer::PostUpdate(float afTimeStep)
 
 void cLuxPlayer::OnDraw(float afFrameTime)
 {
+	if(mbSpectatorMode) return;
+
 	////////////////////////
 	// Draw with current move state
 	mvMoveStates[mMoveState]->OnDraw(afFrameTime);
@@ -444,6 +452,17 @@ void cLuxPlayer::SaveUserConfig()
 
 void cLuxPlayer::OnMapEnter(cLuxMap *apMap)
 {
+	if(mbSpectatorMode)
+	{
+		msFocusText = _W("");
+		msLastFocusText = _W("");
+		mfFocusTextAlpha = 0;
+		mbIsInWater = false;
+		mpEntityInFocus = NULL;
+		mpBodyInFocus = NULL;
+		return;
+	}
+
 	////////////////////////////////
 	//Init all move states 
 	for(int i=0; i<eLuxMoveState_LastEnum; ++i) mvMoveStates[i]->OnMapEnter();
@@ -478,6 +497,25 @@ void cLuxPlayer::OnMapEnter(cLuxMap *apMap)
 
 void cLuxPlayer::OnMapLeave(cLuxMap *apMap)
 {
+	if(mbSpectatorMode)
+	{
+		DestroyCollideCallbacks();
+		m_setTerrorEnemies.clear();
+
+		mfAspectMulGoal = 1.0f;
+		mfAspectMul = 1.0f;
+		mfFOVMulGoal = 1.0f;
+		mfFOVMul = 1.0f;
+		mfRollGoal = 0;
+		mfRoll = 0;
+
+		mpCamera->SetRoll(0.0f);
+		mpCamera->SetFOV(mfFOV);
+		mpCamera->SetAspect(mfAspect);
+		SetSpectatorMode(false);
+		return;
+	}
+
 	////////////////////////
 	// Set default state
 	ChangeState(eLuxPlayerState_Normal);
@@ -519,6 +557,12 @@ void cLuxPlayer::OnMapLeave(cLuxMap *apMap)
 
 void cLuxPlayer::CreateWorldEntities(cLuxMap *apMap)
 {
+	if(apMap->IsSpectatorMode())
+	{
+		SetSpectatorMode(true);
+		return;
+	}
+
 	////////////////////////////////
 	//Create and Init character body
 	CreateCharacterBody(apMap->GetPhysicsWorld());
@@ -526,10 +570,14 @@ void cLuxPlayer::CreateWorldEntities(cLuxMap *apMap)
 	////////////////////////
 	// Run Helper message
 	for(size_t i=0; i<mvHelpers.size(); ++i) mvHelpers[i]->CreateWorldEntities(apMap);
+
+	SetSpectatorMode(false);
 }
 
 void cLuxPlayer::DestroyWorldEntities(cLuxMap *apMap)
 {
+	if(mbSpectatorMode) return;
+
 	////////////////////////////////
 	//Destroy character body
 	if(mpCharBody)
@@ -570,6 +618,8 @@ void cLuxPlayer::OnLeaveContainer(const tString& asNewContainer)
 
 void cLuxPlayer::RenderSolid(cRendererCallbackFunctions* apFunctions)
 {
+	if(mbSpectatorMode) return;
+
 	mvStates[mState]->RenderSolid(apFunctions);
 
 	for(size_t i=0; i<mvHelpers.size(); ++i) mvHelpers[i]->RenderSolid(apFunctions);
@@ -577,6 +627,8 @@ void cLuxPlayer::RenderSolid(cRendererCallbackFunctions* apFunctions)
 
 void cLuxPlayer::RenderTrans(cRendererCallbackFunctions* apFunctions)
 {
+	if(mbSpectatorMode) return;
+
 	mvStates[mState]->RenderTrans(apFunctions);
 }
 
@@ -585,6 +637,7 @@ void cLuxPlayer::RenderTrans(cRendererCallbackFunctions* apFunctions)
 
 void cLuxPlayer::GiveDamage(float afAmount, int alStrength, eLuxDamageType aType, bool abSpinHead, bool abLethal)
 {
+	if(mbSpectatorMode) return;
 	if(mfHealth <=0) return;
 
 	mfHealth -= afAmount;
@@ -608,6 +661,8 @@ void cLuxPlayer::GiveDamage(float afAmount, int alStrength, eLuxDamageType aType
 
 void cLuxPlayer::GiveSanityDamage(float afAmount)
 {
+	if(mbSpectatorMode) return;
+
 	gpBase->mpHintHandler->Add("SanityHit", kTranslate("Hints", "SanityHit"), 0);
 
 	LowerSanity(afAmount, true);
@@ -618,6 +673,7 @@ void cLuxPlayer::GiveSanityDamage(float afAmount)
 
 void cLuxPlayer::LowerSanity(float afAmount, bool abUseEffect)
 {
+	if(mbSpectatorMode) return;
 	if(mfHealth <=0) return;
 
 	mfSanity -= afAmount;
@@ -672,6 +728,12 @@ void cLuxPlayer::Move(eCharDir aDir, float afMul)
 
 void cLuxPlayer::AddYaw(float afAmount)
 {
+	if(mbSpectatorMode)
+	{
+		mpCamera->AddYaw(afAmount * 2.0f);
+		return;
+	}
+
 	if (mbFreeCameraActive)
 	{
 		mpCamera->AddYaw(mpCamDirEffects->AddAndGetPitchAdd(afAmount * 2.0f));
@@ -693,6 +755,12 @@ void cLuxPlayer::AddYaw(float afAmount)
 
 void cLuxPlayer::AddPitch(float afAmount)
 {
+	if(mbSpectatorMode)
+	{
+		mpCamera->AddPitch(afAmount * 2.0f);
+		return;
+	}
+
 	if (mbFreeCameraActive)
 	{
 		mpCamera->AddPitch(mpCamDirEffects->AddAndGetPitchAdd(afAmount * 2.0f));
@@ -714,11 +782,13 @@ void cLuxPlayer::AddPitch(float afAmount)
 
 void cLuxPlayer::SetLean(float afMul)
 {
+	if(mbSpectatorMode) return;
 	mpLean->SetLean(afMul);
 }
 
 void cLuxPlayer::AddLean(float afAdd)
 {
+	if(mbSpectatorMode) return;
 	mpLean->AddLean(afAdd);
 }
 
@@ -726,6 +796,7 @@ void cLuxPlayer::AddLean(float afAdd)
 
 void cLuxPlayer::Scroll(float afAmount)
 {
+	if(mbSpectatorMode) return;
 	mvStates[mState]->OnScroll(afAmount);
 }
 
@@ -734,6 +805,8 @@ void cLuxPlayer::Scroll(float afAmount)
 
 void cLuxPlayer::DoAction(eLuxPlayerAction aAction, bool abPressed)
 {
+	if(mbSpectatorMode) return;
+
 	if(mvStates[mState]->OnDoAction(aAction, abPressed))
 	{
 		if(aAction== eLuxPlayerAction_Lantern && abPressed)
@@ -749,6 +822,8 @@ void cLuxPlayer::DoAction(eLuxPlayerAction aAction, bool abPressed)
 
 void cLuxPlayer::Run(bool abPressed)
 {
+	if(mbSpectatorMode) return;
+
 	mbPressingRun = abPressed;
 	if(mvStates[mState]->OnRun(abPressed))
 	{
@@ -758,6 +833,7 @@ void cLuxPlayer::Run(bool abPressed)
 
 void cLuxPlayer::Jump(bool abPressed)
 {
+	if(mbSpectatorMode) return;
 	if(abPressed && (mbJumpDisabled || mpInsanityCollapse->IsActive()) ) return;
 
 	mbPressingJump = abPressed;
@@ -769,6 +845,7 @@ void cLuxPlayer::Jump(bool abPressed)
 
 void cLuxPlayer::Crouch(bool abPressed)
 {
+	if(mbSpectatorMode) return;
 	if(abPressed && (mbCrouchDisabled || mpInsanityCollapse->IsActive()) ) return;
 
 	if(mvStates[mState]->OnCrouch(abPressed))
@@ -781,6 +858,7 @@ void cLuxPlayer::Crouch(bool abPressed)
 
 void cLuxPlayer::ChangeState(eLuxPlayerState aState)
 {
+	if(mbSpectatorMode) return;
 	if(mState == aState) return;
 
 	mvStates[mState]->OnLeaveState(aState);
@@ -796,6 +874,7 @@ void cLuxPlayer::ChangeState(eLuxPlayerState aState)
 
 void cLuxPlayer::ChangeMoveState(eLuxMoveState aState)
 {
+	if(mbSpectatorMode) return;
 	if(mMoveState == aState) return;
 
 	mvMoveStates[mMoveState]->OnLeaveState(aState);
@@ -820,6 +899,8 @@ void cLuxPlayer::MoveHeadPosAdd(eLuxHeadPosAdd aType, const cVector3f& avGoal, f
 
 void cLuxPlayer::PlaceAtStartNode(cLuxNode_PlayerStart *apNode)
 {
+	if(mbSpectatorMode) return;
+
 	ChangeState(eLuxPlayerState_Normal);
 
 	SetIsInWater(false);//Needs to rest this or else player will spalsh when walking on the ground.
@@ -856,6 +937,7 @@ void cLuxPlayer::SetActive(bool abX)
 
 void cLuxPlayer::SetHealth(float afX)
 {
+	if(mbSpectatorMode) return;
 	if(mfHealth <=0 && afX <= 0) return;
 
 	mfHealth = afX;
@@ -868,6 +950,7 @@ void cLuxPlayer::SetHealth(float afX)
 
 void cLuxPlayer::SetSanity(float afX)
 {
+	if(mbSpectatorMode) return;
 	mfSanity = afX;
 
 	//////////////////
@@ -891,6 +974,7 @@ void cLuxPlayer::SetLampOil(float afX)
 
 void cLuxPlayer::AddHealth(float afX)
 {
+	if(mbSpectatorMode) return;
 	if( (mfHealth >= 100 && afX>0) || mfHealth<0) return;
 	
 	mfHealth += afX;
@@ -904,6 +988,7 @@ void cLuxPlayer::AddHealth(float afX)
 
 void cLuxPlayer::AddSanity(float afX, bool abShowEffect)
 {
+	if(mbSpectatorMode) return;
 	if(mfSanity >= 100 && afX>0) return;
 
 	mfSanity += afX;
@@ -1070,9 +1155,41 @@ tString cLuxPlayer::FocusIconStyleToString(eLuxFocusIconStyle aX)
 
 //-----------------------------------------------------------------------
 
+void cLuxPlayer::SetSpectatorMode(bool abX)
+{
+	mbSpectatorMode = abX;
+
+	if(abX)
+	{
+		mbActive = true;
+		SetFreeCamActive(true);
+		mpCamera->SetMoveMode(eCameraMoveMode_Fly);
+		mpCamera->SetPitchLimits(0, 0);
+		mpCamera->SetYawLimits(0, 0);
+		mpCamera->SetPosition(cVector3f(0, 0, 0));
+		mpCamera->SetPitch(0);
+		mpCamera->SetYaw(0);
+		mpCamera->SetRoll(0);
+	}
+	else
+	{
+		mpCamera->SetMoveMode(eCameraMoveMode_Walk);
+		mpCamera->SetPitchLimits(-cMath::ToRad(70), cMath::ToRad(70));
+		mpCamera->SetYawLimits(0, 0);
+		SetFreeCamActive(false);
+	}
+}
+
+//-----------------------------------------------------------------------
+
 void cLuxPlayer::SetFreeCamActive(bool abX)
 {
+	if(mbSpectatorMode) abX = true;
+
 	mbFreeCameraActive = abX;
+	mpCamera->SetMoveMode(abX ? eCameraMoveMode_Fly : eCameraMoveMode_Walk);
+
+	if(mpCharBody == NULL) return;
 
 	if (abX)
 	{

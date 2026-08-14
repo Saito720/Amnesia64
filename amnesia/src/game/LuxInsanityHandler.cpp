@@ -725,6 +725,14 @@ void cLuxInsanityHandler::Reset()
 
 void cLuxInsanityHandler::Update(float afTimeStep)
 {
+	if(gpBase->mpPlayer->IsSpectatorMode())
+	{
+		if(mlCurrentEvent >= 0) mvEvents[mlCurrentEvent]->OnExit();
+		mlCurrentEvent = -1;
+		mfNewEventCount = 0;
+		return;
+	}
+
 	//////////////////////////
 	// Update time between events if not event is playing
 	if(mfNewEventCount > 0 && mlCurrentEvent < 0)
@@ -759,6 +767,7 @@ void cLuxInsanityHandler::Update(float afTimeStep)
 
 void cLuxInsanityHandler::OnDraw(float afFrameTime)
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
 	if(mlCurrentEvent>=0) mvEvents[mlCurrentEvent]->OnDraw(afFrameTime);
 }
 
@@ -766,6 +775,7 @@ void cLuxInsanityHandler::OnDraw(float afFrameTime)
 
 void cLuxInsanityHandler::StartEvent()
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
 	if(mvEvents.empty()) return;
 
 	float fPlayerSanity = gpBase->mpPlayer->GetSanity();
@@ -835,6 +845,7 @@ void cLuxInsanityHandler::StartEvent()
 
 void cLuxInsanityHandler::StartEvent(int alIdx)
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
 	if(mlCurrentEvent >=0)
 		mvEvents[mlCurrentEvent]->OnExit();
 	
@@ -846,6 +857,8 @@ void cLuxInsanityHandler::StartEvent(int alIdx)
 
 void cLuxInsanityHandler::StartEvent(const tString &asName)
 {
+	if(gpBase->mpPlayer->IsSpectatorMode()) return;
+
 	int lEventIndex = -1;
 	
 	for(size_t i=0; i<mvEvents.size(); ++i)

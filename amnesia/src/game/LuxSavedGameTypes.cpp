@@ -933,7 +933,19 @@ void cLuxPlayerHands_SaveData::FromPlayerHands(cLuxPlayerHands *apPlayerHands)
 
 	msCurrentAnim = apPlayerHands->msCurrentAnim;
 
-    mMesh.FromMeshEntity(apPlayerHands->mpHandsEntity);
+	if(apPlayerHands->mpHandsEntity)
+	{
+		mMesh.FromMeshEntity(apPlayerHands->mpHandsEntity);
+	}
+	else
+	{
+		mMesh.mbActive = false;
+		mMesh.mbVisible = false;
+		mMesh.mfIlluminationAmount = 0;
+		mMesh.m_mtxTransform = cMatrixf::Identity;
+		mMesh.mvAnimations.Clear();
+		mMesh.mvSubMeshEntities.Clear();
+	}
 
 	mfHandObjectChargeCount = apPlayerHands->mfHandObjectChargeCount;
 	mlHandObjectState = apPlayerHands->mlHandObjectState;
@@ -1151,7 +1163,22 @@ void cLuxPlayer_SaveData::FromPlayer(cLuxPlayer *apPlayer)
 
 	//////////////////////
 	///Body
-	mCharBody.FromBody(apPlayer->mpCharBody);
+	if(apPlayer->mpCharBody)
+	{
+		mCharBody.FromBody(apPlayer->mpCharBody);
+	}
+	else
+	{
+		mCharBody.mbActive = false;
+		mCharBody.mfMass = 0;
+		mCharBody.mvPosition = apPlayer->GetCamera()->GetPosition();
+		mCharBody.mfYaw = apPlayer->GetCamera()->GetYaw();
+		mCharBody.mfPitch = apPlayer->GetCamera()->GetPitch();
+		mCharBody.mfSpeedForward = 0;
+		mCharBody.mfSpeedRight = 0;
+		mCharBody.mvForceVelocity = 0;
+		mCharBody.mlActiveSize = 0;
+	}
 	
 	//////////////////////
 	///Camera
@@ -1196,6 +1223,12 @@ void cLuxPlayer_SaveData::FromPlayer(cLuxPlayer *apPlayer)
 
 void cLuxPlayer_SaveData::ToPlayer(cLuxMap *apMap,cLuxPlayer *apPlayer)
 {
+	if(apMap->IsSpectatorMode())
+	{
+		apPlayer->SetSpectatorMode(true);
+		return;
+	}
+
 	//////////////////////
 	///State
 	eLuxPlayerState playerState = (eLuxPlayerState)mlState;
@@ -1380,6 +1413,7 @@ void cLuxPlayer_SaveData::ToPlayer(cLuxMap *apMap,cLuxPlayer *apPlayer)
 		saveCallback.ToCallback(apMap, apPlayer, pCallback);
 		apPlayer->mlstCollideCallbacks.push_back(pCallback);
 	}
+
 }
 
 //-----------------------------------------------------------------------

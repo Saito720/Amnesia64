@@ -51,6 +51,7 @@ protected:
 	void AddPropertySetBox(cWidgetTab* apParentTab);
 	void AddPropertySetPoint(cWidgetTab* apParentTab);
 	void AddPropertySetSpot(cWidgetTab* apParentTab);
+	void AddPropertySetSun(cWidgetTab* apParentTab);
 
 	
 	bool InputCallback(iWidget* apWidget, const cGuiMessageData& aData);
@@ -150,6 +151,14 @@ protected:
 	cEditorInputNumber* mpInpSpotAspect;
 	cEditorInputNumber* mpInpSpotNearClipPlane;
 	cEditorInputFile* mpInpSpotFalloffMap;
+
+	///////////////////////////////////
+	// Sun Light specific
+	cEditorInputNumber* mpInpSunIntensity;
+	cEditorInputNumber* mpInpSunHighlightKnee;
+	cEditorInputBool* mpInpSunShowDisk;
+	cEditorInputBool* mpInpSunUseSystemTime;
+	cEditorInputText* mpInpSunJulianDate;
 };
 
 

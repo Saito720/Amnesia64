@@ -248,6 +248,7 @@
     <ClCompile Include="..\common\EntityWrapperLightBox.cpp" />
     <ClCompile Include="..\common\EntityWrapperLightPoint.cpp" />
     <ClCompile Include="..\common\EntityWrapperLightSpot.cpp" />
+    <ClCompile Include="..\common\EntityWrapperLightSun.cpp" />
     <ClCompile Include="..\common\EntityWrapperParticleSystem.cpp" />
     <ClCompile Include="..\common\EntityWrapperSound.cpp" />
     <ClCompile Include="..\common\EntityWrapperSubMesh.cpp" />
@@ -354,6 +355,7 @@
     <ClInclude Include="..\common\EntityWrapperLightBox.h" />
     <ClInclude Include="..\common\EntityWrapperLightPoint.h" />
     <ClInclude Include="..\common\EntityWrapperLightSpot.h" />
+    <ClInclude Include="..\common\EntityWrapperLightSun.h" />
     <ClInclude Include="..\common\EntityWrapperParticleSystem.h" />
     <ClInclude Include="..\common\EntityWrapperSound.h" />
     <ClInclude Include="..\common\EntityWrapperSubMesh.h" />

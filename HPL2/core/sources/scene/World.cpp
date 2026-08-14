@@ -55,6 +55,7 @@
 #include "scene/LightPoint.h"
 #include "scene/LightSpot.h"
 #include "scene/LightBox.h"
+#include "scene/LightSun.h"
 #include "scene/MeshEntity.h"
 #include "scene/SoundEntity.h"
 #include "scene/ParticleEmitter.h"
@@ -572,9 +573,25 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
+	cLightSun* cWorld::CreateLightSun(const tString &asName,bool abStatic)
+	{
+		cLightSun* pLight = hplNew( cLightSun, (asName,mpResources) );
+		mlstLights.push_back(pLight);
+
+		pLight->SetStatic(abStatic);
+		// A Sun is global and is deliberately not inserted into either spatial
+		// render container. The deferred renderer gathers it from the world.
+		pLight->SetWorld(this);
+
+		return pLight;
+	}
+
+	//-----------------------------------------------------------------------
+
 	void cWorld::DestroyLight(iLight* apLight)
 	{
-		RemoveRenderableFromContainer(apLight);
+		if(apLight->GetLightType() != eLightType_Sun)
+			RemoveRenderableFromContainer(apLight);
 
 		STLFindAndDelete(mlstLights, apLight);
 	}

@@ -257,6 +257,7 @@
     <ClInclude Include="include\scene\LightBox.h" />
     <ClInclude Include="include\scene\LightPoint.h" />
     <ClInclude Include="include\scene\LightSpot.h" />
+    <ClInclude Include="include\scene\LightSun.h" />
     <ClInclude Include="include\scene\MeshEntity.h" />
     <ClInclude Include="include\scene\Node3D.h" />
     <ClInclude Include="include\scene\NodeState.h" />
@@ -576,6 +577,7 @@
     <ClCompile Include="sources\scene\LightBox.cpp" />
     <ClCompile Include="sources\scene\LightPoint.cpp" />
     <ClCompile Include="sources\scene\LightSpot.cpp" />
+    <ClCompile Include="sources\scene\LightSun.cpp" />
     <ClCompile Include="sources\scene\MeshEntity.cpp" />
     <ClCompile Include="sources\scene\Node3D.cpp" />
     <ClCompile Include="sources\scene\NodeState.cpp" />

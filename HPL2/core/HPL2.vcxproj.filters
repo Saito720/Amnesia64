@@ -354,6 +354,9 @@
     <ClInclude Include="include\scene\LightSpot.h">
       <Filter>Scene</Filter>
     </ClInclude>
+    <ClInclude Include="include\scene\LightSun.h">
+      <Filter>Scene</Filter>
+    </ClInclude>
     <ClInclude Include="include\scene\MeshEntity.h">
       <Filter>Scene</Filter>
     </ClInclude>
@@ -1303,6 +1306,9 @@
       <Filter>Scene</Filter>
     </ClCompile>
     <ClCompile Include="sources\scene\LightSpot.cpp">
+      <Filter>Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\scene\LightSun.cpp">
       <Filter>Scene</Filter>
     </ClCompile>
     <ClCompile Include="sources\scene\MeshEntity.cpp">

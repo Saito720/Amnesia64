@@ -53,6 +53,7 @@
 #include "scene/Light.h"
 #include "scene/LightSpot.h"
 #include "scene/LightBox.h"
+#include "scene/LightSun.h"
 #include "scene/FogArea.h"
 #include "scene/MeshEntity.h"
 
@@ -108,8 +109,9 @@ namespace hpl {
 	#define eFeature_Light_Gobo				eFlagBit_4
 	#define eFeature_Light_DivideInFrag		eFlagBit_5
 	#define eFeature_Light_ShadowMap		eFlagBit_6
+	#define eFeature_Light_SunLight		eFlagBit_7
 	
-	#define kLightFeatureNum 7
+	#define kLightFeatureNum 8
 
 	cProgramComboFeature gvLightFeatureVec[] =
 	{
@@ -120,6 +122,7 @@ namespace hpl {
 		cProgramComboFeature("UseGobo", kPC_FragmentBit),
 		cProgramComboFeature("DivideInFrag", kPC_FragmentBit | kPC_VertexBit),
 		cProgramComboFeature("UseShadowMap", kPC_FragmentBit, eFeature_Light_SpotLight),
+		cProgramComboFeature("LightType_Sun", kPC_FragmentBit),
 	};
 
 	//////////////////////////////////////////////////////////////////////////
@@ -164,6 +167,9 @@ namespace hpl {
 	#define kVar_afFalloffExp						20
 	#define kVar_afDepthDiffMul						21
 	#define kVar_afSkipEdgeLimit					22
+	#define kVar_avLightDirection					23
+	#define kVar_afSunHighlightKnee				24
+	#define kVar_afSunDiskCosRadius				25
 
 
 	//////////////////////////////////////////////////////////////////////////
@@ -196,6 +202,7 @@ namespace hpl {
 		mlMaxBatchLights = 100;
 
 		mbReflectionTextureCleared = false;
+		mpSunDiskProgram = NULL;
 	}
 
 	//-----------------------------------------------------------------------
@@ -222,8 +229,14 @@ namespace hpl {
 		//Create G-Buffer textures
 		for(int i=0; i<mlNumOfGBufferTextures; ++i)
 		{
-			ePixelFormat pixelFormat = mGBufferType == eDeferredGBuffer_32Bit ? ePixelFormat_RGBA : ePixelFormat_RGBA16;
-			//ePixelFormat pixelFormat = ePixelFormat_RGBA16;
+			// Attachment 1 stores camera-space normals. Keep it half-float even
+			// in the compact mode so rotating the view cannot expose RGBA8 normal
+			// quantization as moving light bands.
+			ePixelFormat pixelFormat = ePixelFormat_RGBA16;
+			if(mGBufferType == eDeferredGBuffer_32Bit && i != 1)
+			{
+				pixelFormat = ePixelFormat_RGBA;
+			}
 
 			tString sName = "G-BufferTexure"+cString::ToString(i);
 			mpGBufferTexture[0][i] = CreateRenderTexture(sName, mvScreenSize,pixelFormat,eTextureFilter_Nearest);
@@ -417,6 +430,21 @@ namespace hpl {
 			mpSkyBoxProgram->SetShader(eGpuShaderType_Fragment, pFragShader);
 			mpSkyBoxProgram->Link();
 		}
+
+		////////////////////////////////////
+		// Create the camera-relative astronomical Sun disk program.
+		{
+			cParserVarContainer vars;
+			mpSunDiskProgram = mpGraphics->CreateGpuProgramFromShaders(
+				"DeferredSunDisk", "deferred_sun_disk_vtx.glsl",
+				"deferred_sun_disk_frag.glsl", &vars);
+			if(mpSunDiskProgram)
+			{
+				mpSunDiskProgram->GetVariableAsId("avSunDirection", kVar_avLightDirection);
+				mpSunDiskProgram->GetVariableAsId("avSunDiskColor", kVar_avLightColor);
+				mpSunDiskProgram->GetVariableAsId("afSunDiskCosRadius", kVar_afSunDiskCosRadius);
+			}
+		}
 		
 		
 		////////////////////////////////////
@@ -511,6 +539,8 @@ namespace hpl {
 				mpProgramManager->AddGenerateProgramVariableId("a_mtxSpotViewProj", kVar_a_mtxSpotViewProj, eDefferredProgramMode_Lights);
 				mpProgramManager->AddGenerateProgramVariableId("a_mtxInvViewRotation", kVar_a_mtxInvViewRotation, eDefferredProgramMode_Lights);
 				mpProgramManager->AddGenerateProgramVariableId("avShadowMapOffsetMul", kVar_avShadowMapOffsetMul, eDefferredProgramMode_Lights);
+				mpProgramManager->AddGenerateProgramVariableId("avLightDirection", kVar_avLightDirection, eDefferredProgramMode_Lights);
+				mpProgramManager->AddGenerateProgramVariableId("afSunHighlightKnee", kVar_afSunHighlightKnee, eDefferredProgramMode_Lights);
 			}
 
 			//////////////////////////////
@@ -762,6 +792,7 @@ namespace hpl {
 		/////////////////////////
 		//Gpu programs
 		mpGraphics->DestroyGpuProgram(mpSkyBoxProgram);
+		if(mpSunDiskProgram) mpGraphics->DestroyGpuProgram(mpSunDiskProgram);
 
 		mpProgramManager->DestroyShadersAndPrograms();
 	}
@@ -924,6 +955,7 @@ namespace hpl {
 
 		#ifndef kDebug_RenderLightData
 		RenderBasicSkyBox();
+		RenderSunDisks();
 		#endif
 
 		RunCallback(eRendererMessage_PostSolid);
@@ -953,10 +985,34 @@ namespace hpl {
 		SetGBuffer(eGBufferComponents_Full);
 
 		/////////////////////////////
-		// Clear depth (no need to clear any of the textures!)
-		
 		mpLowLevelGraphics->SetClearDepth(1);
-		ClearFrameBuffer(eClearFrameBufferFlag_Depth, true);
+
+		// Global Sun lights render as a fullscreen pass and therefore need an
+		// explicit empty-pixel marker in the G-buffer. Only pay for a color clear
+		// in worlds that actually contain visible sunlight.
+		bool bHasVisibleSun = false;
+		tLightList *pLights = mpCurrentWorld->GetLightList();
+		for(tLightListIt it = pLights->begin(); it != pLights->end(); ++it)
+		{
+			iLight *pLight = *it;
+			if(pLight->GetLightType() == eLightType_Sun && pLight->IsActive() && pLight->IsVisible())
+			{
+				bHasVisibleSun = true;
+				break;
+			}
+		}
+
+		if(bHasVisibleSun)
+		{
+			const cColor oldClearColor = mpCurrentSettings->mClearColor;
+			mpLowLevelGraphics->SetClearColor(cColor(0,0,0,0));
+			ClearFrameBuffer(eClearFrameBufferFlag_Depth | eClearFrameBufferFlag_Color, true);
+			mpLowLevelGraphics->SetClearColor(oldClearColor);
+		}
+		else
+		{
+			ClearFrameBuffer(eClearFrameBufferFlag_Depth, true);
+		}
 		END_RENDER_PASS();
 	}
 
@@ -1347,6 +1403,29 @@ namespace hpl {
 		if(apProgram==NULL) return;
 
 		///////////////////////
+		// Sun light variables
+		if(pLight->GetLightType() == eLightType_Sun)
+		{
+			cLightSun *pLightSun = static_cast<cLightSun*>(pLight);
+			cVector3f vDirection = pLightSun->GetSunDirection();
+			vDirection = cMath::MatrixMul3x3(mpCurrentFrustum->GetViewMatrix(), vDirection);
+			vDirection.Normalize();
+
+			apProgram->SetVec3f(kVar_avLightDirection, vDirection);
+			apProgram->SetFloat(kVar_afSunHighlightKnee, pLightSun->GetHighlightKnee());
+
+			// Light color alpha controls the existing specular strength, so scale
+			// only RGB. This makes Sun intensity affect diffuse and specular once.
+			cColor lightColor = pLight->GetDiffuseColor();
+			const float fIntensity = pLightSun->GetIntensity();
+			lightColor.r *= fIntensity;
+			lightColor.g *= fIntensity;
+			lightColor.b *= fIntensity;
+			apProgram->SetColor4f(kVar_avLightColor, lightColor);
+			return;
+		}
+
+		///////////////////////
 		// General variables
 		apProgram->SetVec3f(kVar_avLightPos, apLightData->m_mtxViewSpaceRender.GetTranslation());
 		apProgram->SetColor4f(kVar_avLightColor, pLight->GetDiffuseColor());
@@ -1419,7 +1498,14 @@ namespace hpl {
 		//Flag setup
 		tFlag lFlags = alExtraFlags;
 		if(pLight->GetDiffuseColor().a > 0)	lFlags |= eFeature_Light_Specular;
-		if(pLight->GetGoboTexture())		lFlags |= eFeature_Light_Gobo;
+		if(lightType != eLightType_Sun && pLight->GetGoboTexture())
+			lFlags |= eFeature_Light_Gobo;
+
+		//Sun specifics
+		if(lightType == eLightType_Sun)
+		{
+			lFlags |= eFeature_Light_SunLight;
+		}
 		
 		//Spotlight specifics
 		if(lightType == eLightType_Spot)
@@ -1445,7 +1531,10 @@ namespace hpl {
 		
 		/////////////////////////
 		//Textures
-		SetTexture(4,pLight->GetFalloffMap());
+		if(lightType == eLightType_Sun)
+			SetTexture(4,NULL);
+		else
+			SetTexture(4,pLight->GetFalloffMap());
 		
 		if(pLight->GetGoboTexture())		SetTexture(5, pLight->GetGoboTexture());
 		
@@ -2533,6 +2622,147 @@ namespace hpl {
 	
 	//------------------------------------------------------------------------------
 
+	void cRendererDeferred::RenderSunLights()
+	{
+		tLightList *pLights = mpCurrentWorld->GetLightList();
+		bool bHasVisibleSun = false;
+		for(tLightListIt it = pLights->begin(); it != pLights->end(); ++it)
+		{
+			iLight *pLight = *it;
+			if(pLight->GetLightType() == eLightType_Sun && pLight->IsActive() && pLight->IsVisible())
+			{
+				bHasVisibleSun = true;
+				break;
+			}
+		}
+
+		if(bHasVisibleSun == false) return;
+
+		START_RENDER_PASS(SunLights);
+
+		SetStencilActive(false);
+		SetDepthTest(false);
+		SetCullMode(eCullMode_CounterClockwise);
+		SetScissorActive(false);
+		SetFlatProjectionMinMax(cVector3f(mfFarLeft,mfFarBottom,-mfFarPlane*1.5f),
+							cVector3f(mfFarRight,mfFarTop,mfFarPlane*1.5f));
+		SetVertexBuffer(mpFullscreenLightQuad);
+
+		for(tLightListIt it = pLights->begin(); it != pLights->end(); ++it)
+		{
+			iLight *pLight = *it;
+			if(pLight->GetLightType() != eLightType_Sun || pLight->IsActive() == false || pLight->IsVisible() == false)
+				continue;
+
+			cDeferredLight lightData;
+			lightData.mpLight = pLight;
+			iGpuProgram *pProgram = SetupProgramAndTextures(&lightData, eFeature_Light_SunLight);
+			if(pProgram == NULL) continue;
+
+			SetupLightProgramVariables(pProgram, &lightData);
+			DrawCurrent();
+			mpCurrentSettings->mlNumberOfLightsRendered++;
+		}
+
+		SetNormalFrustumProjection();
+		SetCullMode(eCullMode_Clockwise);
+		SetDepthTest(true);
+
+		END_RENDER_PASS();
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cRendererDeferred::RenderSunDisks()
+	{
+		if(mpSunDiskProgram == NULL) return;
+
+		tLightList *pLights = mpCurrentWorld->GetLightList();
+		bool bHasVisibleDisk = false;
+		for(tLightListIt it = pLights->begin(); it != pLights->end(); ++it)
+		{
+			iLight *pLight = *it;
+			if(pLight->GetLightType() != eLightType_Sun || pLight->IsActive() == false || pLight->IsVisible() == false)
+				continue;
+
+			if(static_cast<cLightSun*>(pLight)->GetShowSunDisk())
+			{
+				bHasVisibleDisk = true;
+				break;
+			}
+		}
+
+		if(bHasVisibleDisk == false) return;
+
+		START_RENDER_PASS(SunDisks);
+
+		SetAccumulationBuffer();
+		SetStencilActive(false);
+		SetDepthTest(false);
+		SetDepthWrite(false);
+		SetBlendMode(eMaterialBlendMode_Add);
+		SetAlphaMode(eMaterialAlphaMode_Solid);
+		SetChannelMode(eMaterialChannelMode_RGBA);
+		SetCullMode(eCullMode_CounterClockwise);
+		SetScissorActive(false);
+		SetFlatProjectionMinMax(cVector3f(mfFarLeft,mfFarBottom,-mfFarPlane*1.5f),
+							cVector3f(mfFarRight,mfFarTop,mfFarPlane*1.5f));
+		SetVertexBuffer(mpFullscreenLightQuad);
+		SetTexture(0, GetBufferTexture(2));
+		SetTextureRange(NULL, 1);
+		SetProgram(mpSunDiskProgram);
+
+		// The mean apparent solar diameter is approximately 0.533 degrees.
+		// This is cos(0.533 / 2 degrees), used to test each camera ray.
+		mpSunDiskProgram->SetFloat(kVar_afSunDiskCosRadius, 0.99998915f);
+
+		for(tLightListIt it = pLights->begin(); it != pLights->end(); ++it)
+		{
+			iLight *pLight = *it;
+			if(pLight->GetLightType() != eLightType_Sun || pLight->IsActive() == false || pLight->IsVisible() == false)
+				continue;
+
+			cLightSun *pLightSun = static_cast<cLightSun*>(pLight);
+			if(pLightSun->GetShowSunDisk() == false) continue;
+
+			cVector3f vDirection = pLightSun->GetSunDirection();
+			vDirection = cMath::MatrixMul3x3(mpCurrentFrustum->GetViewMatrix(), vDirection);
+			vDirection.Normalize();
+
+			cColor diskColor = pLight->GetDiffuseColor();
+			const float fIntensity = pLightSun->GetIntensity();
+			diskColor.r *= fIntensity;
+			diskColor.g *= fIntensity;
+			diskColor.b *= fIntensity;
+			diskColor.a = 1.0f;
+
+			// Preserve tint while keeping the LDR disk inside display range.
+			const float fPeakColor = cMath::Max(diskColor.r, cMath::Max(diskColor.g, diskColor.b));
+			if(fPeakColor > 1.0f)
+			{
+				const float fInvPeak = 1.0f / fPeakColor;
+				diskColor.r *= fInvPeak;
+				diskColor.g *= fInvPeak;
+				diskColor.b *= fInvPeak;
+			}
+
+			mpSunDiskProgram->SetVec3f(kVar_avLightDirection, vDirection);
+			mpSunDiskProgram->SetColor4f(kVar_avLightColor, diskColor);
+			DrawCurrent();
+		}
+
+		SetTexture(0, NULL);
+		SetProgram(NULL);
+		SetNormalFrustumProjection();
+		SetCullMode(eCullMode_CounterClockwise);
+		SetBlendMode(eMaterialBlendMode_None);
+		SetDepthTest(true);
+
+		END_RENDER_PASS();
+	}
+
+	//-----------------------------------------------------------------------
+
 	void cRendererDeferred::RenderLights()
 	{
 		START_RENDER_PASS(Lights);
@@ -2566,6 +2796,10 @@ namespace hpl {
 		// Set up culling and depth mode
 		SetCullMode(eCullMode_Clockwise);
 		SetDepthTestFunc(eDepthTestFunc_GreaterOrEqual);
+
+		///////////////////////
+		// Render global directional sunlight
+		RenderSunLights();
 
 		///////////////////////
 		// Render box lights

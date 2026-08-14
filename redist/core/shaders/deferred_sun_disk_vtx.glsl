@@ -1,0 +1,12 @@
+////////////////////////////////////////////////////////
+// Deferred Astronomical Sun Disk - Vertex Shader
+////////////////////////////////////////////////////////
+#version 120
+
+varying vec3 gvFarPlanePos;
+
+void main()
+{
+	gl_Position = ftransform();
+	gvFarPlanePos = gl_Vertex.xyz;
+}

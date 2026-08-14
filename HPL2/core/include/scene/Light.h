@@ -51,6 +51,7 @@ namespace hpl {
 		eLightType_Point,
 		eLightType_Spot,
 		eLightType_Box,
+		eLightType_Sun,
 		eLightType_LastEnum
 	};
 

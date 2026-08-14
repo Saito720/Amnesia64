@@ -297,6 +297,9 @@
     <ClCompile Include="..\common\EntityWrapperLightSpot.cpp">
       <Filter>Common\EntityWrappers\Types</Filter>
     </ClCompile>
+    <ClCompile Include="..\common\EntityWrapperLightSun.cpp">
+      <Filter>Common\EntityWrappers\Types</Filter>
+    </ClCompile>
     <ClCompile Include="..\common\EntityWrapperParticleSystem.cpp">
       <Filter>Common\EntityWrappers\Types</Filter>
     </ClCompile>
@@ -609,6 +612,9 @@
       <Filter>Common\EntityWrappers\Types</Filter>
     </ClInclude>
     <ClInclude Include="..\common\EntityWrapperLightSpot.h">
+      <Filter>Common\EntityWrappers\Types</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\EntityWrapperLightSun.h">
       <Filter>Common\EntityWrappers\Types</Filter>
     </ClInclude>
     <ClInclude Include="..\common\EntityWrapperParticleSystem.h">

@@ -180,6 +180,7 @@ enum eEditorEntityLightType
 	eEditorEntityLightType_Box,
 	eEditorEntityLightType_Point,
 	eEditorEntityLightType_Spot,
+	eEditorEntityLightType_Sun,
 
 	eEditorEntityLightType_LastEnum,
 };

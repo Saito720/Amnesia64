@@ -26,6 +26,7 @@
 #include "EntityWrapperLight.h"
 #include "EntityWrapperLightSpot.h"
 #include "EntityWrapperLightBox.h"
+#include "EntityWrapperLightSun.h"
 
 #include "EditorAction.h"
 
@@ -39,6 +40,17 @@ cEditorWindowEntityEditBoxLight::cEditorWindowEntityEditBoxLight(cEditorEditMode
 
 	mpInpRadius = NULL;
 	mpGroupShadows = NULL;
+	mpGroupGobo = NULL;
+	mpInpGobo = NULL;
+	mpInpGoboAnimMode = NULL;
+	mpInpGoboAnimFrameTime = NULL;
+	mpGroupFalloff = NULL;
+	mpInpFalloffMap = NULL;
+	mpInpSunIntensity = NULL;
+	mpInpSunHighlightKnee = NULL;
+	mpInpSunShowDisk = NULL;
+	mpInpSunUseSystemTime = NULL;
+	mpInpSunJulianDate = NULL;
 
 	// Box Light specific
 	mpComboBoxBlendFunc = NULL;
@@ -78,6 +90,10 @@ void cEditorWindowEntityEditBoxLight::Create()
 		pTab = mpTabs->AddTab(_W("Spot"));
 		AddPropertySetSpot(pTab);
 		break;
+	case eEditorEntityLightType_Sun:
+		pTab = mpTabs->AddTab(_W("Sun"));
+		AddPropertySetSun(pTab);
+		break;
 	default:
 		break;
 	}
@@ -85,8 +101,11 @@ void cEditorWindowEntityEditBoxLight::Create()
 	mpTabFlicker = mpTabs->AddTab(_W("Flicker"));
 	AddPropertySetFlicker(mpTabFlicker);
 
-	AddPropertyGobo(mpTabGeneral);
-	AddPropertyFalloffMap(mpTabGeneral);
+	if(mpLight->GetLightType()!=eEditorEntityLightType_Sun)
+	{
+		AddPropertyGobo(mpTabGeneral);
+		AddPropertyFalloffMap(mpTabGeneral);
+	}
 
 	cVector3f vPos = cVector3f(10,10,0.1f);
 	mpInpName->SetPosition(vPos);
@@ -95,10 +114,16 @@ void cEditorWindowEntityEditBoxLight::Create()
 	vPos.y += mpInpActive->GetSize().y+5;
 	mpInpPosition->SetPosition(vPos);
 	vPos.y += mpInpPosition->GetSize().y+5;
-	mpGroupGobo->SetPosition(vPos);
-	vPos.y += mpGroupGobo->GetSize().y + 5;
-	mpGroupFalloff->SetPosition(vPos);
-	vPos.y += mpGroupFalloff->GetSize().y + 5;
+	if(mpGroupGobo)
+	{
+		mpGroupGobo->SetPosition(vPos);
+		vPos.y += mpGroupGobo->GetSize().y + 5;
+	}
+	if(mpGroupFalloff)
+	{
+		mpGroupFalloff->SetPosition(vPos);
+		vPos.y += mpGroupFalloff->GetSize().y + 5;
+	}
 	mpGroupDiffuse->SetPosition(vPos);
 }
 
@@ -351,6 +376,30 @@ void cEditorWindowEntityEditBoxLight::AddPropertySetSpot(cWidgetTab* apParentTab
 
 //------------------------------------------------------------
 
+void cEditorWindowEntityEditBoxLight::AddPropertySetSun(cWidgetTab* apParentTab)
+{
+	cVector3f vPos = cVector3f(10,10,0.1f);
+
+	mpInpSunIntensity = CreateInputNumber(vPos, _W("Intensity"), "", apParentTab, 70, 0.1f);
+	mpInpSunIntensity->SetLowerBound(true, 0.0f);
+	vPos.y += mpInpSunIntensity->GetSize().y + 10;
+
+	mpInpSunHighlightKnee = CreateInputNumber(vPos, _W("Highlight Knee"), "", apParentTab, 70, 0.05f);
+	mpInpSunHighlightKnee->SetLowerBound(true, 0.0f);
+	mpInpSunHighlightKnee->SetUpperBound(true, 1.0f);
+	vPos.y += mpInpSunHighlightKnee->GetSize().y + 10;
+
+	mpInpSunShowDisk = CreateInputBool(vPos, _W("Show Sun Disk"), "", apParentTab);
+	vPos.y += mpInpSunShowDisk->GetSize().y + 10;
+
+	mpInpSunUseSystemTime = CreateInputBool(vPos, _W("Use System Time"), "", apParentTab);
+	vPos.y += mpInpSunUseSystemTime->GetSize().y + 10;
+
+	mpInpSunJulianDate = CreateInputString(vPos, _W("Julian Date"), "", apParentTab, 140);
+}
+
+//------------------------------------------------------------
+
 void cEditorWindowEntityEditBoxLight::OnUpdate(float afTimeStep)
 {
 	if(mpLight==NULL)
@@ -426,6 +475,18 @@ void cEditorWindowEntityEditBoxLight::OnUpdate(float afTimeStep)
 		mpInpSpotAspect->SetValue(pLight->GetAspect(), false);
 		mpInpSpotNearClipPlane->SetValue(pLight->GetNearClipPlane(), false);
 		mpInpSpotFalloffMap->SetValue(cString::To16Char(pLight->GetSpotFalloffMap()), false);
+	}
+	////////////
+	// Sun
+	else if(lightType==eEditorEntityLightType_Sun)
+	{
+		cEntityWrapperLightSun* pLight = (cEntityWrapperLightSun*)mpLight;
+		mpInpSunIntensity->SetValue(pLight->GetIntensity(), false);
+		mpInpSunHighlightKnee->SetValue(pLight->GetHighlightKnee(), false);
+		mpInpSunShowDisk->SetValue(pLight->GetShowSunDisk(), false);
+		mpInpSunUseSystemTime->SetValue(pLight->GetUseSystemTime(), false);
+		mpInpSunJulianDate->SetValue(cString::To16Char(pLight->GetJulianDate()), false);
+		mpInpSunJulianDate->GetHandle()->SetEnabled(pLight->GetUseSystemTime()==false);
 	}
 }
 
@@ -678,6 +739,29 @@ bool cEditorWindowEntityEditBoxLight::WindowSpecificInputCallback(iEditorInput* 
 		}
 		else
 			mpInpFalloffMap->SetValue(_W(""), false);
+	}
+
+	////////////////////////////////////////////////////
+	// Sun
+	else if(apInput==mpInpSunIntensity)
+	{
+		pAction = mpEntity->CreateSetPropertyActionFloat(eLightSunFloat_Intensity, mpInpSunIntensity->GetValue());
+	}
+	else if(apInput==mpInpSunHighlightKnee)
+	{
+		pAction = mpEntity->CreateSetPropertyActionFloat(eLightSunFloat_HighlightKnee, mpInpSunHighlightKnee->GetValue());
+	}
+	else if(apInput==mpInpSunShowDisk)
+	{
+		pAction = mpEntity->CreateSetPropertyActionBool(eLightSunBool_ShowSunDisk, mpInpSunShowDisk->GetValue());
+	}
+	else if(apInput==mpInpSunUseSystemTime)
+	{
+		pAction = mpEntity->CreateSetPropertyActionBool(eLightSunBool_UseSystemTime, mpInpSunUseSystemTime->GetValue());
+	}
+	else if(apInput==mpInpSunJulianDate)
+	{
+		pAction = mpEntity->CreateSetPropertyActionString(eLightSunStr_JulianDate, cString::To8Char(mpInpSunJulianDate->GetValue()));
 	}
 
 	mpEditor->AddAction(pAction);

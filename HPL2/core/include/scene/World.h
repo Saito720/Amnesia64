@@ -46,6 +46,7 @@ namespace hpl {
 	class cLightSpot;
 	class cLightPoint;
 	class cLightBox;
+	class cLightSun;
 	class iLight;
 	class cImageEntity;
 	class cParticleManager;
@@ -247,6 +248,7 @@ namespace hpl {
 		cLightPoint* CreateLightPoint(const tString &asName="",const tString &asGobo="", bool abStatic=false);
 		cLightSpot* CreateLightSpot(const tString &asName="", const tString &asGobo="", bool abStatic=false);
 		cLightBox* CreateLightBox(const tString &asName="", bool abStatic=false);
+		cLightSun* CreateLightSun(const tString &asName="", bool abStatic=false);
 		void DestroyLight(iLight* apLight);
 		iLight* GetLight(const tString& asName);
 		iLight* GetLightFromUniqueID(int alID);

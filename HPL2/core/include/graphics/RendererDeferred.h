@@ -201,6 +201,8 @@ namespace hpl {
 		void SetupLightsAndRenderQueries();
 		void InitLightRendering();
 		void RenderLights();
+		void RenderSunLights();
+		void RenderSunDisks();
 		void RenderLights_StencilBack_ScreenQuad();
 		void RenderLights_StencilFront_RenderBack();
 		void RenderLights_RenderBack();
@@ -313,7 +315,8 @@ namespace hpl {
 		std::vector<cDeferredLight*> mvTempDeferredLights;
 		std::vector<cDeferredLight*> mvSortedLights[eDeferredLightList_LastEnum];
 
-		iGpuProgram *mpSkyBoxProgram; 
+		iGpuProgram *mpSkyBoxProgram;
+		iGpuProgram *mpSunDiskProgram;
 		iGpuProgram *mpLightStencilProgram;
 		iGpuProgram *mpLightBoxProgram[2];//1=SSAO used, 0=no SSAO
 

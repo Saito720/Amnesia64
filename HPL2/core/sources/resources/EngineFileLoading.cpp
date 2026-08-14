@@ -32,6 +32,7 @@
 #include "scene/LightPoint.h"
 #include "scene/LightSpot.h"
 #include "scene/LightBox.h"
+#include "scene/LightSun.h"
 #include "scene/MeshEntity.h"
 #include "scene/SoundEntity.h"
 #include "scene/ParticleEmitter.h"
@@ -47,6 +48,8 @@
 #include "graphics/VertexBuffer.h"
 #include "graphics/Mesh.h"
 #include "graphics/SubMesh.h"
+
+#include <cstdlib>
 
 
 namespace hpl {
@@ -211,8 +214,27 @@ namespace hpl {
 		bool bStatic = abStatic;
 
 		//////////////////////////
+		// Sun Light
+		if(apElement->GetValue() == "SunLight")
+		{
+			cLightSun *pLightSun = apWorld->CreateLightSun(asNamePrefix+sName, bStatic);
+			pLight = pLightSun;
+
+			pLightSun->SetIntensity(apElement->GetAttributeFloat("Intensity", 1.0f));
+			pLightSun->SetHighlightKnee(apElement->GetAttributeFloat("HighlightKnee", 0.7f));
+			pLightSun->SetShowSunDisk(apElement->GetAttributeBool("ShowSunDisk", true));
+
+			const bool bUseSystemTime = apElement->GetAttributeBool("UseSystemTime", true);
+			pLightSun->SetUseSystemTime(bUseSystemTime);
+			if(bUseSystemTime == false)
+			{
+				const tString sJulianDate = apElement->GetAttributeString("JulianDate", "2451545.0");
+				pLightSun->SetJulianDate(std::strtod(sJulianDate.c_str(), NULL));
+			}
+		}
+		//////////////////////////
 		// Box Light
-		if(apElement->GetValue() == "BoxLight")
+		else if(apElement->GetValue() == "BoxLight")
 		{
 			cLightBox *pLightBox = apWorld->CreateLightBox(asNamePrefix+sName, bStatic);
 			pLight = pLightBox;

@@ -23,6 +23,7 @@
 #include "LuxPlayer.h"
 #include "LuxPlayerHelpers.h"
 #include "LuxMapHandler.h"
+#include "LuxSatelliteHandler.h"
 #include "LuxInputHandler.h"
 #include "LuxInventory.h"
 #include "LuxMoveState_Normal.h"
@@ -130,6 +131,7 @@ static cMatrixf LuxCameraViewRotationFromEntityMatrix(const cMatrixf& a_mtxWorld
 cLuxScriptHandler::cLuxScriptHandler() : iLuxUpdateable("LuxScriptHandler")
 {
 	mpLowLevelSystem = gpBase->mpEngine->GetSystem()->GetLowLevel();
+	mpSatelliteHandler = hplNew(cLuxSatelliteHandler, ());
 
 	
 	InitScriptFunctions();
@@ -140,6 +142,7 @@ cLuxScriptHandler::cLuxScriptHandler() : iLuxUpdateable("LuxScriptHandler")
 cLuxScriptHandler::~cLuxScriptHandler()
 {
 	DestroyAllCameraViews();
+	hplDelete(mpSatelliteHandler);
 }
 
 //-----------------------------------------------------------------------
@@ -162,12 +165,14 @@ void cLuxScriptHandler::OnStart()
 void cLuxScriptHandler::Reset()
 {
 	DestroyAllCameraViews();
+	if(mpSatelliteHandler) mpSatelliteHandler->Reset();
 }
 
 //-----------------------------------------------------------------------
 
 void cLuxScriptHandler::Update(float afTimeStep)
 {
+	if(mpSatelliteHandler) mpSatelliteHandler->Update();
 	UpdateCameraViews();
 }
 
@@ -738,6 +743,8 @@ void cLuxScriptHandler::InitScriptFunctions()
 
 	AddFunc("void PreloadParticleSystem(string& asPSFile)",(void *)PreloadParticleSystem);
 	AddFunc("void PreloadSound(string& asSoundFile)",(void *)PreloadSound);
+	AddFunc("bool RegisterEarthOrientationData(string &in asEopFile)",(void *)RegisterEarthOrientationData);
+	AddFunc("bool RegisterTLE(string &in asTLEFile)",(void *)RegisterTLE);
 
 	AddFunc("void CreateParticleSystemAtEntity(string &in asPSName, string &in asPSFile, string &in asEntity, bool abSavePS)",(void *)CreateParticleSystemAtEntity);
 	AddFunc("void CreateParticleSystemAtEntityExt(	string &in asPSName, string &in asPSFile, string &in asEntity, bool abSavePS, float afR, float afG, float afB, float afA, bool abFadeAtDistance, float afFadeMinEnd, float afFadeMinStart, float afFadeMaxStart, float afFadeMaxEnd)", (void *)CreateParticleSystemAtEntityExt);
@@ -2162,6 +2169,22 @@ void __stdcall cLuxScriptHandler::PreloadSound(string& asSoundFile)
 {
 	cResources *pResources = gpBase->mpEngine->GetResources();
 	pResources->GetSoundEntityManager()->Preload(asSoundFile);
+}
+
+bool __stdcall cLuxScriptHandler::RegisterEarthOrientationData(string& asEopFile)
+{
+	if(gpBase == NULL || gpBase->mpScriptHandler == NULL || gpBase->mpScriptHandler->mpSatelliteHandler == NULL)
+		return false;
+
+	return gpBase->mpScriptHandler->mpSatelliteHandler->RegisterEarthOrientationData(asEopFile);
+}
+
+bool __stdcall cLuxScriptHandler::RegisterTLE(string& asTLEFile)
+{
+	if(gpBase == NULL || gpBase->mpScriptHandler == NULL || gpBase->mpScriptHandler->mpSatelliteHandler == NULL)
+		return false;
+
+	return gpBase->mpScriptHandler->mpSatelliteHandler->RegisterTLE(asTLEFile);
 }
 
 //-----------------------------------------------------------------------

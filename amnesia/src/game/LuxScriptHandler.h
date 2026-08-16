@@ -32,6 +32,7 @@ using namespace std;
 
 class cLuxCameraView;
 class cLuxMap;
+class cLuxSatelliteHandler;
 
 class cLuxScriptCameraView;
 typedef std::map<tString, cLuxScriptCameraView*> tLuxScriptCameraViewMap;
@@ -65,6 +66,8 @@ private:
 	void DrawCameraViews();
 	void DestroyAllCameraViews();
 	void DestroyCameraViewEntry(tLuxScriptCameraViewMapIt aIt);
+
+	cLuxSatelliteHandler *mpSatelliteHandler;
 
 	static bool GetEntities(const tString& asName,tLuxEntityList &alstEntities, eLuxEntityType aType, int alSubType);
 	static iLuxEntity* GetEntity(const tString& asName, eLuxEntityType aType, int alSubType);
@@ -323,6 +326,8 @@ private:
 	// Engine data
 	static void __stdcall PreloadParticleSystem(string& asPSFile);
 	static void __stdcall PreloadSound(string& asSoundFile);
+	static bool __stdcall RegisterEarthOrientationData(string& asEopFile);
+	static bool __stdcall RegisterTLE(string& asTLEFile);
 
 	static void __stdcall CreateParticleSystemAtEntity(string& asPSName, string& asPSFile, string& asEntity, bool abSavePS);
 	static void __stdcall CreateParticleSystemAtEntityExt(	string& asPSName, string& asPSFile, string& asEntity, bool abSavePS, float afR, float afG, float afB, float afA,

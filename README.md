@@ -51,6 +51,62 @@ double-precision Julian date, for example `JulianDate="2460389.62916667"`.
 Sunlight affects normally lit solid materials; remove the `Unlit` material
 variable when testing it.
 
+## SGP4 satellite propagation
+
+Map scripts can register a named three-line element set with the global
+AngelScript function:
+
+```cpp
+void OnStart()
+{
+    if (!RegisterEarthOrientationData("core/eop/finals2000A.data"))
+        Print("Could not register IERS Earth-orientation data");
+
+    if (!RegisterTLE("orbits/ISS.tle"))
+        Print("Could not register ISS orbit");
+}
+```
+
+`RegisterTLE` returns `true` after the file passes fixed-column, catalog-number,
+checksum, and SGP4 initialization checks. The first non-empty line is the
+satellite name (an optional standard `0 ` prefix is removed), followed by the
+two TLE element lines. The name also identifies the map entity to move, using
+the map's case-insensitive entity lookup. Registering a new element set with
+the same name replaces the previous orbit. Registrations are cleared with the
+map script state.
+
+Use a dynamic, preferably bodyless `.ent` entity for the satellite. Each game
+update assigns its world transform with +Y away from Earth's center and +Z in
+the prograde direction. Existing script camera views can follow that transform
+through `AttachCameraViewToEntity`.
+
+Propagation uses the Vallado/CelesTrak SGP4 reference implementation with
+WGS-72 constants and AFSPC operation mode. SGP4 output remains double precision
+through UTC time arithmetic, TEME-to-ECEF position and velocity conversion,
+kilometre-to-metre conversion, and the ECEF-to-HPL axis mapping `(X, Y, Z) ->
+(X, Z, -Y)`. Conversion to HPL floats occurs only when the entity transform is
+assigned.
+
+The first active `SunLight` supplies the simulation Julian date, so its fixed
+date mode also makes orbit tests deterministic. If the map has no active Sun,
+wall-clock UTC is used.
+
+`RegisterEarthOrientationData` loads the standard fixed-column IERS
+`finals2000A.data` or `finals2000A.all` format. The repository snapshot at
+`redist/core/eop/finals2000A.data` is loaded automatically on the first TLE if
+no file was registered explicitly. Daily Bulletin B final values are preferred;
+Bulletin A rapid values or predictions are used where final values are not yet
+available. DUT1, polar motion, and length-of-day are interpolated at simulation
+UTC, including leap-second-safe DUT1 interpolation, and applied during the
+TEME-to-ECEF conversion.
+
+IERS updates the data weekly and includes roughly one year of predictions. For
+current wall-clock operation, periodically replace the bundled file with the
+latest [`finals2000A.data`](https://maia.usno.navy.mil/ser7/finals2000A.data).
+If the requested simulation date is outside the loaded file's coverage, the
+engine logs one warning and falls back to the former UTC/zero-polar-motion
+approximation.
+
 The 32-bit deferred mode uses a hybrid G-buffer: albedo and packed-depth
 attachments remain RGBA8, while the camera-space normal attachment uses
 RGBA16F. This prevents camera-relative lighting bands on large, smoothly

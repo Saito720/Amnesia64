@@ -231,6 +231,9 @@
     <ClCompile Include="LuxMainMenu_Profile.cpp" />
     <ClCompile Include="LuxMap.cpp" />
     <ClCompile Include="LuxMapHandler.cpp" />
+    <ClCompile Include="LuxSatelliteHandler.cpp">
+      <AdditionalIncludeDirectories>..\..\..\HPL2\dependencies\sources;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
     <ClCompile Include="LuxMapHelper.cpp" />
     <ClCompile Include="LuxMessageHandler.cpp" />
     <ClCompile Include="LuxMusicHandler.cpp" />
@@ -341,6 +344,7 @@
     <ClInclude Include="LuxMainMenu_Profile.h" />
     <ClInclude Include="LuxMap.h" />
     <ClInclude Include="LuxMapHandler.h" />
+    <ClInclude Include="LuxSatelliteHandler.h" />
     <ClInclude Include="LuxMapHelper.h" />
     <ClInclude Include="LuxMessageHandler.h" />
     <ClInclude Include="LuxMusicHandler.h" />
@@ -387,6 +391,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\HPL2\core\HPL2.vcxproj">
       <Project>{4ab08447-393f-40d0-a48d-aa6ca41d50cc}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\..\HPL2\dependencies\sources\SGP4\SGP4.vcxproj">
+      <Project>{db8da169-311c-4d95-9739-3d34cbdf8560}</Project>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -26,7 +26,6 @@ float ShadowOffsetLookup(sampler2DShadow aShadowMap, vec4 avLocation, vec2 avOff
 	return shadow2DProj(aShadowMap, vec4(avLocation.xy + avOffset, avLocation.z, avLocation.w) ).x;
 }
 
-
 //--------------------------------------------------------------
 
 
@@ -244,8 +243,69 @@ void main()
 
 	/////////////////////////////////
 	//Calculate diffuse color
-	float fLDotN = max( dot( vLightDir, vNormal.xyz), 0.0);
+	float fRawLDotN = dot(vLightDir, vNormal.xyz);
+	float fLDotN = max(fRawLDotN, 0.0);
 	vec3 vDiffuse = vColorVal.xyz * avLightColor.xyz * fLDotN;
+
+	@ifdef LightType_Sun
+		@ifdef RenderTargets_4
+			if(vExtraVal.w > 0.0)
+			{
+				// The finite Sun only softens Earth's geometric terminator by about
+				// half a degree. The visibly broader transition is weak atmospheric
+				// sky irradiance: it begins slightly before sunset, survives into
+				// civil twilight, and vanishes well before the deep night side.
+				// Cool sky irradiance peaks after sunset, between roughly -6 and
+				// -2 degrees, instead of forming a uniform day-side haze.
+				float fCoolTwilightRise = smoothstep(-0.104528, -0.034899, fRawLDotN);
+				float fCoolTwilightFall = 1.0 - smoothstep(-0.052336, 0.017452, fRawLDotN);
+				float fCoolTwilightWeight = fCoolTwilightRise * fCoolTwilightFall;
+				vec3 vCoolTwilightColor = vec3(0.40, 0.58, 0.88);
+
+				// A compact spherical-atmosphere air-mass approximation reaches about
+				// 40 optical air masses at the horizon and approaches one overhead.
+				float fPositiveSunCosine = max(fRawLDotN, 0.0);
+				float fAirMass = 1.0 / max(fPositiveSunCosine +
+					0.025 * exp(-11.0 * fPositiveSunCosine), 0.025);
+
+				// Earth-like vertical Rayleigh plus aerosol optical depth at RGB
+				// wavelengths. Beer-Lambert extinction progressively removes blue,
+				// then green, as the solar path length grows toward the horizon.
+				vec3 vVerticalOpticalDepth = vec3(0.057072, 0.119120, 0.275456);
+				vec3 vSpectralSunTransmission = exp(-vVerticalOpticalDepth *
+					max(fAirMass - 1.0, 0.0));
+				float fLowSunBlend = 1.0 - smoothstep(0.139173, 0.258819, fRawLDotN);
+				vec3 vLowSunDirectTint = mix(vec3(1.0),
+					vSpectralSunTransmission, fLowSunBlend);
+
+				// The sunset lobe builds below +12 degrees, then loses energy from
+				// +0.5 to -2 degrees. Normalizing transmission supplies chromaticity;
+				// the independent visibility curve supplies the fade into darkness.
+				float fSunsetBuild = 1.0 - smoothstep(0.034899, 0.207912, fRawLDotN);
+				float fSunsetMainVisibility = smoothstep(
+					-0.034899, 0.008727, fRawLDotN);
+				// Preserve the established sunset curve while adding a low-energy
+				// continuation from -2.5 to -1.5 degrees on its nightward edge.
+				float fSunsetTailVisibility = 0.105 * smoothstep(
+					-0.043619, -0.026177, fRawLDotN);
+				float fSunsetVisibility = max(
+					fSunsetMainVisibility, fSunsetTailVisibility);
+				float fSunsetWeight = fSunsetBuild * fSunsetVisibility;
+				vec3 vSunsetColor = vSpectralSunTransmission /
+					max(vSpectralSunTransmission.r, 0.001);
+
+				// Tint only the opt-in material's low-angle direct sunlight.
+				vDiffuse = vColorVal.xyz * avLightColor.xyz * fLDotN * vLowSunDirectTint;
+				vDiffuse += vColorVal.xyz * avLightColor.xyz * vCoolTwilightColor *
+					(vExtraVal.w * fCoolTwilightWeight);
+
+				// Long-path scattering remains visible after Lambertian direct light
+				// approaches zero, but reddens and fades continuously toward night.
+				vDiffuse += vColorVal.xyz * avLightColor.xyz * vSunsetColor *
+					(vExtraVal.w * 1.75 * fSunsetWeight);
+			}
+		@endif
+	@endif
 
 	/////////////////////////////////
 	//Calculate specular color
@@ -259,9 +319,32 @@ void main()
 			float fSpecPower = vDepthVal.w;
 		@endif
 
-		vec3 vHalfVec = normalize(vLightDir + normalize(-vPos));
+		vec3 vViewDir = normalize(-vPos);
+		vec3 vHalfVec = normalize(vLightDir + vViewDir);
 		fSpecPower = exp2(fSpecPower * 10.0) + 1.0;//Range 0 - 1024
-		vec3 vSpecular = vec3(avLightColor.w * fSpecIntensity *  pow( clamp( dot( vHalfVec, vNormal.xyz), 0.0, 1.0),fSpecPower ) );
+		float fSpecularTerm = pow(clamp(dot(vHalfVec, vNormal.xyz), 0.0, 1.0), fSpecPower);
+
+		@ifdef LightType_Sun
+			@ifdef RenderTargets_4
+				if(vExtraVal.z > 0.49)
+				{
+					float fBroadStrength = clamp((vExtraVal.z - 0.5) * 2.0, 0.0, 1.0);
+					float fNdotH = clamp(dot(vHalfVec, vNormal.xyz), 0.0, 1.0);
+					float fCorePower = min(fSpecPower * 1.8, 2048.0);
+					float fBroadPower = max(fSpecPower * 0.35, 8.0);
+					float fCoreLobe = pow(fNdotH, fCorePower);
+					float fBroadLobe = pow(fNdotH, fBroadPower);
+
+					// Preserve peak energy while replacing the single smooth disk with
+					// a tighter core and a restrained broad shoulder.
+					fSpecularTerm = (fCoreLobe + fBroadStrength * fBroadLobe) /
+						(1.0 + fBroadStrength);
+					fSpecularTerm *= smoothstep(0.0, 0.015, fLDotN);
+				}
+			@endif
+		@endif
+
+		vec3 vSpecular = vec3(avLightColor.w * fSpecIntensity * fSpecularTerm);
 		vSpecular *= avLightColor.xyz;
 	@endif
 

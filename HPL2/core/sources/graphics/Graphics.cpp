@@ -43,6 +43,7 @@
 
 #include "graphics/MaterialType_BasicSolid.h"
 #include "graphics/MaterialType_BasicTranslucent.h"
+#include "graphics/MaterialType_Atmosphere.h"
 #include "graphics/MaterialType_Water.h"
 #include "graphics/MaterialType_Decal.h"
 
@@ -201,6 +202,7 @@ namespace hpl {
 
 			AddMaterialType(hplNew( cMaterialType_SolidDiffuse, (this, apResources) ), "soliddiffuse");
 			AddMaterialType(hplNew( cMaterialType_Translucent, (this, apResources) ), "translucent");
+			AddMaterialType(hplNew( cMaterialType_Atmosphere, (this, apResources) ), "atmosphere");
 			AddMaterialType(hplNew( cMaterialType_Water, (this, apResources) ), "water");
 			AddMaterialType(hplNew( cMaterialType_Decal, (this, apResources) ), "decal");
 

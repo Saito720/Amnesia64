@@ -300,6 +300,9 @@
     <ClInclude Include="include\graphics\MaterialType_BasicTranslucent.h">
       <Filter>Graphics\MaterialTypes</Filter>
     </ClInclude>
+    <ClInclude Include="include\graphics\MaterialType_Atmosphere.h">
+      <Filter>Graphics\MaterialTypes</Filter>
+    </ClInclude>
     <ClInclude Include="include\graphics\MaterialType_Decal.h">
       <Filter>Graphics\MaterialTypes</Filter>
     </ClInclude>
@@ -1252,6 +1255,9 @@
       <Filter>Graphics\MaterialTypes</Filter>
     </ClCompile>
     <ClCompile Include="sources\graphics\MaterialType_BasicTranslucent.cpp">
+      <Filter>Graphics\MaterialTypes</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\graphics\MaterialType_Atmosphere.cpp">
       <Filter>Graphics\MaterialTypes</Filter>
     </ClCompile>
     <ClCompile Include="sources\graphics\MaterialType_Decal.cpp">

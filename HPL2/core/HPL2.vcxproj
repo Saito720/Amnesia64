@@ -239,6 +239,7 @@
     <ClInclude Include="include\graphics\VideoStream.h" />
     <ClInclude Include="include\graphics\MaterialType_BasicSolid.h" />
     <ClInclude Include="include\graphics\MaterialType_BasicTranslucent.h" />
+    <ClInclude Include="include\graphics\MaterialType_Atmosphere.h" />
     <ClInclude Include="include\graphics\MaterialType_Decal.h" />
     <ClInclude Include="include\graphics\MaterialType_Water.h" />
     <ClInclude Include="include\graphics\PostEffect_Bloom.h" />
@@ -559,6 +560,7 @@
     <ClCompile Include="sources\graphics\TextureCreator.cpp" />
     <ClCompile Include="sources\graphics\MaterialType_BasicSolid.cpp" />
     <ClCompile Include="sources\graphics\MaterialType_BasicTranslucent.cpp" />
+    <ClCompile Include="sources\graphics\MaterialType_Atmosphere.cpp" />
     <ClCompile Include="sources\graphics\MaterialType_Decal.cpp" />
     <ClCompile Include="sources\graphics\MaterialType_Water.cpp" />
     <ClCompile Include="sources\graphics\PostEffect_Bloom.cpp" />

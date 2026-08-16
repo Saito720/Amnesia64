@@ -59,6 +59,8 @@ namespace hpl {
 	#define kVar_avDiffuseArrayTileGrid			7
 	#define kVar_avDiffuseArrayTileSize			8
 	#define kVar_avEllipsoidNormalScale			9
+	#define kVar_avOceanSpecularParams			10
+	#define kVar_afPlanetaryTwilightStrength	11
 
 
 	//------------------------------
@@ -74,8 +76,10 @@ namespace hpl {
 	#define eFeature_Diffuse_Array			eFlagBit_7
 	#define eFeature_Diffuse_Unlit			eFlagBit_8
 	#define eFeature_Diffuse_EllipsoidNormals	eFlagBit_9
+	#define eFeature_Diffuse_OceanSpecular		eFlagBit_10
+	#define eFeature_Diffuse_PlanetaryTwilight	eFlagBit_11
 		
-	#define kDiffuseFeatureNum 10
+	#define kDiffuseFeatureNum 12
 
 	static cProgramComboFeature vDiffuseFeatureVec[] =
 	{
@@ -89,7 +93,18 @@ namespace hpl {
 		cProgramComboFeature("UseDiffuseArray", kPC_FragmentBit),
 		cProgramComboFeature("UseUnlit", kPC_FragmentBit),
 		cProgramComboFeature("UseEllipsoidNormals", kPC_VertexBit | kPC_FragmentBit),
+		cProgramComboFeature("UseOceanSpecular", kPC_FragmentBit, eFeature_Diffuse_Specular),
+		cProgramComboFeature("UsePlanetaryTwilight", kPC_FragmentBit),
 	};
+
+	static bool UsesOceanSpecular(cMaterial *apMaterial,
+		const cMaterialType_SolidDiffuse_Vars *apVars)
+	{
+		return apMaterial->GetTexture(eMaterialTexture_Specular) != NULL &&
+			(cMath::Abs(apVars->mfSpecularIntensityScale - 1.0f) > kEpsilonf ||
+			 cMath::Abs(apVars->mfSpecularGlossBias) > kEpsilonf ||
+			 apVars->mfOceanSpecularBroadStrength > kEpsilonf);
+	}
 
 	//------------------------------
 	//Illumination Features and data
@@ -295,6 +310,10 @@ namespace hpl {
 		AddVarVec3("EllipsoidRadii", cVector3f(1.0f), "Relative local-space ellipsoid radii. Common scale does not matter.");
 		AddVarInt("DiffuseArrayTileColumns", 3, "Number of horizontal tiles in a 2D array diffuse texture.");
 		AddVarInt("DiffuseArrayTileRows", 2, "Number of vertical tiles in a 2D array diffuse texture.");
+		AddVarFloat("SpecularIntensityScale", 1.0f, "Multiplier applied to the specular map intensity channel.");
+		AddVarFloat("SpecularGlossBias", 0.0f, "Offset applied to the specular map gloss channel before lighting.");
+		AddVarFloat("OceanSpecularBroadStrength", 0.0f, "Strength of the broad low-energy ocean glint shoulder.");
+		AddVarFloat("PlanetaryTwilightStrength", 0.0f, "Low-energy atmospheric sky irradiance around a planetary terminator; zero disables it.");
 	}
 	
 	//--------------------------------------------------------------------------
@@ -358,6 +377,8 @@ namespace hpl {
 		mpProgramManager->AddGenerateProgramVariableId("avDiffuseArrayTileGrid", kVar_avDiffuseArrayTileGrid,eMaterialRenderMode_Diffuse);
 		mpProgramManager->AddGenerateProgramVariableId("avDiffuseArrayTileSize", kVar_avDiffuseArrayTileSize,eMaterialRenderMode_Diffuse);
 		mpProgramManager->AddGenerateProgramVariableId("avEllipsoidNormalScale", kVar_avEllipsoidNormalScale,eMaterialRenderMode_Diffuse);
+		mpProgramManager->AddGenerateProgramVariableId("avOceanSpecularParams", kVar_avOceanSpecularParams,eMaterialRenderMode_Diffuse);
+		mpProgramManager->AddGenerateProgramVariableId("afPlanetaryTwilightStrength", kVar_afPlanetaryTwilightStrength,eMaterialRenderMode_Diffuse);
 
 		mpProgramManager->AddGenerateProgramVariableId("a_mtxUV",kVar_a_mtxUV,eMaterialRenderMode_Illumination);
 		mpProgramManager->AddGenerateProgramVariableId("afColorMul",kVar_afColorMul,eMaterialRenderMode_Illumination);
@@ -426,6 +447,20 @@ namespace hpl {
 		//////////////////////////////////
 		//Analytic ellipsoid normals
 		if(pVars->mbUseEllipsoidNormals)
+		{
+			apMaterial->SetHasSpecificSettings(eMaterialRenderMode_Diffuse,true);
+		}
+
+		//////////////////////////////////
+		//Sun-only ocean specular model
+		if(UsesOceanSpecular(apMaterial, pVars))
+		{
+			apMaterial->SetHasSpecificSettings(eMaterialRenderMode_Diffuse,true);
+		}
+
+		//////////////////////////////////
+		//Opt-in planetary twilight sky fill
+		if(pVars->mfPlanetaryTwilightStrength > kEpsilonf)
 		{
 			apMaterial->SetHasSpecificSettings(eMaterialRenderMode_Diffuse,true);
 		}
@@ -562,6 +597,14 @@ namespace hpl {
 			{
 				lFlags |= eFeature_Diffuse_EllipsoidNormals;
 			}
+			if(UsesOceanSpecular(apMaterial, pVars))
+			{
+				lFlags |= eFeature_Diffuse_OceanSpecular;
+			}
+			if(pVars->mfPlanetaryTwilightStrength > kEpsilonf)
+			{
+				lFlags |= eFeature_Diffuse_PlanetaryTwilight;
+			}
 			
 
 			return mpProgramManager->GenerateProgram(aRenderMode,lFlags);
@@ -650,6 +693,20 @@ namespace hpl {
 						1.0f / (vRadii.z * vRadii.z));
 				}
 
+				if(UsesOceanSpecular(apMaterial, pVars))
+				{
+					apProgram->SetVec3f(kVar_avOceanSpecularParams,
+						cMath::Max(pVars->mfSpecularIntensityScale, 0.0f),
+						cMath::Max(-1.0f, cMath::Min(pVars->mfSpecularGlossBias, 1.0f)),
+						cMath::Max(0.0f, cMath::Min(pVars->mfOceanSpecularBroadStrength, 1.0f)));
+				}
+
+				if(pVars->mfPlanetaryTwilightStrength > kEpsilonf)
+				{
+					apProgram->SetFloat(kVar_afPlanetaryTwilightStrength,
+						cMath::Max(0.0f, cMath::Min(pVars->mfPlanetaryTwilightStrength, 1.0f)));
+				}
+
 				/////////////////////////
 				//Parallax
 				if(apMaterial->GetTexture(eMaterialTexture_Height) && iRenderer::GetParallaxEnabled())
@@ -732,6 +789,10 @@ namespace hpl {
 		pVars->mvEllipsoidRadii = apVars->GetVarVector3f("EllipsoidRadii", cVector3f(1.0f));
 		pVars->mlDiffuseArrayTileColumns = cMath::Max(1, apVars->GetVarInt("DiffuseArrayTileColumns", 3));
 		pVars->mlDiffuseArrayTileRows = cMath::Max(1, apVars->GetVarInt("DiffuseArrayTileRows", 2));
+		pVars->mfSpecularIntensityScale = apVars->GetVarFloat("SpecularIntensityScale", 1.0f);
+		pVars->mfSpecularGlossBias = apVars->GetVarFloat("SpecularGlossBias", 0.0f);
+		pVars->mfOceanSpecularBroadStrength = apVars->GetVarFloat("OceanSpecularBroadStrength", 0.0f);
+		pVars->mfPlanetaryTwilightStrength = apVars->GetVarFloat("PlanetaryTwilightStrength", 0.0f);
 
 	}
 
@@ -751,6 +812,10 @@ namespace hpl {
 		apVars->AddVarVector3f("EllipsoidRadii", pVars->mvEllipsoidRadii);
 		apVars->AddVarInt("DiffuseArrayTileColumns", pVars->mlDiffuseArrayTileColumns);
 		apVars->AddVarInt("DiffuseArrayTileRows", pVars->mlDiffuseArrayTileRows);
+		apVars->AddVarFloat("SpecularIntensityScale", pVars->mfSpecularIntensityScale);
+		apVars->AddVarFloat("SpecularGlossBias", pVars->mfSpecularGlossBias);
+		apVars->AddVarFloat("OceanSpecularBroadStrength", pVars->mfOceanSpecularBroadStrength);
+		apVars->AddVarFloat("PlanetaryTwilightStrength", pVars->mfPlanetaryTwilightStrength);
 	}
 
 	//--------------------------------------------------------------------------

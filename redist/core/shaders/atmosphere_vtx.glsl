@@ -1,0 +1,12 @@
+////////////////////////////////////////////////////////
+// Atmosphere proxy - vertex shader
+////////////////////////////////////////////////////////
+#version 120
+
+varying vec3 gvLocalPosition;
+
+void main()
+{
+	gl_Position = ftransform();
+	gvLocalPosition = gl_Vertex.xyz;
+}

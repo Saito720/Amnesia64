@@ -78,6 +78,9 @@ namespace hpl {
 	public:
 		cMaterialType_SolidDiffuse_Vars() : mfHeightMapScale(0.05f), mfHeightMapBias(0.0f),
 											mfFrenselBias(0.2f), mfFrenselPow(8.0f),
+											mfSpecularIntensityScale(1.0f), mfSpecularGlossBias(0.0f),
+											mfOceanSpecularBroadStrength(0.0f),
+											mfPlanetaryTwilightStrength(0.0f),
 											mbAlphaDissolveFilter(false),
 											mbUnlit(false),
 											mbUseEllipsoidNormals(false), mvEllipsoidRadii(1.0f),
@@ -88,6 +91,10 @@ namespace hpl {
 		float mfHeightMapBias;
 		float mfFrenselBias;
 		float mfFrenselPow;
+		float mfSpecularIntensityScale;
+		float mfSpecularGlossBias;
+		float mfOceanSpecularBroadStrength;
+		float mfPlanetaryTwilightStrength;
 		bool mbAlphaDissolveFilter;
 		bool mbUnlit;
 		bool mbUseEllipsoidNormals;

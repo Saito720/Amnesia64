@@ -56,6 +56,14 @@ uniform sampler2D aDiffuseMap;
 	@define sampler_aSpecularMap 2
 @endif
 
+@ifdef UseOceanSpecular
+	uniform vec3 avOceanSpecularParams;
+@endif
+
+@ifdef UsePlanetaryTwilight
+	uniform float afPlanetaryTwilightStrength;
+@endif
+
 @ifdef UseParallax
 	uniform sampler2D aHeightMap;
 	@define sampler_aHeightMap 3
@@ -210,6 +218,14 @@ void main()
 		vec4 vDiffuseColor = SampleDiffuseMap(vTexCoord);
 	@endif
 
+	@ifdef UseSpecular
+		vec2 vSpecVals = texture2D(aSpecularMap, vTexCoord).xy;
+		@ifdef UseOceanSpecular
+			vSpecVals.x = clamp(vSpecVals.x * avOceanSpecularParams.x, 0.0, 1.0);
+			vSpecVals.y = clamp(vSpecVals.y + avOceanSpecularParams.y, 0.0, 1.0);
+		@endif
+	@endif
+
 
 	//////////////////////////////////
 	//Set Diffuse color if no environemnt mapping is used.
@@ -288,13 +304,19 @@ void main()
 	//////////////////////////////////
 	//Specular
 	@ifdef RenderTargets_4
+		gl_FragData[3] = vec4(0.0);
 		@ifdef UseUnlit
-			gl_FragData[3].xy = vec2(0.0);
 		@else
+		@ifdef UsePlanetaryTwilight
+			// W is an opt-in per-pixel strength consumed only by the Sun pass.
+			gl_FragData[3].w = clamp(afPlanetaryTwilightStrength, 0.0, 1.0);
+		@endif
 		@ifdef UseSpecular
-			gl_FragData[3].xy = texture2D(aSpecularMap, vTexCoord).xy;
-		@else
-			gl_FragData[3].xy = vec2(0.0);
+			gl_FragData[3].xy = vSpecVals;
+			@ifdef UseOceanSpecular
+				// Z marks the opt-in ocean model and carries broad-lobe strength.
+				gl_FragData[3].z = 0.5 + 0.5 * clamp(avOceanSpecularParams.z, 0.0, 1.0);
+			@endif
 		@endif
 		@endif
 	@else
@@ -303,7 +325,6 @@ void main()
 			gl_FragData[2].w = 0.0;
 		@else
 		@ifdef UseSpecular
-			vec2 vSpecVals = texture2D(aSpecularMap, vTexCoord).xy;
 			gl_FragData[1].w = vSpecVals.x;
 			gl_FragData[2].w = vSpecVals.y;
 		@else

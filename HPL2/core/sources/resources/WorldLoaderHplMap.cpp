@@ -298,6 +298,7 @@ namespace hpl {
 		// Load skybox
 		mpCurrentWorld->SetSkyBoxActive(pXmlMapData->GetAttributeBool("SkyBoxActive", false) );
 		mpCurrentWorld->SetSkyBoxColor(pXmlMapData->GetAttributeColor("SkyBoxColor", cColor(1,1)) );
+		mpCurrentWorld->SetSceneExposure(pXmlMapData->GetAttributeFloat("SceneExposure", 1.0f));
 
 		tString sSkyBoxTexture = pXmlMapData->GetAttributeString("SkyBoxTexture","");
 		if(sSkyBoxTexture!="")

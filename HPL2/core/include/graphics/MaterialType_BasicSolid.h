@@ -81,6 +81,8 @@ namespace hpl {
 											mfSpecularIntensityScale(1.0f), mfSpecularGlossBias(0.0f),
 											mfOceanSpecularBroadStrength(0.0f),
 											mfPlanetaryTwilightStrength(0.0f),
+											mvWaterTint(1.0f), mfWaterTintStrength(0.0f),
+											mfWaterSaturation(1.0f), mfWaterBrightness(1.0f),
 											mbAlphaDissolveFilter(false),
 											mbUnlit(false),
 											mbUseEllipsoidNormals(false), mvEllipsoidRadii(1.0f),
@@ -95,6 +97,10 @@ namespace hpl {
 		float mfSpecularGlossBias;
 		float mfOceanSpecularBroadStrength;
 		float mfPlanetaryTwilightStrength;
+		cVector3f mvWaterTint;
+		float mfWaterTintStrength;
+		float mfWaterSaturation;
+		float mfWaterBrightness;
 		bool mbAlphaDissolveFilter;
 		bool mbUnlit;
 		bool mbUseEllipsoidNormals;

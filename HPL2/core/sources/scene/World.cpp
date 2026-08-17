@@ -137,6 +137,7 @@ namespace hpl {
 		mbAutoDestroySkybox = false;
 		mbSkyBoxActive = false;
 		mSkyBoxColor = cColor(1,1);
+		mfSceneExposure = 1.0f;
 
 		//////////////////////////////
 		//Fog

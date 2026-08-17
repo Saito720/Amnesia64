@@ -91,6 +91,11 @@ namespace hpl {
 		void SetLargePlaneSurfacePlacement(int alX){ mlLargePlaneSurfacePlacement = alX;};
 		inline int GetLargePlaneSurfacePlacement(){ return mlLargePlaneSurfacePlacement;};
 
+		// Higher-priority translucent objects render later. Solid renderables do
+		// not use this value.
+		void SetTranslucentSortPriority(int alX){ mlTranslucentSortPriority = alX; }
+		inline int GetTranslucentSortPriority() const { return mlTranslucentSortPriority; }
+
 		/**
 		 * Should return a different number each time the renderable model matrix is updated. never -1
 		 * \return
@@ -148,6 +153,7 @@ namespace hpl {
 		bool mbForceShadow;
 		
 		int mlLargePlaneSurfacePlacement;
+		int mlTranslucentSortPriority;
 
 		int mlRenderFrameCount;
 

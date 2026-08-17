@@ -305,6 +305,8 @@ private:
 	void UpdateLean(float afTimeStep);
 	void UpdateFocusText(float afTimeStep);
 	void UpdateAvgSpeed(float afTimeStep);
+	void ConfigureSpectatorCameraBounds();
+	void ClampSpectatorCameraToBounds();
 	
 	void SpinHead(float afSpeed);
 	void UpdateHeadSpin(float afTimeStep);
@@ -463,6 +465,10 @@ private:
 	bool mbSpectatorMode;
 	bool mbFreeCameraActive;
 	float mfFreeCameraSpeed;
+	bool mbSpectatorCameraBoundsActive;
+	float mfSpectatorCameraMinRadius;
+	float mfSpectatorCameraMaxRadius;
+	cVector3f mvSpectatorCameraFallbackDirection;
 };
 
 //----------------------------------------------

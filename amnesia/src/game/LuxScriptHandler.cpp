@@ -170,6 +170,13 @@ void cLuxScriptHandler::Reset()
 
 //-----------------------------------------------------------------------
 
+void cLuxScriptHandler::DestroyWorldEntities(cLuxMap *apMap)
+{
+	if(mpSatelliteHandler) mpSatelliteHandler->DestroyWorldEntities(apMap);
+}
+
+//-----------------------------------------------------------------------
+
 void cLuxScriptHandler::Update(float afTimeStep)
 {
 	if(mpSatelliteHandler) mpSatelliteHandler->Update();

@@ -558,6 +558,7 @@ namespace hpl {
 		eMaterialTexture_CubeMap,
 		eMaterialTexture_DissolveAlpha,
 		eMaterialTexture_CubeMapAlpha,
+		eMaterialTexture_WaterMask,
 		eMaterialTexture_Special,	//This means that the texture is not data in the material, but retrieved else where. Such as a reflection texture.
 		eMaterialTexture_LastEnum
 	};

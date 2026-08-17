@@ -211,6 +211,7 @@ public:
 	void SetSkyboxActive(bool abX);
 	void SetSkyboxTexture(const tString& asX);
 	void SetSkyboxColor(const cColor& aX);
+	void SetSceneExposure(float afX);
 
 	void UpdateSkybox();
 
@@ -218,6 +219,7 @@ public:
 	bool GetSkyboxActive() { return mbSkyboxActive; }
 	const tString& GetSkyboxTexture() { return msSkyboxTexture; }
 	const cColor& GetSkyboxColor() { return mSkyboxColor; }
+	float GetSceneExposure() { return mfSceneExposure; }
 
 	///////////////////////////////
 	// Fog
@@ -293,6 +295,7 @@ protected:
 	bool mbSkyboxActive;
 	cColor mSkyboxColor;
     tString msSkyboxTexture;
+	float mfSceneExposure;
 
 	bool mbSkyboxTextureUpdated;
 

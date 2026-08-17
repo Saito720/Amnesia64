@@ -28,17 +28,19 @@ public:
 	cLuxSatelliteHandler();
 	~cLuxSatelliteHandler();
 
-	// Registers one three-line element set. The name line identifies the map
-	// entity whose transform will be driven by the orbit.
+	// Registers one or more consecutive three-line element sets. Each name can
+	// optionally identify a map entity whose transform will be driven by the orbit.
 	bool RegisterTLE(const tString& asFile);
 	bool RegisterEarthOrientationData(const tString& asFile);
 
 	void Update();
 	void Reset();
+	void DestroyWorldEntities(cLuxMap *apMap);
 
 private:
 	bool LoadEarthOrientationData(const tString& asFile, bool abLogFailure);
 	void EnsureEarthOrientationData();
+	void DestroyOrbit(cLuxSatelliteOrbit *apOrbit, bool abDestroyBillboard);
 	void UpdateOrbit(cLuxSatelliteOrbit *apOrbit, double afJulianDateUtc);
 
 	tLuxSatelliteOrbitMap m_mapOrbits;

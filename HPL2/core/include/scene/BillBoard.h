@@ -57,6 +57,11 @@ namespace hpl {
 		void SetAxis(const cVector3f& avAxis);
 		cVector3f GetAxis(){ return mvAxis;}
 
+		// Keeps a point billboard camera-facing while rolling it so a direction
+		// in its local XY plane points toward a world-space target.
+		void SetPointRollTarget(const cVector3f& avWorldTarget, const cVector2f& avLocalDirection);
+		void ClearPointRollTarget();
+
 		void SetForwardOffset(float afOffset);
 		float GetForwardOffset(){ return mfForwardOffset;}
 
@@ -107,6 +112,9 @@ namespace hpl {
 		eBillboardType mType;
 		cVector2f mvSize;
 		cVector3f mvAxis;
+		bool mbUsePointRollTarget;
+		cVector3f mvPointRollWorldTarget;
+		cVector2f mvPointRollLocalDirection;
 
 		int mlLastRenderCount;
 

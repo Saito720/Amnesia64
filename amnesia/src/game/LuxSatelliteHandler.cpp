@@ -77,6 +77,12 @@ namespace
 	const double kJulianDateToModifiedJulianDate = 2400000.5;
 	const char *kDefaultEarthOrientationFile = "core/eop/finals2000A.data";
 	const char *kRepositoryEarthOrientationFile = "redist/core/eop/finals2000A.data";
+	const char *kSatelliteIconMaterial = "graphics/icon/satellite.mat";
+	const float kSatelliteIconWorldSizeMetres = 400000.0f;
+	const int kSatelliteIconTranslucentPriority = 100;
+	// Billboard UVs display the source icon vertically flipped, placing its
+	// signal bands along local +X,+Y in the rendered quad.
+	const cVector2f kSatelliteIconSignalDirection(1.0f, 1.0f);
 
 	struct cVector3d
 	{
@@ -205,7 +211,51 @@ namespace
 		return asResolvedPath.empty() == false;
 	}
 
-	static bool ReadThreeLineElement(const tString& asFile, cThreeLineElement& aTle)
+	static bool ParseThreeLineElement(const tString& asFile, const std::vector<std::string>& avLines,
+								 size_t alFirstLine, cThreeLineElement& aTle)
+	{
+		aTle.msName = TrimAscii(avLines[alFirstLine]);
+		if(aTle.msName.size() >= 2 && aTle.msName[0] == '0' && aTle.msName[1] == ' ')
+			aTle.msName = TrimAscii(aTle.msName.substr(2));
+
+		aTle.msLine1 = avLines[alFirstLine + 1];
+		aTle.msLine2 = avLines[alFirstLine + 2];
+
+		const unsigned int lRecordNumber = (unsigned int)(alFirstLine / 3 + 1);
+		if(aTle.msName.empty())
+		{
+			Warning("Could not register TLE '%s': satellite name in record %u is empty.\n",
+					asFile.c_str(), lRecordNumber);
+			return false;
+		}
+
+		if(aTle.msLine1.size() < 69 || aTle.msLine2.size() < 69 ||
+			aTle.msLine1[0] != '1' || aTle.msLine1[1] != ' ' ||
+			aTle.msLine2[0] != '2' || aTle.msLine2[1] != ' ')
+		{
+			Warning("Could not register TLE '%s': record %u does not contain valid fixed-column element lines.\n",
+					asFile.c_str(), lRecordNumber);
+			return false;
+		}
+
+		if(aTle.msLine1.compare(2, 5, aTle.msLine2, 2, 5) != 0)
+		{
+			Warning("Could not register TLE '%s': catalog numbers in record %u do not match.\n",
+					asFile.c_str(), lRecordNumber);
+			return false;
+		}
+
+		if(HasValidTleChecksum(aTle.msLine1) == false || HasValidTleChecksum(aTle.msLine2) == false)
+		{
+			Warning("Could not register TLE '%s': checksum validation failed in record %u.\n",
+					asFile.c_str(), lRecordNumber);
+			return false;
+		}
+
+		return true;
+	}
+
+	static bool ReadThreeLineElements(const tString& asFile, std::vector<cThreeLineElement>& avTles)
 	{
 		tWString sResolvedPath;
 		if(ResolveDataPath(asFile, sResolvedPath) == false)
@@ -248,46 +298,36 @@ namespace
 		}
 		std::fclose(pFile);
 
-		if(vLines.size() != 3)
+		if(vLines.empty() || (vLines.size() % 3) != 0)
 		{
-			Warning("Could not register TLE '%s': expected exactly three non-empty lines, found %u.\n",
+			Warning("Could not register TLE '%s': expected one or more complete three-line records, found %u non-empty lines.\n",
 					asFile.c_str(), (unsigned int)vLines.size());
 			return false;
 		}
 
-		aTle.msName = TrimAscii(vLines[0]);
-		if(aTle.msName.size() >= 2 && aTle.msName[0] == '0' && aTle.msName[1] == ' ')
-			aTle.msName = TrimAscii(aTle.msName.substr(2));
-
-		aTle.msLine1 = vLines[1];
-		aTle.msLine2 = vLines[2];
-
-		if(aTle.msName.empty())
+		std::vector<cThreeLineElement> vTles;
+		vTles.reserve(vLines.size() / 3);
+		for(size_t i = 0; i < vLines.size(); i += 3)
 		{
-			Warning("Could not register TLE '%s': satellite name is empty.\n", asFile.c_str());
-			return false;
+			cThreeLineElement tle;
+			if(ParseThreeLineElement(asFile, vLines, i, tle) == false)
+				return false;
+
+			const tString sKey = cString::ToLowerCase(tle.msName);
+			for(size_t j = 0; j < vTles.size(); ++j)
+			{
+				if(cString::ToLowerCase(vTles[j].msName) == sKey)
+				{
+					Warning("Could not register TLE '%s': satellite name '%s' appears more than once.\n",
+							asFile.c_str(), tle.msName.c_str());
+					return false;
+				}
+			}
+
+			vTles.push_back(tle);
 		}
 
-		if(aTle.msLine1.size() < 69 || aTle.msLine2.size() < 69 ||
-			aTle.msLine1[0] != '1' || aTle.msLine1[1] != ' ' ||
-			aTle.msLine2[0] != '2' || aTle.msLine2[1] != ' ')
-		{
-			Warning("Could not register TLE '%s': element lines are not valid fixed-column TLE records.\n", asFile.c_str());
-			return false;
-		}
-
-		if(aTle.msLine1.compare(2, 5, aTle.msLine2, 2, 5) != 0)
-		{
-			Warning("Could not register TLE '%s': catalog numbers do not match.\n", asFile.c_str());
-			return false;
-		}
-
-		if(HasValidTleChecksum(aTle.msLine1) == false || HasValidTleChecksum(aTle.msLine2) == false)
-		{
-			Warning("Could not register TLE '%s': checksum validation failed.\n", asFile.c_str());
-			return false;
-		}
-
+		avTles.swap(vTles);
 		return true;
 	}
 
@@ -596,7 +636,7 @@ public:
 	cLuxSatelliteOrbit()
 	{
 		mpMap = NULL;
-		mbMissingEntityWarningShown = false;
+		mpIconBillboard = NULL;
 		mlLastPropagationError = 0;
 		std::memset(&mSatelliteRecord, 0, sizeof(mSatelliteRecord));
 	}
@@ -604,8 +644,8 @@ public:
 	tString msName;
 	tString msSourceFile;
 	cLuxMap *mpMap;
+	cBillboard *mpIconBillboard;
 	elsetrec mSatelliteRecord;
-	bool mbMissingEntityWarningShown;
 	int mlLastPropagationError;
 };
 
@@ -680,49 +720,86 @@ bool cLuxSatelliteHandler::RegisterTLE(const tString& asFile)
 	}
 	EnsureEarthOrientationData();
 
-	cThreeLineElement tle;
-	if(ReadThreeLineElement(asFile, tle) == false)
+	std::vector<cThreeLineElement> vTles;
+	if(ReadThreeLineElements(asFile, vTles) == false)
 		return false;
 
-	cLuxSatelliteOrbit *pOrbit = hplNew(cLuxSatelliteOrbit, ());
-	pOrbit->msName = tle.msName;
-	pOrbit->msSourceFile = asFile;
-	pOrbit->mpMap = pMap;
-
-	char sLine1[130] = {0};
-	char sLine2[130] = {0};
-	const size_t lLine1Length = tle.msLine1.size() < sizeof(sLine1) - 1 ? tle.msLine1.size() : sizeof(sLine1) - 1;
-	const size_t lLine2Length = tle.msLine2.size() < sizeof(sLine2) - 1 ? tle.msLine2.size() : sizeof(sLine2) - 1;
-	std::memcpy(sLine1, tle.msLine1.data(), lLine1Length);
-	std::memcpy(sLine2, tle.msLine2.data(), lLine2Length);
-
-	double fStartMinutes = 0.0;
-	double fStopMinutes = 0.0;
-	double fStepMinutes = 0.0;
-	SGP4Funcs::twoline2rv(sLine1, sLine2, 'c', 'm', 'a', wgs72,
-						 fStartMinutes, fStopMinutes, fStepMinutes, pOrbit->mSatelliteRecord);
-
-	if(pOrbit->mSatelliteRecord.error != 0 ||
-		std::isfinite(pOrbit->mSatelliteRecord.jdsatepoch) == false ||
-		std::isfinite(pOrbit->mSatelliteRecord.jdsatepochF) == false)
+	// Initialize every record before changing the live orbit map. A malformed
+	// catalog therefore cannot leave only part of the file registered.
+	std::vector<cLuxSatelliteOrbit*> vNewOrbits;
+	vNewOrbits.reserve(vTles.size());
+	for(size_t i = 0; i < vTles.size(); ++i)
 	{
-		Warning("Could not register TLE '%s': SGP4 initialization failed with error %d.\n",
-				asFile.c_str(), pOrbit->mSatelliteRecord.error);
-		hplDelete(pOrbit);
-		return false;
+		const cThreeLineElement& tle = vTles[i];
+		cLuxSatelliteOrbit *pOrbit = hplNew(cLuxSatelliteOrbit, ());
+		pOrbit->msName = tle.msName;
+		pOrbit->msSourceFile = asFile;
+		pOrbit->mpMap = pMap;
+
+		char sLine1[130] = {0};
+		char sLine2[130] = {0};
+		const size_t lLine1Length = tle.msLine1.size() < sizeof(sLine1) - 1 ? tle.msLine1.size() : sizeof(sLine1) - 1;
+		const size_t lLine2Length = tle.msLine2.size() < sizeof(sLine2) - 1 ? tle.msLine2.size() : sizeof(sLine2) - 1;
+		std::memcpy(sLine1, tle.msLine1.data(), lLine1Length);
+		std::memcpy(sLine2, tle.msLine2.data(), lLine2Length);
+
+		double fStartMinutes = 0.0;
+		double fStopMinutes = 0.0;
+		double fStepMinutes = 0.0;
+		SGP4Funcs::twoline2rv(sLine1, sLine2, 'c', 'm', 'a', wgs72,
+							 fStartMinutes, fStopMinutes, fStepMinutes, pOrbit->mSatelliteRecord);
+
+		if(pOrbit->mSatelliteRecord.error != 0 ||
+			std::isfinite(pOrbit->mSatelliteRecord.jdsatepoch) == false ||
+			std::isfinite(pOrbit->mSatelliteRecord.jdsatepochF) == false)
+		{
+			Warning("Could not register TLE '%s': SGP4 initialization for '%s' failed with error %d.\n",
+					asFile.c_str(), pOrbit->msName.c_str(), pOrbit->mSatelliteRecord.error);
+			hplDelete(pOrbit);
+			for(size_t j = 0; j < vNewOrbits.size(); ++j)
+				hplDelete(vNewOrbits[j]);
+			return false;
+		}
+
+		vNewOrbits.push_back(pOrbit);
 	}
 
-	const tString sKey = cString::ToLowerCase(pOrbit->msName);
-	tLuxSatelliteOrbitMap::iterator itExisting = m_mapOrbits.find(sKey);
-	if(itExisting != m_mapOrbits.end())
+	const double fJulianDateUtc = GetSimulationJulianDateUtc(pMap);
+	for(size_t i = 0; i < vNewOrbits.size(); ++i)
 	{
-		hplDelete(itExisting->second);
-		m_mapOrbits.erase(itExisting);
-	}
-	m_mapOrbits[sKey] = pOrbit;
+		cLuxSatelliteOrbit *pOrbit = vNewOrbits[i];
+		const tString sKey = cString::ToLowerCase(pOrbit->msName);
+		tLuxSatelliteOrbitMap::iterator itExisting = m_mapOrbits.find(sKey);
+		if(itExisting != m_mapOrbits.end())
+		{
+			DestroyOrbit(itExisting->second, true);
+			m_mapOrbits.erase(itExisting);
+		}
 
-	Log("Registered SGP4 orbit '%s' from '%s'.\n", pOrbit->msName.c_str(), asFile.c_str());
-	UpdateOrbit(pOrbit, GetSimulationJulianDateUtc(pMap));
+		if(pMap->GetWorld())
+		{
+			pOrbit->mpIconBillboard = pMap->GetWorld()->CreateBillboard(
+				"__SGP4Icon_" + pOrbit->msName, cVector2f(kSatelliteIconWorldSizeMetres),
+				eBillboardType_Point, kSatelliteIconMaterial, false);
+			if(pOrbit->mpIconBillboard)
+			{
+				pOrbit->mpIconBillboard->SetTranslucentSortPriority(kSatelliteIconTranslucentPriority);
+				pOrbit->mpIconBillboard->SetPointRollTarget(cVector3f(0.0f), kSatelliteIconSignalDirection);
+			}
+			if(pOrbit->mpIconBillboard && pOrbit->mpIconBillboard->GetMaterial() == NULL)
+			{
+				Warning("Could not create satellite icon for '%s': material '%s' could not be loaded.\n",
+						pOrbit->msName.c_str(), kSatelliteIconMaterial);
+				pMap->GetWorld()->DestroyBillboard(pOrbit->mpIconBillboard);
+				pOrbit->mpIconBillboard = NULL;
+			}
+		}
+
+		m_mapOrbits[sKey] = pOrbit;
+		Log("Registered SGP4 orbit '%s' from '%s'.\n", pOrbit->msName.c_str(), asFile.c_str());
+		UpdateOrbit(pOrbit, fJulianDateUtc);
+	}
+
 	return true;
 }
 
@@ -746,7 +823,7 @@ void cLuxSatelliteHandler::Update()
 		if(pOrbit == NULL || pOrbit->mpMap != pMap)
 		{
 			tLuxSatelliteOrbitMap::iterator itDestroy = it++;
-			hplDelete(itDestroy->second);
+			DestroyOrbit(itDestroy->second, false);
 			m_mapOrbits.erase(itDestroy);
 			continue;
 		}
@@ -758,9 +835,41 @@ void cLuxSatelliteHandler::Update()
 
 void cLuxSatelliteHandler::Reset()
 {
+	cLuxMap *pCurrentMap = gpBase && gpBase->mpMapHandler ?
+		gpBase->mpMapHandler->GetCurrentMap() : NULL;
 	for(tLuxSatelliteOrbitMap::iterator it = m_mapOrbits.begin(); it != m_mapOrbits.end(); ++it)
-		hplDelete(it->second);
+		DestroyOrbit(it->second, it->second && it->second->mpMap == pCurrentMap);
 	m_mapOrbits.clear();
+}
+
+void cLuxSatelliteHandler::DestroyWorldEntities(cLuxMap *apMap)
+{
+	if(apMap == NULL)
+		return;
+
+	tLuxSatelliteOrbitMap::iterator it = m_mapOrbits.begin();
+	while(it != m_mapOrbits.end())
+	{
+		if(it->second && it->second->mpMap == apMap)
+		{
+			tLuxSatelliteOrbitMap::iterator itDestroy = it++;
+			DestroyOrbit(itDestroy->second, true);
+			m_mapOrbits.erase(itDestroy);
+		}
+		else
+			++it;
+	}
+}
+
+void cLuxSatelliteHandler::DestroyOrbit(cLuxSatelliteOrbit *apOrbit, bool abDestroyBillboard)
+{
+	if(apOrbit == NULL)
+		return;
+
+	if(abDestroyBillboard && apOrbit->mpIconBillboard && apOrbit->mpMap && apOrbit->mpMap->GetWorld())
+		apOrbit->mpMap->GetWorld()->DestroyBillboard(apOrbit->mpIconBillboard);
+	apOrbit->mpIconBillboard = NULL;
+	hplDelete(apOrbit);
 }
 
 void cLuxSatelliteHandler::UpdateOrbit(cLuxSatelliteOrbit *apOrbit, double afJulianDateUtc)
@@ -827,19 +936,18 @@ void cLuxSatelliteHandler::UpdateOrbit(cLuxSatelliteOrbit *apOrbit, double afJul
 	if(IsFinite(vHplPositionMetres) == false || IsFinite(vHplVelocityMetresPerSecond) == false)
 		return;
 
+	if(apOrbit->mpIconBillboard)
+	{
+		const cVector3f vIconPosition((float)vHplPositionMetres.x,
+								  (float)vHplPositionMetres.y,
+								  (float)vHplPositionMetres.z);
+		apOrbit->mpIconBillboard->SetWorldPosition(vIconPosition);
+	}
+
 	iLuxEntity *pEntity = apOrbit->mpMap->GetEntityByName(apOrbit->msName);
 	iEntity3D *pAttachEntity = pEntity ? pEntity->GetAttachEntity() : NULL;
 	if(pAttachEntity == NULL)
-	{
-		if(apOrbit->mbMissingEntityWarningShown == false)
-		{
-			Warning("SGP4 orbit '%s' is registered but no same-named map entity with a transform exists.\n",
-					apOrbit->msName.c_str());
-			apOrbit->mbMissingEntityWarningShown = true;
-		}
 		return;
-	}
-	apOrbit->mbMissingEntityWarningShown = false;
 
 	cMatrixf mtxTransform;
 	if(BuildHplTransform(vHplPositionMetres, vHplVelocityMetresPerSecond,

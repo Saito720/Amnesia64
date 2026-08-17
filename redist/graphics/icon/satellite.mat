@@ -1,0 +1,6 @@
+<Material>
+    <Main BlendMode="Alpha" DepthTest="true" PhysicsMaterial="Silent" Type="translucent" UseAlpha="false" />
+    <TextureUnits>
+        <Diffuse AnimFrameTime="0" AnimMode="None" Compress="false" File="satellite.dds" MipMaps="true" Type="2D" Wrap="ClampToEdge" />
+    </TextureUnits>
+</Material>

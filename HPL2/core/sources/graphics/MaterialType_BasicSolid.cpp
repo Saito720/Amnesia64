@@ -61,6 +61,10 @@ namespace hpl {
 	#define kVar_avEllipsoidNormalScale			9
 	#define kVar_avOceanSpecularParams			10
 	#define kVar_afPlanetaryTwilightStrength	11
+	#define kVar_avWaterTint					12
+	#define kVar_afWaterTintStrength			13
+	#define kVar_afWaterSaturation			14
+	#define kVar_afWaterBrightness			15
 
 
 	//------------------------------
@@ -78,8 +82,9 @@ namespace hpl {
 	#define eFeature_Diffuse_EllipsoidNormals	eFlagBit_9
 	#define eFeature_Diffuse_OceanSpecular		eFlagBit_10
 	#define eFeature_Diffuse_PlanetaryTwilight	eFlagBit_11
+	#define eFeature_Diffuse_WaterMask			eFlagBit_12
 		
-	#define kDiffuseFeatureNum 12
+	#define kDiffuseFeatureNum 13
 
 	static cProgramComboFeature vDiffuseFeatureVec[] =
 	{
@@ -95,6 +100,7 @@ namespace hpl {
 		cProgramComboFeature("UseEllipsoidNormals", kPC_VertexBit | kPC_FragmentBit),
 		cProgramComboFeature("UseOceanSpecular", kPC_FragmentBit, eFeature_Diffuse_Specular),
 		cProgramComboFeature("UsePlanetaryTwilight", kPC_FragmentBit),
+		cProgramComboFeature("UseWaterMask", kPC_FragmentBit),
 	};
 
 	static bool UsesOceanSpecular(cMaterial *apMaterial,
@@ -297,6 +303,7 @@ namespace hpl {
 		AddUsedTexture(eMaterialTexture_DissolveAlpha);
 		AddUsedTexture(eMaterialTexture_CubeMap);
 		AddUsedTexture(eMaterialTexture_CubeMapAlpha);
+		AddUsedTexture(eMaterialTexture_WaterMask);
 
 		mbHasTypeSpecifics[eMaterialRenderMode_Diffuse] = true;
 
@@ -314,6 +321,10 @@ namespace hpl {
 		AddVarFloat("SpecularGlossBias", 0.0f, "Offset applied to the specular map gloss channel before lighting.");
 		AddVarFloat("OceanSpecularBroadStrength", 0.0f, "Strength of the broad low-energy ocean glint shoulder.");
 		AddVarFloat("PlanetaryTwilightStrength", 0.0f, "Low-energy atmospheric sky irradiance around a planetary terminator; zero disables it.");
+		AddVarVec3("WaterTint", cVector3f(1.0f), "Multiplicative RGB tint applied only where the water mask is white.");
+		AddVarFloat("WaterTintStrength", 0.0f, "Blend strength of WaterTint; zero applies no tint and one applies the full tint.");
+		AddVarFloat("WaterSaturation", 1.0f, "Water-only color saturation; zero is grayscale and one preserves the source saturation.");
+		AddVarFloat("WaterBrightness", 1.0f, "Water-only diffuse brightness multiplier.");
 	}
 	
 	//--------------------------------------------------------------------------
@@ -379,6 +390,10 @@ namespace hpl {
 		mpProgramManager->AddGenerateProgramVariableId("avEllipsoidNormalScale", kVar_avEllipsoidNormalScale,eMaterialRenderMode_Diffuse);
 		mpProgramManager->AddGenerateProgramVariableId("avOceanSpecularParams", kVar_avOceanSpecularParams,eMaterialRenderMode_Diffuse);
 		mpProgramManager->AddGenerateProgramVariableId("afPlanetaryTwilightStrength", kVar_afPlanetaryTwilightStrength,eMaterialRenderMode_Diffuse);
+		mpProgramManager->AddGenerateProgramVariableId("avWaterTint", kVar_avWaterTint,eMaterialRenderMode_Diffuse);
+		mpProgramManager->AddGenerateProgramVariableId("afWaterTintStrength", kVar_afWaterTintStrength,eMaterialRenderMode_Diffuse);
+		mpProgramManager->AddGenerateProgramVariableId("afWaterSaturation", kVar_afWaterSaturation,eMaterialRenderMode_Diffuse);
+		mpProgramManager->AddGenerateProgramVariableId("afWaterBrightness", kVar_afWaterBrightness,eMaterialRenderMode_Diffuse);
 
 		mpProgramManager->AddGenerateProgramVariableId("a_mtxUV",kVar_a_mtxUV,eMaterialRenderMode_Illumination);
 		mpProgramManager->AddGenerateProgramVariableId("afColorMul",kVar_afColorMul,eMaterialRenderMode_Illumination);
@@ -466,6 +481,13 @@ namespace hpl {
 		}
 
 		//////////////////////////////////
+		//Optional water-only diffuse adjustments
+		if(apMaterial->GetTexture(eMaterialTexture_WaterMask))
+		{
+			apMaterial->SetHasSpecificSettings(eMaterialRenderMode_Diffuse,true);
+		}
+
+		//////////////////////////////////
 		//Illuminations specifics
 		if(apMaterial->GetTexture(eMaterialTexture_Illumination))
 		{
@@ -513,6 +535,7 @@ namespace hpl {
 			case 3: return apMaterial->GetTexture(eMaterialTexture_Height);
 			case 4: return apMaterial->GetTexture(eMaterialTexture_CubeMap);
 			case 5: return apMaterial->GetTexture(eMaterialTexture_CubeMapAlpha);
+			case 6: return apMaterial->GetTexture(eMaterialTexture_WaterMask);
 			}
 		}
 		////////////////////////////
@@ -604,6 +627,10 @@ namespace hpl {
 			if(pVars->mfPlanetaryTwilightStrength > kEpsilonf)
 			{
 				lFlags |= eFeature_Diffuse_PlanetaryTwilight;
+			}
+			if(apMaterial->GetTexture(eMaterialTexture_WaterMask))
+			{
+				lFlags |= eFeature_Diffuse_WaterMask;
 			}
 			
 
@@ -707,6 +734,17 @@ namespace hpl {
 						cMath::Max(0.0f, cMath::Min(pVars->mfPlanetaryTwilightStrength, 1.0f)));
 				}
 
+				if(apMaterial->GetTexture(eMaterialTexture_WaterMask))
+				{
+					apProgram->SetVec3f(kVar_avWaterTint, pVars->mvWaterTint);
+					apProgram->SetFloat(kVar_afWaterTintStrength,
+						cMath::Max(0.0f, cMath::Min(pVars->mfWaterTintStrength, 1.0f)));
+					apProgram->SetFloat(kVar_afWaterSaturation,
+						cMath::Max(0.0f, cMath::Min(pVars->mfWaterSaturation, 2.0f)));
+					apProgram->SetFloat(kVar_afWaterBrightness,
+						cMath::Max(0.0f, pVars->mfWaterBrightness));
+				}
+
 				/////////////////////////
 				//Parallax
 				if(apMaterial->GetTexture(eMaterialTexture_Height) && iRenderer::GetParallaxEnabled())
@@ -793,6 +831,10 @@ namespace hpl {
 		pVars->mfSpecularGlossBias = apVars->GetVarFloat("SpecularGlossBias", 0.0f);
 		pVars->mfOceanSpecularBroadStrength = apVars->GetVarFloat("OceanSpecularBroadStrength", 0.0f);
 		pVars->mfPlanetaryTwilightStrength = apVars->GetVarFloat("PlanetaryTwilightStrength", 0.0f);
+		pVars->mvWaterTint = apVars->GetVarVector3f("WaterTint", cVector3f(1.0f));
+		pVars->mfWaterTintStrength = apVars->GetVarFloat("WaterTintStrength", 0.0f);
+		pVars->mfWaterSaturation = apVars->GetVarFloat("WaterSaturation", 1.0f);
+		pVars->mfWaterBrightness = apVars->GetVarFloat("WaterBrightness", 1.0f);
 
 	}
 
@@ -816,6 +858,10 @@ namespace hpl {
 		apVars->AddVarFloat("SpecularGlossBias", pVars->mfSpecularGlossBias);
 		apVars->AddVarFloat("OceanSpecularBroadStrength", pVars->mfOceanSpecularBroadStrength);
 		apVars->AddVarFloat("PlanetaryTwilightStrength", pVars->mfPlanetaryTwilightStrength);
+		apVars->AddVarVector3f("WaterTint", pVars->mvWaterTint);
+		apVars->AddVarFloat("WaterTintStrength", pVars->mfWaterTintStrength);
+		apVars->AddVarFloat("WaterSaturation", pVars->mfWaterSaturation);
+		apVars->AddVarFloat("WaterBrightness", pVars->mfWaterBrightness);
 	}
 
 	//--------------------------------------------------------------------------

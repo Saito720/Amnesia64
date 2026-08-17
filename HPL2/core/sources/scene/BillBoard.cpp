@@ -55,6 +55,9 @@ namespace hpl {
 		
 		mvSize = avSize;
 		mvAxis = cVector3f(0,1,0);
+		mbUsePointRollTarget = false;
+		mvPointRollWorldTarget = 0;
+		mvPointRollLocalDirection = cVector2f(0,1);
 
 		mColor = cColor(1,1,1,1);
 		mfForwardOffset =0;
@@ -179,6 +182,24 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
+	void cBillboard::SetPointRollTarget(const cVector3f& avWorldTarget, const cVector2f& avLocalDirection)
+	{
+		mvPointRollWorldTarget = avWorldTarget;
+		mvPointRollLocalDirection = avLocalDirection;
+		mbUsePointRollTarget = mvPointRollLocalDirection.Normalize() > 1e-08f;
+		SetTransformUpdated();
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cBillboard::ClearPointRollTarget()
+	{
+		mbUsePointRollTarget = false;
+		SetTransformUpdated();
+	}
+
+	//-----------------------------------------------------------------------
+
 	void cBillboard::SetColor(const cColor &aColor)
 	{
 		if(mColor == aColor) return;
@@ -264,8 +285,31 @@ namespace hpl {
 		if(mType == eBillboardType_Point)
 		{
 			vForward = vCameraForward;
-			vRight = cMath::Vector3Cross(apFrustum->GetViewMatrix().GetUp(), vForward);
-			vUp = cMath::Vector3Cross(vForward,vRight);
+
+			bool bRollTargetApplied = false;
+			if(mbUsePointRollTarget)
+			{
+				// Project the target direction onto the camera-facing billboard
+				// plane. When target and camera directions coincide, roll is
+				// undefined and the ordinary camera-up orientation is used.
+				cVector3f vTargetDirection = mvPointRollWorldTarget - GetWorldPosition();
+				vTargetDirection -= vForward * cMath::Vector3Dot(vTargetDirection, vForward);
+				if(vTargetDirection.Normalize() > 1e-06f)
+				{
+					const cVector3f vTargetPerpendicular = cMath::Vector3Cross(vForward, vTargetDirection);
+					const float fLocalX = mvPointRollLocalDirection.x;
+					const float fLocalY = mvPointRollLocalDirection.y;
+					vRight = vTargetDirection * fLocalX - vTargetPerpendicular * fLocalY;
+					vUp = vTargetDirection * fLocalY + vTargetPerpendicular * fLocalX;
+					bRollTargetApplied = true;
+				}
+			}
+
+			if(bRollTargetApplied == false)
+			{
+				vRight = cMath::Vector3Cross(apFrustum->GetViewMatrix().GetUp(), vForward);
+				vUp = cMath::Vector3Cross(vForward,vRight);
+			}
 		}
 		//////////////////////
 		// Axis

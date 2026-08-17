@@ -525,6 +525,7 @@ namespace hpl {
 			case eMaterialTexture_CubeMap: return "CubeMap";
 			case eMaterialTexture_DissolveAlpha: return "DissolveAlpha";
 			case eMaterialTexture_CubeMapAlpha: return "CubeMapAlpha";
+			case eMaterialTexture_WaterMask: return "WaterMask";
 		}
 
 		return "";

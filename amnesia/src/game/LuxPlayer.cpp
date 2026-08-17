@@ -48,6 +48,93 @@
 
 #include "LuxAreaNodes.h"
 
+#include "graphics/Material.h"
+#include "graphics/MaterialType.h"
+#include "math/BoundingVolume.h"
+#include "scene/LightSun.h"
+#include "scene/MeshEntity.h"
+#include "scene/SubMeshEntity.h"
+#include "scene/World.h"
+
+
+namespace
+{
+	const float kSpectatorCameraAtmosphereMargin = 1000.0f;
+	const float kSpectatorCameraBoundsRounding = 100000.0f;
+
+	bool MeshUsesMaterialType(cMeshEntity *apMeshEntity, const tString& asMaterialType)
+	{
+		if(apMeshEntity == NULL) return false;
+
+		for(int i = 0; i < apMeshEntity->GetSubMeshEntityNum(); ++i)
+		{
+			cSubMeshEntity *pSubMeshEntity = apMeshEntity->GetSubMeshEntity(i);
+			cMaterial *pMaterial = pSubMeshEntity ? pSubMeshEntity->GetMaterial() : NULL;
+			if(pMaterial && pMaterial->GetType() && pMaterial->GetType()->GetName() == asMaterialType)
+				return true;
+		}
+
+		return false;
+	}
+
+	float GetRadialExtentFromOrigin(cBoundingVolume *apBoundingVolume)
+	{
+		if(apBoundingVolume == NULL) return 0.0f;
+
+		const cVector3f& vMin = apBoundingVolume->GetMin();
+		const cVector3f& vMax = apBoundingVolume->GetMax();
+		float fRadius = cMath::Max(cMath::Abs(vMin.x), cMath::Abs(vMax.x));
+		fRadius = cMath::Max(fRadius, cMath::Max(cMath::Abs(vMin.y), cMath::Abs(vMax.y)));
+		fRadius = cMath::Max(fRadius, cMath::Max(cMath::Abs(vMin.z), cMath::Abs(vMax.z)));
+		return fRadius;
+	}
+
+	float GetAtmosphereRadius(cWorld *apWorld)
+	{
+		if(apWorld == NULL) return 0.0f;
+
+		float fAtmosphereRadius = 0.0f;
+		cMeshEntityIterator staticIt = apWorld->GetStaticMeshEntityIterator();
+		while(staticIt.HasNext())
+		{
+			cMeshEntity *pMeshEntity = staticIt.Next();
+			if(MeshUsesMaterialType(pMeshEntity, "atmosphere"))
+				fAtmosphereRadius = cMath::Max(fAtmosphereRadius,
+					GetRadialExtentFromOrigin(pMeshEntity->GetBoundingVolume()));
+		}
+
+		cMeshEntityIterator dynamicIt = apWorld->GetDynamicMeshEntityIterator();
+		while(dynamicIt.HasNext())
+		{
+			cMeshEntity *pMeshEntity = dynamicIt.Next();
+			if(MeshUsesMaterialType(pMeshEntity, "atmosphere"))
+				fAtmosphereRadius = cMath::Max(fAtmosphereRadius,
+					GetRadialExtentFromOrigin(pMeshEntity->GetBoundingVolume()));
+		}
+
+		return fAtmosphereRadius;
+	}
+
+	cVector3f GetSolarDirection(cWorld *apWorld)
+	{
+		if(apWorld)
+		{
+			cLightListIterator lightIt = apWorld->GetLightIterator();
+			while(lightIt.HasNext())
+			{
+				iLight *pLight = lightIt.Next();
+				if(pLight && pLight->GetLightType() == eLightType_Sun && pLight->IsActive())
+				{
+					cVector3f vSunDirection = static_cast<cLightSun*>(pLight)->GetSunDirection();
+					if(vSunDirection.Normalize() > 0.0f) return vSunDirection;
+				}
+			}
+		}
+
+		return cVector3f(0, 0, 1);
+	}
+}
+
 
 //////////////////////////////////////////////////////////////////////////
 // CONSTRUCTORS
@@ -69,6 +156,10 @@ cLuxPlayer::cLuxPlayer() : iLuxUpdateable("LuxPlayer"), iLuxCollideCallbackConta
 	mbSpectatorMode = false;
 	mbFreeCameraActive = false;
 	mfFreeCameraSpeed = 0.1f;
+	mbSpectatorCameraBoundsActive = false;
+	mfSpectatorCameraMinRadius = 0.0f;
+	mfSpectatorCameraMaxRadius = 0.0f;
+	mvSpectatorCameraFallbackDirection = cVector3f(0, 0, 1);
 
 	//TODO: More setup?
 	cVector2f vScreenSize = gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeFloat();
@@ -336,6 +427,10 @@ void cLuxPlayer::Reset()
 	mbSpectatorMode = false;
 	mbFreeCameraActive = false;
 	mfFreeCameraSpeed = 0.1f;
+	mbSpectatorCameraBoundsActive = false;
+	mfSpectatorCameraMinRadius = 0.0f;
+	mfSpectatorCameraMaxRadius = 0.0f;
+	mvSpectatorCameraFallbackDirection = cVector3f(0, 0, 1);
 
 	////////////////////////
 	// Reset Helpers
@@ -353,7 +448,11 @@ void cLuxPlayer::OnStart()
 
 void cLuxPlayer::Update(float afTimeStep)
 {
-	if(mbSpectatorMode) return;
+	if(mbSpectatorMode)
+	{
+		ClampSpectatorCameraToBounds();
+		return;
+	}
 
 	////////////////////////
 	// Update current move state
@@ -710,6 +809,8 @@ void cLuxPlayer::Move(eCharDir aDir, float afMul)
 		{
 			mpCamera->MoveRight(mfFreeCameraSpeed * afMul);
 		}
+
+		ClampSpectatorCameraToBounds();
 
 		return;
 	}
@@ -1166,18 +1267,91 @@ void cLuxPlayer::SetSpectatorMode(bool abX)
 		mpCamera->SetMoveMode(eCameraMoveMode_Fly);
 		mpCamera->SetPitchLimits(0, 0);
 		mpCamera->SetYawLimits(0, 0);
-		mpCamera->SetPosition(cVector3f(0, 0, 0));
 		mpCamera->SetPitch(0);
 		mpCamera->SetYaw(0);
 		mpCamera->SetRoll(0);
+		ConfigureSpectatorCameraBounds();
 	}
 	else
 	{
+		mbSpectatorCameraBoundsActive = false;
 		mpCamera->SetMoveMode(eCameraMoveMode_Walk);
 		mpCamera->SetPitchLimits(-cMath::ToRad(70), cMath::ToRad(70));
 		mpCamera->SetYawLimits(0, 0);
 		SetFreeCamActive(false);
 	}
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayer::ConfigureSpectatorCameraBounds()
+{
+	mbSpectatorCameraBoundsActive = false;
+	mfSpectatorCameraMinRadius = 0.0f;
+	mfSpectatorCameraMaxRadius = 0.0f;
+
+	cLuxMap *pMap = gpBase->mpMapHandler ? gpBase->mpMapHandler->GetCurrentMap() : NULL;
+	cWorld *pWorld = pMap ? pMap->GetWorld() : NULL;
+	const float fAtmosphereRadius = GetAtmosphereRadius(pWorld);
+	if(fAtmosphereRadius <= 0.0f)
+	{
+		Warning("Could not find an atmosphere mesh; spectator camera radial bounds are disabled.\n");
+		mpCamera->SetPosition(cVector3f(0, 0, 0));
+		return;
+	}
+
+	const float fUnroundedMinRadius = fAtmosphereRadius + mpCamera->GetNearClipPlane() +
+		kSpectatorCameraAtmosphereMargin;
+	mfSpectatorCameraMinRadius = std::ceil(fUnroundedMinRadius /
+		kSpectatorCameraBoundsRounding) * kSpectatorCameraBoundsRounding;
+	mfSpectatorCameraMaxRadius = mpCamera->GetFarClipPlane();
+
+	if(mfSpectatorCameraMinRadius >= mfSpectatorCameraMaxRadius)
+	{
+		Warning("Spectator camera radial bounds are invalid: minimum %.0f, maximum %.0f.\n",
+			mfSpectatorCameraMinRadius, mfSpectatorCameraMaxRadius);
+		mpCamera->SetPosition(cVector3f(0, 0, 0));
+		return;
+	}
+
+	mbSpectatorCameraBoundsActive = true;
+	mvSpectatorCameraFallbackDirection = GetSolarDirection(pWorld);
+	const float fInitialRadius = (mfSpectatorCameraMinRadius + mfSpectatorCameraMaxRadius) * 0.5f;
+	const cVector3f vInitialPosition = mvSpectatorCameraFallbackDirection * fInitialRadius;
+	mpCamera->SetPosition(vInitialPosition);
+
+	cVector3f vAngles = cMath::GetAngleFromPoints3D(vInitialPosition, cVector3f(0, 0, 0));
+	if(vAngles.x > kPif) vAngles.x -= k2Pif;
+	mpCamera->SetYaw(vAngles.y);
+	mpCamera->SetPitch(vAngles.x);
+	mpCamera->SetRoll(0.0f);
+
+	Log("Spectator camera radial bounds: atmosphere %.0f, minimum %.0f, maximum %.0f, start %.0f.\n",
+		fAtmosphereRadius, mfSpectatorCameraMinRadius, mfSpectatorCameraMaxRadius, fInitialRadius);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayer::ClampSpectatorCameraToBounds()
+{
+	if(mbSpectatorMode == false || mbSpectatorCameraBoundsActive == false) return;
+
+	cVector3f vPosition = mpCamera->GetPosition();
+	const float fRadius = vPosition.Length();
+	if(fRadius <= 0.001f)
+	{
+		mpCamera->SetPosition(mvSpectatorCameraFallbackDirection * mfSpectatorCameraMinRadius);
+		return;
+	}
+
+	float fClampedRadius = fRadius;
+	if(fClampedRadius < mfSpectatorCameraMinRadius)
+		fClampedRadius = mfSpectatorCameraMinRadius;
+	else if(fClampedRadius > mfSpectatorCameraMaxRadius)
+		fClampedRadius = mfSpectatorCameraMaxRadius;
+
+	if(fClampedRadius != fRadius)
+		mpCamera->SetPosition(vPosition * (fClampedRadius / fRadius));
 }
 
 //-----------------------------------------------------------------------

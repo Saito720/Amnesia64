@@ -47,6 +47,7 @@ public:
 	void OnStart();
 	void Update(float afTimeStep);
 	void Reset();
+	void DestroyWorldEntities(cLuxMap *apMap);
 
 	void OnDraw(float afFrameTime);
 

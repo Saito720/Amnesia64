@@ -125,6 +125,44 @@ vec3 Extinction(vec2 avOpticalDepth)
 		vec3(afMieExtinction * avOpticalDepth.y);
 }
 
+float AverageSegmentTransmittance(float afOpticalDepth)
+{
+	// Average exp(-tau) from the near to far edge of a segment. Use the
+	// series expansion close to zero to avoid cancellation in 1 - exp(-tau).
+	if(afOpticalDepth < 0.001)
+		return 1.0 - 0.5 * afOpticalDepth +
+			afOpticalDepth * afOpticalDepth / 6.0;
+
+	return (1.0 - exp(-afOpticalDepth)) / afOpticalDepth;
+}
+
+vec3 AverageSegmentTransmittance(vec3 avOpticalDepth)
+{
+	return vec3(
+		AverageSegmentTransmittance(avOpticalDepth.r),
+		AverageSegmentTransmittance(avOpticalDepth.g),
+		AverageSegmentTransmittance(avOpticalDepth.b));
+}
+
+float TerminatorChromaAt(vec3 avPosition)
+{
+	vec3 vNormal = normalize(avPosition / (avGroundRadii * avGroundRadii));
+	float fSunCosine = dot(vNormal, avSunDirection);
+	return 1.0 - smoothstep(
+		0.139173, 0.258819, abs(fSunCosine));
+}
+
+vec3 ViewTransmissionForSolarGeometry(vec3 avTransmission, vec3 avPosition)
+{
+	// A long camera path may reduce brightness, but it must not manufacture a
+	// sunset. Preserve spectral reddening only where the local solar elevation
+	// is genuinely near the terminator (roughly within 15 degrees).
+	float fTerminatorChroma = TerminatorChromaAt(avPosition);
+	float fNeutralTransmission = dot(avTransmission,
+		vec3(0.2126, 0.7152, 0.0722));
+	return mix(vec3(fNeutralTransmission), avTransmission, fTerminatorChroma);
+}
+
 @ifdef AtmosphereScatteringPass
 vec2 OpticalDepthAlongView(vec3 avOrigin, vec3 avDirection,
 	float afRayStart, float afRayEnd)
@@ -317,18 +355,30 @@ void main()
 		float fT = fRayStart + (float(i) + 0.5) * fStep;
 		vec3 vPosition = avCameraPosition + vRayDirection * fT;
 		vec2 vDensity = DensityAt(vPosition);
-		vViewOpticalDepth += vDensity * fStep;
+		vec2 vStepOpticalDepth = vDensity * fStep;
 
 		@ifdef AtmosphereScatteringPass
 		vec2 vSunOpticalDepth = OpticalDepthToSun(vPosition);
-		if(vSunOpticalDepth.x < 0.0)
-			continue;
-
-		vec3 vTransmittance = exp(-Extinction(
-			vViewOpticalDepth + vSunOpticalDepth));
-		vRayleighIntegral += vTransmittance * (vDensity.x * fStep);
-		vMieIntegral += vTransmittance * (vDensity.y * fStep);
+		if(vSunOpticalDepth.x >= 0.0)
+		{
+			// Treat density and solar transmission as constant over this segment,
+			// then integrate the camera-path extinction analytically. Unlike a
+			// midpoint estimate, this remains accurate when a dense grazing step is
+			// optically thick in blue but only moderately thick in red.
+			vec3 vStepExtinction = Extinction(vStepOpticalDepth);
+			vec3 vViewTransmissionAtStart =
+				exp(-Extinction(vViewOpticalDepth));
+			vec3 vSunTransmission = exp(-Extinction(vSunOpticalDepth));
+			vec3 vTransmittance = vViewTransmissionAtStart *
+				vSunTransmission *
+				AverageSegmentTransmittance(vStepExtinction);
+			vRayleighIntegral += vTransmittance *
+				(vDensity.x * fStep);
+			vMieIntegral += vTransmittance * (vDensity.y * fStep);
+		}
 		@endif
+
+		vViewOpticalDepth += vStepOpticalDepth;
 	}
 
 	@ifdef AtmosphereScatteringPass
@@ -489,7 +539,9 @@ void main()
 					vCloudIlluminance += vSunsetColor *
 						(afCloudTwilightStrength * 1.75 * fSunsetWeight);
 					vec3 vCloudLight = avSunColor * vCloudIlluminance;
-					vCloudScatteredLight += vAtmosphereTransmittanceToCloud *
+					vec3 vCloudViewTransmission = ViewTransmissionForSolarGeometry(
+						vAtmosphereTransmittanceToCloud, vPosition);
+					vCloudScatteredLight += vCloudViewTransmission *
 						fFrontTransmittance * fStepOpacity * vCloudLight;
 				@endif
 
@@ -525,8 +577,8 @@ void main()
 	vec3 vMultipleScatteredLight = vScatteringSource *
 		(fIsotropicPhase * afMultipleScatteringStrength);
 	vec3 vScatteredLight = avSunColor * afExposure *
-		(vSingleScatteredLight + vMultipleScatteredLight);
-	vScatteredLight += vCloudScatteredLight;
+		(vSingleScatteredLight + vMultipleScatteredLight) +
+		vCloudScatteredLight;
 
 	// Additive pass. Alpha remains nonzero so HPL's translucent alpha test keeps
 	// the fragment; blend mode affects RGB independently of that test.
@@ -566,8 +618,14 @@ void main()
 		}
 	}
 
-	// Multiplicative pass: destination RGB is filtered independently per
-	// wavelength, including cloud extinction.
+	float fChromaAnchorT = bGroundVisible ? vGroundHit.x :
+		clamp(-dot(avCameraPosition, vRayDirection), fRayStart, fRayEnd);
+	vec3 vChromaAnchor = avCameraPosition + vRayDirection * fChromaAnchorT;
+	vViewTransmittance = ViewTransmissionForSolarGeometry(
+		vViewTransmittance, vChromaAnchor);
+
+	// Multiplicative pass: view-path extinction dims at all angles, while its
+	// chromatic shift is gated by the actual local solar terminator.
 	gl_FragColor = vec4(vViewTransmittance, 1.0);
 	@endif
 }

@@ -197,6 +197,8 @@ namespace hpl {
 		void RenderSSAO();
 		void RenderEdgeSmooth();
 		void RenderDeferredSkyBox();
+		void RenderSolidSky();
+		void RenderSceneExposure();
 		
 		void SetupLightsAndRenderQueries();
 		void InitLightRendering();
@@ -316,6 +318,8 @@ namespace hpl {
 		std::vector<cDeferredLight*> mvSortedLights[eDeferredLightList_LastEnum];
 
 		iGpuProgram *mpSkyBoxProgram;
+		iGpuProgram *mpSolidSkyProgram;
+		iGpuProgram *mpSceneExposureProgram;
 		iGpuProgram *mpSunDiskProgram;
 		iGpuProgram *mpLightStencilProgram;
 		iGpuProgram *mpLightBoxProgram[2];//1=SSAO used, 0=no SSAO

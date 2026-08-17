@@ -76,6 +76,7 @@ void cLevelEditorWorld::LoadWorldObjects(cXmlElement* apWorldObjectsElement)
 	SetSkyboxActive(pMapData->GetAttributeBool("SkyBoxActive", false));
 	SetSkyboxTexture(pMapData->GetAttributeString("SkyBoxTexture"));
 	SetSkyboxColor(pMapData->GetAttributeColor("SkyBoxColor", cColor(1)));
+	SetSceneExposure(pMapData->GetAttributeFloat("SceneExposure", 1.0f));
 
 	//////////////////////////////////////////////////////
 	// Load global fog params
@@ -139,8 +140,10 @@ void cLevelEditorWorld::SaveWorldObjects(cXmlElement* apWorldObjectsElement, tEn
 	// Save skybox params
 	cXmlElement* pMapData = apWorldObjectsElement->GetParent()->ToElement();
 	pMapData->SetAttributeBool("SkyBoxActive", GetSkyboxActive());
-	pMapData->SetAttributeString("SkyBoxTexture", cString::To8Char(mpEditor->GetPathRelToWD(GetSkyboxTexture())));
+	const tString& sSkyboxTexture = GetSkyboxTexture();
+	pMapData->SetAttributeString("SkyBoxTexture", sSkyboxTexture.empty() ? "" : cString::To8Char(mpEditor->GetPathRelToWD(sSkyboxTexture)));
 	pMapData->SetAttributeColor("SkyBoxColor", GetSkyboxColor());
+	pMapData->SetAttributeFloat("SceneExposure", GetSceneExposure());
 
 	//////////////////////////////////////////////////////
 	// Save global fog params

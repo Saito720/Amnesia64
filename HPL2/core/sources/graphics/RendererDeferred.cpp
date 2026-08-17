@@ -170,6 +170,10 @@ namespace hpl {
 	#define kVar_avLightDirection					23
 	#define kVar_afSunHighlightKnee				24
 	#define kVar_afSunDiskCosRadius				25
+	#define kVar_avSkyColor						26
+	#define kVar_afSceneExposure				27
+	#define kVar_afPreserveSolidSky			28
+	#define kVar_avPreservedSkyColor			29
 
 
 	//////////////////////////////////////////////////////////////////////////
@@ -202,6 +206,8 @@ namespace hpl {
 		mlMaxBatchLights = 100;
 
 		mbReflectionTextureCleared = false;
+		mpSolidSkyProgram = NULL;
+		mpSceneExposureProgram = NULL;
 		mpSunDiskProgram = NULL;
 	}
 
@@ -429,6 +435,32 @@ namespace hpl {
 			mpSkyBoxProgram->SetShader(eGpuShaderType_Vertex, pVtxShader);
 			mpSkyBoxProgram->SetShader(eGpuShaderType_Fragment, pFragShader);
 			mpSkyBoxProgram->Link();
+		}
+
+		////////////////////////////////////
+		// Create the textureless solid-sky compositing program.
+		{
+			cParserVarContainer vars;
+			mpSolidSkyProgram = mpGraphics->CreateGpuProgramFromShaders(
+				"DeferredSolidSky", "deferred_base_vtx.glsl",
+				"deferred_solid_sky_frag.glsl", &vars);
+			if(mpSolidSkyProgram)
+				mpSolidSkyProgram->GetVariableAsId("avSkyColor", kVar_avSkyColor);
+		}
+
+		////////////////////////////////////
+		// Create the final scene exposure program.
+		{
+			cParserVarContainer vars;
+			mpSceneExposureProgram = mpGraphics->CreateGpuProgramFromShaders(
+				"DeferredSceneExposure", "deferred_base_vtx.glsl",
+				"deferred_scene_exposure_frag.glsl", &vars);
+			if(mpSceneExposureProgram)
+			{
+				mpSceneExposureProgram->GetVariableAsId("afExposure", kVar_afSceneExposure);
+				mpSceneExposureProgram->GetVariableAsId("afPreserveSolidSky", kVar_afPreserveSolidSky);
+				mpSceneExposureProgram->GetVariableAsId("avPreservedSkyColor", kVar_avPreservedSkyColor);
+			}
 		}
 
 		////////////////////////////////////
@@ -792,6 +824,8 @@ namespace hpl {
 		/////////////////////////
 		//Gpu programs
 		mpGraphics->DestroyGpuProgram(mpSkyBoxProgram);
+		if(mpSolidSkyProgram) mpGraphics->DestroyGpuProgram(mpSolidSkyProgram);
+		if(mpSceneExposureProgram) mpGraphics->DestroyGpuProgram(mpSceneExposureProgram);
 		if(mpSunDiskProgram) mpGraphics->DestroyGpuProgram(mpSunDiskProgram);
 
 		mpProgramManager->DestroyShadersAndPrograms();
@@ -955,6 +989,7 @@ namespace hpl {
 
 		#ifndef kDebug_RenderLightData
 		RenderBasicSkyBox();
+		RenderSolidSky();
 		RenderSunDisks();
 		#endif
 
@@ -963,6 +998,8 @@ namespace hpl {
 		RenderTranslucent();
 
 		RunCallback(eRendererMessage_PostTranslucent);
+
+		RenderSceneExposure();
 
 		if(mbOcclusionTestLargeLights)
 			RetrieveAllLightOcclusionPair(false); //false = we do not stop and wait.
@@ -987,9 +1024,8 @@ namespace hpl {
 		/////////////////////////////
 		mpLowLevelGraphics->SetClearDepth(1);
 
-		// Global Sun lights render as a fullscreen pass and therefore need an
-		// explicit empty-pixel marker in the G-buffer. Only pay for a color clear
-		// in worlds that actually contain visible sunlight.
+		// Fullscreen sky and Sun passes need an explicit empty-pixel marker in the
+		// G-buffer. Only pay for a color clear in worlds that use either pass.
 		bool bHasVisibleSun = false;
 		tLightList *pLights = mpCurrentWorld->GetLightList();
 		for(tLightListIt it = pLights->begin(); it != pLights->end(); ++it)
@@ -1002,7 +1038,9 @@ namespace hpl {
 			}
 		}
 
-		if(bHasVisibleSun)
+		const bool bHasSolidSky = mpCurrentWorld->GetSkyBoxActive() &&
+			mpCurrentWorld->GetSkyBoxTexture()==NULL;
+		if(bHasVisibleSun || bHasSolidSky)
 		{
 			const cColor oldClearColor = mpCurrentSettings->mClearColor;
 			mpLowLevelGraphics->SetClearColor(cColor(0,0,0,0));
@@ -2666,6 +2704,94 @@ namespace hpl {
 
 		SetNormalFrustumProjection();
 		SetCullMode(eCullMode_Clockwise);
+		SetDepthTest(true);
+
+		END_RENDER_PASS();
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cRendererDeferred::RenderSceneExposure()
+	{
+		if(mpSceneExposureProgram == NULL || mpCurrentWorld == NULL ||
+			mpCurrentSettings->mbIsReflection ||
+			fabs(mpCurrentWorld->GetSceneExposure() - 1.0f) < 0.0001f)
+		{
+			return;
+		}
+
+		START_RENDER_PASS(SceneExposure);
+
+		SetAccumulationBuffer();
+		CopyFrameBufferToTexure(mpRefractionTexture, 0, mvScreenSize, 0, true);
+
+		SetStencilActive(false);
+		SetDepthTest(false);
+		SetDepthWrite(false);
+		SetBlendMode(eMaterialBlendMode_None);
+		SetAlphaMode(eMaterialAlphaMode_Solid);
+		SetChannelMode(eMaterialChannelMode_RGBA);
+		SetCullMode(eCullMode_CounterClockwise);
+		SetScissorActive(false);
+		SetFlatProjectionMinMax(cVector3f(mfFarLeft,mfFarBottom,-mfFarPlane*1.5f),
+							cVector3f(mfFarRight,mfFarTop,mfFarPlane*1.5f));
+		SetVertexBuffer(mpFullscreenLightQuad);
+		SetTexture(0, mpRefractionTexture);
+		SetTexture(1, GetBufferTexture(2));
+		SetTextureRange(NULL, 2);
+		SetProgram(mpSceneExposureProgram);
+
+		mpSceneExposureProgram->SetFloat(kVar_afSceneExposure, mpCurrentWorld->GetSceneExposure());
+		const bool bPreserveSolidSky = mpCurrentWorld->GetSkyBoxActive() &&
+			mpCurrentWorld->GetSkyBoxTexture() == NULL;
+		mpSceneExposureProgram->SetFloat(kVar_afPreserveSolidSky, bPreserveSolidSky ? 1.0f : 0.0f);
+		mpSceneExposureProgram->SetColor4f(kVar_avPreservedSkyColor, mpCurrentWorld->GetSkyBoxColor());
+		DrawCurrent();
+
+		SetTexture(0, NULL);
+		SetTexture(1, NULL);
+		SetProgram(NULL);
+		SetNormalFrustumProjection();
+		SetDepthTest(true);
+
+		END_RENDER_PASS();
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cRendererDeferred::RenderSolidSky()
+	{
+		if(mpSolidSkyProgram == NULL || mpCurrentWorld == NULL ||
+			mpCurrentWorld->GetSkyBoxActive() == false ||
+			mpCurrentWorld->GetSkyBoxTexture() != NULL)
+		{
+			return;
+		}
+
+		START_RENDER_PASS(SolidSky);
+
+		SetAccumulationBuffer();
+		SetStencilActive(false);
+		SetDepthTest(false);
+		SetDepthWrite(false);
+		SetBlendMode(eMaterialBlendMode_None);
+		SetAlphaMode(eMaterialAlphaMode_Solid);
+		SetChannelMode(eMaterialChannelMode_RGBA);
+		SetCullMode(eCullMode_CounterClockwise);
+		SetScissorActive(false);
+		SetFlatProjectionMinMax(cVector3f(mfFarLeft,mfFarBottom,-mfFarPlane*1.5f),
+							cVector3f(mfFarRight,mfFarTop,mfFarPlane*1.5f));
+		SetVertexBuffer(mpFullscreenLightQuad);
+		SetTexture(0, GetBufferTexture(2));
+		SetTextureRange(NULL, 1);
+		SetProgram(mpSolidSkyProgram);
+		mpSolidSkyProgram->SetColor4f(kVar_avSkyColor, mpCurrentWorld->GetSkyBoxColor());
+		DrawCurrent();
+
+		SetTexture(0, NULL);
+		SetProgram(NULL);
+		SetNormalFrustumProjection();
+		SetBlendMode(eMaterialBlendMode_None);
 		SetDepthTest(true);
 
 		END_RENDER_PASS();

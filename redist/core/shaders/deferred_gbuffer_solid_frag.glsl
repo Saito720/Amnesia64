@@ -87,6 +87,15 @@ uniform sampler2D aDiffuseMap;
 
 @endif
 
+@ifdef UseWaterMask
+	uniform sampler2D aWaterMaskMap;
+	@define sampler_aWaterMaskMap 6
+	uniform vec3 avWaterTint;
+	uniform float afWaterTintStrength;
+	uniform float afWaterSaturation;
+	uniform float afWaterBrightness;
+@endif
+
 
 //--------------------------------------------------
 
@@ -216,6 +225,16 @@ void main()
 	@else
 		vec2 vTexCoord = gl_TexCoord[0].xy;
 		vec4 vDiffuseColor = SampleDiffuseMap(vTexCoord);
+	@endif
+
+	@ifdef UseWaterMask
+		float fWaterMask = clamp(texture2D(aWaterMaskMap, vTexCoord).r, 0.0, 1.0);
+		float fWaterLuminance = dot(vDiffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+		vec3 vWaterColor = mix(vec3(fWaterLuminance), vDiffuseColor.rgb, clamp(afWaterSaturation, 0.0, 2.0));
+		vWaterColor *= mix(vec3(1.0), avWaterTint,
+			clamp(afWaterTintStrength, 0.0, 1.0));
+		vWaterColor *= max(afWaterBrightness, 0.0);
+		vDiffuseColor.rgb = mix(vDiffuseColor.rgb, vWaterColor, fWaterMask);
 	@endif
 
 	@ifdef UseSpecular

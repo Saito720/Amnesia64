@@ -59,6 +59,7 @@ namespace hpl {
 		mbIsVisible = true;
 
 		mlLargePlaneSurfacePlacement = 0;
+		mlTranslucentSortPriority = 0;
 
 		mpRenderCallback = NULL;
 

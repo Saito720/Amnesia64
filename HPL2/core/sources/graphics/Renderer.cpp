@@ -2032,7 +2032,7 @@ namespace hpl {
 
 	void iRenderer::RenderBasicSkyBox()
 	{
-		if(mpCurrentWorld==NULL || mpCurrentWorld->GetSkyBoxActive()==false) return;
+		if(mpCurrentWorld==NULL || mpCurrentWorld->GetSkyBoxActive()==false || mpCurrentWorld->GetSkyBoxTexture()==NULL) return;
 		START_RENDER_PASS(BasicSkyBox);
 
 		SetDepthTest(true);

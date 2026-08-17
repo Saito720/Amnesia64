@@ -67,25 +67,33 @@ void OnStart()
 }
 ```
 
-`RegisterTLE` returns `true` after the file passes fixed-column, catalog-number,
-checksum, and SGP4 initialization checks. The first non-empty line is the
-satellite name (an optional standard `0 ` prefix is removed), followed by the
-two TLE element lines. The name also identifies the map entity to move, using
-the map's case-insensitive entity lookup. Registering a new element set with
-the same name replaces the previous orbit. Registrations are cleared with the
-map script state.
+`RegisterTLE` accepts one or more consecutive three-line records and returns
+`true` after every record passes fixed-column, catalog-number, checksum, and
+SGP4 initialization checks. Each record starts with the satellite name (an
+optional standard `0 ` prefix is removed), followed by its two TLE element
+lines. Files are registered transactionally, so one bad record does not leave
+a partial catalog active. Registering a new element set with the same name
+replaces the previous orbit. Registrations are cleared with the map script
+state.
 
-Use a dynamic, preferably bodyless `.ent` entity for the satellite. Each game
-update assigns its world transform with +Y away from Earth's center and +Z in
-the prograde direction. Existing script camera views can follow that transform
-through `AttachCameraViewToEntity`.
+Each registered satellite gets a point billboard using
+`graphics/icon/satellite.mat`. It has a fixed 400 km world-space size, so normal
+perspective makes it shrink with distance, while depth testing lets Earth
+occlude it. Satellite icons render after ordinary translucent atmosphere and
+cloud effects so those effects cannot blend over the marker. A same-named map
+entity is optional. The billboard remains flat to each rendering camera and
+uses its free roll axis to keep the icon's signal bands pointed toward Earth's
+center. When a same-named entity is present, each game update also assigns its
+world transform with +Y away from Earth's center and +Z in the prograde
+direction. Existing script camera views can follow that transform through
+`AttachCameraViewToEntity`.
 
 Propagation uses the Vallado/CelesTrak SGP4 reference implementation with
 WGS-72 constants and AFSPC operation mode. SGP4 output remains double precision
 through UTC time arithmetic, TEME-to-ECEF position and velocity conversion,
 kilometre-to-metre conversion, and the ECEF-to-HPL axis mapping `(X, Y, Z) ->
-(X, Z, -Y)`. Conversion to HPL floats occurs only when the entity transform is
-assigned.
+(X, Z, -Y)`. Conversion to HPL floats occurs only when a billboard position or
+entity transform is assigned.
 
 The first active `SunLight` supplies the simulation Julian date, so its fixed
 date mode also makes orbit tests deterministic. If the map has no active Sun,
@@ -229,3 +237,39 @@ ocean; it does not attempt to resolve individual waves. Planetary twilight
 adds the low-energy sky fill and warm sunset tail used by the surface near the
 terminator. Leaving these values at `1`, `0`, `0`, and `0` respectively keeps
 the standard solid-material path.
+
+A grayscale `WaterMask` texture enables independent water-only color controls;
+white selects water and black leaves the source diffuse color untouched:
+
+```xml
+<WaterMask File="earth_landocean.dds" Type="2D" MipMaps="true"
+           Wrap="ClampToEdge" Compress="false" />
+<Var Name="WaterTint" Value="1 1 0.85" />
+<Var Name="WaterTintStrength" Value="1" />
+<Var Name="WaterSaturation" Value="0.55" />
+<Var Name="WaterBrightness" Value="1.2" />
+```
+
+`WaterTintStrength` blends between neutral white and `WaterTint`.
+`WaterSaturation` uses `1` for the source saturation and `0` for grayscale;
+`WaterBrightness` is a water-only diffuse multiplier. All four controls are
+inactive when the material has no `WaterMask` texture.
+
+## Solid background, exposure, and spectator bounds
+
+An active skybox with an empty `SkyBoxTexture` now uses `SkyBoxColor` as a
+deferred solid background instead of drawing sky geometry. It is composited
+only into empty pixels, so translucent atmosphere and clouds cannot feed the
+background color back into the planet.
+
+Maps may set `SceneExposure` on the root `MapData` element. `1` is the identity;
+values slightly above one raise shadows and midtones through a soft shoulder
+that keeps display white fixed. The authored textureless sky color is preserved
+exactly rather than being exposure-adjusted.
+
+In spectator mode, a world containing an `Atmosphere` material receives radial
+camera bounds centered on the world origin. The inner bound clears the
+atmosphere proxy plus the camera near plane and a one-kilometre margin, rounded
+outward to the next 100 km; the outer bound is the camera far clip. The initial
+camera is placed halfway between those limits above the current solar point and
+looks toward the origin. Movement remains otherwise unchanged.

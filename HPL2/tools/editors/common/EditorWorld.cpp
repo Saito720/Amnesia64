@@ -146,6 +146,7 @@ void iEditorWorld::Reset()
 	SetSkyboxTexture("");
 	SetSkyboxColor(cColor(1));
 	SetSkyboxActive(false);
+	SetSceneExposure(1.0f);
 
 	SetShowFog(true);
 	SetFogActive(false);
@@ -1164,6 +1165,14 @@ void iEditorWorld::SetSkyboxColor(const cColor& aX)
 	mSkyboxColor = aX;
 
 	UpdateSkybox();
+}
+
+//----------------------------------------------------------------------------
+
+void iEditorWorld::SetSceneExposure(float afX)
+{
+	mfSceneExposure = afX < 0.0f ? 0.0f : afX;
+	mpWorld->SetSceneExposure(mfSceneExposure);
 }
 
 //----------------------------------------------------------------------------

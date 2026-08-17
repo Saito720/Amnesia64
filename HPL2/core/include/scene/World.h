@@ -204,11 +204,13 @@ namespace hpl {
 		void SetSkyBox(iTexture *apTexture, bool abAutoDestroy);
 		void SetSkyBoxActive(bool abX);
 		void SetSkyBoxColor(const cColor& aColor);
+		void SetSceneExposure(float afExposure){ mfSceneExposure = afExposure < 0.0f ? 0.0f : afExposure; }
 
 		iTexture* GetSkyBoxTexture(){return mpSkyBoxTexture;}
 		iVertexBuffer *GetSkyBoxVertexBuffer(){ return mpSkyBoxVtxBuffer;}
 		bool GetSkyBoxActive(){ return mbSkyBoxActive;}
 		cColor GetSkyBoxColor(){ return mSkyBoxColor;}
+		float GetSceneExposure(){ return mfSceneExposure; }
         
 		///// FOG ////////////////////////////////
 
@@ -393,6 +395,7 @@ namespace hpl {
 		bool mbAutoDestroySkybox;
 		bool mbSkyBoxActive;
 		cColor mSkyBoxColor;
+		float mfSceneExposure;
 
 		bool mbFogActive;
 		bool mbFogCulling;

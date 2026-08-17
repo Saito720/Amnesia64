@@ -372,6 +372,15 @@ namespace hpl {
 	static bool SortFunc_Translucent(iRenderable* apObjectA, iRenderable *apObjectB)
 	{
 		////////////////////////
+		// Explicit priority takes precedence over approximate depth sorting.
+		// Higher values draw later and are useful for depth-tested world markers
+		// that must not be modified by earlier translucent effects.
+		if(apObjectA->GetTranslucentSortPriority() != apObjectB->GetTranslucentSortPriority())
+		{
+			return apObjectA->GetTranslucentSortPriority() < apObjectB->GetTranslucentSortPriority();
+		}
+
+		////////////////////////
 		//If there is a large plane, then need to sort objects according to this first!
 		if(apObjectA->GetLargePlaneSurfacePlacement() != apObjectB->GetLargePlaneSurfacePlacement())
 		{

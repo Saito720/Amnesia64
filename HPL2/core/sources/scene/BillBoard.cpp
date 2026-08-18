@@ -58,6 +58,7 @@ namespace hpl {
 		mbUsePointRollTarget = false;
 		mvPointRollWorldTarget = 0;
 		mvPointRollLocalDirection = cVector2f(0,1);
+		mvCameraSpaceOffset = 0;
 
 		mColor = cColor(1,1,1,1);
 		mfForwardOffset =0;
@@ -135,7 +136,16 @@ namespace hpl {
 	void cBillboard::SetSize(const cVector2f& avSize)
 	{
 		mvSize = avSize;
-		mBoundingVolume.SetSize(cVector3f(mvSize.x, mvSize.y, mvSize.x));
+		if(mvCameraSpaceOffset == cVector2f(0))
+		{
+			mBoundingVolume.SetSize(cVector3f(mvSize.x, mvSize.y, mvSize.x));
+		}
+		else
+		{
+			const float fRadius = mvCameraSpaceOffset.Length() +
+				cMath::Max(mvSize.x, mvSize.y) * 0.5f;
+			mBoundingVolume.SetSize(fRadius * 2.0f);
+		}
 
 		float *pPos = mpVtxBuffer->GetFloatArray(eVertexBufferElement_Position);
 		
@@ -218,6 +228,50 @@ namespace hpl {
 		}
 
 		mpVtxBuffer->UpdateData(eVertexElementFlag_Color0,false);
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cBillboard::SetCameraSpaceOffset(const cVector2f& avOffset)
+	{
+		if(mvCameraSpaceOffset == avOffset) return;
+
+		mvCameraSpaceOffset = avOffset;
+		if(mvCameraSpaceOffset == cVector2f(0))
+		{
+			mBoundingVolume.SetSize(cVector3f(mvSize.x, mvSize.y, mvSize.x));
+		}
+		else
+		{
+			const float fRadius = mvCameraSpaceOffset.Length() +
+				cMath::Max(mvSize.x, mvSize.y) * 0.5f;
+			mBoundingVolume.SetSize(fRadius * 2.0f);
+		}
+		SetTransformUpdated();
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cBillboard::SetUVRect(const cVector2f& avMin, const cVector2f& avMax, bool abFlipVertical)
+	{
+		const float fBottomV = abFlipVertical ? avMax.y : avMin.y;
+		const float fTopV = abFlipVertical ? avMin.y : avMax.y;
+		const cVector3f vTexCoords[4] = {
+			cVector3f(avMax.x, fBottomV, 0),
+			cVector3f(avMin.x, fBottomV, 0),
+			cVector3f(avMin.x, fTopV, 0),
+			cVector3f(avMax.x, fTopV, 0)
+		};
+
+		float *pTexCoords = mpVtxBuffer->GetFloatArray(eVertexBufferElement_Texture0);
+		for(int i=0; i<4; ++i)
+		{
+			pTexCoords[0] = vTexCoords[i].x;
+			pTexCoords[1] = vTexCoords[i].y;
+			pTexCoords[2] = vTexCoords[i].z;
+			pTexCoords += 3;
+		}
+		mpVtxBuffer->UpdateData(eVertexElementFlag_Texture0, false);
 	}
 
 	//-----------------------------------------------------------------------
@@ -333,9 +387,10 @@ namespace hpl {
 			//vUp.Normalize();
 		}
 
-		if(mfForwardOffset!=0)
+		if(mfForwardOffset!=0 || mvCameraSpaceOffset != cVector2f(0))
 		{
 			cVector3f vPos = m_mtxTempTransform.GetTranslation();
+			vPos += vRight * mvCameraSpaceOffset.x + vUp * mvCameraSpaceOffset.y;
 			vPos +=  vCameraForward * mfForwardOffset;
 			m_mtxTempTransform.SetTranslation(vPos);
 		}

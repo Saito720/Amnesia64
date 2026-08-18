@@ -25,6 +25,11 @@
 
 #include "SGP4/SGP4.h"
 
+#include "graphics/FontData.h"
+#include "graphics/FrameSubImage.h"
+#include "gui/GuiGfxElement.h"
+#include "resources/FontManager.h"
+
 struct cLuxEarthOrientationRecord
 {
 	double mfModifiedJulianDateUtc;
@@ -80,6 +85,11 @@ namespace
 	const char *kSatelliteIconMaterial = "graphics/icon/satellite.mat";
 	const float kSatelliteIconWorldSizeMetres = 400000.0f;
 	const int kSatelliteIconTranslucentPriority = 100;
+	const char *kSatelliteLabelFont = "JetBrainsMono-Bold.fnt";
+	const char *kSatelliteLabelMaterial = "fonts/satellite_label.mat";
+	const float kSatelliteLabelLineHeightMetres = 140000.0f;
+	const float kSatelliteLabelGapMetres = 20000.0f;
+	const int kSatelliteLabelTranslucentPriority = 101;
 	// Billboard UVs display the source icon vertically flipped, placing its
 	// signal bands along local +X,+Y in the rendered quad.
 	const cVector2f kSatelliteIconSignalDirection(1.0f, 1.0f);
@@ -645,9 +655,73 @@ public:
 	tString msSourceFile;
 	cLuxMap *mpMap;
 	cBillboard *mpIconBillboard;
+	std::vector<cBillboard*> mvLabelBillboards;
 	elsetrec mSatelliteRecord;
 	int mlLastPropagationError;
 };
+
+static bool CreateSatelliteLabel(cLuxSatelliteOrbit *apOrbit, iFontData *apFont)
+{
+	if(apOrbit == NULL || apFont == NULL || apOrbit->mpMap == NULL ||
+		apOrbit->mpMap->GetWorld() == NULL)
+	{
+		return false;
+	}
+
+	cWorld *pWorld = apOrbit->mpMap->GetWorld();
+	const tWString sLabel = cString::To16Char(apOrbit->msName);
+	const cVector2f vFontScale(kSatelliteLabelLineHeightMetres);
+	float fCursorX = -apFont->GetLength(vFontScale, sLabel.c_str()) * 0.5f;
+	const float fLineTopY = -(kSatelliteIconWorldSizeMetres * 0.5f +
+		kSatelliteLabelGapMetres);
+
+	for(size_t i = 0; i < sLabel.size(); ++i)
+	{
+		const wchar_t lCharacter = sLabel[i];
+		if(lCharacter < apFont->GetFirstChar() || lCharacter > apFont->GetLastChar())
+			continue;
+
+		cGlyph *pGlyph = apFont->GetGlyph(lCharacter - apFont->GetFirstChar());
+		if(pGlyph == NULL)
+			continue;
+
+		const float fAdvance = pGlyph->mfAdvance * kSatelliteLabelLineHeightMetres;
+		if(lCharacter != L' ' && pGlyph->mpGuiGfx)
+		{
+			cFrameSubImage *pImage = pGlyph->mpGuiGfx->GetImage(0);
+			if(pImage && pImage->GetVertexVec().size() >= 4)
+			{
+				const cVector2f vGlyphSize = pGlyph->mvSize * vFontScale;
+				const cVector2f vGlyphOffset(
+					fCursorX + pGlyph->mvOffset.x * kSatelliteLabelLineHeightMetres + vGlyphSize.x * 0.5f,
+					fLineTopY - pGlyph->mvOffset.y * kSatelliteLabelLineHeightMetres - vGlyphSize.y * 0.5f);
+				cBillboard *pGlyphBillboard = pWorld->CreateBillboard(
+					"__SGP4Label_" + apOrbit->msName + "_" + cString::ToString((int)i),
+					vGlyphSize, eBillboardType_Point, kSatelliteLabelMaterial, false);
+				if(pGlyphBillboard == NULL || pGlyphBillboard->GetMaterial() == NULL)
+				{
+					if(pGlyphBillboard) pWorld->DestroyBillboard(pGlyphBillboard);
+					for(size_t j = 0; j < apOrbit->mvLabelBillboards.size(); ++j)
+						pWorld->DestroyBillboard(apOrbit->mvLabelBillboards[j]);
+					apOrbit->mvLabelBillboards.clear();
+					return false;
+				}
+
+				const tVertexVec& vImageVertices = pImage->GetVertexVec();
+				pGlyphBillboard->SetUVRect(
+					cVector2f(vImageVertices[0].tex.x, vImageVertices[0].tex.y),
+					cVector2f(vImageVertices[2].tex.x, vImageVertices[2].tex.y), true);
+				pGlyphBillboard->SetCameraSpaceOffset(vGlyphOffset);
+				pGlyphBillboard->SetTranslucentSortPriority(kSatelliteLabelTranslucentPriority);
+				apOrbit->mvLabelBillboards.push_back(pGlyphBillboard);
+			}
+		}
+
+		fCursorX += fAdvance;
+	}
+
+	return apOrbit->mvLabelBillboards.empty() == false;
+}
 
 cLuxSatelliteHandler::cLuxSatelliteHandler()
 {
@@ -765,6 +839,13 @@ bool cLuxSatelliteHandler::RegisterTLE(const tString& asFile)
 	}
 
 	const double fJulianDateUtc = GetSimulationJulianDateUtc(pMap);
+	cFontManager *pFontManager = gpBase->mpEngine && gpBase->mpEngine->GetResources() ?
+		gpBase->mpEngine->GetResources()->GetFontManager() : NULL;
+	iFontData *pLabelFont = pFontManager ?
+		pFontManager->CreateFontData(kSatelliteLabelFont) : NULL;
+	if(pLabelFont == NULL)
+		Warning("Could not load satellite label font '%s'.\n", kSatelliteLabelFont);
+
 	for(size_t i = 0; i < vNewOrbits.size(); ++i)
 	{
 		cLuxSatelliteOrbit *pOrbit = vNewOrbits[i];
@@ -793,12 +874,19 @@ bool cLuxSatelliteHandler::RegisterTLE(const tString& asFile)
 				pMap->GetWorld()->DestroyBillboard(pOrbit->mpIconBillboard);
 				pOrbit->mpIconBillboard = NULL;
 			}
+
+			if(pLabelFont && CreateSatelliteLabel(pOrbit, pLabelFont) == false)
+			{
+				Warning("Could not create satellite label for '%s' with material '%s'.\n",
+						pOrbit->msName.c_str(), kSatelliteLabelMaterial);
+			}
 		}
 
 		m_mapOrbits[sKey] = pOrbit;
 		Log("Registered SGP4 orbit '%s' from '%s'.\n", pOrbit->msName.c_str(), asFile.c_str());
 		UpdateOrbit(pOrbit, fJulianDateUtc);
 	}
+	if(pLabelFont) pFontManager->Destroy(pLabelFont);
 
 	return true;
 }
@@ -868,7 +956,13 @@ void cLuxSatelliteHandler::DestroyOrbit(cLuxSatelliteOrbit *apOrbit, bool abDest
 
 	if(abDestroyBillboard && apOrbit->mpIconBillboard && apOrbit->mpMap && apOrbit->mpMap->GetWorld())
 		apOrbit->mpMap->GetWorld()->DestroyBillboard(apOrbit->mpIconBillboard);
+	if(abDestroyBillboard && apOrbit->mpMap && apOrbit->mpMap->GetWorld())
+	{
+		for(size_t i = 0; i < apOrbit->mvLabelBillboards.size(); ++i)
+			apOrbit->mpMap->GetWorld()->DestroyBillboard(apOrbit->mvLabelBillboards[i]);
+	}
 	apOrbit->mpIconBillboard = NULL;
+	apOrbit->mvLabelBillboards.clear();
 	hplDelete(apOrbit);
 }
 
@@ -936,12 +1030,15 @@ void cLuxSatelliteHandler::UpdateOrbit(cLuxSatelliteOrbit *apOrbit, double afJul
 	if(IsFinite(vHplPositionMetres) == false || IsFinite(vHplVelocityMetresPerSecond) == false)
 		return;
 
-	if(apOrbit->mpIconBillboard)
+	if(apOrbit->mpIconBillboard || apOrbit->mvLabelBillboards.empty() == false)
 	{
 		const cVector3f vIconPosition((float)vHplPositionMetres.x,
 								  (float)vHplPositionMetres.y,
 								  (float)vHplPositionMetres.z);
-		apOrbit->mpIconBillboard->SetWorldPosition(vIconPosition);
+		if(apOrbit->mpIconBillboard)
+			apOrbit->mpIconBillboard->SetWorldPosition(vIconPosition);
+		for(size_t i = 0; i < apOrbit->mvLabelBillboards.size(); ++i)
+			apOrbit->mvLabelBillboards[i]->SetWorldPosition(vIconPosition);
 	}
 
 	iLuxEntity *pEntity = apOrbit->mpMap->GetEntityByName(apOrbit->msName);

@@ -68,6 +68,15 @@ namespace hpl {
 		void SetColor(const cColor &aColor);
 		const cColor& GetColor(){ return mColor;}
 
+		// Offsets a rotating billboard along its camera-facing right/up axes.
+		// This keeps related billboards coplanar without baking in one camera.
+		void SetCameraSpaceOffset(const cVector2f& avOffset);
+		const cVector2f& GetCameraSpaceOffset(){ return mvCameraSpaceOffset; }
+
+		// Selects a sub-rectangle of the material texture. Vertical flipping is
+		// useful for atlas regions authored in top-left image coordinates.
+		void SetUVRect(const cVector2f& avMin, const cVector2f& avMax, bool abFlipVertical);
+
 		void SetHaloAlpha(float afX);
 		float GetHaloAlpha(){ return mfHaloAlpha;}
 
@@ -115,6 +124,7 @@ namespace hpl {
 		bool mbUsePointRollTarget;
 		cVector3f mvPointRollWorldTarget;
 		cVector2f mvPointRollLocalDirection;
+		cVector2f mvCameraSpaceOffset;
 
 		int mlLastRenderCount;
 

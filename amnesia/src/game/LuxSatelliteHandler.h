@@ -15,10 +15,13 @@
 #include <map>
 
 #include "LuxBase.h"
+#include "LuxSatelliteTypes.h"
 
 class cLuxMap;
 class cLuxEarthOrientationTable;
+class cLuxMsuMrSimulation;
 class cLuxSatelliteOrbit;
+class cLuxSatelliteScanPresentationState;
 
 typedef std::map<tString, cLuxSatelliteOrbit*> tLuxSatelliteOrbitMap;
 
@@ -32,18 +35,37 @@ public:
 	// optionally identify a map entity whose transform will be driven by the orbit.
 	bool RegisterTLE(const tString& asFile);
 	bool RegisterEarthOrientationData(const tString& asFile);
+	void GetSatelliteNames(tStringVec& avNames) const;
+	bool SelectSatellite(const tString& asName);
+	bool StartMsuMrScan(const tString& asName);
+	bool StopMsuMrScan();
+	bool IsMsuMrScanActive() const;
 
 	void Update();
+	void OnDraw();
+	void OnPostRender();
 	void Reset();
 	void DestroyWorldEntities(cLuxMap *apMap);
 
 private:
 	bool LoadEarthOrientationData(const tString& asFile, bool abLogFailure);
 	void EnsureEarthOrientationData();
+	bool BeginScanPresentation(cLuxMap *apMap, const tString& asTargetKey);
+	void UpdateScanPresentation();
+	void EndScanPresentation(bool abResyncLiveOrbits);
+	void LogMsuMrSampleDiagnostics(cLuxSatelliteOrbit *apOrbit);
+	void SetOrbitScanVisibility(cLuxSatelliteOrbit *apOrbit, bool abTargetVisible);
+	void RestoreOrbitScanVisibility(cLuxSatelliteOrbit *apOrbit);
 	void DestroyOrbit(cLuxSatelliteOrbit *apOrbit, bool abDestroyBillboard);
 	void UpdateOrbit(cLuxSatelliteOrbit *apOrbit, double afJulianDateUtc);
+	void ApplyOrbitPose(cLuxSatelliteOrbit *apOrbit, const cLuxSatellitePose& aPose);
+	bool GetOrbitPose(cLuxSatelliteOrbit *apOrbit, double afJulianDayUtc,
+					  double afJulianFractionUtc, cLuxSatellitePose& aPose);
 
 	tLuxSatelliteOrbitMap m_mapOrbits;
+	tString msSelectedSatelliteKey;
+	cLuxMsuMrSimulation *mpMsuMrSimulation;
+	cLuxSatelliteScanPresentationState *mpScanPresentationState;
 	cLuxEarthOrientationTable *mpEarthOrientationTable;
 	bool mbDefaultEarthOrientationLoadAttempted;
 	bool mbEarthOrientationWarningShown;

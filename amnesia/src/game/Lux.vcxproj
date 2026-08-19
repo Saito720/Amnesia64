@@ -231,6 +231,9 @@
     <ClCompile Include="LuxMainMenu_Profile.cpp" />
     <ClCompile Include="LuxMap.cpp" />
     <ClCompile Include="LuxMapHandler.cpp" />
+    <ClCompile Include="LuxMsuMrGeometry.cpp" />
+    <ClCompile Include="LuxMsuMrScanProduct.cpp" />
+    <ClCompile Include="LuxMsuMrSimulation.cpp" />
     <ClCompile Include="LuxSatelliteHandler.cpp">
       <AdditionalIncludeDirectories>..\..\..\HPL2\dependencies\sources;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
@@ -344,7 +347,11 @@
     <ClInclude Include="LuxMainMenu_Profile.h" />
     <ClInclude Include="LuxMap.h" />
     <ClInclude Include="LuxMapHandler.h" />
+    <ClInclude Include="LuxMsuMrGeometry.h" />
+    <ClInclude Include="LuxMsuMrScanProduct.h" />
+    <ClInclude Include="LuxMsuMrSimulation.h" />
     <ClInclude Include="LuxSatelliteHandler.h" />
+    <ClInclude Include="LuxSatelliteTypes.h" />
     <ClInclude Include="LuxMapHelper.h" />
     <ClInclude Include="LuxMessageHandler.h" />
     <ClInclude Include="LuxMusicHandler.h" />

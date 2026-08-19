@@ -39,6 +39,7 @@
 #include "LuxGlobalDataHandler.h"
 #include "LuxInventory.h"
 #include "LuxLoadScreenHandler.h"
+#include "LuxScriptHandler.h"
 
 #include "scene/RenderableContainer_DynBoxTree.h"
 
@@ -80,6 +81,8 @@ cLuxDebugHandler::cLuxDebugHandler() : iLuxUpdateable("LuxDebugHandler")
 	mpInspectMeshEntity = NULL;
 
 	mpCBPlayerStarts = NULL;
+	mpCBSatellites = NULL;
+	mpBStartScan = NULL;
 	mpCBFlyCamera = NULL;
 
 	msCurrentFilePath = _W("");
@@ -228,6 +231,9 @@ static void PrintContainerNode(iRenderableContainerNode *apNode, int alLevel)
 
 void cLuxDebugHandler::Update(float afTimeStep)
 {
+	RefreshSatelliteList();
+	RefreshMsuMrScanButton();
+
 	if(mbFirstUpdateOnMap)// && mlTempCount>0)
 	{
 		mbFirstUpdateOnMap = false;
@@ -313,11 +319,82 @@ void cLuxDebugHandler::OnMapLeave(cLuxMap *apMap)
 		mpCBPlayerStarts->SetSelectedItem(-1);
 	}
 
+	if(mpCBSatellites)
+	{
+		mpCBSatellites->ClearItems();
+		mpCBSatellites->SetSelectedItem(-1);
+	}
+
 	if(mpCBFlyCamera)
 	{
 		mpCBFlyCamera->SetEnabled(true);
 		mpCBFlyCamera->SetChecked(false, false);
 	}
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxDebugHandler::RefreshSatelliteList()
+{
+	if(mpCBSatellites == NULL)
+		return;
+
+	tStringVec vSatelliteNames;
+	if(gpBase && gpBase->mpScriptHandler)
+		gpBase->mpScriptHandler->GetSatelliteNames(vSatelliteNames);
+
+	bool bListChanged = mpCBSatellites->GetItemNum() != (int)vSatelliteNames.size();
+	if(bListChanged == false)
+	{
+		for(size_t i = 0; i < vSatelliteNames.size(); ++i)
+		{
+			if(mpCBSatellites->GetItemText((int)i) != cString::To16Char(vSatelliteNames[i]))
+			{
+				bListChanged = true;
+				break;
+			}
+		}
+	}
+	if(bListChanged == false)
+		return;
+
+	tWString sSelectedName;
+	const int lPreviousSelection = mpCBSatellites->GetSelectedItem();
+	if(lPreviousSelection >= 0)
+		sSelectedName = mpCBSatellites->GetItemText(lPreviousSelection);
+
+	mpCBSatellites->ClearItems();
+	int lNewSelection = -1;
+	for(size_t i = 0; i < vSatelliteNames.size(); ++i)
+	{
+		const tWString sName = cString::To16Char(vSatelliteNames[i]);
+		mpCBSatellites->AddItem(sName);
+		if(sName == sSelectedName)
+			lNewSelection = (int)i;
+	}
+
+	if(lNewSelection < 0 && vSatelliteNames.empty() == false)
+		lNewSelection = 0;
+	mpCBSatellites->SetSelectedItem(lNewSelection);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxDebugHandler::RefreshMsuMrScanButton()
+{
+	if(mpBStartScan == NULL)
+		return;
+
+	const bool bScanActive = gpBase && gpBase->mpScriptHandler &&
+		gpBase->mpScriptHandler->IsMsuMrScanActive();
+	mpBStartScan->SetText(bScanActive ? _W("Stop Scan") : _W("Start Scan"));
+	mpBStartScan->SetDefaultFontColor(bScanActive ?
+		cColor(1.0f, 0.3f, 0.3f, 1.0f) : cColor(0.0f, 0.45f, 0.0f, 1.0f));
+
+	// Keep the highlighted satellite and the active simulation target from
+	// disagreeing. Stop the current scan before choosing another spacecraft.
+	if(mpCBSatellites)
+		mpCBSatellites->SetEnabled(bScanActive == false);
 }
 
 //-----------------------------------------------------------------------
@@ -982,7 +1059,7 @@ void cLuxDebugHandler::CreateGuiWindow()
 
 	///////////////////////////
 	//Window
-	cVector2f vSize = cVector2f(250, 780);
+	cVector2f vSize = cVector2f(250, 870);
 	vGroupSize.x = vSize.x - 20;
 	cVector3f vPos = cVector3f(mpGuiSet->GetVirtualSize().x - vSize.x - 10, 10, 0);
 	mpDebugWindow = mpGuiSet->CreateWidgetWindow(0,vPos,vSize,_W("Debug Toolbar") );
@@ -1196,6 +1273,31 @@ void cLuxDebugHandler::CreateGuiWindow()
 
 
 		//Group end
+		vGroupSize.y = vGroupPos.y + 15;
+		pGroup->SetSize(vGroupSize);
+		vPos.y += vGroupSize.y + 15;
+	}
+
+	//////////////////////////
+	// Satellite
+	{
+		// Group
+		vGroupPos = cVector3f(5, 10, 0.1f);
+		pGroup = mpGuiSet->CreateWidgetGroup(vPos, 100, _W("Satellite"), mpDebugWindow);
+
+		// Start scan
+		mpBStartScan = mpGuiSet->CreateWidgetButton(vGroupPos, vSize, _W("Start Scan"), pGroup);
+		mpBStartScan->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(PressStartScan));
+		mpBStartScan->SetDefaultFontColor(cColor(0.0f, 0.45f, 0.0f, 1.0f));
+		vGroupPos.y += 22;
+
+		// Pick satellite
+		mpCBSatellites = mpGuiSet->CreateWidgetComboBox(vGroupPos, vSize, _W("None"), pGroup);
+		mpCBSatellites->AddCallback(eGuiMessage_SelectionChange, this, kGuiCallback(SelectSatellite));
+		mpCBSatellites->SetSelectedItem(-1);
+		vGroupPos.y += 22;
+
+		// Group end
 		vGroupSize.y = vGroupPos.y + 15;
 		pGroup->SetSize(vGroupSize);
 		vPos.y += vGroupSize.y + 15;
@@ -1796,5 +1898,52 @@ bool cLuxDebugHandler::PressLoadBatchLoadFile(iWidget* apWidget,const cGuiMessag
 }
 kGuiCallbackDeclaredFuncEnd(cLuxDebugHandler, PressLoadBatchLoadFile); 
 
+//-----------------------------------------------------------------------
+
+bool cLuxDebugHandler::PressStartScan(iWidget* apWidget, const cGuiMessageData& aData)
+{
+	if(gpBase == NULL || gpBase->mpScriptHandler == NULL)
+		return true;
+
+	if(gpBase->mpScriptHandler->IsMsuMrScanActive())
+	{
+		if(gpBase->mpScriptHandler->StopMsuMrScan())
+			AddMessage(_W("MSU-MR simulation stopped."), false);
+		RefreshMsuMrScanButton();
+		return true;
+	}
+
+	const int lSelectedItem = mpCBSatellites ? mpCBSatellites->GetSelectedItem() : -1;
+	const cWidgetItem *pItem = lSelectedItem >= 0 ? mpCBSatellites->GetItem(lSelectedItem) : NULL;
+	if(pItem == NULL)
+	{
+		AddMessage(_W("Select a satellite before starting the MSU-MR scan."), false);
+		return true;
+	}
+
+	const tString sSatelliteName = cString::To8Char(pItem->GetText());
+	if(gpBase->mpScriptHandler->StartMsuMrScan(sSatelliteName))
+		AddMessage(_W("MSU-MR simulation started for ") + pItem->GetText() + _W("."), false);
+	else
+		AddMessage(_W("Could not start MSU-MR simulation for ") + pItem->GetText() + _W("."), false);
+	RefreshMsuMrScanButton();
+
+	return true;
+}
+kGuiCallbackDeclaredFuncEnd(cLuxDebugHandler, PressStartScan);
+
+//-----------------------------------------------------------------------
+
+bool cLuxDebugHandler::SelectSatellite(iWidget* apWidget, const cGuiMessageData& aData)
+{
+	if(gpBase == NULL || gpBase->mpScriptHandler == NULL)
+		return true;
+
+	const int lSelectedItem = mpCBSatellites ? mpCBSatellites->GetSelectedItem() : -1;
+	const cWidgetItem *pItem = lSelectedItem >= 0 ? mpCBSatellites->GetItem(lSelectedItem) : NULL;
+	gpBase->mpScriptHandler->SelectSatellite(pItem ? cString::To8Char(pItem->GetText()) : "");
+	return true;
+}
+kGuiCallbackDeclaredFuncEnd(cLuxDebugHandler, SelectSatellite);
 
 //-----------------------------------------------------------------------

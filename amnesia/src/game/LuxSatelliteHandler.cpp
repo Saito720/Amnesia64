@@ -12,6 +12,7 @@
 #include "LuxSatelliteHandler.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -22,13 +23,24 @@
 #include "LuxEntity.h"
 #include "LuxMap.h"
 #include "LuxMapHandler.h"
+#include "LuxMsuMrGeometry.h"
+#include "LuxMsuMrScanProduct.h"
+#include "LuxMsuMrSimulation.h"
 
 #include "SGP4/SGP4.h"
 
+#include "engine/Engine.h"
+#include "graphics/Bitmap.h"
 #include "graphics/FontData.h"
+#include "graphics/FrameBuffer.h"
 #include "graphics/FrameSubImage.h"
+#include "graphics/Graphics.h"
+#include "graphics/LowLevelGraphics.h"
+#include "graphics/Renderer.h"
+#include "graphics/Texture.h"
 #include "gui/GuiGfxElement.h"
 #include "resources/FontManager.h"
+#include "scene/MeshEntity.h"
 
 struct cLuxEarthOrientationRecord
 {
@@ -58,7 +70,8 @@ class cLuxEarthOrientationTable
 {
 public:
 	bool Load(const tWString& asPath, tString& asError);
-	bool Sample(double afJulianDateUtc, cLuxEarthOrientationSample& aSample) const;
+	bool Sample(double afJulianDayUtc, double afJulianFractionUtc,
+				cLuxEarthOrientationSample& aSample) const;
 
 	bool Empty() const { return mvRecords.empty(); }
 	size_t GetRecordCount() const { return mvRecords.size(); }
@@ -90,19 +103,45 @@ namespace
 	const float kSatelliteLabelLineHeightMetres = 140000.0f;
 	const float kSatelliteLabelGapMetres = 20000.0f;
 	const int kSatelliteLabelTranslucentPriority = 101;
+	enum
+	{
+		kMsuMrStripSampleCount = 16,
+		kMsuMrFullStripCount =
+			cLuxMsuMrSimulation::kEarthViewSamplesPerLine /
+			kMsuMrStripSampleCount,
+		kMsuMrTailStripSampleCount =
+			cLuxMsuMrSimulation::kEarthViewSamplesPerLine %
+			kMsuMrStripSampleCount,
+		kMsuMrStripCount = kMsuMrFullStripCount + 1,
+		kMsuMrFirstRenderBatchStripCount = 50,
+		kMsuMrSensorBatchWidth =
+			cLuxMsuMrSimulation::kEarthViewSamplesPerLine,
+		kMsuMrRepresentativeSampleCount = 6
+	};
+	static_assert(kMsuMrTailStripSampleCount > 0,
+		"The MSU-MR strip layout expects one non-empty rightmost tail view");
+	static_assert(kMsuMrFirstRenderBatchStripCount > 0 &&
+		kMsuMrFirstRenderBatchStripCount < kMsuMrStripCount,
+		"The MSU-MR acquisition must be split into two non-empty render batches");
+	const std::uint32_t
+		kMsuMrRepresentativeSampleIndices[kMsuMrRepresentativeSampleCount] =
+			{0, 393, 785, 786, 1178, 1571};
+	static int GetMsuMrStripFirstSample(int alStripIndex)
+	{
+		return alStripIndex * kMsuMrStripSampleCount;
+	}
+	static int GetMsuMrStripSampleCount(int alStripIndex)
+	{
+		return alStripIndex < kMsuMrFullStripCount ?
+			kMsuMrStripSampleCount : kMsuMrTailStripSampleCount;
+	}
+	const float kMsuMrSensorNearClipMetres = 100.0f;
+	const float kMsuMrSensorFarClipMetres = 3000000.0f;
 	// Billboard UVs display the source icon vertically flipped, placing its
 	// signal bands along local +X,+Y in the rendered quad.
 	const cVector2f kSatelliteIconSignalDirection(1.0f, 1.0f);
 
-	struct cVector3d
-	{
-		cVector3d() : x(0.0), y(0.0), z(0.0) {}
-		cVector3d(double afX, double afY, double afZ) : x(afX), y(afY), z(afZ) {}
-
-		double x;
-		double y;
-		double z;
-	};
+	typedef cLuxSatelliteVector3d cVector3d;
 
 	struct cThreeLineElement
 	{
@@ -138,6 +177,56 @@ namespace
 	static bool IsFinite(const cVector3d& avValue)
 	{
 		return std::isfinite(avValue.x) && std::isfinite(avValue.y) && std::isfinite(avValue.z);
+	}
+
+	static bool CalculateMsuMrGroundSolarElevationDegrees(
+		const cLuxMsuMrGroundSample& aGroundSample,
+		double afJulianDayUtc, double afJulianFractionUtc,
+		double& afSolarElevationDegrees)
+	{
+		if(std::isfinite(aGroundSample.mfLatitudeDegrees) == false ||
+			std::isfinite(aGroundSample.mfLongitudeDegrees) == false ||
+			std::isfinite(afJulianDayUtc) == false ||
+			std::isfinite(afJulianFractionUtc) == false)
+			return false;
+
+		const double fLatitudeRadians =
+			aGroundSample.mfLatitudeDegrees * kDegreesToRadians;
+		const double fLongitudeRadians =
+			aGroundSample.mfLongitudeDegrees * kDegreesToRadians;
+		// A geodetic latitude/longitude pair directly defines the outward WGS-84
+		// surface normal. Convert that normal to HPL's Y-up Earth-fixed axes.
+		const cVector3d vSurfaceNormal(
+			std::cos(fLatitudeRadians) * std::cos(fLongitudeRadians),
+			std::sin(fLatitudeRadians),
+			-std::cos(fLatitudeRadians) * std::sin(fLongitudeRadians));
+		const cVector3f vSunDirection = cLightSun::CalculateSunDirection(
+			afJulianDayUtc + afJulianFractionUtc);
+		double fSolarSine =
+			vSurfaceNormal.x * static_cast<double>(vSunDirection.x) +
+			vSurfaceNormal.y * static_cast<double>(vSunDirection.y) +
+			vSurfaceNormal.z * static_cast<double>(vSunDirection.z);
+		fSolarSine = std::max(-1.0, std::min(1.0, fSolarSine));
+		afSolarElevationDegrees =
+			std::asin(fSolarSine) / kDegreesToRadians;
+		return std::isfinite(afSolarElevationDegrees);
+	}
+
+	static bool IsMsuMrPointSunEarthOccluded(
+		const cLuxSatellitePose& aPose,
+		double afJulianDayUtc, double afJulianFractionUtc)
+	{
+		const cVector3f vSunDirection = cLightSun::CalculateSunDirection(
+			afJulianDayUtc + afJulianFractionUtc);
+		const cVector3d vSunRay(
+			static_cast<double>(vSunDirection.x),
+			static_cast<double>(vSunDirection.y),
+			static_cast<double>(vSunDirection.z));
+		cLuxMsuMrGroundSample occultingGround;
+		// This deliberately tests the Sun's centre as a point source. A future
+		// radiometric model can distinguish penumbra using the finite solar disk.
+		return cLuxMsuMrGeometry::CalculateGroundIntersection(
+			aPose.mvPositionMetres, vSunRay, occultingGround);
 	}
 
 	static std::string TrimAscii(const std::string& asValue)
@@ -359,21 +448,73 @@ namespace
 		return cLightSun::GetSystemJulianDate();
 	}
 
-	static void TemeToEarthFixed(double afJulianDateUtc,
+	static int GetFixedUpdatesPerSecond()
+	{
+		if(gpBase == NULL || gpBase->mpEngine == NULL)
+			return 0;
+
+		const double fStepSeconds = gpBase->mpEngine->GetStepSize();
+		if(std::isfinite(fStepSeconds) == false || fStepSeconds <= 0.0)
+			return 0;
+
+		// cLogicTimer::GetUpdatesPerSec truncates a reconstructed floating-point
+		// reciprocal. For a stored 1000/60 ms step that reciprocal can be just
+		// below 60, so recover the configured integer rate by rounding instead.
+		return static_cast<int>(std::floor(1.0 / fStepSeconds + 0.5));
+	}
+
+	static bool NormalizeJulianDate(double afJulianDay, double afJulianFraction,
+									double& afNormalizedDay, double& afNormalizedFraction)
+	{
+		if(std::isfinite(afJulianDay) == false || std::isfinite(afJulianFraction) == false)
+			return false;
+
+		afNormalizedDay = std::floor(afJulianDay);
+		afNormalizedFraction = (afJulianDay - afNormalizedDay) + afJulianFraction;
+		const double fAdditionalDays = std::floor(afNormalizedFraction);
+		afNormalizedDay += fAdditionalDays;
+		afNormalizedFraction -= fAdditionalDays;
+		return std::isfinite(afNormalizedDay) && std::isfinite(afNormalizedFraction);
+	}
+
+	static double GreenwichSiderealTime(double afJulianDayUt1, double afJulianFractionUt1)
+	{
+		// Vallado 2013, equation 3-45, evaluated from a split Julian date so a
+		// 30-microsecond instrument phase tick survives the subtraction from J2000.
+		const double fJulianCenturies =
+			((afJulianDayUt1 - 2451545.0) + afJulianFractionUt1) / 36525.0;
+		double fSiderealSeconds =
+			-6.2e-6 * fJulianCenturies * fJulianCenturies * fJulianCenturies +
+			0.093104 * fJulianCenturies * fJulianCenturies +
+			(876600.0 * 3600.0 + 8640184.812866) * fJulianCenturies + 67310.54841;
+		double fSiderealAngle = std::fmod(
+			fSiderealSeconds * kDegreesToRadians / 240.0, kTwoPi);
+		if(fSiderealAngle < 0.0)
+			fSiderealAngle += kTwoPi;
+		return fSiderealAngle;
+	}
+
+	static void TemeToEarthFixed(double afJulianDayUtc, double afJulianFractionUtc,
 							 const double avTemePositionKm[3], const double avTemeVelocityKmPerSecond[3],
 							 const cLuxEarthOrientationSample& aEarthOrientation,
-							 cVector3d& avEcefPositionKm, cVector3d& avEcefVelocityKmPerSecond)
+							 cVector3d& avEcefPositionKm, cVector3d& avEcefVelocityKmPerSecond,
+							 cVector3d& avEcefInertialVelocityKmPerSecond)
 	{
-		const double fJulianDateUt1 =
-			afJulianDateUtc + aEarthOrientation.mfUt1MinusUtcSeconds / kSecondsPerDay;
-		double fSiderealAngle = SGP4Funcs::gstime_SGP4(fJulianDateUt1);
+		double fJulianDayUt1 = 0.0;
+		double fJulianFractionUt1 = 0.0;
+		NormalizeJulianDate(afJulianDayUtc,
+			afJulianFractionUtc + aEarthOrientation.mfUt1MinusUtcSeconds / kSecondsPerDay,
+			fJulianDayUt1, fJulianFractionUt1);
+		double fSiderealAngle = GreenwichSiderealTime(fJulianDayUt1, fJulianFractionUt1);
 
 		// TEME's post-1997 kinematic equation-of-equinox terms, matching
 		// Vallado's reference teme2ecef implementation. UT1 also approximates TT
 		// here; their difference has a negligible effect on these tiny terms.
-		if(fJulianDateUt1 > 2450449.5)
+		if(fJulianDayUt1 > 2450449.0 ||
+			(fJulianDayUt1 == 2450449.0 && fJulianFractionUt1 > 0.5))
 		{
-			const double fJulianCenturies = (fJulianDateUt1 - 2451545.0) / 36525.0;
+			const double fJulianCenturies =
+				((fJulianDayUt1 - 2451545.0) + fJulianFractionUt1) / 36525.0;
 			const double fOmegaDegrees = 125.04452222 +
 				(-6962890.5390 * fJulianCenturies +
 				 7.455 * fJulianCenturies * fJulianCenturies +
@@ -426,6 +567,17 @@ namespace
 		avEcefVelocityKmPerSecond.y = fCosYp * vPefVelocityKmPerSecond.y - fSinYp * vPefVelocityKmPerSecond.z;
 		avEcefVelocityKmPerSecond.z = -fSinXp * vPefVelocityKmPerSecond.x +
 			fCosXp * fSinYp * vPefVelocityKmPerSecond.y + fCosXp * fCosYp * vPefVelocityKmPerSecond.z;
+
+		// The inertial TEME velocity rotated into Earth-fixed axes is kept
+		// separately. It defines the spacecraft's LVLH/orbital plane; the
+		// coordinate derivative above includes the rotating Earth's omega x r
+		// correction and instead follows the ground track.
+		avEcefInertialVelocityKmPerSecond.x = fCosXp * vRotatedVelocity.x +
+			fSinXp * fSinYp * vRotatedVelocity.y + fSinXp * fCosYp * vRotatedVelocity.z;
+		avEcefInertialVelocityKmPerSecond.y = fCosYp * vRotatedVelocity.y -
+			fSinYp * vRotatedVelocity.z;
+		avEcefInertialVelocityKmPerSecond.z = -fSinXp * vRotatedVelocity.x +
+			fCosXp * fSinYp * vRotatedVelocity.y + fCosXp * fCosYp * vRotatedVelocity.z;
 	}
 
 	static void EarthFixedToHpl(const cVector3d& avEcef, cVector3d& avHpl)
@@ -446,15 +598,25 @@ namespace
 		return fLength > 0.0 && std::isfinite(fLength) ? fLength : 1.0;
 	}
 
-	static bool BuildHplTransform(const cVector3d& avPositionMetres, const cVector3d& avVelocityMetresPerSecond,
+	static bool BuildOrbitFrame(const cVector3d& avPositionMetres,
+							const cVector3d& avVelocityMetresPerSecond,
+							cVector3d& avCrossTrack, cVector3d& avRadialOut,
+							cVector3d& avAlongTrack)
+	{
+		avRadialOut = Normalize(avPositionMetres);
+		const cVector3d vVelocity = Normalize(avVelocityMetresPerSecond);
+		avCrossTrack = Normalize(Cross(avRadialOut, vVelocity));
+		avAlongTrack = Normalize(Cross(avCrossTrack, avRadialOut));
+
+		return Dot(avRadialOut, avRadialOut) != 0.0 &&
+			Dot(avCrossTrack, avCrossTrack) != 0.0 && Dot(avAlongTrack, avAlongTrack) != 0.0;
+	}
+
+	static bool BuildHplTransform(const cLuxSatellitePose& aPose,
 							  const cMatrixf& aCurrentTransform, cMatrixf& aTransform)
 	{
-		const cVector3d vUp = Normalize(avPositionMetres);
-		const cVector3d vVelocity = Normalize(avVelocityMetresPerSecond);
-		const cVector3d vRight = Normalize(Cross(vUp, vVelocity));
-		const cVector3d vForward = Normalize(Cross(vRight, vUp));
-
-		if(Dot(vUp, vUp) == 0.0 || Dot(vRight, vRight) == 0.0 || Dot(vForward, vForward) == 0.0)
+		if(IsFinite(aPose.mvPositionMetres) == false || IsFinite(aPose.mvCrossTrack) == false ||
+			IsFinite(aPose.mvRadialOut) == false || IsFinite(aPose.mvAlongTrack) == false)
 			return false;
 
 		const double fScaleX = MatrixColumnLength(aCurrentTransform, 0);
@@ -462,18 +624,18 @@ namespace
 		const double fScaleZ = MatrixColumnLength(aCurrentTransform, 2);
 
 		aTransform = cMatrixf::Identity;
-		aTransform.m[0][0] = (float)(vRight.x * fScaleX);
-		aTransform.m[1][0] = (float)(vRight.y * fScaleX);
-		aTransform.m[2][0] = (float)(vRight.z * fScaleX);
-		aTransform.m[0][1] = (float)(vUp.x * fScaleY);
-		aTransform.m[1][1] = (float)(vUp.y * fScaleY);
-		aTransform.m[2][1] = (float)(vUp.z * fScaleY);
-		aTransform.m[0][2] = (float)(vForward.x * fScaleZ);
-		aTransform.m[1][2] = (float)(vForward.y * fScaleZ);
-		aTransform.m[2][2] = (float)(vForward.z * fScaleZ);
-		aTransform.m[0][3] = (float)avPositionMetres.x;
-		aTransform.m[1][3] = (float)avPositionMetres.y;
-		aTransform.m[2][3] = (float)avPositionMetres.z;
+		aTransform.m[0][0] = (float)(aPose.mvCrossTrack.x * fScaleX);
+		aTransform.m[1][0] = (float)(aPose.mvCrossTrack.y * fScaleX);
+		aTransform.m[2][0] = (float)(aPose.mvCrossTrack.z * fScaleX);
+		aTransform.m[0][1] = (float)(aPose.mvRadialOut.x * fScaleY);
+		aTransform.m[1][1] = (float)(aPose.mvRadialOut.y * fScaleY);
+		aTransform.m[2][1] = (float)(aPose.mvRadialOut.z * fScaleY);
+		aTransform.m[0][2] = (float)(aPose.mvAlongTrack.x * fScaleZ);
+		aTransform.m[1][2] = (float)(aPose.mvAlongTrack.y * fScaleZ);
+		aTransform.m[2][2] = (float)(aPose.mvAlongTrack.z * fScaleZ);
+		aTransform.m[0][3] = (float)aPose.mvPositionMetres.x;
+		aTransform.m[1][3] = (float)aPose.mvPositionMetres.y;
+		aTransform.m[2][3] = (float)aPose.mvPositionMetres.z;
 		return true;
 	}
 }
@@ -568,12 +730,18 @@ bool cLuxEarthOrientationTable::Load(const tWString& asPath, tString& asError)
 	return true;
 }
 
-bool cLuxEarthOrientationTable::Sample(double afJulianDateUtc, cLuxEarthOrientationSample& aSample) const
+bool cLuxEarthOrientationTable::Sample(double afJulianDayUtc, double afJulianFractionUtc,
+									   cLuxEarthOrientationSample& aSample) const
 {
-	if(mvRecords.empty() || std::isfinite(afJulianDateUtc) == false)
+	double fJulianDayUtc = 0.0;
+	double fJulianFractionUtc = 0.0;
+	if(mvRecords.empty() ||
+		NormalizeJulianDate(afJulianDayUtc, afJulianFractionUtc,
+			fJulianDayUtc, fJulianFractionUtc) == false)
 		return false;
 
-	const double fModifiedJulianDate = afJulianDateUtc - kJulianDateToModifiedJulianDate;
+	const double fModifiedJulianDate =
+		(fJulianDayUtc - kJulianDateToModifiedJulianDate) + fJulianFractionUtc;
 	std::vector<cLuxEarthOrientationRecord>::const_iterator itUpper =
 		std::lower_bound(mvRecords.begin(), mvRecords.end(), fModifiedJulianDate,
 			[](const cLuxEarthOrientationRecord& aRecord, double afDate)
@@ -647,6 +815,10 @@ public:
 	{
 		mpMap = NULL;
 		mpIconBillboard = NULL;
+		mpScanMeshEntity = NULL;
+		mbScanVisibilityCaptured = false;
+		mbScanIconWasVisible = false;
+		mbScanMeshWasVisible = false;
 		mlLastPropagationError = 0;
 		std::memset(&mSatelliteRecord, 0, sizeof(mSatelliteRecord));
 	}
@@ -656,9 +828,397 @@ public:
 	cLuxMap *mpMap;
 	cBillboard *mpIconBillboard;
 	std::vector<cBillboard*> mvLabelBillboards;
+	cMeshEntity *mpScanMeshEntity;
+	std::vector<bool> mvScanLabelWasVisible;
+	bool mbScanVisibilityCaptured;
+	bool mbScanIconWasVisible;
+	bool mbScanMeshWasVisible;
 	elsetrec mSatelliteRecord;
 	int mlLastPropagationError;
 };
+
+struct cLuxSatelliteScanSunState
+{
+	cLuxSatelliteScanSunState()
+		: mpSun(NULL), mbUsedSystemTime(false), mfFixedJulianDate(0.0)
+	{
+	}
+
+	cLightSun *mpSun;
+	bool mbUsedSystemTime;
+	double mfFixedJulianDate;
+};
+
+// The sensor and player cameras share one world. This callback suppresses the
+// spacecraft's presentation-only renderables and applies the individual
+// sample's Sun time solely while its viewport is drawing, then restores every
+// captured state before the next sensor or player view runs.
+class cLuxMsuMrSensorViewportCallback : public iViewportCallback
+{
+public:
+	cLuxMsuMrSensorViewportCallback(cLuxSatelliteOrbit *apOrbit)
+		: mpOrbit(apOrbit), mbSuppressed(false), mbIconWasVisible(false),
+		  mbMeshWasVisible(false), mpWorld(NULL), mbSkyBoxWasActive(false),
+		  mfSampleJulianDate(0.0), mbHasSampleJulianDate(false),
+		  mbRenderTimingActive(false), mbRenderTimingValid(false),
+		  mfLastWorldDrawMilliseconds(0.0)
+	{
+	}
+
+	void SetSampleJulianDate(double afJulianDayUtc,
+							 double afJulianFractionUtc)
+	{
+		mfSampleJulianDate = afJulianDayUtc + afJulianFractionUtc;
+		mbHasSampleJulianDate = std::isfinite(mfSampleJulianDate);
+	}
+
+	void ResetRenderTiming()
+	{
+		mbRenderTimingActive = false;
+		mbRenderTimingValid = false;
+		mfLastWorldDrawMilliseconds = 0.0;
+	}
+
+	bool HasRenderTiming() const { return mbRenderTimingValid; }
+	double GetLastWorldDrawMilliseconds() const
+	{
+		return mfLastWorldDrawMilliseconds;
+	}
+
+	void OnPreWorldDraw()
+	{
+		if(mpOrbit == NULL || mbSuppressed)
+			return;
+
+		mbIconWasVisible = mpOrbit->mpIconBillboard &&
+			mpOrbit->mpIconBillboard->GetVisibleVar();
+		mvLabelWasVisible.clear();
+		mvLabelWasVisible.reserve(mpOrbit->mvLabelBillboards.size());
+		for(size_t i = 0; i < mpOrbit->mvLabelBillboards.size(); ++i)
+		{
+			mvLabelWasVisible.push_back(mpOrbit->mvLabelBillboards[i] &&
+				mpOrbit->mvLabelBillboards[i]->GetVisibleVar());
+		}
+		mbMeshWasVisible = mpOrbit->mpScanMeshEntity &&
+			mpOrbit->mpScanMeshEntity->IsVisible();
+		mpWorld = mpOrbit->mpMap ? mpOrbit->mpMap->GetWorld() : NULL;
+		mbSkyBoxWasActive = mpWorld && mpWorld->GetSkyBoxActive();
+		mvSunStates.clear();
+		if(mpWorld && mbHasSampleJulianDate)
+		{
+			cLightListIterator itLight = mpWorld->GetLightIterator();
+			while(itLight.HasNext())
+			{
+				iLight *pLight = itLight.Next();
+				if(pLight == NULL || pLight->GetLightType() != eLightType_Sun)
+					continue;
+
+				cLightSun *pSun = static_cast<cLightSun*>(pLight);
+				cLuxSatelliteScanSunState state;
+				state.mpSun = pSun;
+				state.mbUsedSystemTime = pSun->GetUseSystemTime();
+				state.mfFixedJulianDate = pSun->GetJulianDate();
+				mvSunStates.push_back(state);
+				pSun->SetUseSystemTime(false);
+				pSun->SetJulianDate(mfSampleJulianDate);
+			}
+		}
+
+		if(mpOrbit->mpIconBillboard)
+			mpOrbit->mpIconBillboard->SetVisible(false);
+		for(size_t i = 0; i < mpOrbit->mvLabelBillboards.size(); ++i)
+		{
+			if(mpOrbit->mvLabelBillboards[i])
+				mpOrbit->mvLabelBillboards[i]->SetVisible(false);
+		}
+		if(mpOrbit->mpScanMeshEntity)
+			mpOrbit->mpScanMeshEntity->SetVisible(false);
+		if(mpWorld)
+			mpWorld->SetSkyBoxActive(false);
+		mbSuppressed = true;
+		mRenderStart = std::chrono::steady_clock::now();
+		mbRenderTimingActive = true;
+	}
+
+	void OnPostWorldDraw()
+	{
+		if(mbRenderTimingActive)
+		{
+			const std::chrono::steady_clock::time_point end =
+				std::chrono::steady_clock::now();
+			mfLastWorldDrawMilliseconds =
+				std::chrono::duration<double, std::milli>(end - mRenderStart).count();
+			mbRenderTimingValid = true;
+			mbRenderTimingActive = false;
+		}
+		Restore();
+	}
+
+	void Restore()
+	{
+		if(mpOrbit == NULL || mbSuppressed == false)
+			return;
+
+		if(mpOrbit->mpIconBillboard)
+			mpOrbit->mpIconBillboard->SetVisible(mbIconWasVisible);
+		for(size_t i = 0; i < mpOrbit->mvLabelBillboards.size(); ++i)
+		{
+			if(mpOrbit->mvLabelBillboards[i] && i < mvLabelWasVisible.size())
+				mpOrbit->mvLabelBillboards[i]->SetVisible(mvLabelWasVisible[i]);
+		}
+		if(mpOrbit->mpScanMeshEntity)
+			mpOrbit->mpScanMeshEntity->SetVisible(mbMeshWasVisible);
+		for(size_t i = 0; i < mvSunStates.size(); ++i)
+		{
+			if(mvSunStates[i].mpSun)
+			{
+				mvSunStates[i].mpSun->SetJulianDate(
+					mvSunStates[i].mfFixedJulianDate);
+				mvSunStates[i].mpSun->SetUseSystemTime(
+					mvSunStates[i].mbUsedSystemTime);
+			}
+		}
+		if(mpWorld)
+			mpWorld->SetSkyBoxActive(mbSkyBoxWasActive);
+
+		mvLabelWasVisible.clear();
+		mvSunStates.clear();
+		mpWorld = NULL;
+		mbSuppressed = false;
+	}
+
+private:
+	cLuxSatelliteOrbit *mpOrbit;
+	bool mbSuppressed;
+	bool mbIconWasVisible;
+	bool mbMeshWasVisible;
+	cWorld *mpWorld;
+	bool mbSkyBoxWasActive;
+	double mfSampleJulianDate;
+	bool mbHasSampleJulianDate;
+	std::chrono::steady_clock::time_point mRenderStart;
+	bool mbRenderTimingActive;
+	bool mbRenderTimingValid;
+	double mfLastWorldDrawMilliseconds;
+	std::vector<bool> mvLabelWasVisible;
+	std::vector<cLuxSatelliteScanSunState> mvSunStates;
+};
+
+struct cLuxMsuMrSensorSampleState
+{
+	cLuxMsuMrSensorSampleState()
+		: mpView(NULL), mpViewportCallback(NULL), mlSampleIndex(0),
+		  mfJulianDayUtc(0.0), mfJulianFractionUtc(0.0),
+		  mfLookAngleDegrees(0.0), mfSlantRangeMetres(0.0),
+		  mfFootprintMetres(0.0), mfLatitudeDegrees(0.0),
+		  mfLongitudeDegrees(0.0), mfAimErrorArcseconds(0.0),
+		  mfOriginQuantizationMetres(0.0)
+	{
+	}
+
+	cLuxCameraView *mpView;
+	cLuxMsuMrSensorViewportCallback *mpViewportCallback;
+	std::uint32_t mlSampleIndex;
+	double mfJulianDayUtc;
+	double mfJulianFractionUtc;
+	double mfLookAngleDegrees;
+	double mfSlantRangeMetres;
+	double mfFootprintMetres;
+	double mfLatitudeDegrees;
+	double mfLongitudeDegrees;
+	double mfAimErrorArcseconds;
+	double mfOriginQuantizationMetres;
+};
+
+class cLuxSatelliteScanPresentationState
+{
+public:
+	cLuxSatelliteScanPresentationState()
+		: mpMap(NULL), mpSensorBatchFrameBuffer(NULL),
+		  mpSensorBatchTexture(NULL), mpSensorBatchDepthStencil(NULL),
+		  mpScanProduct(NULL),
+		  mbSensorLinePending(false),
+		  mlSensorLineIndex(0), mlSensorMirrorFaceIndex(0),
+		  mlCurrentStripBatchStart(0), mlCurrentStripBatchCount(0),
+		  mlOverwrittenSensorLines(0), mlPerformanceBatchCount(0),
+		  mfPreparationWallMilliseconds(0.0),
+		  mfCurrentLineRenderWallMilliseconds(0.0),
+		  mfCurrentLineMaxViewRenderWallMilliseconds(0.0),
+		  mfFirstBatchPackSubmitWallMilliseconds(0.0),
+		  mfPreparationWallSumMilliseconds(0.0),
+		  mfPreparationWallMaxMilliseconds(0.0),
+		  mfFirstBatchPackSubmitWallSumMilliseconds(0.0),
+		  mfFirstBatchPackSubmitWallMaxMilliseconds(0.0),
+		  mfRenderWallSumMilliseconds(0.0),
+		  mfRenderWallMaxMilliseconds(0.0),
+		  mfReadbackWallSumMilliseconds(0.0),
+		  mfReadbackWallMaxMilliseconds(0.0),
+		  mfLineLatencyWallSumMilliseconds(0.0),
+		  mfLineLatencyWallMaxMilliseconds(0.0),
+		  mfCommitWallSumMilliseconds(0.0),
+		  mfCommitWallMaxMilliseconds(0.0),
+		  mfStripMaxProjectionRayErrorArcseconds(0.0),
+		  mfStripMaxGroundDisplacementMetres(0.0),
+		  mfStripMaxTimeOffsetMilliseconds(0.0),
+		  mbIlluminationDiagnosticsValid(false),
+		  mbPointSunEarthOccluded(false),
+		  mfGroundSolarElevationMinDegrees(0.0),
+		  mfGroundSolarElevationMaxDegrees(0.0),
+		  mlDaylightEndpointCount(0),
+		  mlIlluminationEndpointCount(0),
+		  mlActiveSunCount(0),
+		  mfMaxActiveSunIntensity(0.0)
+	{
+		for(int i = 0; i < kMsuMrRepresentativeSampleCount; ++i)
+			mvRepresentativeSolarElevationDegrees[i] = 0.0;
+	}
+
+	cLuxMap *mpMap;
+	tString msTargetKey;
+	std::vector<cLuxSatelliteScanSunState> mvSuns;
+	cLuxMsuMrSensorSampleState mvSensorStrips[kMsuMrStripCount];
+	iFrameBuffer *mpSensorBatchFrameBuffer;
+	iTexture *mpSensorBatchTexture;
+	iDepthStencilBuffer *mpSensorBatchDepthStencil;
+	cLuxMsuMrScanProduct *mpScanProduct;
+	bool mbSensorLinePending;
+	std::uint64_t mlSensorLineIndex;
+	std::uint32_t mlSensorMirrorFaceIndex;
+	int mlCurrentStripBatchStart;
+	int mlCurrentStripBatchCount;
+	std::uint64_t mlOverwrittenSensorLines;
+	std::uint64_t mlPerformanceBatchCount;
+	double mfPreparationWallMilliseconds;
+	double mfCurrentLineRenderWallMilliseconds;
+	double mfCurrentLineMaxViewRenderWallMilliseconds;
+	double mfFirstBatchPackSubmitWallMilliseconds;
+	std::chrono::steady_clock::time_point mLineAcquisitionStart;
+	double mfPreparationWallSumMilliseconds;
+	double mfPreparationWallMaxMilliseconds;
+	double mfFirstBatchPackSubmitWallSumMilliseconds;
+	double mfFirstBatchPackSubmitWallMaxMilliseconds;
+	double mfRenderWallSumMilliseconds;
+	double mfRenderWallMaxMilliseconds;
+	double mfReadbackWallSumMilliseconds;
+	double mfReadbackWallMaxMilliseconds;
+	double mfLineLatencyWallSumMilliseconds;
+	double mfLineLatencyWallMaxMilliseconds;
+	double mfCommitWallSumMilliseconds;
+	double mfCommitWallMaxMilliseconds;
+	double mfStripMaxProjectionRayErrorArcseconds;
+	double mfStripMaxGroundDisplacementMetres;
+	double mfStripMaxTimeOffsetMilliseconds;
+	bool mbIlluminationDiagnosticsValid;
+	bool mbPointSunEarthOccluded;
+	double mfGroundSolarElevationMinDegrees;
+	double mfGroundSolarElevationMaxDegrees;
+	double mvRepresentativeSolarElevationDegrees[kMsuMrRepresentativeSampleCount];
+	unsigned int mlDaylightEndpointCount;
+	unsigned int mlIlluminationEndpointCount;
+	unsigned int mlActiveSunCount;
+	double mfMaxActiveSunIntensity;
+};
+
+static void ResetMsuMrPendingSensorLine(
+	cLuxSatelliteScanPresentationState *apState)
+{
+	if(apState == NULL)
+		return;
+
+	for(int i = 0; i < kMsuMrStripCount; ++i)
+	{
+		if(apState->mvSensorStrips[i].mpView)
+			apState->mvSensorStrips[i].mpView->SetVisible(false);
+	}
+	apState->mbSensorLinePending = false;
+	apState->mlCurrentStripBatchStart = 0;
+	apState->mlCurrentStripBatchCount = 0;
+	apState->mlOverwrittenSensorLines = 0;
+	apState->mfCurrentLineRenderWallMilliseconds = 0.0;
+	apState->mfCurrentLineMaxViewRenderWallMilliseconds = 0.0;
+	apState->mfFirstBatchPackSubmitWallMilliseconds = 0.0;
+	apState->mbIlluminationDiagnosticsValid = false;
+}
+
+static bool AimMsuMrSensorSample(cLuxMsuMrSensorSampleState& aSample,
+	const cLuxMsuMrEarthSampleEvent& aEvent,
+	const cLuxSatellitePose& aPose,
+	const cLuxMsuMrGroundSample& aGroundSample)
+{
+	if(aSample.mpView == NULL || aSample.mpViewportCallback == NULL)
+		return false;
+
+	cVector3f vForward(
+		static_cast<float>(aGroundSample.mvRayDirection.x),
+		static_cast<float>(aGroundSample.mvRayDirection.y),
+		static_cast<float>(aGroundSample.mvRayDirection.z));
+	cVector3f vUp(
+		static_cast<float>(aPose.mvAlongTrack.x),
+		static_cast<float>(aPose.mvAlongTrack.y),
+		static_cast<float>(aPose.mvAlongTrack.z));
+	vForward.Normalize();
+	cVector3f vRight = cMath::Vector3Cross(vForward, vUp);
+	vRight.Normalize();
+	vUp = cMath::Vector3Cross(vRight, vForward);
+	vUp.Normalize();
+
+	cMatrixf mtxViewRotation = cMatrixf::Identity;
+	mtxViewRotation.SetRight(vRight);
+	mtxViewRotation.SetUp(vUp);
+	mtxViewRotation.SetForward(vForward * -1.0f);
+	const cVector3f vSensorPosition(
+		static_cast<float>(aPose.mvPositionMetres.x),
+		static_cast<float>(aPose.mvPositionMetres.y),
+		static_cast<float>(aPose.mvPositionMetres.z));
+	aSample.mpView->SetTransform(vSensorPosition, mtxViewRotation);
+	aSample.mpViewportCallback->SetSampleJulianDate(
+		aEvent.mfJulianDayUtc, aEvent.mfJulianFractionUtc);
+	aSample.mpViewportCallback->ResetRenderTiming();
+
+	aSample.mlSampleIndex = aEvent.mlEarthSampleIndex;
+	aSample.mfJulianDayUtc = aEvent.mfJulianDayUtc;
+	aSample.mfJulianFractionUtc = aEvent.mfJulianFractionUtc;
+	aSample.mfLookAngleDegrees = aGroundSample.mfLookAngleDegrees;
+	aSample.mfSlantRangeMetres = aGroundSample.mfSlantRangeMetres;
+	aSample.mfFootprintMetres = 2.0 * aGroundSample.mfSlantRangeMetres *
+		std::tan(cLuxMsuMrGeometry::GetOpticalPositionPitchDegrees() *
+			kDegreesToRadians * 0.5);
+	aSample.mfLatitudeDegrees = aGroundSample.mfLatitudeDegrees;
+	aSample.mfLongitudeDegrees = aGroundSample.mfLongitudeDegrees;
+
+	const cVector3f vCameraForward = aSample.mpView->GetCamera()->GetForward();
+	const double fAimDot =
+		static_cast<double>(vCameraForward.x) * aGroundSample.mvRayDirection.x +
+		static_cast<double>(vCameraForward.y) * aGroundSample.mvRayDirection.y +
+		static_cast<double>(vCameraForward.z) * aGroundSample.mvRayDirection.z;
+	const double fAimCrossX =
+		static_cast<double>(vCameraForward.y) * aGroundSample.mvRayDirection.z -
+		static_cast<double>(vCameraForward.z) * aGroundSample.mvRayDirection.y;
+	const double fAimCrossY =
+		static_cast<double>(vCameraForward.z) * aGroundSample.mvRayDirection.x -
+		static_cast<double>(vCameraForward.x) * aGroundSample.mvRayDirection.z;
+	const double fAimCrossZ =
+		static_cast<double>(vCameraForward.x) * aGroundSample.mvRayDirection.y -
+		static_cast<double>(vCameraForward.y) * aGroundSample.mvRayDirection.x;
+	const double fAimCrossLength = std::sqrt(
+		fAimCrossX * fAimCrossX + fAimCrossY * fAimCrossY +
+		fAimCrossZ * fAimCrossZ);
+	aSample.mfAimErrorArcseconds = std::atan2(fAimCrossLength, fAimDot) /
+		kDegreesToRadians * 3600.0;
+
+	const cVector3f vCameraPosition = aSample.mpView->GetCamera()->GetPosition();
+	const double fOriginErrorX =
+		static_cast<double>(vCameraPosition.x) - aPose.mvPositionMetres.x;
+	const double fOriginErrorY =
+		static_cast<double>(vCameraPosition.y) - aPose.mvPositionMetres.y;
+	const double fOriginErrorZ =
+		static_cast<double>(vCameraPosition.z) - aPose.mvPositionMetres.z;
+	aSample.mfOriginQuantizationMetres = std::sqrt(
+		fOriginErrorX * fOriginErrorX + fOriginErrorY * fOriginErrorY +
+		fOriginErrorZ * fOriginErrorZ);
+	return std::isfinite(aSample.mfAimErrorArcseconds) &&
+		std::isfinite(aSample.mfOriginQuantizationMetres);
+}
 
 static bool CreateSatelliteLabel(cLuxSatelliteOrbit *apOrbit, iFontData *apFont)
 {
@@ -725,6 +1285,8 @@ static bool CreateSatelliteLabel(cLuxSatelliteOrbit *apOrbit, iFontData *apFont)
 
 cLuxSatelliteHandler::cLuxSatelliteHandler()
 {
+	mpMsuMrSimulation = hplNew(cLuxMsuMrSimulation, ());
+	mpScanPresentationState = NULL;
 	mpEarthOrientationTable = hplNew(cLuxEarthOrientationTable, ());
 	mbDefaultEarthOrientationLoadAttempted = false;
 	mbEarthOrientationWarningShown = false;
@@ -733,6 +1295,8 @@ cLuxSatelliteHandler::cLuxSatelliteHandler()
 cLuxSatelliteHandler::~cLuxSatelliteHandler()
 {
 	Reset();
+	if(mpScanPresentationState) hplDelete(mpScanPresentationState);
+	hplDelete(mpMsuMrSimulation);
 	hplDelete(mpEarthOrientationTable);
 }
 
@@ -778,13 +1342,1361 @@ void cLuxSatelliteHandler::EnsureEarthOrientationData()
 
 bool cLuxSatelliteHandler::RegisterEarthOrientationData(const tString& asFile)
 {
+	if((mpMsuMrSimulation && mpMsuMrSimulation->IsActive()) ||
+		mpScanPresentationState)
+	{
+		Warning("Could not register Earth-orientation data '%s' while an MSU-MR scan is active.\n",
+			asFile.c_str());
+		return false;
+	}
 	return LoadEarthOrientationData(asFile, true);
+}
+
+void cLuxSatelliteHandler::GetSatelliteNames(tStringVec& avNames) const
+{
+	avNames.clear();
+	avNames.reserve(m_mapOrbits.size());
+	for(tLuxSatelliteOrbitMap::const_iterator it = m_mapOrbits.begin(); it != m_mapOrbits.end(); ++it)
+	{
+		if(it->second)
+			avNames.push_back(it->second->msName);
+	}
+}
+
+bool cLuxSatelliteHandler::SelectSatellite(const tString& asName)
+{
+	const tString sSelectedKey = cString::ToLowerCase(asName);
+	bool bFound = false;
+
+	for(tLuxSatelliteOrbitMap::iterator it = m_mapOrbits.begin(); it != m_mapOrbits.end(); ++it)
+	{
+		cLuxSatelliteOrbit *pOrbit = it->second;
+		if(pOrbit == NULL)
+			continue;
+
+		const bool bSelected = it->first == sSelectedKey;
+		bFound = bFound || bSelected;
+		if(pOrbit->mpIconBillboard)
+			pOrbit->mpIconBillboard->SetColor(bSelected ? cColor(0, 1, 0, 1) : cColor(1, 1, 1, 1));
+	}
+
+	msSelectedSatelliteKey = bFound ? sSelectedKey : "";
+	return bFound;
+}
+
+void cLuxSatelliteHandler::SetOrbitScanVisibility(cLuxSatelliteOrbit *apOrbit,
+												   bool abTargetVisible)
+{
+	if(apOrbit == NULL || apOrbit->mpMap == NULL)
+		return;
+
+	if(apOrbit->mbScanVisibilityCaptured == false)
+	{
+		apOrbit->mbScanIconWasVisible = apOrbit->mpIconBillboard &&
+			apOrbit->mpIconBillboard->GetVisibleVar();
+		apOrbit->mvScanLabelWasVisible.clear();
+		apOrbit->mvScanLabelWasVisible.reserve(apOrbit->mvLabelBillboards.size());
+		for(size_t i = 0; i < apOrbit->mvLabelBillboards.size(); ++i)
+		{
+			apOrbit->mvScanLabelWasVisible.push_back(
+				apOrbit->mvLabelBillboards[i] && apOrbit->mvLabelBillboards[i]->GetVisibleVar());
+		}
+
+		iLuxEntity *pEntity = apOrbit->mpMap->GetEntityByName(apOrbit->msName);
+		apOrbit->mpScanMeshEntity = pEntity ? pEntity->GetMeshEntity() : NULL;
+		apOrbit->mbScanMeshWasVisible = apOrbit->mpScanMeshEntity &&
+			apOrbit->mpScanMeshEntity->IsVisible();
+		apOrbit->mbScanVisibilityCaptured = true;
+	}
+
+	if(apOrbit->mpIconBillboard)
+		apOrbit->mpIconBillboard->SetVisible(abTargetVisible && apOrbit->mbScanIconWasVisible);
+	for(size_t i = 0; i < apOrbit->mvLabelBillboards.size(); ++i)
+	{
+		const bool bWasVisible = i < apOrbit->mvScanLabelWasVisible.size() &&
+			apOrbit->mvScanLabelWasVisible[i];
+		if(apOrbit->mvLabelBillboards[i])
+			apOrbit->mvLabelBillboards[i]->SetVisible(abTargetVisible && bWasVisible);
+	}
+	if(apOrbit->mpScanMeshEntity)
+		apOrbit->mpScanMeshEntity->SetVisible(abTargetVisible && apOrbit->mbScanMeshWasVisible);
+}
+
+void cLuxSatelliteHandler::RestoreOrbitScanVisibility(cLuxSatelliteOrbit *apOrbit)
+{
+	if(apOrbit == NULL || apOrbit->mbScanVisibilityCaptured == false)
+		return;
+
+	if(apOrbit->mpIconBillboard)
+		apOrbit->mpIconBillboard->SetVisible(apOrbit->mbScanIconWasVisible);
+	for(size_t i = 0; i < apOrbit->mvLabelBillboards.size(); ++i)
+	{
+		if(apOrbit->mvLabelBillboards[i] && i < apOrbit->mvScanLabelWasVisible.size())
+			apOrbit->mvLabelBillboards[i]->SetVisible(apOrbit->mvScanLabelWasVisible[i]);
+	}
+	if(apOrbit->mpScanMeshEntity)
+		apOrbit->mpScanMeshEntity->SetVisible(apOrbit->mbScanMeshWasVisible);
+
+	apOrbit->mpScanMeshEntity = NULL;
+	apOrbit->mvScanLabelWasVisible.clear();
+	apOrbit->mbScanVisibilityCaptured = false;
+	apOrbit->mbScanIconWasVisible = false;
+	apOrbit->mbScanMeshWasVisible = false;
+}
+
+bool cLuxSatelliteHandler::BeginScanPresentation(cLuxMap *apMap, const tString& asTargetKey)
+{
+	if(mpScanPresentationState || apMap == NULL || apMap->GetWorld() == NULL ||
+		mpMsuMrSimulation == NULL || mpMsuMrSimulation->IsActive() == false ||
+		gpBase == NULL || gpBase->mpMapHandler == NULL ||
+		gpBase->mpEngine == NULL || gpBase->mpEngine->GetGraphics() == NULL)
+		return false;
+	tLuxSatelliteOrbitMap::iterator itTarget = m_mapOrbits.find(asTargetKey);
+	if(itTarget == m_mapOrbits.end() || itTarget->second == NULL ||
+		itTarget->second->mpMap != apMap)
+		return false;
+
+	mpScanPresentationState = hplNew(cLuxSatelliteScanPresentationState, ());
+	mpScanPresentationState->mpMap = apMap;
+	mpScanPresentationState->msTargetKey = asTargetKey;
+
+	// Each strip retains a private render target. Ninety-eight 16x1 views and
+	// one 4x1 tail are packed into this full-width atlas for one readback;
+	// direct offset sub-viewports into a shared HPL2 deferred target are not
+	// reliable.
+	cGraphics *pGraphics = gpBase->mpEngine->GetGraphics();
+	const cVector2l vSensorBatchSize(kMsuMrSensorBatchWidth, 1);
+	mpScanPresentationState->mpSensorBatchTexture = pGraphics->CreateTexture(
+		"MsuMrSensorBatchTarget", eTextureType_Rect,
+		eTextureUsage_RenderTarget);
+	if(mpScanPresentationState->mpSensorBatchTexture == NULL)
+	{
+		EndScanPresentation(false);
+		return false;
+	}
+	mpScanPresentationState->mpSensorBatchTexture->SetWrapSTR(
+		eTextureWrap_ClampToEdge);
+	if(mpScanPresentationState->mpSensorBatchTexture->CreateFromRawData(
+		cVector3l(vSensorBatchSize.x, vSensorBatchSize.y, 0),
+		ePixelFormat_RGBA, NULL) == false)
+	{
+		EndScanPresentation(false);
+		return false;
+	}
+
+	mpScanPresentationState->mpSensorBatchFrameBuffer =
+		pGraphics->CreateFrameBuffer("MsuMrSensorBatch");
+	if(mpScanPresentationState->mpSensorBatchFrameBuffer == NULL)
+	{
+		EndScanPresentation(false);
+		return false;
+	}
+	mpScanPresentationState->mpSensorBatchFrameBuffer->SetTexture2D(
+		0, mpScanPresentationState->mpSensorBatchTexture);
+	mpScanPresentationState->mpSensorBatchDepthStencil =
+		pGraphics->CreateDepthStencilBuffer(vSensorBatchSize, 24, 8, false);
+	if(mpScanPresentationState->mpSensorBatchDepthStencil == NULL)
+	{
+		EndScanPresentation(false);
+		return false;
+	}
+	mpScanPresentationState->mpSensorBatchFrameBuffer->SetDepthStencilBuffer(
+		mpScanPresentationState->mpSensorBatchDepthStencil);
+	if(mpScanPresentationState->mpSensorBatchFrameBuffer->CompileAndValidate() ==
+		false)
+	{
+		EndScanPresentation(false);
+		return false;
+	}
+
+	cLuxCameraViewDesc stripDesc;
+	stripDesc.mvResolution = cVector2l(kMsuMrStripSampleCount, 1);
+	stripDesc.mfFOV = static_cast<float>(
+		cLuxMsuMrGeometry::GetOpticalPositionPitchDegrees() * kDegreesToRadians);
+	stripDesc.mfNearClipPlane = kMsuMrSensorNearClipMetres;
+	stripDesc.mfFarClipPlane = kMsuMrSensorFarClipMetres;
+	stripDesc.mpWorld = apMap->GetWorld();
+	stripDesc.mRenderer = eRenderer_Main;
+	stripDesc.mbActive = true;
+	// The world renderer only needs to visit these viewports when a completed
+	// line has queued the complete strip acquisition set.
+	stripDesc.mbVisible = false;
+	stripDesc.mbPushFront = true;
+	bool bAnyTargetMipmaps =
+		mpScanPresentationState->mpSensorBatchTexture->UsesMipMaps();
+	for(int i = 0; i < kMsuMrStripCount; ++i)
+	{
+		const int lStripSampleCount = GetMsuMrStripSampleCount(i);
+		stripDesc.mvResolution = cVector2l(lStripSampleCount, 1);
+		cLuxMsuMrSensorSampleState& strip =
+			mpScanPresentationState->mvSensorStrips[i];
+		strip.mlSampleIndex = GetMsuMrStripFirstSample(i);
+		strip.mpView = gpBase->mpMapHandler->CreateCameraView(stripDesc);
+		if(strip.mpView == NULL || strip.mpView->GetViewport() == NULL)
+		{
+			EndScanPresentation(false);
+			return false;
+		}
+		if(strip.mpView->GetRenderTexture() &&
+			strip.mpView->GetRenderTexture()->UsesMipMaps())
+		{
+			bAnyTargetMipmaps = true;
+		}
+		strip.mpView->GetViewport()->SetPosition(cVector2l(0, 0));
+		strip.mpView->GetViewport()->SetSize(
+			cVector2l(lStripSampleCount, 1));
+
+		strip.mpViewportCallback =
+			hplNew(cLuxMsuMrSensorViewportCallback, (itTarget->second));
+		strip.mpView->GetViewport()->AddViewportCallback(
+			strip.mpViewportCallback);
+
+		// Detector strips do not benefit from screen-space passes, reflections,
+		// shadows, or occlusion queries.
+		cRenderSettings *pRenderSettings =
+			strip.mpView->GetViewport()->GetRenderSettings();
+		if(pRenderSettings)
+		{
+			pRenderSettings->mbUseOcclusionCulling = false;
+			pRenderSettings->mbUseEdgeSmooth = false;
+			pRenderSettings->mbRenderWorldReflection = false;
+			pRenderSettings->mbRenderShadows = false;
+			pRenderSettings->mbSSAOActive = false;
+		}
+	}
+
+	mpScanPresentationState->mpScanProduct = hplNew(cLuxMsuMrScanProduct, ());
+	if(mpScanPresentationState->mpScanProduct->Initialize() == false)
+	{
+		EndScanPresentation(false);
+		return false;
+	}
+
+	cLightListIterator itLight = apMap->GetWorld()->GetLightIterator();
+	while(itLight.HasNext())
+	{
+		iLight *pLight = itLight.Next();
+		if(pLight == NULL || pLight->GetLightType() != eLightType_Sun)
+			continue;
+
+		cLightSun *pSun = static_cast<cLightSun*>(pLight);
+		cLuxSatelliteScanSunState state;
+		state.mpSun = pSun;
+		state.mbUsedSystemTime = pSun->GetUseSystemTime();
+		state.mfFixedJulianDate = pSun->GetJulianDate();
+		mpScanPresentationState->mvSuns.push_back(state);
+		pSun->SetUseSystemTime(false);
+	}
+
+	for(tLuxSatelliteOrbitMap::iterator it = m_mapOrbits.begin(); it != m_mapOrbits.end(); ++it)
+	{
+		if(it->second && it->second->mpMap == apMap)
+			SetOrbitScanVisibility(it->second, it->first == asTargetKey);
+	}
+
+	UpdateScanPresentation();
+	const double fPitchRadians =
+		cLuxMsuMrGeometry::GetOpticalPositionPitchDegrees() * kDegreesToRadians;
+	const double fStripHorizontalFovDegrees = 2.0 * std::atan(
+		kMsuMrStripSampleCount * std::tan(fPitchRadians * 0.5)) /
+		kDegreesToRadians;
+	const double fTailHorizontalFovDegrees = 2.0 * std::atan(
+		kMsuMrTailStripSampleCount * std::tan(fPitchRadians * 0.5)) /
+		kDegreesToRadians;
+	Log("MSU-MR full-strip acquisition initialized: fullStrips=%dx(16x1 RGBA), "
+		"tail=1x(4x1 RGBA) for rightmost samples 1568..1571, "
+		"totalViews=%d, samples=0..1571, "
+		"perStripPixelOrder=reversed, "
+		"packedTarget=%dx1 RGBA, gpuCopiesPerLine=%d, "
+		"renderBatches=50+49 across two frames, readbackCallsPerLine=1, "
+		"renderer=mainDeferred, "
+		"verticalFOV=%.8f deg, fullHorizontalFOV=%.8f deg, "
+		"tailHorizontalFOV=%.8f deg, "
+		"clip=%.0f..%.0f m, targetMipmaps=%s, stripMidpointSunTime=on, "
+		"endpointGeometryValidation=on, void=engineDefaultBlack, "
+		"spacecraftRenderables=excluded.\n",
+		kMsuMrFullStripCount, kMsuMrStripCount,
+		kMsuMrSensorBatchWidth, kMsuMrStripCount,
+		cLuxMsuMrGeometry::GetOpticalPositionPitchDegrees(),
+		fStripHorizontalFovDegrees, fTailHorizontalFovDegrees,
+		kMsuMrSensorNearClipMetres, kMsuMrSensorFarClipMetres,
+		bAnyTargetMipmaps ? "on" : "off");
+	Log("MSU-MR strip timing: fullSpan=%.9f ms, "
+		"fullMaximumMidpointOffset=%.9f ms, tailSpan=%.9f ms, "
+		"tailMaximumMidpointOffset=%.9f ms; complete 1572-sample lines "
+		"are published atomically.\n",
+		(kMsuMrStripSampleCount - 1) * 1000.0 /
+			cLuxMsuMrSimulation::kCircularPositionsPerSecond,
+		(kMsuMrStripSampleCount - 1) * 500.0 /
+			cLuxMsuMrSimulation::kCircularPositionsPerSecond,
+		(kMsuMrTailStripSampleCount - 1) * 1000.0 /
+			cLuxMsuMrSimulation::kCircularPositionsPerSecond,
+		(kMsuMrTailStripSampleCount - 1) * 500.0 /
+			cLuxMsuMrSimulation::kCircularPositionsPerSecond);
+	Log("MSU-MR product mapping: HRPT acquires all 99 views; LRPT width 1568 "
+		"omits the final 4x1 view containing rightmost HRPT samples 1568..1571.\n");
+	Log("MSU-MR scan product initialized: lineBuffer=%ux1 RGBA, "
+		"rollingHistory=%ux%u RGBA, unwrittenAlpha=0, "
+		"maxOverlay=786x128, newestLine=row0, activeSuns=%u, "
+		"maxActiveSunIntensity=%.3f.\n",
+		cLuxMsuMrScanProduct::kWidth,
+		cLuxMsuMrScanProduct::kWidth,
+		cLuxMsuMrScanProduct::kHistoryLines,
+		mpScanPresentationState->mlActiveSunCount,
+		mpScanPresentationState->mfMaxActiveSunIntensity);
+	return true;
+}
+
+void cLuxSatelliteHandler::UpdateScanPresentation()
+{
+	if(mpScanPresentationState == NULL || mpMsuMrSimulation == NULL ||
+		mpMsuMrSimulation->IsActive() == false)
+		return;
+
+	double fJulianDayUtc = 0.0;
+	double fJulianFractionUtc = 0.0;
+	mpMsuMrSimulation->GetJulianDateUtc(fJulianDayUtc, fJulianFractionUtc);
+	const double fJulianDateUtc = fJulianDayUtc + fJulianFractionUtc;
+	mpScanPresentationState->mlActiveSunCount = 0;
+	mpScanPresentationState->mfMaxActiveSunIntensity = 0.0;
+	for(size_t i = 0; i < mpScanPresentationState->mvSuns.size(); ++i)
+	{
+		cLightSun *pSun = mpScanPresentationState->mvSuns[i].mpSun;
+		if(pSun)
+		{
+			if(pSun->IsActive())
+			{
+				++mpScanPresentationState->mlActiveSunCount;
+				mpScanPresentationState->mfMaxActiveSunIntensity = std::max(
+					mpScanPresentationState->mfMaxActiveSunIntensity,
+					static_cast<double>(pSun->GetIntensity()));
+			}
+			pSun->SetUseSystemTime(false);
+			pSun->SetJulianDate(fJulianDateUtc);
+		}
+	}
+
+	for(tLuxSatelliteOrbitMap::iterator it = m_mapOrbits.begin(); it != m_mapOrbits.end(); ++it)
+	{
+		cLuxSatelliteOrbit *pOrbit = it->second;
+		if(pOrbit == NULL || pOrbit->mpMap != mpScanPresentationState->mpMap)
+			continue;
+
+		const bool bIsTarget = it->first == mpScanPresentationState->msTargetKey;
+		SetOrbitScanVisibility(pOrbit, bIsTarget);
+		if(bIsTarget && mpMsuMrSimulation->HasSatellitePose())
+			ApplyOrbitPose(pOrbit, mpMsuMrSimulation->GetSatellitePose());
+	}
+}
+
+void cLuxSatelliteHandler::EndScanPresentation(bool abResyncLiveOrbits)
+{
+	if(mpScanPresentationState == NULL)
+		return;
+
+	cLuxSatelliteScanPresentationState *pState = mpScanPresentationState;
+	mpScanPresentationState = NULL;
+	if(pState->mpScanProduct)
+	{
+		hplDelete(pState->mpScanProduct);
+		pState->mpScanProduct = NULL;
+	}
+	for(int i = 0; i < kMsuMrStripCount; ++i)
+	{
+		cLuxMsuMrSensorSampleState& strip = pState->mvSensorStrips[i];
+		if(strip.mpViewportCallback)
+		{
+			strip.mpViewportCallback->Restore();
+			if(strip.mpView && strip.mpView->GetViewport())
+			{
+				strip.mpView->GetViewport()->RemoveViewportCallback(
+					strip.mpViewportCallback);
+			}
+			hplDelete(strip.mpViewportCallback);
+			strip.mpViewportCallback = NULL;
+		}
+		if(strip.mpView && gpBase && gpBase->mpMapHandler)
+		{
+			gpBase->mpMapHandler->DestroyCameraView(strip.mpView);
+			strip.mpView = NULL;
+		}
+	}
+	if(gpBase && gpBase->mpEngine && gpBase->mpEngine->GetGraphics())
+	{
+		cGraphics *pGraphics = gpBase->mpEngine->GetGraphics();
+		if(pState->mpSensorBatchFrameBuffer)
+		{
+			pGraphics->DestroyFrameBuffer(pState->mpSensorBatchFrameBuffer);
+			pState->mpSensorBatchFrameBuffer = NULL;
+		}
+		if(pState->mpSensorBatchDepthStencil)
+		{
+			pGraphics->DestoroyDepthStencilBuffer(
+				pState->mpSensorBatchDepthStencil);
+			pState->mpSensorBatchDepthStencil = NULL;
+		}
+		if(pState->mpSensorBatchTexture)
+		{
+			pGraphics->DestroyTexture(pState->mpSensorBatchTexture);
+			pState->mpSensorBatchTexture = NULL;
+		}
+	}
+	for(size_t i = 0; i < pState->mvSuns.size(); ++i)
+	{
+		cLuxSatelliteScanSunState& state = pState->mvSuns[i];
+		if(state.mpSun)
+		{
+			state.mpSun->SetJulianDate(state.mfFixedJulianDate);
+			state.mpSun->SetUseSystemTime(state.mbUsedSystemTime);
+		}
+	}
+
+	if(abResyncLiveOrbits && pState->mpMap && pState->mpMap->GetWorld())
+	{
+		const double fLiveJulianDateUtc = GetSimulationJulianDateUtc(pState->mpMap);
+		for(tLuxSatelliteOrbitMap::iterator it = m_mapOrbits.begin(); it != m_mapOrbits.end(); ++it)
+		{
+			if(it->second && it->second->mpMap == pState->mpMap)
+				UpdateOrbit(it->second, fLiveJulianDateUtc);
+		}
+	}
+
+	for(tLuxSatelliteOrbitMap::iterator it = m_mapOrbits.begin(); it != m_mapOrbits.end(); ++it)
+	{
+		if(it->second && it->second->mpMap == pState->mpMap)
+			RestoreOrbitScanVisibility(it->second);
+	}
+
+	hplDelete(pState);
+}
+
+void cLuxSatelliteHandler::LogMsuMrSampleDiagnostics(cLuxSatelliteOrbit *apOrbit)
+{
+	if(mpMsuMrSimulation == NULL || apOrbit == NULL)
+		return;
+
+	const tLuxMsuMrEarthSampleEventVec& vEvents =
+		mpMsuMrSimulation->GetLastEarthSampleEvents();
+	if(vEvents.empty())
+		return;
+
+	const cLuxMsuMrEarthSampleEvent& lastEvent = vEvents.back();
+	if(lastEvent.mlEarthSampleIndex != cLuxMsuMrSimulation::kEarthViewSamplesPerLine - 1)
+		return;
+
+	const cLuxMsuMrEarthSampleEvent& firstEvent = vEvents.front();
+	Log("MSU-MR HRPT line %llu complete: face=%u, updatePhase=%u, updateEarth=%u, "
+		"HRPT=%u..%u, circular=%u..%u, totalEarth=%llu, nextPhase=%u, "
+		"UTC(first)=%.0f+%.15f, UTC(last)=%.0f+%.15f.\n",
+		static_cast<unsigned long long>(lastEvent.mlLineIndex),
+		lastEvent.mlMirrorFaceIndex,
+		mpMsuMrSimulation->GetLastPhasePositionsAdvanced(),
+		static_cast<unsigned int>(vEvents.size()),
+		firstEvent.mlEarthSampleIndex, lastEvent.mlEarthSampleIndex,
+		firstEvent.mlCircularPhase, lastEvent.mlCircularPhase,
+		static_cast<unsigned long long>(mpMsuMrSimulation->GetTotalEarthSampleCount()),
+		mpMsuMrSimulation->GetCircularPhasePosition(),
+		firstEvent.mfJulianDayUtc, firstEvent.mfJulianFractionUtc,
+		lastEvent.mfJulianDayUtc, lastEvent.mfJulianFractionUtc);
+
+	cLuxMsuMrEarthSampleEvent
+		vRepresentativeEvents[kMsuMrRepresentativeSampleCount];
+	cLuxSatellitePose vRepresentativePoses[kMsuMrRepresentativeSampleCount];
+	cLuxMsuMrGroundSample vGroundSamples[kMsuMrRepresentativeSampleCount];
+	double
+		vRepresentativeSolarElevationDegrees[kMsuMrRepresentativeSampleCount] = {};
+	bool bIlluminationDiagnosticsValid = true;
+	for(int i = 0; i < kMsuMrRepresentativeSampleCount; ++i)
+	{
+		if(mpMsuMrSimulation->GetEarthSampleEvent(lastEvent.mlLineIndex,
+			kMsuMrRepresentativeSampleIndices[i],
+			vRepresentativeEvents[i]) == false ||
+			GetOrbitPose(apOrbit, vRepresentativeEvents[i].mfJulianDayUtc,
+				vRepresentativeEvents[i].mfJulianFractionUtc,
+				vRepresentativePoses[i]) == false ||
+			cLuxMsuMrGeometry::CalculateGroundSample(vRepresentativePoses[i],
+				kMsuMrRepresentativeSampleIndices[i], vGroundSamples[i]) == false)
+		{
+			Warning("Could not calculate MSU-MR WGS-84 geometry for line %llu, HRPT sample %u.\n",
+				static_cast<unsigned long long>(lastEvent.mlLineIndex),
+				kMsuMrRepresentativeSampleIndices[i]);
+			return;
+		}
+		if(CalculateMsuMrGroundSolarElevationDegrees(vGroundSamples[i],
+			vRepresentativeEvents[i].mfJulianDayUtc,
+			vRepresentativeEvents[i].mfJulianFractionUtc,
+			vRepresentativeSolarElevationDegrees[i]) == false)
+		{
+			bIlluminationDiagnosticsValid = false;
+		}
+	}
+	const bool bPointSunEarthOccluded = IsMsuMrPointSunEarthOccluded(
+		vRepresentativePoses[2],
+		vRepresentativeEvents[2].mfJulianDayUtc,
+		vRepresentativeEvents[2].mfJulianFractionUtc);
+
+	double fSwathMetres = 0.0;
+	double fCentreSampleSpacingMetres = 0.0;
+	if(cLuxMsuMrGeometry::CalculateGeodesicDistanceMetres(
+		vGroundSamples[0].mfLatitudeDegrees, vGroundSamples[0].mfLongitudeDegrees,
+		vGroundSamples[5].mfLatitudeDegrees, vGroundSamples[5].mfLongitudeDegrees,
+		fSwathMetres) == false ||
+		cLuxMsuMrGeometry::CalculateGeodesicDistanceMetres(
+		vGroundSamples[2].mfLatitudeDegrees, vGroundSamples[2].mfLongitudeDegrees,
+		vGroundSamples[3].mfLatitudeDegrees, vGroundSamples[3].mfLongitudeDegrees,
+		fCentreSampleSpacingMetres) == false)
+	{
+		Warning("Could not calculate MSU-MR WGS-84 ground distances for line %llu.\n",
+			static_cast<unsigned long long>(lastEvent.mlLineIndex));
+		return;
+	}
+
+	Log("MSU-MR WGS84 line %llu face=%u: "
+		"s0[a=%.8f lat=%.7f lon=%.7f range=%.3fkm], "
+		"s785[a=%.8f lat=%.7f lon=%.7f range=%.3fkm], "
+		"s786[a=%.8f lat=%.7f lon=%.7f range=%.3fkm], "
+		"s1571[a=%.8f lat=%.7f lon=%.7f range=%.3fkm], "
+		"edgeDistance=%.3fkm, centreSpacing=%.3fkm.\n",
+		static_cast<unsigned long long>(lastEvent.mlLineIndex),
+		lastEvent.mlMirrorFaceIndex,
+		vGroundSamples[0].mfLookAngleDegrees,
+		vGroundSamples[0].mfLatitudeDegrees,
+		vGroundSamples[0].mfLongitudeDegrees,
+		vGroundSamples[0].mfSlantRangeMetres / 1000.0,
+		vGroundSamples[2].mfLookAngleDegrees,
+		vGroundSamples[2].mfLatitudeDegrees,
+		vGroundSamples[2].mfLongitudeDegrees,
+		vGroundSamples[2].mfSlantRangeMetres / 1000.0,
+		vGroundSamples[3].mfLookAngleDegrees,
+		vGroundSamples[3].mfLatitudeDegrees,
+		vGroundSamples[3].mfLongitudeDegrees,
+		vGroundSamples[3].mfSlantRangeMetres / 1000.0,
+		vGroundSamples[5].mfLookAngleDegrees,
+		vGroundSamples[5].mfLatitudeDegrees,
+		vGroundSamples[5].mfLongitudeDegrees,
+		vGroundSamples[5].mfSlantRangeMetres / 1000.0,
+		fSwathMetres / 1000.0, fCentreSampleSpacingMetres / 1000.0);
+
+	// Prepare 98 full strips and the four-sample HRPT tail at their temporal and
+	// angular midpoints. Endpoint checks bound the projection and motion
+	// approximation at both swath edges as well as the centre before any view
+	// becomes visible.
+	if(mpScanPresentationState)
+	{
+		if(mpScanPresentationState->mbSensorLinePending)
+		{
+			++mpScanPresentationState->mlOverwrittenSensorLines;
+			Log("MSU-MR product line %llu skipped while two-frame acquisition "
+				"of line %llu is still active; simulation timing continues.\n",
+				static_cast<unsigned long long>(lastEvent.mlLineIndex),
+				static_cast<unsigned long long>(
+					mpScanPresentationState->mlSensorLineIndex));
+			return;
+		}
+		const std::chrono::steady_clock::time_point preparationStart =
+			std::chrono::steady_clock::now();
+		const double fPitchRadians =
+			cLuxMsuMrGeometry::GetOpticalPositionPitchDegrees() *
+			kDegreesToRadians;
+		const double fCentreSampleIndex =
+			(cLuxMsuMrSimulation::kEarthViewSamplesPerLine - 1) * 0.5;
+		double fMaxProjectionRayErrorArcseconds = 0.0;
+		double fMaxGroundDisplacementMetres = 0.0;
+		double fMaxTimeOffsetMilliseconds = 0.0;
+		double fGroundSolarElevationMinDegrees = 90.0;
+		double fGroundSolarElevationMaxDegrees = -90.0;
+		unsigned int lDaylightEndpointCount = 0;
+		unsigned int lIlluminationEndpointCount = 0;
+		bool bPreparationSucceeded = true;
+		int lFailedStrip = -1;
+		for(int stripIndex = 0; stripIndex < kMsuMrStripCount; ++stripIndex)
+		{
+			const int lStripSampleCount =
+				GetMsuMrStripSampleCount(stripIndex);
+			const std::uint32_t lFirstSample =
+				GetMsuMrStripFirstSample(stripIndex);
+			const std::uint32_t lLowerCentreSample =
+				lFirstSample + lStripSampleCount / 2 - 1;
+			const std::uint32_t lUpperCentreSample = lLowerCentreSample + 1;
+			cLuxMsuMrEarthSampleEvent lowerCentreEvent;
+			cLuxMsuMrEarthSampleEvent upperCentreEvent;
+			if(mpMsuMrSimulation->GetEarthSampleEvent(lastEvent.mlLineIndex,
+				lLowerCentreSample, lowerCentreEvent) == false ||
+				mpMsuMrSimulation->GetEarthSampleEvent(lastEvent.mlLineIndex,
+					lUpperCentreSample, upperCentreEvent) == false)
+			{
+				bPreparationSucceeded = false;
+				lFailedStrip = stripIndex;
+				break;
+			}
+
+			cLuxMsuMrEarthSampleEvent stripEvent = lowerCentreEvent;
+			stripEvent.mlEarthSampleIndex = lFirstSample;
+			const double fCentreEventDeltaDays =
+				(upperCentreEvent.mfJulianDayUtc -
+				 lowerCentreEvent.mfJulianDayUtc) +
+				(upperCentreEvent.mfJulianFractionUtc -
+				 lowerCentreEvent.mfJulianFractionUtc);
+			stripEvent.mfJulianFractionUtc += fCentreEventDeltaDays * 0.5;
+
+			cLuxSatellitePose stripPose;
+			if(GetOrbitPose(apOrbit, stripEvent.mfJulianDayUtc,
+				stripEvent.mfJulianFractionUtc, stripPose) == false)
+			{
+				bPreparationSucceeded = false;
+				lFailedStrip = stripIndex;
+				break;
+			}
+			const double fStripCentreSample =
+				lFirstSample + (lStripSampleCount - 1) * 0.5;
+			const double fStripLookAngleDegrees =
+				(fStripCentreSample - fCentreSampleIndex) *
+				cLuxMsuMrGeometry::GetOpticalPositionPitchDegrees();
+			const double fStripLookAngleRadians =
+				fStripLookAngleDegrees * kDegreesToRadians;
+			const cVector3d vStripForward = Normalize(cVector3d(
+				-stripPose.mvRadialOut.x * std::cos(fStripLookAngleRadians) +
+					stripPose.mvCrossTrack.x * std::sin(fStripLookAngleRadians),
+				-stripPose.mvRadialOut.y * std::cos(fStripLookAngleRadians) +
+					stripPose.mvCrossTrack.y * std::sin(fStripLookAngleRadians),
+				-stripPose.mvRadialOut.z * std::cos(fStripLookAngleRadians) +
+					stripPose.mvCrossTrack.z * std::sin(fStripLookAngleRadians)));
+			cLuxMsuMrGroundSample stripCentreGround;
+			if(cLuxMsuMrGeometry::CalculateGroundIntersection(
+				stripPose.mvPositionMetres, vStripForward,
+				stripCentreGround) == false)
+			{
+				bPreparationSucceeded = false;
+				lFailedStrip = stripIndex;
+				break;
+			}
+			stripCentreGround.mlEarthSampleIndex = lFirstSample;
+			stripCentreGround.mfLookAngleDegrees = fStripLookAngleDegrees;
+
+			const cVector3d vStripRight = Normalize(Cross(
+				vStripForward, stripPose.mvAlongTrack));
+			for(int endpoint = 0; endpoint < 2; ++endpoint)
+			{
+				const int lSampleOffset = endpoint == 0 ?
+					0 : lStripSampleCount - 1;
+				const std::uint32_t lSampleIndex = lFirstSample + lSampleOffset;
+				cLuxMsuMrEarthSampleEvent exactEvent;
+				cLuxSatellitePose exactPose;
+				cLuxMsuMrGroundSample exactGround;
+				cLuxMsuMrGroundSample idealMidpointGround;
+				cLuxMsuMrGroundSample projectedStripGround;
+				const int lStripPixel =
+					lStripSampleCount - 1 - lSampleOffset;
+				const double fHorizontalTangent =
+					(2.0 * lStripPixel + 1.0 - lStripSampleCount) *
+					std::tan(fPitchRadians * 0.5);
+				const cVector3d vStripRay = Normalize(cVector3d(
+					vStripForward.x + vStripRight.x * fHorizontalTangent,
+					vStripForward.y + vStripRight.y * fHorizontalTangent,
+					vStripForward.z + vStripRight.z * fHorizontalTangent));
+				double fGroundDisplacementMetres = 0.0;
+				if(mpMsuMrSimulation->GetEarthSampleEvent(
+						lastEvent.mlLineIndex, lSampleIndex, exactEvent) == false ||
+					GetOrbitPose(apOrbit, exactEvent.mfJulianDayUtc,
+						exactEvent.mfJulianFractionUtc, exactPose) == false ||
+					cLuxMsuMrGeometry::CalculateGroundSample(exactPose,
+						lSampleIndex, exactGround) == false ||
+					cLuxMsuMrGeometry::CalculateGroundSample(stripPose,
+						lSampleIndex, idealMidpointGround) == false ||
+					cLuxMsuMrGeometry::CalculateGroundIntersection(
+						stripPose.mvPositionMetres, vStripRay,
+						projectedStripGround) == false ||
+					cLuxMsuMrGeometry::CalculateGeodesicDistanceMetres(
+						projectedStripGround.mfLatitudeDegrees,
+						projectedStripGround.mfLongitudeDegrees,
+						exactGround.mfLatitudeDegrees,
+						exactGround.mfLongitudeDegrees,
+						fGroundDisplacementMetres) == false)
+				{
+					bPreparationSucceeded = false;
+					lFailedStrip = stripIndex;
+					break;
+				}
+
+				const cVector3d vRayCross = Cross(
+					vStripRay, idealMidpointGround.mvRayDirection);
+				const double fProjectionRayErrorArcseconds = std::atan2(
+					std::sqrt(Dot(vRayCross, vRayCross)),
+					Dot(vStripRay, idealMidpointGround.mvRayDirection)) /
+					kDegreesToRadians * 3600.0;
+				const double fTimeOffsetMilliseconds = std::fabs(
+					((exactEvent.mfJulianDayUtc - stripEvent.mfJulianDayUtc) +
+					 (exactEvent.mfJulianFractionUtc -
+					  stripEvent.mfJulianFractionUtc)) *
+					kSecondsPerDay * 1000.0);
+				fMaxProjectionRayErrorArcseconds = std::max(
+					fMaxProjectionRayErrorArcseconds,
+					fProjectionRayErrorArcseconds);
+				fMaxGroundDisplacementMetres = std::max(
+					fMaxGroundDisplacementMetres,
+					fGroundDisplacementMetres);
+				fMaxTimeOffsetMilliseconds = std::max(
+					fMaxTimeOffsetMilliseconds,
+					fTimeOffsetMilliseconds);
+				double fSolarElevationDegrees = 0.0;
+				if(CalculateMsuMrGroundSolarElevationDegrees(exactGround,
+					exactEvent.mfJulianDayUtc,
+					exactEvent.mfJulianFractionUtc,
+					fSolarElevationDegrees))
+				{
+					fGroundSolarElevationMinDegrees = std::min(
+						fGroundSolarElevationMinDegrees,
+						fSolarElevationDegrees);
+					fGroundSolarElevationMaxDegrees = std::max(
+						fGroundSolarElevationMaxDegrees,
+						fSolarElevationDegrees);
+					++lIlluminationEndpointCount;
+					if(fSolarElevationDegrees >= 0.0)
+						++lDaylightEndpointCount;
+				}
+				else
+				{
+					bIlluminationDiagnosticsValid = false;
+				}
+			}
+			if(bPreparationSucceeded == false)
+				break;
+
+			cLuxMsuMrSensorSampleState& strip =
+				mpScanPresentationState->mvSensorStrips[stripIndex];
+			if(AimMsuMrSensorSample(strip, stripEvent, stripPose,
+				stripCentreGround) == false)
+			{
+				bPreparationSucceeded = false;
+				lFailedStrip = stripIndex;
+				break;
+			}
+			strip.mlSampleIndex = lFirstSample;
+		}
+
+		if(bPreparationSucceeded == false)
+		{
+			Warning("Could not prepare complete MSU-MR strip line %llu at strip %d "
+				"(first HRPT sample %d).\n",
+				static_cast<unsigned long long>(lastEvent.mlLineIndex),
+				lFailedStrip,
+				lFailedStrip >= 0 ?
+					GetMsuMrStripFirstSample(lFailedStrip) : -1);
+			ResetMsuMrPendingSensorLine(mpScanPresentationState);
+			return;
+		}
+
+		mpScanPresentationState->mlSensorLineIndex = lastEvent.mlLineIndex;
+		mpScanPresentationState->mlSensorMirrorFaceIndex =
+			lastEvent.mlMirrorFaceIndex;
+		mpScanPresentationState->mfStripMaxProjectionRayErrorArcseconds =
+			fMaxProjectionRayErrorArcseconds;
+		mpScanPresentationState->mfStripMaxGroundDisplacementMetres =
+			fMaxGroundDisplacementMetres;
+		mpScanPresentationState->mfStripMaxTimeOffsetMilliseconds =
+			fMaxTimeOffsetMilliseconds;
+		mpScanPresentationState->mbIlluminationDiagnosticsValid =
+			bIlluminationDiagnosticsValid &&
+			lIlluminationEndpointCount == kMsuMrStripCount * 2;
+		mpScanPresentationState->mbPointSunEarthOccluded =
+			bPointSunEarthOccluded;
+		mpScanPresentationState->mfGroundSolarElevationMinDegrees =
+			fGroundSolarElevationMinDegrees;
+		mpScanPresentationState->mfGroundSolarElevationMaxDegrees =
+			fGroundSolarElevationMaxDegrees;
+		mpScanPresentationState->mlDaylightEndpointCount =
+			lDaylightEndpointCount;
+		mpScanPresentationState->mlIlluminationEndpointCount =
+			lIlluminationEndpointCount;
+		for(int i = 0; i < kMsuMrRepresentativeSampleCount; ++i)
+		{
+			mpScanPresentationState->mvRepresentativeSolarElevationDegrees[i] =
+				vRepresentativeSolarElevationDegrees[i];
+		}
+		mpScanPresentationState->mfPreparationWallMilliseconds =
+			std::chrono::duration<double, std::milli>(
+				std::chrono::steady_clock::now() - preparationStart).count();
+		mpScanPresentationState->mfCurrentLineRenderWallMilliseconds = 0.0;
+		mpScanPresentationState->mfCurrentLineMaxViewRenderWallMilliseconds = 0.0;
+		mpScanPresentationState->mfFirstBatchPackSubmitWallMilliseconds = 0.0;
+		mpScanPresentationState->mLineAcquisitionStart = preparationStart;
+		mpScanPresentationState->mlCurrentStripBatchStart = 0;
+		mpScanPresentationState->mlCurrentStripBatchCount =
+			kMsuMrFirstRenderBatchStripCount;
+		mpScanPresentationState->mbSensorLinePending = true;
+		for(int i = 0; i < kMsuMrFirstRenderBatchStripCount; ++i)
+			mpScanPresentationState->mvSensorStrips[i].mpView->SetVisible(true);
+	}
+}
+
+void cLuxSatelliteHandler::OnPostRender()
+{
+	if(mpScanPresentationState == NULL ||
+		mpScanPresentationState->mbSensorLinePending == false)
+		return;
+	if(gpBase == NULL || gpBase->mpEngine == NULL ||
+		gpBase->mpEngine->GetGraphics() == NULL)
+	{
+		Warning("Discarded pending MSU-MR line %llu because the graphics system is unavailable.\n",
+			static_cast<unsigned long long>(
+				mpScanPresentationState->mlSensorLineIndex));
+		ResetMsuMrPendingSensorLine(mpScanPresentationState);
+		return;
+	}
+
+	iLowLevelGraphics *pLowLevelGraphics =
+		gpBase->mpEngine->GetGraphics()->GetLowLevel();
+	if(pLowLevelGraphics == NULL)
+	{
+		Warning("Discarded pending MSU-MR line %llu because low-level graphics are unavailable.\n",
+			static_cast<unsigned long long>(
+				mpScanPresentationState->mlSensorLineIndex));
+		ResetMsuMrPendingSensorLine(mpScanPresentationState);
+		return;
+	}
+
+	cBitmap *pSensorBatchBitmap = NULL;
+	unsigned char vLinePixels[kMsuMrSensorBatchWidth][4] = {};
+	bool bReadSucceeded = true;
+	int lFailedStrip = -1;
+	const int lBatchStart =
+		mpScanPresentationState->mlCurrentStripBatchStart;
+	const int lBatchCount =
+		mpScanPresentationState->mlCurrentStripBatchCount;
+	const int lBatchEnd = lBatchStart + lBatchCount;
+	const bool bFinalBatch = lBatchEnd == kMsuMrStripCount;
+	if(lBatchStart < 0 || lBatchCount <= 0 ||
+		lBatchEnd > kMsuMrStripCount)
+	{
+		Warning("Discarded MSU-MR line %llu after invalid strip batch %d+%d.\n",
+			static_cast<unsigned long long>(
+				mpScanPresentationState->mlSensorLineIndex),
+			lBatchStart, lBatchCount);
+		ResetMsuMrPendingSensorLine(mpScanPresentationState);
+		return;
+	}
+
+	double fBatchRenderWallMilliseconds = 0.0;
+	double fBatchMaxViewRenderWallMilliseconds = 0.0;
+	for(int i = lBatchStart; i < lBatchEnd; ++i)
+	{
+		cLuxMsuMrSensorViewportCallback *pCallback =
+			mpScanPresentationState->mvSensorStrips[i].mpViewportCallback;
+		if(pCallback == NULL || pCallback->HasRenderTiming() == false)
+		{
+			bReadSucceeded = false;
+			lFailedStrip = i;
+			break;
+		}
+		const double fViewRenderMilliseconds =
+			pCallback->GetLastWorldDrawMilliseconds();
+		fBatchRenderWallMilliseconds += fViewRenderMilliseconds;
+		fBatchMaxViewRenderWallMilliseconds = std::max(
+			fBatchMaxViewRenderWallMilliseconds, fViewRenderMilliseconds);
+	}
+	const std::chrono::steady_clock::time_point packReadbackStart =
+		std::chrono::steady_clock::now();
+	iFrameBuffer *pPreviousFrameBuffer =
+		pLowLevelGraphics->GetCurrentFrameBuffer();
+	for(int i = lBatchStart; bReadSucceeded && i < lBatchEnd; ++i)
+	{
+		const int lStripSampleCount = GetMsuMrStripSampleCount(i);
+		cLuxMsuMrSensorSampleState& strip =
+			mpScanPresentationState->mvSensorStrips[i];
+		if(strip.mpView == NULL || strip.mpView->GetViewport() == NULL ||
+			strip.mpView->GetViewport()->IsVisible() == false ||
+			strip.mpView->GetViewport()->GetFrameBuffer() !=
+				strip.mpView->GetFrameBuffer() ||
+			strip.mpView->GetViewport()->GetPosition() != cVector2l(0, 0) ||
+			strip.mpView->GetViewport()->GetSize() !=
+				cVector2l(lStripSampleCount, 1))
+		{
+			bReadSucceeded = false;
+			lFailedStrip = i;
+			break;
+		}
+	}
+	if(bReadSucceeded &&
+		(mpScanPresentationState->mpSensorBatchTexture == NULL ||
+		 mpScanPresentationState->mpSensorBatchFrameBuffer == NULL))
+	{
+		bReadSucceeded = false;
+		lFailedStrip = 0;
+	}
+	// Pack all private strip targets on the GPU, then synchronize only once for
+	// the complete line. HPL's nominal roll reverses screen X relative to HRPT
+	// sample order; that reversal is corrected after the atlas readback.
+	for(int i = lBatchStart; bReadSucceeded && i < lBatchEnd; ++i)
+	{
+		const cVector2l vStripSize(GetMsuMrStripSampleCount(i), 1);
+		cLuxMsuMrSensorSampleState& strip =
+			mpScanPresentationState->mvSensorStrips[i];
+		pLowLevelGraphics->SetCurrentFrameBuffer(
+			strip.mpView->GetFrameBuffer(), cVector2l(0, 0), vStripSize);
+		pLowLevelGraphics->CopyFrameBufferToTexure(
+			mpScanPresentationState->mpSensorBatchTexture,
+			cVector2l(0, 0), vStripSize,
+			cVector2l(GetMsuMrStripFirstSample(i), 0));
+	}
+	if(bReadSucceeded && bFinalBatch &&
+		mpScanPresentationState->mpSensorBatchFrameBuffer != NULL)
+	{
+		const cVector2l vSensorBatchSize(kMsuMrSensorBatchWidth, 1);
+		pLowLevelGraphics->SetCurrentFrameBuffer(
+			mpScanPresentationState->mpSensorBatchFrameBuffer,
+			cVector2l(0, 0), vSensorBatchSize);
+		pSensorBatchBitmap = pLowLevelGraphics->CopyFrameBufferToBitmap(
+			cVector2l(0, 0), vSensorBatchSize);
+		cBitmapData *pBitmapData = pSensorBatchBitmap ?
+			pSensorBatchBitmap->GetData(0, 0) : NULL;
+		if(pSensorBatchBitmap == NULL ||
+			pSensorBatchBitmap->GetWidth() != vSensorBatchSize.x ||
+			pSensorBatchBitmap->GetHeight() != vSensorBatchSize.y ||
+			pSensorBatchBitmap->GetBytesPerPixel() < 4 ||
+			pBitmapData == NULL || pBitmapData->mpData == NULL ||
+			pBitmapData->mlSize < kMsuMrSensorBatchWidth * 4)
+		{
+			bReadSucceeded = false;
+			lFailedStrip = 0;
+		}
+		else
+		{
+			const int lBytesPerPixel =
+				pSensorBatchBitmap->GetBytesPerPixel();
+			for(int stripIndex = 0;
+				stripIndex < kMsuMrStripCount; ++stripIndex)
+			{
+				const int lStripSampleCount =
+					GetMsuMrStripSampleCount(stripIndex);
+				const int lFirstSample =
+					GetMsuMrStripFirstSample(stripIndex);
+				for(int sampleOffset = 0;
+					sampleOffset < lStripSampleCount; ++sampleOffset)
+				{
+					const int lSourcePixel = lFirstSample +
+						(lStripSampleCount - 1 - sampleOffset);
+					const unsigned char *pSource = pBitmapData->mpData +
+						lSourcePixel * lBytesPerPixel;
+					std::memcpy(vLinePixels[lFirstSample + sampleOffset],
+						pSource, 4);
+				}
+			}
+		}
+	}
+	else if(bReadSucceeded && bFinalBatch)
+	{
+		bReadSucceeded = false;
+		lFailedStrip = 0;
+	}
+	pLowLevelGraphics->SetCurrentFrameBuffer(pPreviousFrameBuffer);
+
+	if(pSensorBatchBitmap) hplDelete(pSensorBatchBitmap);
+	for(int i = lBatchStart; i < lBatchEnd; ++i)
+	{
+		if(mpScanPresentationState->mvSensorStrips[i].mpView)
+			mpScanPresentationState->mvSensorStrips[i].mpView->SetVisible(false);
+	}
+	const double fBatchPackWallMilliseconds =
+		std::chrono::duration<double, std::milli>(
+			std::chrono::steady_clock::now() - packReadbackStart).count();
+	if(bReadSucceeded == false)
+	{
+		Warning("Discarded incomplete MSU-MR full-strip line %llu after strip "
+			"%d (first HRPT sample %d) could not be rendered, packed, or read.\n",
+			static_cast<unsigned long long>(mpScanPresentationState->mlSensorLineIndex),
+			lFailedStrip,
+			lFailedStrip >= 0 ?
+				GetMsuMrStripFirstSample(lFailedStrip) : -1);
+		ResetMsuMrPendingSensorLine(mpScanPresentationState);
+		return;
+	}
+
+	mpScanPresentationState->mfCurrentLineRenderWallMilliseconds +=
+		fBatchRenderWallMilliseconds;
+	mpScanPresentationState->mfCurrentLineMaxViewRenderWallMilliseconds = std::max(
+		mpScanPresentationState->mfCurrentLineMaxViewRenderWallMilliseconds,
+		fBatchMaxViewRenderWallMilliseconds);
+	if(bFinalBatch == false)
+	{
+		mpScanPresentationState->mfFirstBatchPackSubmitWallMilliseconds =
+			fBatchPackWallMilliseconds;
+		mpScanPresentationState->mlCurrentStripBatchStart = lBatchEnd;
+		mpScanPresentationState->mlCurrentStripBatchCount =
+			kMsuMrStripCount - lBatchEnd;
+		for(int i = lBatchEnd; i < kMsuMrStripCount; ++i)
+			mpScanPresentationState->mvSensorStrips[i].mpView->SetVisible(true);
+		Log("MSU-MR line %llu render batch 1/2 packed: strips=%d..%d, "
+			"samples=0..799, renderCpuWall=%.3f ms, "
+			"packSubmitCpuWall=%.3f ms, nextBatchStrips=%d..%d, "
+			"fps=%.1f, avgFrame=%.3f ms.\n",
+			static_cast<unsigned long long>(
+				mpScanPresentationState->mlSensorLineIndex),
+			lBatchStart, lBatchEnd - 1,
+			fBatchRenderWallMilliseconds, fBatchPackWallMilliseconds,
+			lBatchEnd, kMsuMrStripCount - 1,
+			gpBase->mpEngine->GetFPS(),
+			gpBase->mpEngine->GetAvgFrameTimeInMS());
+		return;
+	}
+
+	const double fRenderWallMilliseconds =
+		mpScanPresentationState->mfCurrentLineRenderWallMilliseconds;
+	const double fMaxViewRenderWallMilliseconds =
+		mpScanPresentationState->mfCurrentLineMaxViewRenderWallMilliseconds;
+	const double fPackReadbackWallMilliseconds = fBatchPackWallMilliseconds;
+	const double fLineLatencyWallMilliseconds =
+		std::chrono::duration<double, std::milli>(
+			std::chrono::steady_clock::now() -
+			mpScanPresentationState->mLineAcquisitionStart).count();
+
+	double fMaxAimErrorArcseconds = 0.0;
+	double fMaxOriginErrorMetres = 0.0;
+	for(int i = 0; i < kMsuMrStripCount; ++i)
+	{
+		const cLuxMsuMrSensorSampleState& strip =
+			mpScanPresentationState->mvSensorStrips[i];
+		fMaxAimErrorArcseconds = std::max(fMaxAimErrorArcseconds,
+			strip.mfAimErrorArcseconds);
+		fMaxOriginErrorMetres = std::max(fMaxOriginErrorMetres,
+			strip.mfOriginQuantizationMetres);
+	}
+	std::uint32_t lLineRgbaHash = 2166136261u;
+	unsigned int lNonOpaquePixels = 0;
+	unsigned int lBlackRgbPixels = 0;
+	for(int i = 0; i < kMsuMrSensorBatchWidth; ++i)
+	{
+		for(int channel = 0; channel < 4; ++channel)
+		{
+			lLineRgbaHash ^= vLinePixels[i][channel];
+			lLineRgbaHash *= 16777619u;
+		}
+		if(vLinePixels[i][3] != 255) ++lNonOpaquePixels;
+		if(vLinePixels[i][0] == 0 && vLinePixels[i][1] == 0 &&
+			vLinePixels[i][2] == 0) ++lBlackRgbPixels;
+	}
+
+	Log("MSU-MR full-strip line %llu face=%u: "
+		"s0=(%u,%u,%u,%u), s393=(%u,%u,%u,%u), "
+		"s785=(%u,%u,%u,%u), s786=(%u,%u,%u,%u), "
+		"s1178=(%u,%u,%u,%u), s1571=(%u,%u,%u,%u), "
+		"lineHash=%08x, blackRGB=%u/1572, nonOpaque=%u, "
+		"maxProjectionRayError=%.6f arcsec, "
+		"maxGroundDisplacement=%.3f m, maxTimeOffset=%.6f ms, "
+		"preparationCpuWall=%.3f ms, stripAimError=%.3f arcsec, "
+		"stripOriginFloatError=%.3f m, renderCpuWall=%.3f ms "
+		"(maxView=%.3f ms), firstBatchPackSubmitWall=%.3f ms, "
+		"finalBatchPackReadbackWall=%.3f ms, "
+		"twoFrameLatencyWall=%.3f ms, fps=%.1f, avgFrame=%.3f ms, "
+		"overwrittenLinesBeforeRead=%llu.\n",
+		static_cast<unsigned long long>(mpScanPresentationState->mlSensorLineIndex),
+		mpScanPresentationState->mlSensorMirrorFaceIndex,
+		static_cast<unsigned int>(vLinePixels[0][0]),
+		static_cast<unsigned int>(vLinePixels[0][1]),
+		static_cast<unsigned int>(vLinePixels[0][2]),
+		static_cast<unsigned int>(vLinePixels[0][3]),
+		static_cast<unsigned int>(vLinePixels[393][0]),
+		static_cast<unsigned int>(vLinePixels[393][1]),
+		static_cast<unsigned int>(vLinePixels[393][2]),
+		static_cast<unsigned int>(vLinePixels[393][3]),
+		static_cast<unsigned int>(vLinePixels[785][0]),
+		static_cast<unsigned int>(vLinePixels[785][1]),
+		static_cast<unsigned int>(vLinePixels[785][2]),
+		static_cast<unsigned int>(vLinePixels[785][3]),
+		static_cast<unsigned int>(vLinePixels[786][0]),
+		static_cast<unsigned int>(vLinePixels[786][1]),
+		static_cast<unsigned int>(vLinePixels[786][2]),
+		static_cast<unsigned int>(vLinePixels[786][3]),
+		static_cast<unsigned int>(vLinePixels[1178][0]),
+		static_cast<unsigned int>(vLinePixels[1178][1]),
+		static_cast<unsigned int>(vLinePixels[1178][2]),
+		static_cast<unsigned int>(vLinePixels[1178][3]),
+		static_cast<unsigned int>(vLinePixels[1571][0]),
+		static_cast<unsigned int>(vLinePixels[1571][1]),
+		static_cast<unsigned int>(vLinePixels[1571][2]),
+		static_cast<unsigned int>(vLinePixels[1571][3]),
+		static_cast<unsigned int>(lLineRgbaHash),
+		lBlackRgbPixels, lNonOpaquePixels,
+		mpScanPresentationState->mfStripMaxProjectionRayErrorArcseconds,
+		mpScanPresentationState->mfStripMaxGroundDisplacementMetres,
+		mpScanPresentationState->mfStripMaxTimeOffsetMilliseconds,
+		mpScanPresentationState->mfPreparationWallMilliseconds,
+		fMaxAimErrorArcseconds, fMaxOriginErrorMetres,
+		fRenderWallMilliseconds, fMaxViewRenderWallMilliseconds,
+		mpScanPresentationState->mfFirstBatchPackSubmitWallMilliseconds,
+		fPackReadbackWallMilliseconds,
+		fLineLatencyWallMilliseconds,
+		gpBase->mpEngine->GetFPS(),
+		gpBase->mpEngine->GetAvgFrameTimeInMS(),
+		static_cast<unsigned long long>(
+			mpScanPresentationState->mlOverwrittenSensorLines));
+
+	if(mpScanPresentationState->mbIlluminationDiagnosticsValid)
+	{
+		const bool bGroundNight =
+			mpScanPresentationState->mfGroundSolarElevationMaxDegrees < 0.0;
+		const char *pGroundLighting = bGroundNight ? "night" :
+			(mpScanPresentationState->mfGroundSolarElevationMinDegrees >= 0.0 ?
+				"daylight" : "terminator");
+		const char *pBlackAssessment =
+			lNonOpaquePixels != 0 ? "incompleteAcquisition" :
+			(lBlackRgbPixels != kMsuMrSensorBatchWidth ? "notAllBlack" :
+			(mpScanPresentationState->mlActiveSunCount == 0 ||
+			 mpScanPresentationState->mfMaxActiveSunIntensity <= 0.0 ?
+				"consistentWithNoActiveSun" :
+			(bGroundNight ? "consistentWithNight" :
+				"unexpectedForGroundLighting")));
+		Log("MSU-MR illumination line %llu: ground=%s, "
+			"spacecraftPointSun=%s, activeSuns=%u, "
+			"maxActiveSunIntensity=%.3f, "
+			"solarElevationDeg[min=%.3f max=%.3f, "
+			"s0=%.3f s393=%.3f s785=%.3f s786=%.3f "
+			"s1178=%.3f s1571=%.3f], "
+			"daylightStripEndpoints=%u/%u, blackAssessment=%s; "
+			"point-Sun occultation excludes penumbra.\n",
+			static_cast<unsigned long long>(
+				mpScanPresentationState->mlSensorLineIndex),
+			pGroundLighting,
+			mpScanPresentationState->mbPointSunEarthOccluded ?
+				"earthOccluded" : "visible",
+			mpScanPresentationState->mlActiveSunCount,
+			mpScanPresentationState->mfMaxActiveSunIntensity,
+			mpScanPresentationState->mfGroundSolarElevationMinDegrees,
+			mpScanPresentationState->mfGroundSolarElevationMaxDegrees,
+			mpScanPresentationState->mvRepresentativeSolarElevationDegrees[0],
+			mpScanPresentationState->mvRepresentativeSolarElevationDegrees[1],
+			mpScanPresentationState->mvRepresentativeSolarElevationDegrees[2],
+			mpScanPresentationState->mvRepresentativeSolarElevationDegrees[3],
+			mpScanPresentationState->mvRepresentativeSolarElevationDegrees[4],
+			mpScanPresentationState->mvRepresentativeSolarElevationDegrees[5],
+			mpScanPresentationState->mlDaylightEndpointCount,
+			mpScanPresentationState->mlIlluminationEndpointCount,
+			pBlackAssessment);
+	}
+	else
+	{
+		Warning("MSU-MR illumination diagnostics unavailable for line %llu; "
+			"pixel acquisition validity still follows alpha/completeness checks.\n",
+			static_cast<unsigned long long>(
+				mpScanPresentationState->mlSensorLineIndex));
+	}
+
+	const std::chrono::steady_clock::time_point commitStart =
+		std::chrono::steady_clock::now();
+	bool bCommitted = false;
+	cLuxMsuMrScanProduct *pScanProduct = mpScanPresentationState->mpScanProduct;
+	if(pScanProduct && pScanProduct->BeginLine(
+		mpScanPresentationState->mlSensorLineIndex))
+	{
+		bool bLineValid = true;
+		for(int i = 0; i < kMsuMrSensorBatchWidth; ++i)
+		{
+			if(pScanProduct->SetLineSample(i, vLinePixels[i]) == false)
+			{
+				bLineValid = false;
+				break;
+			}
+		}
+		if(bLineValid)
+			bCommitted = pScanProduct->CommitLine();
+		if(bCommitted == false)
+			pScanProduct->CancelLine();
+	}
+	const double fCommitWallMilliseconds =
+		std::chrono::duration<double, std::milli>(
+			std::chrono::steady_clock::now() - commitStart).count();
+
+	if(bCommitted == false)
+	{
+		Warning("Could not atomically commit complete MSU-MR strip line %llu to the scan product.\n",
+			static_cast<unsigned long long>(mpScanPresentationState->mlSensorLineIndex));
+	}
+	else
+	{
+		Log("MSU-MR scan product line %llu committed: acquiredSamples=%d, "
+			"historyRows=%u, insertedGapRows=%llu, commitWall=%.3f ms.\n",
+			static_cast<unsigned long long>(mpScanPresentationState->mlSensorLineIndex),
+			kMsuMrSensorBatchWidth,
+			pScanProduct->GetStoredLineCount(),
+			static_cast<unsigned long long>(
+				pScanProduct->GetLastGapLineCount()),
+			fCommitWallMilliseconds);
+
+		++mpScanPresentationState->mlPerformanceBatchCount;
+		mpScanPresentationState->mfPreparationWallSumMilliseconds +=
+			mpScanPresentationState->mfPreparationWallMilliseconds;
+		mpScanPresentationState->mfPreparationWallMaxMilliseconds = std::max(
+			mpScanPresentationState->mfPreparationWallMaxMilliseconds,
+			mpScanPresentationState->mfPreparationWallMilliseconds);
+		mpScanPresentationState->mfFirstBatchPackSubmitWallSumMilliseconds +=
+			mpScanPresentationState->mfFirstBatchPackSubmitWallMilliseconds;
+		mpScanPresentationState->mfFirstBatchPackSubmitWallMaxMilliseconds =
+			std::max(
+				mpScanPresentationState->mfFirstBatchPackSubmitWallMaxMilliseconds,
+				mpScanPresentationState->mfFirstBatchPackSubmitWallMilliseconds);
+		mpScanPresentationState->mfRenderWallSumMilliseconds +=
+			fRenderWallMilliseconds;
+		mpScanPresentationState->mfRenderWallMaxMilliseconds = std::max(
+			mpScanPresentationState->mfRenderWallMaxMilliseconds,
+			fRenderWallMilliseconds);
+		mpScanPresentationState->mfReadbackWallSumMilliseconds +=
+			fPackReadbackWallMilliseconds;
+		mpScanPresentationState->mfReadbackWallMaxMilliseconds = std::max(
+			mpScanPresentationState->mfReadbackWallMaxMilliseconds,
+			fPackReadbackWallMilliseconds);
+		mpScanPresentationState->mfLineLatencyWallSumMilliseconds +=
+			fLineLatencyWallMilliseconds;
+		mpScanPresentationState->mfLineLatencyWallMaxMilliseconds = std::max(
+			mpScanPresentationState->mfLineLatencyWallMaxMilliseconds,
+			fLineLatencyWallMilliseconds);
+		mpScanPresentationState->mfCommitWallSumMilliseconds +=
+			fCommitWallMilliseconds;
+		mpScanPresentationState->mfCommitWallMaxMilliseconds = std::max(
+			mpScanPresentationState->mfCommitWallMaxMilliseconds,
+			fCommitWallMilliseconds);
+
+		if(mpScanPresentationState->mlPerformanceBatchCount % 16 == 0)
+		{
+			const double fBatchCount = static_cast<double>(
+				mpScanPresentationState->mlPerformanceBatchCount);
+			Log("MSU-MR full-strip performance after %llu lines "
+				"(%d 16x1 views + one 4x1 tail/line, %d total views, "
+				"%d samples/line): "
+				"preparationCpuWall avg=%.3f max=%.3f ms, "
+				"renderCpuWall avg=%.3f max=%.3f ms, "
+				"firstBatchPackSubmitWall avg=%.3f max=%.3f ms, "
+				"finalBatchPackReadbackWall avg=%.3f max=%.3f ms, "
+				"twoFrameLatencyWall avg=%.3f max=%.3f ms "
+				"(GPU copies=50+49, readbackCalls/line=1), "
+				"commitWall avg=%.3f max=%.3f ms, fps=%.1f, "
+				"avgFrame=%.3f ms.\n",
+				static_cast<unsigned long long>(
+					mpScanPresentationState->mlPerformanceBatchCount),
+				kMsuMrFullStripCount, kMsuMrStripCount,
+				kMsuMrSensorBatchWidth,
+				mpScanPresentationState->mfPreparationWallSumMilliseconds /
+					fBatchCount,
+				mpScanPresentationState->mfPreparationWallMaxMilliseconds,
+				mpScanPresentationState->mfRenderWallSumMilliseconds / fBatchCount,
+				mpScanPresentationState->mfRenderWallMaxMilliseconds,
+				mpScanPresentationState->mfFirstBatchPackSubmitWallSumMilliseconds /
+					fBatchCount,
+				mpScanPresentationState->mfFirstBatchPackSubmitWallMaxMilliseconds,
+				mpScanPresentationState->mfReadbackWallSumMilliseconds / fBatchCount,
+				mpScanPresentationState->mfReadbackWallMaxMilliseconds,
+				mpScanPresentationState->mfLineLatencyWallSumMilliseconds /
+					fBatchCount,
+				mpScanPresentationState->mfLineLatencyWallMaxMilliseconds,
+				mpScanPresentationState->mfCommitWallSumMilliseconds / fBatchCount,
+				mpScanPresentationState->mfCommitWallMaxMilliseconds,
+				gpBase->mpEngine->GetFPS(),
+				gpBase->mpEngine->GetAvgFrameTimeInMS());
+		}
+	}
+	ResetMsuMrPendingSensorLine(mpScanPresentationState);
+}
+
+void cLuxSatelliteHandler::OnDraw()
+{
+	if(mpScanPresentationState && mpScanPresentationState->mpScanProduct)
+		mpScanPresentationState->mpScanProduct->Draw();
+}
+
+bool cLuxSatelliteHandler::StartMsuMrScan(const tString& asName)
+{
+	if(mpMsuMrSimulation == NULL || gpBase == NULL || gpBase->mpMapHandler == NULL ||
+		gpBase->mpEngine == NULL)
+		return false;
+	if(mpMsuMrSimulation->IsActive() || mpScanPresentationState)
+	{
+		Warning("Could not start MSU-MR simulation for '%s': another scan is already active.\n",
+			asName.c_str());
+		return false;
+	}
+
+	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
+	const tString sSatelliteKey = cString::ToLowerCase(asName);
+	tLuxSatelliteOrbitMap::iterator it = m_mapOrbits.find(sSatelliteKey);
+	if(pMap == NULL || it == m_mapOrbits.end() || it->second == NULL || it->second->mpMap != pMap)
+	{
+		Warning("Could not start MSU-MR simulation: satellite '%s' is not registered in the current map.\n",
+				asName.c_str());
+		return false;
+	}
+
+	const int lUpdatesPerSecond = GetFixedUpdatesPerSecond();
+	const double fEpochJulianDateUtc = GetSimulationJulianDateUtc(pMap);
+	if(mpMsuMrSimulation->Start(it->second->msName, fEpochJulianDateUtc, lUpdatesPerSecond) == false)
+	{
+		Warning("Could not start MSU-MR simulation for satellite '%s': invalid clock state.\n",
+				asName.c_str());
+		return false;
+	}
+
+	cLuxSatellitePose initialPose;
+	const double fEpochJulianDayUtc = std::floor(fEpochJulianDateUtc);
+	if(GetOrbitPose(it->second, fEpochJulianDayUtc,
+		fEpochJulianDateUtc - fEpochJulianDayUtc, initialPose) == false)
+	{
+		mpMsuMrSimulation->Stop();
+		Warning("Could not start MSU-MR simulation for satellite '%s': its initial pose could not be propagated.\n",
+				asName.c_str());
+		return false;
+	}
+	mpMsuMrSimulation->SetSatellitePose(initialPose);
+	if(BeginScanPresentation(pMap, sSatelliteKey) == false)
+	{
+		mpMsuMrSimulation->Stop();
+		Warning("Could not start MSU-MR simulation for satellite '%s': scan presentation mode could not be initialized.\n",
+				asName.c_str());
+		return false;
+	}
+
+	SelectSatellite(asName);
+	Log("MSU-MR scan epoch source: current map astronomical UTC.\n");
+	Log("Started MSU-MR simulation for '%s' at UTC JD %.12f (%d updates/s, %d phase positions/s).\n",
+		it->second->msName.c_str(), fEpochJulianDateUtc, lUpdatesPerSecond,
+		cLuxMsuMrSimulation::kCircularPositionsPerSecond);
+	Log("MSU-MR scheduler convention: epoch is circular phase 0 / HRPT sample 0; "
+		"Earth window is phase 0..1571 and non-Earth timing is phase 1572..5119.\n");
+	Log("MSU-MR geometry convention: pitch=%.8f deg, footprint=%.8f deg, "
+		"samples increase -cross-track to +cross-track in a nominal nadir-pointed "
+		"LVLH frame; intersections use the WGS-84 ellipsoid without terrain.\n",
+		cLuxMsuMrGeometry::GetOpticalPositionPitchDegrees(),
+		cLuxMsuMrGeometry::GetEarthFootprintWidthDegrees());
+	return true;
+}
+
+bool cLuxSatelliteHandler::StopMsuMrScan()
+{
+	if(mpMsuMrSimulation == NULL ||
+		(mpMsuMrSimulation->IsActive() == false && mpScanPresentationState == NULL))
+		return false;
+
+	tString sSatelliteName = mpMsuMrSimulation->GetSatelliteName();
+	if(sSatelliteName.empty() && mpScanPresentationState)
+		sSatelliteName = mpScanPresentationState->msTargetKey;
+	EndScanPresentation(true);
+	mpMsuMrSimulation->Stop();
+	Log("Stopped MSU-MR simulation for '%s'.\n", sSatelliteName.c_str());
+	return true;
+}
+
+bool cLuxSatelliteHandler::IsMsuMrScanActive() const
+{
+	return mpMsuMrSimulation && mpMsuMrSimulation->IsActive();
 }
 
 bool cLuxSatelliteHandler::RegisterTLE(const tString& asFile)
 {
 	if(gpBase == NULL || gpBase->mpMapHandler == NULL)
 		return false;
+	if((mpMsuMrSimulation && mpMsuMrSimulation->IsActive()) ||
+		mpScanPresentationState)
+	{
+		Warning("Could not register TLE '%s' while an MSU-MR scan is active.\n",
+			asFile.c_str());
+		return false;
+	}
 
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	if(pMap == NULL)
@@ -866,6 +2778,8 @@ bool cLuxSatelliteHandler::RegisterTLE(const tString& asFile)
 			{
 				pOrbit->mpIconBillboard->SetTranslucentSortPriority(kSatelliteIconTranslucentPriority);
 				pOrbit->mpIconBillboard->SetPointRollTarget(cVector3f(0.0f), kSatelliteIconSignalDirection);
+				pOrbit->mpIconBillboard->SetColor(sKey == msSelectedSatelliteKey ?
+					cColor(0, 1, 0, 1) : cColor(1, 1, 1, 1));
 			}
 			if(pOrbit->mpIconBillboard && pOrbit->mpIconBillboard->GetMaterial() == NULL)
 			{
@@ -893,7 +2807,7 @@ bool cLuxSatelliteHandler::RegisterTLE(const tString& asFile)
 
 void cLuxSatelliteHandler::Update()
 {
-	if(m_mapOrbits.empty() || gpBase == NULL || gpBase->mpMapHandler == NULL)
+	if(gpBase == NULL || gpBase->mpMapHandler == NULL)
 		return;
 
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
@@ -903,7 +2817,70 @@ void cLuxSatelliteHandler::Update()
 		return;
 	}
 
-	const double fJulianDateUtc = GetSimulationJulianDateUtc(pMap);
+	// LuxScriptHandler is a global updateable and therefore still receives
+	// Update calls in menu, inventory, and journal containers. The map world is
+	// inactive in those pause states (and during an in-world pause message), so
+	// only advance instrument time while the world simulation itself is active.
+	const bool bWorldSimulationRunning = pMap->GetWorld() && pMap->GetWorld()->IsActive();
+	if(mpMsuMrSimulation && mpMsuMrSimulation->IsActive() && bWorldSimulationRunning)
+	{
+		const tString sSimulationKey = cString::ToLowerCase(mpMsuMrSimulation->GetSatelliteName());
+		tLuxSatelliteOrbitMap::iterator itSimulationOrbit = m_mapOrbits.find(sSimulationKey);
+		const bool bTargetIsValid = itSimulationOrbit != m_mapOrbits.end() &&
+			itSimulationOrbit->second != NULL && itSimulationOrbit->second->mpMap == pMap;
+		const int lUpdatesPerSecond = GetFixedUpdatesPerSecond();
+
+		if(bTargetIsValid == false)
+		{
+			Warning("Stopping MSU-MR simulation because its target satellite is no longer available.\n");
+			StopMsuMrScan();
+		}
+		else if(lUpdatesPerSecond != mpMsuMrSimulation->GetUpdatesPerSecond())
+		{
+			// The integer DDA is exact for the fixed update rate captured at Start.
+			// Silently changing its denominator would introduce a time discontinuity.
+			Warning("Stopping MSU-MR simulation because the game update rate changed from %d to %d Hz.\n",
+					mpMsuMrSimulation->GetUpdatesPerSecond(), lUpdatesPerSecond);
+			StopMsuMrScan();
+		}
+		else
+		{
+			mpMsuMrSimulation->AdvanceOneUpdate();
+			LogMsuMrSampleDiagnostics(itSimulationOrbit->second);
+			if(mpMsuMrSimulation->IsActive() == false)
+			{
+				Warning("Stopped MSU-MR simulation after its phase counter overflowed.\n");
+				EndScanPresentation(true);
+			}
+			else
+			{
+				double fJulianDayUtc = 0.0;
+				double fJulianFractionUtc = 0.0;
+				mpMsuMrSimulation->GetJulianDateUtc(fJulianDayUtc, fJulianFractionUtc);
+
+				cLuxSatellitePose pose;
+				if(GetOrbitPose(itSimulationOrbit->second, fJulianDayUtc,
+					fJulianFractionUtc, pose))
+				{
+					mpMsuMrSimulation->SetSatellitePose(pose);
+				}
+				else
+				{
+					Warning("Stopping MSU-MR simulation because its target pose could not be propagated.\n");
+					StopMsuMrScan();
+				}
+			}
+		}
+	}
+	if(mpMsuMrSimulation && mpMsuMrSimulation->IsActive())
+		UpdateScanPresentation();
+
+	if(m_mapOrbits.empty())
+		return;
+
+	const bool bScanModeActive = mpScanPresentationState && mpMsuMrSimulation &&
+		mpMsuMrSimulation->IsActive();
+	const double fJulianDateUtc = bScanModeActive ? 0.0 : GetSimulationJulianDateUtc(pMap);
 	tLuxSatelliteOrbitMap::iterator it = m_mapOrbits.begin();
 	while(it != m_mapOrbits.end())
 	{
@@ -911,23 +2888,31 @@ void cLuxSatelliteHandler::Update()
 		if(pOrbit == NULL || pOrbit->mpMap != pMap)
 		{
 			tLuxSatelliteOrbitMap::iterator itDestroy = it++;
+			if(itDestroy->first == msSelectedSatelliteKey)
+				msSelectedSatelliteKey.clear();
 			DestroyOrbit(itDestroy->second, false);
 			m_mapOrbits.erase(itDestroy);
 			continue;
 		}
 
-		UpdateOrbit(pOrbit, fJulianDateUtc);
+		if(bScanModeActive == false)
+			UpdateOrbit(pOrbit, fJulianDateUtc);
 		++it;
 	}
 }
 
 void cLuxSatelliteHandler::Reset()
 {
+	EndScanPresentation(false);
+	if(mpMsuMrSimulation)
+		mpMsuMrSimulation->Stop();
+
 	cLuxMap *pCurrentMap = gpBase && gpBase->mpMapHandler ?
 		gpBase->mpMapHandler->GetCurrentMap() : NULL;
 	for(tLuxSatelliteOrbitMap::iterator it = m_mapOrbits.begin(); it != m_mapOrbits.end(); ++it)
 		DestroyOrbit(it->second, it->second && it->second->mpMap == pCurrentMap);
 	m_mapOrbits.clear();
+	msSelectedSatelliteKey.clear();
 }
 
 void cLuxSatelliteHandler::DestroyWorldEntities(cLuxMap *apMap)
@@ -935,12 +2920,20 @@ void cLuxSatelliteHandler::DestroyWorldEntities(cLuxMap *apMap)
 	if(apMap == NULL)
 		return;
 
+	if(mpScanPresentationState && mpScanPresentationState->mpMap == apMap)
+	{
+		EndScanPresentation(false);
+		if(mpMsuMrSimulation) mpMsuMrSimulation->Stop();
+	}
+
 	tLuxSatelliteOrbitMap::iterator it = m_mapOrbits.begin();
 	while(it != m_mapOrbits.end())
 	{
 		if(it->second && it->second->mpMap == apMap)
 		{
 			tLuxSatelliteOrbitMap::iterator itDestroy = it++;
+			if(itDestroy->first == msSelectedSatelliteKey)
+				msSelectedSatelliteKey.clear();
 			DestroyOrbit(itDestroy->second, true);
 			m_mapOrbits.erase(itDestroy);
 		}
@@ -953,6 +2946,7 @@ void cLuxSatelliteHandler::DestroyOrbit(cLuxSatelliteOrbit *apOrbit, bool abDest
 {
 	if(apOrbit == NULL)
 		return;
+	RestoreOrbitScanVisibility(apOrbit);
 
 	if(abDestroyBillboard && apOrbit->mpIconBillboard && apOrbit->mpMap && apOrbit->mpMap->GetWorld())
 		apOrbit->mpMap->GetWorld()->DestroyBillboard(apOrbit->mpIconBillboard);
@@ -966,13 +2960,21 @@ void cLuxSatelliteHandler::DestroyOrbit(cLuxSatelliteOrbit *apOrbit, bool abDest
 	hplDelete(apOrbit);
 }
 
-void cLuxSatelliteHandler::UpdateOrbit(cLuxSatelliteOrbit *apOrbit, double afJulianDateUtc)
+bool cLuxSatelliteHandler::GetOrbitPose(cLuxSatelliteOrbit *apOrbit,
+										double afJulianDayUtc,
+										double afJulianFractionUtc,
+										cLuxSatellitePose& aPose)
 {
-	if(apOrbit == NULL || apOrbit->mpMap == NULL || std::isfinite(afJulianDateUtc) == false)
-		return;
+	if(apOrbit == NULL)
+		return false;
 
-	const double fJulianDay = std::floor(afJulianDateUtc);
-	const double fJulianFraction = afJulianDateUtc - fJulianDay;
+	double fJulianDay = 0.0;
+	double fJulianFraction = 0.0;
+	if(NormalizeJulianDate(afJulianDayUtc, afJulianFractionUtc,
+		fJulianDay, fJulianFraction) == false)
+		return false;
+
+	const double fJulianDateForDiagnostics = fJulianDay + fJulianFraction;
 	const double fMinutesSinceEpoch =
 		((fJulianDay - apOrbit->mSatelliteRecord.jdsatepoch) +
 		 (fJulianFraction - apOrbit->mSatelliteRecord.jdsatepochF)) * kMinutesPerDay;
@@ -987,16 +2989,17 @@ void cLuxSatelliteHandler::UpdateOrbit(cLuxSatelliteOrbit *apOrbit, double afJul
 		if(apOrbit->mlLastPropagationError != apOrbit->mSatelliteRecord.error)
 		{
 			Warning("Could not propagate SGP4 orbit '%s' at JD %.8f (error %d).\n",
-					apOrbit->msName.c_str(), afJulianDateUtc, apOrbit->mSatelliteRecord.error);
+					apOrbit->msName.c_str(), fJulianDateForDiagnostics,
+					apOrbit->mSatelliteRecord.error);
 			apOrbit->mlLastPropagationError = apOrbit->mSatelliteRecord.error;
 		}
-		return;
+		return false;
 	}
 	apOrbit->mlLastPropagationError = 0;
 
 	cLuxEarthOrientationSample earthOrientation;
 	const bool bHasEarthOrientation = mpEarthOrientationTable &&
-		mpEarthOrientationTable->Sample(afJulianDateUtc, earthOrientation);
+		mpEarthOrientationTable->Sample(fJulianDay, fJulianFraction, earthOrientation);
 	if(bHasEarthOrientation)
 		mbEarthOrientationWarningShown = false;
 	else if(mbEarthOrientationWarningShown == false)
@@ -1005,7 +3008,7 @@ void cLuxSatelliteHandler::UpdateOrbit(cLuxSatelliteOrbit *apOrbit, double afJul
 		{
 			Warning("No IERS Earth-orientation record covers JD %.8f (available MJD %.2f through %.2f); "
 					"falling back to UTC as UT1 with zero polar motion and LOD.\n",
-					afJulianDateUtc,
+					fJulianDateForDiagnostics,
 					mpEarthOrientationTable->GetFirstModifiedJulianDate(),
 					mpEarthOrientationTable->GetLastModifiedJulianDate());
 		}
@@ -1019,22 +3022,55 @@ void cLuxSatelliteHandler::UpdateOrbit(cLuxSatelliteOrbit *apOrbit, double afJul
 
 	cVector3d vEcefPositionKm;
 	cVector3d vEcefVelocityKmPerSecond;
-	TemeToEarthFixed(afJulianDateUtc, vTemePositionKm, vTemeVelocityKmPerSecond,
+	cVector3d vEcefInertialVelocityKmPerSecond;
+	TemeToEarthFixed(fJulianDay, fJulianFraction,
+					 vTemePositionKm, vTemeVelocityKmPerSecond,
 					 earthOrientation,
-					 vEcefPositionKm, vEcefVelocityKmPerSecond);
+					 vEcefPositionKm, vEcefVelocityKmPerSecond,
+					 vEcefInertialVelocityKmPerSecond);
 
-	cVector3d vHplPositionMetres;
-	cVector3d vHplVelocityMetresPerSecond;
-	EarthFixedToHpl(vEcefPositionKm, vHplPositionMetres);
-	EarthFixedToHpl(vEcefVelocityKmPerSecond, vHplVelocityMetresPerSecond);
-	if(IsFinite(vHplPositionMetres) == false || IsFinite(vHplVelocityMetresPerSecond) == false)
+	aPose = cLuxSatellitePose();
+	aPose.mfJulianDayUtc = fJulianDay;
+	aPose.mfJulianFractionUtc = fJulianFraction;
+	aPose.mbUsedEarthOrientationData = bHasEarthOrientation;
+	EarthFixedToHpl(vEcefPositionKm, aPose.mvPositionMetres);
+	EarthFixedToHpl(vEcefVelocityKmPerSecond, aPose.mvVelocityMetresPerSecond);
+	EarthFixedToHpl(vEcefInertialVelocityKmPerSecond,
+		aPose.mvInertialVelocityMetresPerSecond);
+	if(IsFinite(aPose.mvPositionMetres) == false ||
+		IsFinite(aPose.mvVelocityMetresPerSecond) == false ||
+		IsFinite(aPose.mvInertialVelocityMetresPerSecond) == false)
+		return false;
+
+	return BuildOrbitFrame(aPose.mvPositionMetres,
+		aPose.mvInertialVelocityMetresPerSecond,
+		aPose.mvCrossTrack, aPose.mvRadialOut, aPose.mvAlongTrack);
+}
+
+void cLuxSatelliteHandler::UpdateOrbit(cLuxSatelliteOrbit *apOrbit, double afJulianDateUtc)
+{
+	if(apOrbit == NULL || apOrbit->mpMap == NULL || std::isfinite(afJulianDateUtc) == false)
+		return;
+
+	const double fJulianDayUtc = std::floor(afJulianDateUtc);
+	cLuxSatellitePose pose;
+	if(GetOrbitPose(apOrbit, fJulianDayUtc,
+		afJulianDateUtc - fJulianDayUtc, pose) == false)
+		return;
+	ApplyOrbitPose(apOrbit, pose);
+}
+
+void cLuxSatelliteHandler::ApplyOrbitPose(cLuxSatelliteOrbit *apOrbit,
+											 const cLuxSatellitePose& aPose)
+{
+	if(apOrbit == NULL || apOrbit->mpMap == NULL)
 		return;
 
 	if(apOrbit->mpIconBillboard || apOrbit->mvLabelBillboards.empty() == false)
 	{
-		const cVector3f vIconPosition((float)vHplPositionMetres.x,
-								  (float)vHplPositionMetres.y,
-								  (float)vHplPositionMetres.z);
+		const cVector3f vIconPosition((float)aPose.mvPositionMetres.x,
+								  (float)aPose.mvPositionMetres.y,
+								  (float)aPose.mvPositionMetres.z);
 		if(apOrbit->mpIconBillboard)
 			apOrbit->mpIconBillboard->SetWorldPosition(vIconPosition);
 		for(size_t i = 0; i < apOrbit->mvLabelBillboards.size(); ++i)
@@ -1047,8 +3083,7 @@ void cLuxSatelliteHandler::UpdateOrbit(cLuxSatelliteOrbit *apOrbit, double afJul
 		return;
 
 	cMatrixf mtxTransform;
-	if(BuildHplTransform(vHplPositionMetres, vHplVelocityMetresPerSecond,
-						 pAttachEntity->GetWorldMatrix(), mtxTransform))
+	if(BuildHplTransform(aPose, pAttachEntity->GetWorldMatrix(), mtxTransform))
 	{
 		// This is the only precision boundary in the orbit path. SGP4, UTC/UT1,
 		// EOP interpolation, TEME/ECEF conversion, units, axes, and orbital

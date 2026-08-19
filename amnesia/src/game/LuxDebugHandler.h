@@ -90,6 +90,8 @@ private:
 	void ReloadTranslations();
 	void ReloadMap();
 	void TestChangeMapSave();
+	void RefreshSatelliteList();
+	void RefreshMsuMrScanButton();
 
 	void LoadBatchLoadFile(const tWString& asFilePath);
 	
@@ -144,6 +146,11 @@ private:
 	bool PressLoadBatchLoadFile(iWidget* apWidget,const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(PressLoadBatchLoadFile);
 
+	bool PressStartScan(iWidget* apWidget, const cGuiMessageData& aData);
+	kGuiCallbackDeclarationEnd(PressStartScan);
+
+	bool SelectSatellite(iWidget* apWidget, const cGuiMessageData& aData);
+	kGuiCallbackDeclarationEnd(SelectSatellite);
 
 
 	cGui *mpGui;
@@ -153,6 +160,8 @@ private:
 
 	cWidgetComboBox *mpCBInsanityEvents;
 	cWidgetComboBox *mpCBPlayerStarts;
+	cWidgetComboBox *mpCBSatellites;
+	cWidgetButton *mpBStartScan;
 	cWidgetCheckBox *mpCBFlyCamera;
 
 	cWidgetWindow *mpDebugWindow;

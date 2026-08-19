@@ -177,6 +177,44 @@ void cLuxScriptHandler::DestroyWorldEntities(cLuxMap *apMap)
 
 //-----------------------------------------------------------------------
 
+void cLuxScriptHandler::GetSatelliteNames(tStringVec& avNames) const
+{
+	if(mpSatelliteHandler)
+		mpSatelliteHandler->GetSatelliteNames(avNames);
+	else
+		avNames.clear();
+}
+
+//-----------------------------------------------------------------------
+
+bool cLuxScriptHandler::SelectSatellite(const tString& asName)
+{
+	return mpSatelliteHandler && mpSatelliteHandler->SelectSatellite(asName);
+}
+
+//-----------------------------------------------------------------------
+
+bool cLuxScriptHandler::StartMsuMrScan(const tString& asName)
+{
+	return mpSatelliteHandler && mpSatelliteHandler->StartMsuMrScan(asName);
+}
+
+//-----------------------------------------------------------------------
+
+bool cLuxScriptHandler::StopMsuMrScan()
+{
+	return mpSatelliteHandler && mpSatelliteHandler->StopMsuMrScan();
+}
+
+//-----------------------------------------------------------------------
+
+bool cLuxScriptHandler::IsMsuMrScanActive() const
+{
+	return mpSatelliteHandler && mpSatelliteHandler->IsMsuMrScanActive();
+}
+
+//-----------------------------------------------------------------------
+
 void cLuxScriptHandler::Update(float afTimeStep)
 {
 	if(mpSatelliteHandler) mpSatelliteHandler->Update();
@@ -190,6 +228,14 @@ void cLuxScriptHandler::OnDraw(float afFrameTime)
 {
 	UpdateCameraViews();
 	DrawCameraViews();
+	if(mpSatelliteHandler) mpSatelliteHandler->OnDraw();
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxScriptHandler::OnPostRender(float afFrameTime)
+{
+	if(mpSatelliteHandler) mpSatelliteHandler->OnPostRender();
 }
 
 

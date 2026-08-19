@@ -48,8 +48,14 @@ public:
 	void Update(float afTimeStep);
 	void Reset();
 	void DestroyWorldEntities(cLuxMap *apMap);
+	void GetSatelliteNames(tStringVec& avNames) const;
+	bool SelectSatellite(const tString& asName);
+	bool StartMsuMrScan(const tString& asName);
+	bool StopMsuMrScan();
+	bool IsMsuMrScanActive() const;
 
 	void OnDraw(float afFrameTime);
+	void OnPostRender(float afFrameTime);
 
 private:
 	iLowLevelSystem *mpLowLevelSystem;

@@ -228,7 +228,6 @@ void cLuxScriptHandler::OnDraw(float afFrameTime)
 {
 	UpdateCameraViews();
 	DrawCameraViews();
-	if(mpSatelliteHandler) mpSatelliteHandler->OnDraw();
 }
 
 //-----------------------------------------------------------------------

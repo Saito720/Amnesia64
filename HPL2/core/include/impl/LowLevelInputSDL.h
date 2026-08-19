@@ -64,6 +64,7 @@ namespace hpl {
 	private: 
 		iLowLevelGraphics *mpLowLevelGraphics;
 		bool mbQuitMessagePosted;
+		Uint32 mlWindowId;
 	};
 };
 #endif // HPL_LOWLEVELINPUT_SDL_H

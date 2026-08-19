@@ -42,7 +42,6 @@ public:
 	bool IsMsuMrScanActive() const;
 
 	void Update();
-	void OnDraw();
 	void OnPostRender();
 	void Reset();
 	void DestroyWorldEntities(cLuxMap *apMap);

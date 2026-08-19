@@ -12,25 +12,34 @@
 #ifndef LUX_MSU_MR_SCAN_PRODUCT_H
 #define LUX_MSU_MR_SCAN_PRODUCT_H
 
+#include <atomic>
 #include <cstdint>
+#include <string>
 #include <vector>
 
-#include "LuxBase.h"
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <Windows.h>
+#endif
 
-namespace hpl
-{
-	class iTexture;
-	class cGuiGfxElement;
-}
+#include "SDL2/SDL_events.h"
+
+struct SDL_Window;
+struct SDL_Renderer;
+struct SDL_Texture;
 
 // Owns the accumulating rendered scan image independently of instrument
-// scheduling and sensor acquisition. Gap rows have zero alpha; the overlay
-// draws them over a black backing panel so acquired black remains valid data.
+// scheduling and sensor acquisition. The product is presented in its own
+// SDL window; gap rows remain black while acquired black remains valid data.
 class cLuxMsuMrScanProduct
 {
 public:
 	static const std::uint32_t kWidth = 1572;
-	static const std::uint32_t kHistoryLines = 256;
 
 	cLuxMsuMrScanProduct();
 	~cLuxMsuMrScanProduct();
@@ -42,22 +51,53 @@ public:
 					   const unsigned char *apRgba);
 	bool CommitLine();
 	void CancelLine();
-	void Draw();
+	// Returns false after the user requests that the product window close.
+	bool UpdateWindow();
 
 	bool IsInitialized() const { return mbInitialized; }
 	std::uint32_t GetStoredLineCount() const { return mlStoredLineCount; }
+	std::uint32_t GetHistoryLineCapacity() const { return mlHistoryLineCapacity; }
 	std::uint64_t GetLastLineIndex() const { return mlLastLineIndex; }
 	std::uint64_t GetLastGapLineCount() const { return mlLastGapLineCount; }
 
 private:
+	static int SDLCALL SdlEventWatch(void *apUserData, SDL_Event *apEvent);
+#if defined(_WIN32)
+	static LRESULT CALLBACK NativeWindowProc(HWND ahWindow, UINT alMessage,
+		WPARAM alWParam, LPARAM alLParam);
+	bool CreateNativeMenu();
+	void DestroyNativeMenu();
+	bool PromptForSavePath(std::wstring &asPath);
+#endif
+	bool SaveCanvas(bool abSaveAs);
+	SDL_Texture *CreateWindowTexture(std::uint32_t alHistoryLines);
+	std::uint32_t CalculateWindowHistoryLines() const;
+	bool ResizeCanvasToWindow();
 	void UploadPixels();
+	void RenderWindow();
 
 	std::vector<unsigned char> mvLinePixels;
 	std::vector<unsigned char> mvLineWritten;
 	std::vector<unsigned char> mvPixels;
-	hpl::iTexture *mpTexture;
-	hpl::cGuiGfxElement *mpImageGfx;
-	hpl::cGuiGfxElement *mpBackgroundGfx;
+	SDL_Window *mpWindow;
+	SDL_Renderer *mpRenderer;
+	SDL_Texture *mpWindowTexture;
+#if defined(_WIN32)
+	HWND mhNativeWindow;
+	WNDPROC mpPreviousWindowProc;
+	HMENU mhNativeMenu;
+#endif
+	std::atomic<bool> mbCloseRequested;
+	std::atomic<bool> mbRedrawRequested;
+	std::atomic<bool> mbCanvasResizePending;
+	std::atomic<bool> mbSaveRequested;
+	std::atomic<bool> mbSaveAsRequested;
+	std::atomic<std::uint32_t> mlLastResizeEventTicks;
+	std::wstring msSavePath;
+	std::uint32_t mlWindowId;
+	int mlCursorStateBeforeEnter;
+	bool mbEventWatchInstalled;
+	bool mbMouseInside;
 	bool mbInitialized;
 	bool mbHasLastLine;
 	bool mbLineOpen;
@@ -66,6 +106,7 @@ private:
 	std::uint64_t mlLastGapLineCount;
 	std::uint32_t mlStoredLineCount;
 	std::uint32_t mlWrittenSampleCount;
+	std::uint32_t mlHistoryLineCapacity;
 };
 
 #endif // LUX_MSU_MR_SCAN_PRODUCT_H

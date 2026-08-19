@@ -44,6 +44,38 @@
 
 namespace hpl {
 
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+	static Uint32 GetEventWindowId(const SDL_Event& aEvent)
+	{
+		switch(aEvent.type)
+		{
+		case SDL_WINDOWEVENT:
+			return aEvent.window.windowID;
+		case SDL_KEYDOWN:
+		case SDL_KEYUP:
+			return aEvent.key.windowID;
+		case SDL_TEXTEDITING:
+			return aEvent.edit.windowID;
+		case SDL_TEXTINPUT:
+			return aEvent.text.windowID;
+		case SDL_MOUSEMOTION:
+			return aEvent.motion.windowID;
+		case SDL_MOUSEBUTTONDOWN:
+		case SDL_MOUSEBUTTONUP:
+			return aEvent.button.windowID;
+		case SDL_MOUSEWHEEL:
+			return aEvent.wheel.windowID;
+		case SDL_DROPFILE:
+		case SDL_DROPTEXT:
+		case SDL_DROPBEGIN:
+		case SDL_DROPCOMPLETE:
+			return aEvent.drop.windowID;
+		default:
+			return 0;
+		}
+	}
+#endif
+
 	//////////////////////////////////////////////////////////////////////////
 	// CONSTRUCTORS
 	//////////////////////////////////////////////////////////////////////////
@@ -51,8 +83,14 @@ namespace hpl {
 	//-----------------------------------------------------------------------
 
 	cLowLevelInputSDL::cLowLevelInputSDL(iLowLevelGraphics *apLowLevelGraphics)
-        : mpLowLevelGraphics(apLowLevelGraphics), mbQuitMessagePosted(false)
+		: mpLowLevelGraphics(apLowLevelGraphics), mbQuitMessagePosted(false),
+		  mlWindowId(0)
 	{
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+		SDL_Window *pCurrentWindow = SDL_GL_GetCurrentWindow();
+		if(pCurrentWindow)
+			mlWindowId = SDL_GetWindowID(pCurrentWindow);
+#endif
 		LockInput(true);
 		RelativeMouse(false);
 #if SDL_VERSION_ATLEAST(2, 0, 0)
@@ -95,10 +133,41 @@ namespace hpl {
 	void cLowLevelInputSDL::BeginInputUpdate()
 	{
 		SDL_Event sdlEvent;
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+		if(mlWindowId == 0)
+		{
+			SDL_Window *pCurrentWindow = SDL_GL_GetCurrentWindow();
+			if(pCurrentWindow)
+				mlWindowId = SDL_GetWindowID(pCurrentWindow);
+		}
+#endif
 
 		mlstEvents.clear();
 		while(SDL_PollEvent(&sdlEvent)!=0)
 		{
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+			const Uint32 lEventWindowId = GetEventWindowId(sdlEvent);
+			// SDL has one process-wide event queue. Keep input and window events
+			// from auxiliary windows out of the game input devices.
+			if(lEventWindowId != 0 && mlWindowId != 0 &&
+				lEventWindowId != mlWindowId)
+			{
+				if((sdlEvent.type == SDL_DROPFILE ||
+					sdlEvent.type == SDL_DROPTEXT) && sdlEvent.drop.file)
+					SDL_free(sdlEvent.drop.file);
+				continue;
+			}
+			// SDL emits SDL_QUIT on a close request only when the target is the
+			// final window. Treat closing HPL's primary window as quit even when
+			// a tool or product window is also alive.
+			if(sdlEvent.type == SDL_WINDOWEVENT &&
+				sdlEvent.window.event == SDL_WINDOWEVENT_CLOSE &&
+				(mlWindowId == 0 || sdlEvent.window.windowID == mlWindowId))
+			{
+				mbQuitMessagePosted = true;
+				continue;
+			}
+#endif
 #if defined _WIN32 && !SDL_VERSION_ATLEAST(2,0,0)
 			if(sdlEvent.type==SDL_SYSWMEVENT)
 			{

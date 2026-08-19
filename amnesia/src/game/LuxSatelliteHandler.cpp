@@ -1637,11 +1637,11 @@ bool cLuxSatelliteHandler::BeginScanPresentation(cLuxMap *apMap, const tString& 
 		"omits the final 4x1 view containing rightmost HRPT samples 1568..1571.\n");
 	Log("MSU-MR scan product initialized: lineBuffer=%ux1 RGBA, "
 		"rollingHistory=%ux%u RGBA, unwrittenAlpha=0, "
-		"maxOverlay=786x128, newestLine=row0, activeSuns=%u, "
+		"presentation=separateSDLWindow, newestLine=row0, activeSuns=%u, "
 		"maxActiveSunIntensity=%.3f.\n",
 		cLuxMsuMrScanProduct::kWidth,
 		cLuxMsuMrScanProduct::kWidth,
-		cLuxMsuMrScanProduct::kHistoryLines,
+		mpScanPresentationState->mpScanProduct->GetHistoryLineCapacity(),
 		mpScanPresentationState->mlActiveSunCount,
 		mpScanPresentationState->mfMaxActiveSunIntensity);
 	return true;
@@ -1652,6 +1652,13 @@ void cLuxSatelliteHandler::UpdateScanPresentation()
 	if(mpScanPresentationState == NULL || mpMsuMrSimulation == NULL ||
 		mpMsuMrSimulation->IsActive() == false)
 		return;
+	if(mpScanPresentationState->mpScanProduct &&
+		mpScanPresentationState->mpScanProduct->UpdateWindow() == false)
+	{
+		Log("Stopping MSU-MR simulation because its product window was closed.\n");
+		StopMsuMrScan();
+		return;
+	}
 
 	double fJulianDayUtc = 0.0;
 	double fJulianFractionUtc = 0.0;
@@ -2593,12 +2600,6 @@ void cLuxSatelliteHandler::OnPostRender()
 		}
 	}
 	ResetMsuMrPendingSensorLine(mpScanPresentationState);
-}
-
-void cLuxSatelliteHandler::OnDraw()
-{
-	if(mpScanPresentationState && mpScanPresentationState->mpScanProduct)
-		mpScanPresentationState->mpScanProduct->Draw();
 }
 
 bool cLuxSatelliteHandler::StartMsuMrScan(const tString& asName)

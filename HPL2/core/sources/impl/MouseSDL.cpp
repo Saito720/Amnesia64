@@ -168,6 +168,13 @@ namespace hpl {
 		
 		int lX,lY; 
 		SDL_GetRelativeMouseState(&lX, &lY);
+		// Discard motion accumulated while an auxiliary SDL window owns input
+		// focus so returning to the game cannot rotate the view unexpectedly.
+		if(pLowLevelGfx->GetWindowInputFocus() == false)
+		{
+			lX = 0;
+			lY = 0;
+		}
 		mvMouseRelPos = cVector2l(lX,lY);
 
 		

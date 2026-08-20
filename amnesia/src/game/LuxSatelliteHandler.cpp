@@ -89,6 +89,8 @@ namespace
 	const double kDegreesToRadians = kPi / 180.0;
 	const double kMinutesPerDay = 1440.0;
 	const double kSecondsPerDay = 86400.0;
+	// Diagnostic threshold only; TLE accuracy has no universal hard cutoff.
+	const double kTleEpochWarningDistanceDays = 14.0;
 	const double kMetresPerKilometre = 1000.0;
 	const double kEarthRotationRadiansPerSecond = 7.29211514670698e-5;
 	const double kArcsecondsToRadians = kDegreesToRadians / 3600.0;
@@ -2604,6 +2606,25 @@ void cLuxSatelliteHandler::OnPostRender()
 
 bool cLuxSatelliteHandler::StartMsuMrScan(const tString& asName)
 {
+	if(gpBase == NULL || gpBase->mpMapHandler == NULL)
+		return false;
+	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if(pMap == NULL)
+		return false;
+	return StartMsuMrScanAtEpoch(asName, GetSimulationJulianDateUtc(pMap),
+		"current map astronomical UTC");
+}
+
+bool cLuxSatelliteHandler::StartMsuMrScan(const tString& asName,
+	double afEpochJulianDateUtc)
+{
+	return StartMsuMrScanAtEpoch(asName, afEpochJulianDateUtc,
+		"user-selected UTC");
+}
+
+bool cLuxSatelliteHandler::StartMsuMrScanAtEpoch(const tString& asName,
+	double afEpochJulianDateUtc, const char *asEpochSource)
+{
 	if(mpMsuMrSimulation == NULL || gpBase == NULL || gpBase->mpMapHandler == NULL ||
 		gpBase->mpEngine == NULL)
 		return false;
@@ -2623,20 +2644,40 @@ bool cLuxSatelliteHandler::StartMsuMrScan(const tString& asName)
 				asName.c_str());
 		return false;
 	}
+	if(std::isfinite(afEpochJulianDateUtc) == false)
+	{
+		Warning("Could not start MSU-MR simulation for satellite '%s': "
+			"the requested UTC epoch is not finite.\n", asName.c_str());
+		return false;
+	}
 
 	const int lUpdatesPerSecond = GetFixedUpdatesPerSecond();
-	const double fEpochJulianDateUtc = GetSimulationJulianDateUtc(pMap);
-	if(mpMsuMrSimulation->Start(it->second->msName, fEpochJulianDateUtc, lUpdatesPerSecond) == false)
+	if(mpMsuMrSimulation->Start(it->second->msName, afEpochJulianDateUtc,
+		lUpdatesPerSecond) == false)
 	{
 		Warning("Could not start MSU-MR simulation for satellite '%s': invalid clock state.\n",
 				asName.c_str());
 		return false;
 	}
 
+	const double fTleEpochJulianDateUtc =
+		it->second->mSatelliteRecord.jdsatepoch +
+		it->second->mSatelliteRecord.jdsatepochF;
+	const double fTleEpochOffsetDays =
+		afEpochJulianDateUtc - fTleEpochJulianDateUtc;
+	Log("MSU-MR selected UTC is %+.6f days from the loaded TLE epoch "
+		"(JD %.12f).\n", fTleEpochOffsetDays, fTleEpochJulianDateUtc);
+	if(std::fabs(fTleEpochOffsetDays) > kTleEpochWarningDistanceDays)
+	{
+		Warning("MSU-MR scan UTC is %.2f days from the loaded TLE epoch; "
+			"SGP4 position accuracy may be degraded.\n",
+			std::fabs(fTleEpochOffsetDays));
+	}
+
 	cLuxSatellitePose initialPose;
-	const double fEpochJulianDayUtc = std::floor(fEpochJulianDateUtc);
+	const double fEpochJulianDayUtc = std::floor(afEpochJulianDateUtc);
 	if(GetOrbitPose(it->second, fEpochJulianDayUtc,
-		fEpochJulianDateUtc - fEpochJulianDayUtc, initialPose) == false)
+		afEpochJulianDateUtc - fEpochJulianDayUtc, initialPose) == false)
 	{
 		mpMsuMrSimulation->Stop();
 		Warning("Could not start MSU-MR simulation for satellite '%s': its initial pose could not be propagated.\n",
@@ -2653,9 +2694,10 @@ bool cLuxSatelliteHandler::StartMsuMrScan(const tString& asName)
 	}
 
 	SelectSatellite(asName);
-	Log("MSU-MR scan epoch source: current map astronomical UTC.\n");
+	Log("MSU-MR scan epoch source: %s.\n",
+		asEpochSource ? asEpochSource : "unspecified UTC");
 	Log("Started MSU-MR simulation for '%s' at UTC JD %.12f (%d updates/s, %d phase positions/s).\n",
-		it->second->msName.c_str(), fEpochJulianDateUtc, lUpdatesPerSecond,
+		it->second->msName.c_str(), afEpochJulianDateUtc, lUpdatesPerSecond,
 		cLuxMsuMrSimulation::kCircularPositionsPerSecond);
 	Log("MSU-MR scheduler convention: epoch is circular phase 0 / HRPT sample 0; "
 		"Earth window is phase 0..1571 and non-Earth timing is phase 1572..5119.\n");

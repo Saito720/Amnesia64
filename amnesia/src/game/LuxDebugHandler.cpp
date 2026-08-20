@@ -39,6 +39,7 @@
 #include "LuxGlobalDataHandler.h"
 #include "LuxInventory.h"
 #include "LuxLoadScreenHandler.h"
+#include "LuxMsuMrScanEpochDialog.h"
 #include "LuxScriptHandler.h"
 
 #include "scene/RenderableContainer_DynBoxTree.h"
@@ -1922,7 +1923,24 @@ bool cLuxDebugHandler::PressStartScan(iWidget* apWidget, const cGuiMessageData& 
 	}
 
 	const tString sSatelliteName = cString::To8Char(pItem->GetText());
-	if(gpBase->mpScriptHandler->StartMsuMrScan(sSatelliteName))
+	double fEpochJulianDateUtc = 0.0;
+	std::wstring sEpochUtc;
+	const cLuxMsuMrScanEpochDialog::eResult epochResult =
+		cLuxMsuMrScanEpochDialog::Show(pItem->GetText(),
+			fEpochJulianDateUtc, sEpochUtc);
+	if(epochResult == cLuxMsuMrScanEpochDialog::eResult_Cancelled)
+		return true;
+	if(epochResult != cLuxMsuMrScanEpochDialog::eResult_Confirmed)
+	{
+		AddMessage(_W("Could not open the MSU-MR scan start UTC picker."), false);
+		Warning("Could not open the native MSU-MR scan start UTC picker.\n");
+		return true;
+	}
+
+	Log("MSU-MR scan start selected: %ls (JD %.12f).\n",
+		sEpochUtc.c_str(), fEpochJulianDateUtc);
+	if(gpBase->mpScriptHandler->StartMsuMrScan(sSatelliteName,
+		fEpochJulianDateUtc))
 		AddMessage(_W("MSU-MR simulation started for ") + pItem->GetText() + _W("."), false);
 	else
 		AddMessage(_W("Could not start MSU-MR simulation for ") + pItem->GetText() + _W("."), false);

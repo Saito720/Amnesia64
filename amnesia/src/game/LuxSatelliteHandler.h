@@ -38,6 +38,7 @@ public:
 	void GetSatelliteNames(tStringVec& avNames) const;
 	bool SelectSatellite(const tString& asName);
 	bool StartMsuMrScan(const tString& asName);
+	bool StartMsuMrScan(const tString& asName, double afEpochJulianDateUtc);
 	bool StopMsuMrScan();
 	bool IsMsuMrScanActive() const;
 
@@ -49,6 +50,8 @@ public:
 private:
 	bool LoadEarthOrientationData(const tString& asFile, bool abLogFailure);
 	void EnsureEarthOrientationData();
+	bool StartMsuMrScanAtEpoch(const tString& asName,
+		double afEpochJulianDateUtc, const char *asEpochSource);
 	bool BeginScanPresentation(cLuxMap *apMap, const tString& asTargetKey);
 	void UpdateScanPresentation();
 	void EndScanPresentation(bool abResyncLiveOrbits);

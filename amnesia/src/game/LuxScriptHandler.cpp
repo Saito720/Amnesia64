@@ -201,6 +201,15 @@ bool cLuxScriptHandler::StartMsuMrScan(const tString& asName)
 
 //-----------------------------------------------------------------------
 
+bool cLuxScriptHandler::StartMsuMrScan(const tString& asName,
+	double afEpochJulianDateUtc)
+{
+	return mpSatelliteHandler &&
+		mpSatelliteHandler->StartMsuMrScan(asName, afEpochJulianDateUtc);
+}
+
+//-----------------------------------------------------------------------
+
 bool cLuxScriptHandler::StopMsuMrScan()
 {
 	return mpSatelliteHandler && mpSatelliteHandler->StopMsuMrScan();

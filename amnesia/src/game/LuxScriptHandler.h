@@ -51,6 +51,7 @@ public:
 	void GetSatelliteNames(tStringVec& avNames) const;
 	bool SelectSatellite(const tString& asName);
 	bool StartMsuMrScan(const tString& asName);
+	bool StartMsuMrScan(const tString& asName, double afEpochJulianDateUtc);
 	bool StopMsuMrScan();
 	bool IsMsuMrScanActive() const;
 

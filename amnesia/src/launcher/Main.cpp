@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "launcher.h"
@@ -23,14 +23,14 @@
 
 #include "FL/fl_ask.H"
 
-#ifdef WIN32
+#ifdef _WIN32
 	#include <Windows.h>
 #endif
 #include <GL/gl.h>
 #include <GL/glu.h>
 #if USE_SDL2
 #include <SDL2/SDL.h>
-#elif defined WIN32
+#elif defined _WIN32
 #include "glut.h"
 #elif defined __linux__
 #include <GL/glx.h>
@@ -71,7 +71,7 @@ tWString gsCrashFlagPath;
 
 std::vector<cConfigFile*> gvPresets;
 
-bool InitPaths(const tWString& asInitConfigFile, const tWString &asDefaultInitConfigFile)
+bool InitPaths(const tWString& asInitConfigFile)
 {
     // Load this up as a global to search alternate resource path
 	tWString sPersonalDir = cPlatform::GetSystemSpecialPath(eSystemPath_Personal);
@@ -91,32 +91,14 @@ bool InitPaths(const tWString& asInitConfigFile, const tWString &asDefaultInitCo
 		return false;
 	}
 	
+	
 	//Set the name of the folder (in Lux) that all save stuff will be put.
 	gsMainSaveFolder = pInitCfg->GetStringW("Directories","MainSaveFolder",_W(""));
+	
 	
 	//Get the config file paths
 #if USE_SDL2
 	gsDefaultMainConfigPath = pInitCfg->GetStringW("ConfigFiles", "DefaultMainSettingsSDL2",_W(""));
-	if(gsDefaultMainConfigPath.empty() && asInitConfigFile!=asDefaultInitConfigFile)
-	{
-		fl_message("%s",cString::To8Char((_W("No DefaultMainSettingsSDL2 path defined in: ")+asInitConfigFile)+_W(" - Using default")).c_str());
-
-		cConfigFile *pInitCfgDefaults = hplNew(cConfigFile, (asDefaultInitConfigFile));
-		if(pInitCfgDefaults->Load()==false){
-			fl_message("%s",cString::To8Char((_W("Could not load default main init file: ")+asDefaultInitConfigFile)).c_str());
-			return false;
-		}
-
-		gsDefaultMainConfigPath = pInitCfgDefaults->GetStringW("ConfigFiles", "DefaultMainSettingsSDL2",_W(""));
-		hplDelete(pInitCfgDefaults);
-
-		if(gsDefaultMainConfigPath.empty())
-		{
-			fl_message("Settings file for entry DefaultMainSettingsSDL2 in default config is empty");
-			
-			return false;
-		}
-	}
 #else
 	gsDefaultMainConfigPath = pInitCfg->GetStringW("ConfigFiles", "DefaultMainSettings",_W(""));
 #endif
@@ -127,7 +109,7 @@ bool InitPaths(const tWString& asInitConfigFile, const tWString &asDefaultInitCo
 	gsDefaultMainConfigPathHigh = pInitCfg->GetStringW("ConfigFiles", "DefaultMainSettingsHigh",_W(""));
 
 	gsDefaultBaseLanguage = pInitCfg->GetString("ConfigFiles", "DefaultBaseLanguage", "");
-	//gsDefaultGameLanguage = pInitCfg->GetString("ConfigFiles", "DefaultGameLanguage", "");
+	gsDefaultGameLanguage = pInitCfg->GetString("ConfigFiles", "DefaultGameLanguage", "");
 
 	//Directories
 	gsBaseLanguageFolder = pInitCfg->GetString("Directories","BaseLanguageFolder","");
@@ -170,8 +152,6 @@ cConfigFile* LoadConfigFile(const tWString& asDefaultPath, const tWString& asWan
 {
 	cConfigFile *pConfig;
 	bool bLoadedWantedPath = false;
-
-	tWString sErrorMessageExtra;
 	
 	//////////////////////
 	//Check if wanted exist and created config using existing file
@@ -193,10 +173,6 @@ cConfigFile* LoadConfigFile(const tWString& asDefaultPath, const tWString& asWan
 	// Load the settings config file
 	if(pConfig->Load()==false)
 	{
-		if(bLoadedWantedPath==false &&
-			asDefaultPath.empty()) {
-			fl_message("Empty default config file in startup config file");
-		}
 		//msErrorMessage = _W("Failed to load config file!");
 		return NULL;
 	}
@@ -239,18 +215,10 @@ bool LoadLanguage(cEngine* apEngine, const tString& asName, bool abForceReload)
 	////////////////////////////////////////////
 	//If not default language, add default to so only missing entries are filled in
     if(sGameFileName != gsDefaultGameLanguage)	
-#ifdef USERDIR_RESOURCES
-		pResources->AddLanguageFile(gsGameLanguageFolder + gsDefaultGameLanguage, false, gsUserResourceDir);
-#else
 		pResources->AddLanguageFile(gsGameLanguageFolder + gsDefaultGameLanguage, false);
-#endif
 
-	if(sBaseFileName != gsDefaultBaseLanguage)
-#ifdef USERDIR_RESOURCES
-	pResources->AddLanguageFile(gsBaseLanguageFolder + gsDefaultBaseLanguage, false,gsUserResourceDir);
-#else
+	if(sBaseFileName != gsDefaultBaseLanguage)	
 	pResources->AddLanguageFile(gsBaseLanguageFolder + gsDefaultBaseLanguage, false);
-#endif
     
 	return true;
 }
@@ -358,17 +326,16 @@ tString LinuxGetRenderer() {
 
 int hplMain(const tString &asCommandLine)
 {
-	tWString sParams = _W(""); //REMOVE COMMAND LINE AS FIX FOR EPIC GAMES cString::To16Char(asCommandLine);
-	tWString sCfgFileDefault = _W("config/main_init.cfg");
-	tWString sCfgFile;
+	tWString sParams = cString::To16Char(asCommandLine);
+	tWString sCfgFile = _W("config/main_init.cfg");
+#if 0 // Pigs doesn't use cfg file as command arg
 	if(sParams==_W("ptest"))
 		sCfgFile = _W("config/ptest_main_init.cfg");
-	else if(sParams.empty())
-		sCfgFile = sCfgFileDefault;
-	else
+	else if(! sParams.empty())
 		sCfgFile = sParams;
+#endif
 
-	if(InitPaths(sCfgFile, sCfgFileDefault)==false)
+	if(InitPaths(sCfgFile)==false)
 		return -1;
 
 	// Create video card database handler
@@ -376,7 +343,7 @@ int hplMain(const tString &asCommandLine)
 
 #if USE_SDL2
     tString sCardString = SDL2GetRenderer();
-#elif defined WIN32
+#elif defined _WIN32
 	// Temp GLUT retrieval of the card string.
 	int argc = 1;
 	char *argv[] = { "" };
@@ -400,13 +367,12 @@ int hplMain(const tString &asCommandLine)
 	// Load the main settings
 	cConfigFile* pMainConfig = LoadConfigFile(gsDefaultMainConfigPath, sConfigFilePath, bLastInitCrashed);
 	if(pMainConfig==NULL) return -1;
-
 	cEngineInitVars vars;
 	vars.mSound.mlSoundDeviceID = pMainConfig->GetInt("Sound", "Device", -1);
 	//////////////////////////////////////////////////////////////////////////
 	// If sound devices should be filtered, set this before creating engine
-	#if defined(WIN32)
-	iLowLevelSound::SetSoundDeviceNameFilter("software");
+	#if defined(_WIN32)
+	iLowLevelSound::SetSoundDeviceNameFilter("soft");
 	#endif
 
 	gpEngine = CreateHPLEngine(eHplAPI_OpenGL, eHplSetup_Video, &vars);
@@ -452,13 +418,13 @@ int hplMain(const tString &asCommandLine)
 	////////////////////////////////////////////
 	// Set up game exe
 	tWString sGameExe;
-#ifdef WIN32
-	sGameExe = _W("Amnesia.exe");
+#ifdef _WIN32
+	sGameExe = _W("Lux.exe");
 #elif __linux__
 	#if (defined(i386) && !defined(__LP64__))
-		sGameExe = _W("./Amnesia.bin.x86");
+		sGameExe = _W("./AmnesiaAMFP.bin.x86");
 	#else
-		sGameExe = _W("./Amnesia.bin.x86_64");
+		sGameExe = _W("./AmnesiaAMFP.bin.x86_64");
 	#endif
 #endif
 

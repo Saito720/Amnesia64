@@ -1,6 +1,6 @@
 /*
    AngelCode Scripting Library
-   Copyright (c) 2003-2009 Andreas Jonsson
+   Copyright (c) 2003-2012 Andreas Jonsson
 
    This software is provided 'as-is', without any express or implied 
    warranty. In no event will the authors be held liable for any 
@@ -42,8 +42,8 @@
 
 BEGIN_AS_NAMESPACE
 
-// TODO: optimize: The access to the arguments should be optimized so that code 
-//                 doesn't have to count the position of the argument with every call
+// TODO: runtime optimize: The access to the arguments should be optimized so that code 
+//                         doesn't have to count the position of the argument with every call
 
 // internal
 asCGeneric::asCGeneric(asCScriptEngine *engine, asCScriptFunction *sysFunction, void *currentObject, asDWORD *stackPointer)
@@ -63,16 +63,34 @@ asCGeneric::~asCGeneric()
 }
 
 // interface
-asIScriptEngine *asCGeneric::GetEngine()
+asIScriptEngine *asCGeneric::GetEngine() const
 {
 	return (asIScriptEngine*)engine;
 }
 
+#ifdef AS_DEPRECATED
+// Deprecated since 2.24.0 - 2012-05-25
 // interface
-int asCGeneric::GetFunctionId()
+int asCGeneric::GetFunctionId() const
 {
 	return sysFunction->id;
 }
+#endif
+
+// interface
+asIScriptFunction *asCGeneric::GetFunction() const
+{
+	return sysFunction;
+}
+
+#ifdef AS_DEPRECATED
+// Deprecated since 2.24.0 - 2012-05-25
+// interface
+void *asCGeneric::GetFunctionUserData() const
+{
+	return sysFunction->userData;
+}
+#endif
 
 // interface
 void *asCGeneric::GetObject()
@@ -81,14 +99,14 @@ void *asCGeneric::GetObject()
 }
 
 // interface
-int asCGeneric::GetObjectTypeId()
+int asCGeneric::GetObjectTypeId() const
 {
 	asCDataType dt = asCDataType::CreateObject(sysFunction->objectType, false);
 	return engine->GetTypeIdFromDataType(dt);
 }
 
 // interface
-int asCGeneric::GetArgCount()
+int asCGeneric::GetArgCount() const
 {
 	return (int)sysFunction->parameterTypes.GetLength();
 }
@@ -248,7 +266,7 @@ void *asCGeneric::GetArgAddress(asUINT arg)
 		offset += sysFunction->parameterTypes[n].GetSizeOnStackDWords();
 
 	// Get the value
-	return (void*)*(size_t*)(&stackPointer[offset]);
+	return (void*)*(asPWORD*)(&stackPointer[offset]);
 }
 
 // interface
@@ -293,7 +311,7 @@ void *asCGeneric::GetAddressOfArg(asUINT arg)
 }
 
 // interface
-int asCGeneric::GetArgTypeId(asUINT arg)
+int asCGeneric::GetArgTypeId(asUINT arg) const
 {
 	if( arg >= (unsigned)sysFunction->parameterTypes.GetLength() )
 		return 0;
@@ -453,7 +471,12 @@ int asCGeneric::SetReturnObject(void *obj)
 	}
 	else
 	{
-		obj = engine->CreateScriptObjectCopy(obj, engine->GetTypeIdFromDataType(*dt));
+		// If function returns object by value the memory is already allocated.
+		// Here we should just initialize that memory by calling the copy constructor
+		// or the default constructor followed by the assignment operator
+		void *mem = (void*)*(asPWORD*)&stackPointer[-AS_PTR_SIZE];
+		engine->ConstructScriptObjectCopy(mem, obj, dt->GetObjectType());
+		return 0;
 	}
 
 	objectRegister = obj;
@@ -467,7 +490,13 @@ void *asCGeneric::GetReturnPointer()
 	asCDataType &dt = sysFunction->returnType;
 
 	if( dt.IsObject() && !dt.IsReference() )
+	{
+		// This function doesn't support returning on the stack but the use of 
+		// the function doesn't require it so we don't need to implement it here.
+		asASSERT( !sysFunction->DoesReturnOnStack() );
+
 		return &objectRegister;
+	}
 
 	return &returnVal;
 }
@@ -479,15 +508,11 @@ void *asCGeneric::GetAddressOfReturnLocation()
 
 	if( dt.IsObject() && !dt.IsReference() )
 	{
-		if( dt.GetObjectType()->flags & asOBJ_VALUE )
+		if( sysFunction->DoesReturnOnStack() )
 		{
-			// Allocate the necessary memory for this object, 
-			// but do not initialize it, as the caller will do that.
-			objectRegister = engine->CallAlloc(dt.GetObjectType());
-
-			// TODO: How will we know if the initialization was successful?
-
-			return objectRegister;
+			// The memory is already preallocated on the stack,
+			// and the pointer to the location is found before the first arg
+			return (void*)*(asPWORD*)&stackPointer[-AS_PTR_SIZE];
 		}
 
 		// Reference types store the handle in the objectReference
@@ -499,7 +524,7 @@ void *asCGeneric::GetAddressOfReturnLocation()
 }
 
 // interface
-int asCGeneric::GetReturnTypeId()
+int asCGeneric::GetReturnTypeId() const
 {
 	return sysFunction->GetReturnTypeId();
 }

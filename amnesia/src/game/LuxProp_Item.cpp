@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxProp_Item.h"
@@ -78,12 +78,6 @@ void cLuxPropLoader_Item::LoadVariables(iLuxProp *apProp, cXmlElement *apRootEle
 	{
 		pItem->mfAmount = GetVarFloat("HealAmount", 0);
 	}
-	///////////////////////////
-	// Lamp Oil
-	else if(pItem->mItemType == eLuxItemType_LampOil)
-	{
-		pItem->mfAmount = GetVarFloat("OilAmount", 0);
-	}
 }
 
 //-----------------------------------------------------------------------
@@ -114,6 +108,7 @@ void cLuxPropLoader_Item::LoadInstanceVariables(iLuxProp *apProp, cResourceVarsO
 		pItem->msExtraVal = apInstanceVars->GetVarString("DiaryCallback", "");
 	}
 }
+
 //-----------------------------------------------------------------------
 
 //////////////////////////////////////////////////////////////////////////
@@ -126,7 +121,6 @@ cLuxProp_Item::cLuxProp_Item(const tString &asName,int alID, cLuxMap *apMap) : i
 {
 	mfAmount = 1.0f;
 	mlSpawnContainerID =-1;
-	mfFlashAlpha =0;
 }
 
 //-----------------------------------------------------------------------
@@ -202,36 +196,7 @@ void cLuxProp_Item::UpdatePropSpecific(float afTimeStep)
 {
 	if(mbInteractionDisabled) return;
 
-	/////////////////////////////////
-	// If near player, flash
-	cCamera *pCam =  gpBase->mpPlayer->GetCamera();
-	cVector3f vCameraPos = pCam->GetPosition();
-	cVector3f vBodyPos = mvBodies[0]->GetLocalPosition();
-	vCameraPos.y=0; 
-	vBodyPos.y =0;
-
-	float fDistSqrt = cMath::Vector3DistSqr(vCameraPos, vBodyPos);
-	if(fDistSqrt < 4.0f * 4.0f)
-	{
-		mfFlashAlpha += afTimeStep;
-		if(mfFlashAlpha >1)mfFlashAlpha =1;
-	}
-	else
-	{
-		mfFlashAlpha -=afTimeStep;
-		if(mfFlashAlpha <0)mfFlashAlpha =0;
-	}
-
-	if(mfFlashAlpha> 0)
-	{
-		for(int i=0; i<mpMeshEntity->GetSubMeshEntityNum(); ++i)
-		{
-			cSubMeshEntity *pSubEnt = mpMeshEntity->GetSubMeshEntity(i);
-
-			if(pCam->GetFrustum()->CollideBoundingVolume(pSubEnt->GetBoundingVolume()) != eCollision_Outside)
-				gpBase->mpEffectRenderer->AddFlashObject(pSubEnt, mfFlashAlpha);
-		}
-	}
+	FlashIfNearPlayer(afTimeStep);
 }
 
 //-----------------------------------------------------------------------
@@ -244,7 +209,8 @@ void cLuxProp_Item::BeforePropDestruction()
 
 eLuxFocusCrosshair cLuxProp_Item::GetFocusCrosshair(iPhysicsBody *apBody, const cVector3f &avPos)
 {
-	return eLuxFocusCrosshair_Pick;
+	if(mItemType == eLuxItemType_Note)	return eLuxFocusCrosshair_Note;
+	else								return eLuxFocusCrosshair_Pick;
 }
 
 //-----------------------------------------------------------------------

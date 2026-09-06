@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "EntityWrapperLight.h"
@@ -233,6 +233,12 @@ bool iEntityWrapperLight::GetProperty(int alPropID, float& afX)
 	case eLightFloat_FlickerOffFadeMaxLength:
 		afX = GetFlickerOffFadeMaxLength();
 		break;
+	case eLightFloat_Brightness:
+		afX = GetBrightness();
+		break;
+	case eLightFloat_Falloff:
+		afX = GetFalloff();
+		break;
 	default:
 		return false;
 	}
@@ -258,9 +264,6 @@ bool iEntityWrapperLight::GetProperty(int alPropID, tString& asX)
 		break;
 	case eLightStr_GoboAnimMode:
 		asX = GetGoboAnimMode();
-		break;
-	case eLightStr_FalloffMap:
-		asX = GetFalloffMap();
 		break;
 	case eLightStr_FlickerOnSound:
 		asX = GetFlickerOnSound();
@@ -363,6 +366,12 @@ bool iEntityWrapperLight::SetProperty(int alPropID, const float& afX)
 	case eLightFloat_FlickerOffFadeMaxLength:
 		SetFlickerOffFadeMaxLength(afX);
 		break;
+	case eLightFloat_Brightness:
+		SetBrightness(afX);
+		break;
+	case eLightFloat_Falloff:
+		SetFalloff(afX);
+		break;
 	default:
 		return iEntityWrapper::SetProperty(alPropID, afX);
 	}
@@ -387,9 +396,6 @@ bool iEntityWrapperLight::SetProperty(int alPropID, const tString& asX)
 		break;
 	case eLightStr_GoboAnimMode:
 		SetGoboAnimMode(asX);
-		break;
-	case eLightStr_FalloffMap:
-		SetFalloffMap(asX);
 		break;
 	case eLightStr_FlickerOnSound:
 		SetFlickerOnSound(asX);
@@ -586,6 +592,18 @@ void iEntityWrapperLight::SetFlickerOffColor(const cColor& aCol)
 	mbFlickerUpdated = true;
 }
 
+void iEntityWrapperLight::SetBrightness(float afX)
+{
+	mfBrightness = afX;
+
+	((iLight*)mpEngineEntity->GetEntity())->SetBrightness(afX);
+}
+
+void iEntityWrapperLight::SetFalloff(float afX)
+{
+	mfFalloff = afX;
+	((iLight*)mpEngineEntity->GetEntity())->SetFalloff(afX);
+}
 
 void iEntityWrapperLight::SetFlickerOnSound(const tString& asStr)
 {
@@ -630,11 +648,11 @@ void iEntityWrapperLight::UpdateFlickerParams()
 
 	iLight* pLight = (iLight*)mpEngineEntity->GetEntity();
 
-    pLight->SetFlickerActive(mbFlickerActive);
-	pLight->SetFlicker(mcolFlickerOffColor, mfFlickerOffRadius,
+    pLight->SetFlicker(mcolFlickerOffColor, mfFlickerOffRadius,
 							mfFlickerOnMinLength, mfFlickerOnMaxLength, msFlickerOnSound, msFlickerOnPS,
 							mfFlickerOffMinLength, mfFlickerOffMaxLength, msFlickerOffSound, msFlickerOffPS,
 							mbFlickerFade, mfFlickerOnFadeMinLength, mfFlickerOnFadeMaxLength, mfFlickerOffFadeMinLength, mfFlickerOffFadeMaxLength);
+	pLight->SetFlickerActive(mbFlickerActive);
 }
 
 //------------------------------------------------------------------------------
@@ -662,23 +680,6 @@ void iEntityWrapperLight::RemoveConnectedBillboard(cEntityWrapperBillboard* apBB
 
 //------------------------------------------------------------------------------
 
-//------------------------------------------------------------------------------
-
-void iEntityWrapperLight::SetFalloffMap(const tString& asFalloffMap)
-{
-	iTexture* pTex = NULL;
-
-	cEditorHelper::LoadTextureResource(eEditorTextureResourceType_1D, asFalloffMap, &pTex);
-	if(pTex)
-		msFalloffMap = cString::To8Char(GetEditorWorld()->GetEditor()->GetPathRelToWD(asFalloffMap));
-	else
-	{
-		cEditorHelper::LoadTextureResource(eEditorTextureResourceType_1D, "core_falloff_linear", &pTex);
-		msFalloffMap = "";
-	}
-
-	((iLight*)mpEngineEntity->GetEntity())->SetFalloffMap(pTex);	
-}
 
 //------------------------------------------------------------------------------
 

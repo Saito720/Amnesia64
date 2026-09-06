@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "system/SerializeClass.h"
@@ -28,8 +28,6 @@
 #include "graphics/GraphicsTypes.h"
 #include "math/MathTypes.h"
 #include "system/Container.h"
-
-#include "impl/tinyXML/tinyxml.h"
 
 #include "resources/BinaryBuffer.h"
 
@@ -203,6 +201,17 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
+	void cSerializeClass::ResetGeneration()
+	{
+		//////////////
+		// Reset some data
+		SetUpData();
+
+		glTabs=0;
+	}
+
+	//-----------------------------------------------------------------------
+
 	bool cSerializeClass::SaveToFile(iSerializable* apData, const tWString &asFile,const tString &asRoot, bool abCompressAndCrc)
 	{
 		SetUpData();
@@ -278,6 +287,67 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
+	bool cSerializeClass::SaveElementToFile(TiXmlDocument* apXmlDoc, const tWString &asFile,bool abCompressAndCRC)
+	{
+		///////////////////////////////
+		//Normal Save
+		if(abCompressAndCRC==false)
+		{
+			FILE *pFile = cPlatform::OpenFile(asFile, _W("w+"));
+			if(pFile==NULL)
+			{
+				Error("Unable to open serialized file '%s' as w+! Invalid filepointer returned!\n", cString::To8Char(asFile).c_str());
+				return false;
+			}
+
+			// Enable buffered writing to disk
+			char buffer[8*1024];
+			setvbuf(pFile, buffer, _IOFBF, 8*1024);
+
+			bool bRet = apXmlDoc->SaveFile(pFile);
+			if(bRet==false)
+				Error("Couldn't save class to '%s'\n", asFile.c_str());
+
+			if(pFile) fclose(pFile);
+
+			return bRet;
+		}
+		///////////////////////////////
+		//Compressed Save
+		else
+		{
+			/////////////////////////////
+			// Get the data
+			tString sData;
+			sData << *apXmlDoc;
+
+			/////////////////////////////
+			// Compress the data
+			cBinaryBuffer destBuffer;
+
+			destBuffer.AddCRC_Begin();
+
+			if(destBuffer.CompressAndAdd(&sData[0], sData.size()+1)==false)
+			{
+				Error("Unable to compress data for serialized data '%s'!\n", cString::To8Char(asFile).c_str());
+				return false;
+			}
+
+			destBuffer.AddCRC_End(kSavedDataCRCKey);
+
+			/////////////////////////////
+			// Save the file
+			if(destBuffer.Save(asFile)==false)
+			{
+				Error("Unable to save serialized file '%s'!\n", cString::To8Char(asFile).c_str());
+				return false;
+			}
+
+			return true;
+		}
+	}
+
+	//-----------------------------------------------------------------------
 
 	void cSerializeClass::SaveToElement(iSerializable* apData,const tString &asName, TiXmlElement *apParent,
 										bool abIsPointer)
@@ -413,15 +483,31 @@ namespace hpl {
 
 			////////////////////
 			//Load xml
-			pXmlDoc->Parse(textBuffer.GetDataPointer());
+			// XML needs a contiguous, terminated string even when the buffer spans chunks.
+			tString sData(textBuffer.GetSize(), '\0');
+			textBuffer.SetPos(0);
+			if(!sData.empty()) textBuffer.GetRawData(&sData[0], sData.size());
+			pXmlDoc->Parse(sData.c_str());
 		}
 
 
 		//Get root
 		TiXmlElement* pRootElem = pXmlDoc->RootElement();
+		if(pXmlDoc->Error() || pRootElem == NULL)
+		{
+			Error("Unable to parse serialized file '%s'!\n", cString::To8Char(asFile).c_str());
+			hplDelete(pXmlDoc);
+			return false;
+		}
 
 		//Get first, there should only be ONE class at the root.
 		TiXmlElement* pClassElem = pRootElem->FirstChildElement("class");
+		if(pClassElem == NULL)
+		{
+			Error("Serialized file '%s' contains no class!\n", cString::To8Char(asFile).c_str());
+			hplDelete(pXmlDoc);
+			return false;
+		}
 
 		LoadFromElement(apData,pClassElem);
 
@@ -1014,7 +1100,7 @@ namespace hpl {
 					*pValuePtr = pSavedClass->mpCreateFunc();
 				}
 				else {
-					hplDelete(*pValuePtr);
+					hplDelete(pValuePtr);
 					*pValuePtr = pSavedClass->mpCreateFunc();
 				}
 

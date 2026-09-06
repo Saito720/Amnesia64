@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef HPL_MESH_ENTITY_H
@@ -103,6 +103,9 @@ namespace hpl {
 		int GetAnimationStateIndex(const tString &asName);
 		cAnimationState* GetAnimationStateFromName(const tString &asName);
 		int GetAnimationStateNum();
+		bool IsMeshCulled();
+		
+		void SetIsOccluder(bool abX);
 
 		//Animation controller
 		void Play(int alIndex,bool abLoop, bool bStopPrev);
@@ -111,6 +114,9 @@ namespace hpl {
 
 		void PlayFadeTo(int alIndex,bool abLoop, float afTime);
 		void PlayFadeToName(const tString &asName,bool abLoop, float afTime);
+
+		void FadeOutCurrent(float afTime);
+		void FadeInCurrent(float afTime, bool abLoop);
 
 		bool AnimationIsOver(const tString &asName);
 
@@ -181,6 +187,9 @@ namespace hpl {
 
 		void SetStatic(bool abX);
 		bool IsStatic(){ return mbStatic;}
+		
+		void SetUpdateBonesWhenCulled(bool abX) { mbUpdateBonesWhenCulled = abX; }
+		bool GetUpdateBonesWhenCulled() { return mbUpdateBonesWhenCulled; }
 
 		void SetRenderFlagBit(tRenderableFlag alFlagBit, bool abSet);
 		//bool GetRenderFlagBit(tRenderableFlag alFlagBit){ return (mlRenderFlags & alFlagBit)!=0;} 
@@ -188,6 +197,9 @@ namespace hpl {
 
 		void SetIlluminationAmount(float afX);
 		float GetIlluminationAmount(){ return mfIlluminationAmount; }
+
+        void SetShaderTimer(float afX);
+		float GetShaderTimer(){ return mfShaderTimer; }
 
 		void SetCoverageAmount(float afX);
 		float GetCoverageAmount(){ return mfCoverageAmount;}
@@ -217,6 +229,9 @@ namespace hpl {
 		void GetAABBFromBones(cVector3f &avMin, cVector3f &avMax);
 
 		void BuildBoneStatesRec(cBone *apBone, cNode3D *apParent);
+		void UpdateSkeletonBounds(cAnimation* apAnimation, cAnimationState* apState);
+		
+		bool GetAABBFromSkeletonBounds(cVector3f &avMin, cVector3f &avMax);
 
 		cMaterialManager* mpMaterialManager;
 		cMeshManager* mpMeshManager;
@@ -226,14 +241,18 @@ namespace hpl {
 
 		bool mbIsVisible;
 		float mfIlluminationAmount;
+		float mfShaderTimer;
 		float mfCoverageAmount;
 		tRenderableFlag mlRenderFlags;
 		
 		bool mbBoneMatricesNeedUpdate;
 		int mlBoneMatricesTransformCount;
+		int mlBoneMatricesUpdateCount;
 
 		cMatrixf m_mtxInvWorldMatrix;
 		int mlInvWorldMatrixTransformCount;
+
+		bool mbUpdateBonesWhenCulled;
 
 		bool mbStatic;
 

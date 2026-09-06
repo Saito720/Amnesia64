@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxMoveState_Normal.h"
@@ -68,10 +68,6 @@ cLuxMoveState_Normal::cLuxMoveState_Normal(cLuxPlayer *apPlayer) : iLuxMoveState
 	////////////////////////////
 	// Create data
 	mpCallback = hplNew( cLuxMoveState_Normal_Callback, (this));
-	
-	mbRunning = false;
-	mbCrouching = false;
-	mbJumping = false;
 
 	////////////////////////////
 	// Sounds
@@ -153,6 +149,11 @@ cLuxMoveState_Normal::cLuxMoveState_Normal(cLuxPlayer *apPlayer) : iLuxMoveState
 	mfFallDamageSpeed_Max = gpBase->mpGameCfg->GetFloat("Player_General","FallSpeed_Max",0);
 	mfFallDamage_Max = gpBase->mpGameCfg->GetFloat("Player_General","FallDamage_Max",0);
 	msFallDamageSound_Max = gpBase->mpGameCfg->GetString("Player_General","FallDamageSound_Max","");
+
+	miScuffleMinInfectionLevel = gpBase->mpGameCfg->GetInt("Player_Movement_Normal","ScuffleMinInfectionLevel",0);
+
+	mfExhaustionBobMultiplier = gpBase->mpGameCfg->GetFloat("Player_General","Stamina_ExhaustionBobMultiplier",0);
+	
 }
 
 //-----------------------------------------------------------------------
@@ -250,7 +251,6 @@ void cLuxMoveState_Normal::OnUpdate(float afTimeStep)
 	////////////////////////////
 	// Update head bob
 	UpdateHeadBob(afTimeStep);
-	
 }
 
 //-----------------------------------------------------------------------
@@ -281,7 +281,7 @@ void cLuxMoveState_Normal::OnRun(bool abActive)
 {
 	if(abActive)
 	{
-		if(mpPlayer->GetCrouchDisabled()==false && mpPlayer->GetInsanityCollapse()->IsActive()==false)
+		if(mpPlayer->GetCrouchDisabled()==false && mpPlayer->GetInfectionCollapse()->IsActive()==false)
 		{
 			//Stand up if moving and running!
 			iCharacterBody *pCharBody = mpPlayer->GetCharacterBody();
@@ -309,7 +309,7 @@ void cLuxMoveState_Normal::OnJump(bool abActive)
 {
 	//////////////////////////
 	//Jump pressed
-	if(abActive && mbJumping == false)
+	if(abActive && mbJumping == false && mpPlayer->GetHelperVoiceFlashback()->AllowsJump() )
 	{
 		iCharacterBody *pCharBody = mpPlayer->GetCharacterBody();
 		if(pCharBody->IsOnGround()==false) return;
@@ -330,7 +330,6 @@ void cLuxMoveState_Normal::Jump()
 	gpBase->mpHelpFuncs->PlayGuiSoundData(msJumpSound, eSoundEntryType_World);
 
 	float fStartForce = mbCrouching ? mfJumpCrouchStartForce : mfJumpStartForce;
-	fStartForce *= mpPlayer->GetScriptJumpForceMul();
 
 	pCharBody->AddForce(cVector3f(0, fStartForce * mpPlayer->GetDefaultMass(),0));		
 	mbJumping = true;
@@ -402,7 +401,7 @@ void cLuxMoveState_Normal::SetCrouch(bool abActive)
 			gpBase->mpHelpFuncs->PlayGuiSoundData(msStandSound, eSoundEntryType_World);
 
 			mbCrouching = false;
-			pCharBody->SetPosition(pCharBody->GetPosition()+vPosTestAdd[lCurrentFitTest]); //Make sure to move the player to the fitting positon!
+			pCharBody->SetPosition(pCharBody->GetPosition()+vPosTestAdd[lCurrentFitTest], true); //Make sure to move the player to the fitting positon!
 			pCharBody->SetActiveSize(0);
 			mpPlayer->MoveHeadPosAdd(eLuxHeadPosAdd_Main, 0, 1.6f, 0.05f);
 		}
@@ -428,7 +427,9 @@ float cLuxMoveState_Normal::GetMoveSpeedMul()
 						mpPlayer->GetScriptMoveSpeedMul() * 
 						mpPlayer->GetEventMoveSpeedMul() * 
 						mpPlayer->GetHurtMoveSpeedMul() *
-						mpPlayer->GetInsanityCollapseSpeedMul();
+						mpPlayer->GetInfectionCollapseSpeedMul() *
+						mpPlayer->GetStaminaSpeedMul() *
+						mpPlayer->GetInfectionSpeedMul();
 	if(mpPlayer->IsInWater()) fMoveMul *= mpPlayer->GetWaterSpeedMul();
 	
 	return fMoveMul;
@@ -456,8 +457,7 @@ void cLuxMoveState_Normal::UpdateMovement(float afTimeStep)
 
 	//////////////////////////////////////
 	//Update the running state
-	mbRunning = mpPlayer->IsPressingRun();
-
+	mbRunning = mpPlayer->IsPressingRun() && mpPlayer->CanRun();
 
 	//////////////////////////////////////
 	//Check if character is running, if so stand up (if possible)
@@ -467,7 +467,7 @@ void cLuxMoveState_Normal::UpdateMovement(float afTimeStep)
 
 		if(mbRunning)
 		{
-			if(mpPlayer->GetCrouchDisabled()==false && mpPlayer->GetInsanityCollapse()->IsActive()==false)
+			if(mpPlayer->GetCrouchDisabled()==false && mpPlayer->GetInfectionCollapse()->IsActive()==false)
 			{
 				SetCrouch(false);
 			}
@@ -601,13 +601,16 @@ void cLuxMoveState_Normal::UpdateHeadBob(float afTimeStep)
 	
 	/////////////////////
 	// Check if moving
-	bool bMoving = pCharBody->IsOnGround() && pCharBody->GetMovedLastUpdate();
+	bool bMoving = pCharBody->IsOnGround() && pCharBody->GetMovedLastUpdate() && fPlayerSpeed > 0.0001f;
 
 	//If not moving fade size to 0 too.
 	if(bMoving==false)
 	{
 		mvBobMaxGoal =0;
 	}
+
+    float exhaustion_factor = mpPlayer->GetExhaustionFactor();
+	mvBobMaxGoal *=  ( 1.0f - exhaustion_factor ) + exhaustion_factor * mfExhaustionBobMultiplier;
 	
 	//Fade into the new max
 	float fAdd = 0.1f;
@@ -829,8 +832,20 @@ void cLuxMoveState_Normal::FootSound(eLuxFootSound aType)
 	if(aType == eLuxFootSound_Step)
 	{
 		tString sMoveType = "walk";
-		if(mbRunning) sMoveType = "run";
-		if(mbCrouching) sMoveType = "sneak";
+
+        if ( mpPlayer->UsesDragFootsteps() )
+        {
+			sMoveType = "drag";
+        }
+        else if ( mpPlayer->GetInfectionLevel() >= miScuffleMinInfectionLevel )
+		{
+			sMoveType = "scuffle";
+		}
+		else
+		{
+			if(mbRunning) sMoveType = "run";
+			if(mbCrouching) sMoveType = "sneak";
+		}
 
 		sSoundDataName = "step_"+sMoveType+"_"+sMaterialStep;
 	}
@@ -845,21 +860,8 @@ void cLuxMoveState_Normal::FootSound(eLuxFootSound aType)
 	gpBase->mpHelpFuncs->PlayGuiSoundData(sSoundDataName, eSoundEntryType_World,1,eSoundEntityType_Main, true,&extraData);
 
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
-
-	float fVolumeMul = 1.0f;
-	float fDistanceMul = 1.0f;
-
-	if (gpBase->mbHardMode)
-	{
-		if (mbRunning)
-		{
-			fVolumeMul = 2.0f;
-			fDistanceMul = 1.25f;
-		}
-	}
-	
-	pMap->BroadcastEnemySoundMessage(	mpPlayer->GetCharacterBody()->GetFeetPosition() + cVector3f(0,0.1f,0),extraData.mfVolume * fVolumeMul,
-										extraData.mfMinDistance, extraData.mfMaxDistance * fDistanceMul);
+	pMap->BroadcastEnemySoundMessage( mpPlayer->GetCharacterBody()->GetFeetPosition() + cVector3f(0,0.1f,0), extraData.mfAIVolume, 
+										extraData.mfMinDistance, extraData.mfMaxDistance, sSoundDataName );
 }
 
 //-----------------------------------------------------------------------
@@ -867,7 +869,7 @@ void cLuxMoveState_Normal::FootSound(eLuxFootSound aType)
 
 void cLuxMoveState_Normal::FallDamage(float afYSpeed)
 {
-	if(mpPlayer->GetNoFallDamage()) return;
+    if(mpPlayer->GetNoFallDamage()) return;
 
 	tString sSound = "";
 	float fDamage = 0.0f;
@@ -895,7 +897,7 @@ void cLuxMoveState_Normal::FallDamage(float afYSpeed)
 	{
 		mfBounceSizeMul = mfFallDamageBounceSizeMul;
 		mfBounceSpeedMul = mfFallDamageBounceSpeedMul;
-		mpPlayer->GiveDamage(fDamage,100,eLuxDamageType_BloodSplat, false, false);
+		mpPlayer->GiveDamage(fDamage,100,eLuxDamageType_BloodSplat, false, false); // no fall damage in pigs; no time/budget for the nice solution. Still want sound though.
 		gpBase->mpHelpFuncs->PlayGuiSoundData(sSound, eSoundEntryType_World);
 	}
 }

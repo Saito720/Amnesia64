@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "physics/CharacterBody.h"
@@ -211,17 +211,20 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	void cCharacterBodyRay::Clear()
+	void cCharacterBodyRay::Clear(bool abCollideVolatile)
 	{
 		mfMinDist = 10000.0f;
 		mbCollide = false;
+		mbCollideVolatile = abCollideVolatile;
 	}
 
 	//-----------------------------------------------------------------------
 
 	bool cCharacterBodyRay::OnIntersect(iPhysicsBody *pBody,cPhysicsRayParams *apParams)
 	{
-		if(	pBody->IsCharacter()==false && pBody->GetCollideCharacter() && 
+		bool bVolatile = pBody->GetMass()==0 && pBody->IsVolatile();
+
+		if(	pBody->IsCharacter()==false && pBody->GetCollideCharacter() && (bVolatile==false || mbCollideVolatile) &&
 			apParams->mfDist < mfMinDist)
 		{
 			mfMinDist = apParams->mfDist;
@@ -294,6 +297,7 @@ namespace hpl {
 		mbActive = true;
 		mbCollideCharacter = true;
 		mbTestCollision = true;
+		mbCollideStaticVolatile = true;
 
 		mbEntitySmoothYPos = false;
 		mlEntitySmoothYPosNum = 20;
@@ -643,6 +647,7 @@ namespace hpl {
 		if(mpConnectedBody && mbConnectionAlignCharacterRotation) return;
         
 		mfYaw = afX;
+        UpdateMoveMatrix();
 	}
 
 	float iCharacterBody::GetYaw()
@@ -806,6 +811,8 @@ namespace hpl {
 			mfMoveAcc[i] =0;
 			mfMoveSpeed[i]=0;
 		}
+
+		mvLastPosition = mvPosition;
 	}
 
 	//-----------------------------------------------------------------------
@@ -1101,7 +1108,7 @@ namespace hpl {
 
 	bool iCharacterBody::CheckRayIntersection(const cVector3f &avStart, const cVector3f &avEnd, float *apDistance, cVector3f *apNormalVec)
 	{
-		mpRayCallback->Clear();
+		mpRayCallback->Clear(mbCollideStaticVolatile);
 		mpWorld->CastRay(mpRayCallback,avStart,avEnd,apDistance!=NULL,apNormalVec!=NULL,false);
 		bool bCollide = mpRayCallback->mbCollide;
 		if(bCollide)
@@ -1671,7 +1678,7 @@ namespace hpl {
 			
 			float fHeight = mvSize.y/2.0f - fMinDist[i];
 
-			if(fHeight <= fMaxHeight && fHeight>0.025f)
+			if(fHeight <= fMaxHeight && fHeight>0.015f)
 			{
 				//Check if there is any collision on the new pos
 				cVector3f vStepPos = mvPosition + cVector3f(0,fHeight+mfClimbHeightAdd,0)+ (vMoveDir*fForwadAdd*mfClimbForwardMul);
@@ -1680,6 +1687,7 @@ namespace hpl {
 				{
 					//Climb the stair.
 					mvPosition.y += mfStepClimbSpeed * afTimeStep;
+					//mvPosition.y = mvPosition.y + fHeight;
 					mbClimbing = true;
 					break;
 				}
@@ -1894,7 +1902,7 @@ namespace hpl {
 				//If no collision and on ground and not climbing then cast ray to get ground normal
 				if(mlOnGroundCount > 0 && mbClimbing==false)
 				{
-					mpRayCallback->Clear();
+					mpRayCallback->Clear(mbCollideStaticVolatile);
 					cVector3f vStart = GetFeetPosition() + cVector3f(0,0.001f,0);
 					cVector3f vEnd = vStart - cVector3f(0,mvSize.x*2.0001f,0);
 					mpWorld->CastRay(mpRayCallback,vStart,vEnd,true,true,false);
@@ -2272,7 +2280,7 @@ namespace hpl {
 		return mpWorld->CheckShapeWorldCollision(apPushBackVector, pShape, cMath::MatrixTranslate(avPos),
 												mpCurrentBody, false, true, 
 												apCallback, true,mlMinBodyPushStrength, 
-												mlCollideFlags, false);
+												mlCollideFlags, false, !mbCollideStaticVolatile);
 	}
 	
 	//-----------------------------------------------------------------------

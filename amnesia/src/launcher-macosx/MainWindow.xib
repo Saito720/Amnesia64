@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <document type="com.apple.InterfaceBuilder3.Cocoa.XIB" version="3.0" toolsVersion="5056" systemVersion="13F34" targetRuntime="MacOSX.Cocoa" propertyAccessControl="none">
     <dependencies>
-        <deployment version="1060" identifier="macosx"/>
+        <deployment version="1060" defaultVersion="1060" identifier="macosx"/>
         <plugIn identifier="com.apple.InterfaceBuilder.CocoaPlugin" version="5056"/>
     </dependencies>
     <objects>
@@ -154,9 +154,8 @@
                 </menuItem>
             </items>
         </menu>
-        <window title="Amnesia: The Dark Descent Launcher" allowsToolTipsWhenApplicationIsInactive="NO" autorecalculatesKeyViewLoop="NO" releasedWhenClosed="NO" animationBehavior="default" id="367">
-            <windowStyleMask key="styleMask" titled="YES" closable="YES" miniaturizable="YES" resizable="YES"/>
-            <windowPositionMask key="initialPositionMask" leftStrut="YES" rightStrut="YES" topStrut="YES" bottomStrut="YES"/>
+        <window title="Amnesia: A Machine For Pigs" allowsToolTipsWhenApplicationIsInactive="NO" autorecalculatesKeyViewLoop="NO" releasedWhenClosed="NO" visibleAtLaunch="NO" animationBehavior="default" id="367">
+            <windowStyleMask key="styleMask" titled="YES" closable="YES"/>
             <rect key="contentRect" x="559" y="295" width="694" height="554"/>
             <rect key="screenRect" x="0.0" y="0.0" width="1920" height="1178"/>
             <value key="minSize" type="size" width="694" height="554"/>
@@ -174,7 +173,7 @@
                     <imageView id="815">
                         <rect key="frame" x="0.0" y="1" width="694" height="554"/>
                         <autoresizingMask key="autoresizingMask"/>
-                        <imageCell key="cell" refusesFirstResponder="YES" alignment="left" animates="YES" imageAlignment="top" imageScaling="proportionallyUpOrDown" image="launcher_bg" id="816"/>
+                        <imageCell key="cell" refusesFirstResponder="YES" alignment="left" animates="YES" imageAlignment="top" imageScaling="proportionallyUpOrDown" image="background" id="816"/>
                     </imageView>
                     <customView id="1221" customClass="TabBackground">
                         <rect key="frame" x="53" y="48" width="588" height="180"/>
@@ -300,7 +299,7 @@
                                                 <binding destination="1020" name="selectedIndex" keyPath="selection.Language" previousBinding="1496" id="1504"/>
                                             </connections>
                                         </popUpButton>
-                                        <button verticalHuggingPriority="750" id="1573">
+                                        <button hidden="YES" verticalHuggingPriority="750" id="1573">
                                             <rect key="frame" x="154" y="26" width="241" height="32"/>
                                             <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                                             <buttonCell key="cell" type="push" title="Open Custom Stories" bezelStyle="rounded" alignment="center" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="1574">
@@ -323,7 +322,7 @@
                                     <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                                     <subviews>
                                         <tabView drawsBackground="NO" type="noTabsNoBorder" initialItem="1151" id="1095">
-                                            <rect key="frame" x="-3" y="-4" width="591" height="181"/>
+                                            <rect key="frame" x="0.0" y="-4" width="591" height="181"/>
                                             <autoresizingMask key="autoresizingMask" flexibleMinX="YES" flexibleMaxX="YES" flexibleMinY="YES"/>
                                             <font key="font" metaFont="system"/>
                                             <tabViewItems>
@@ -371,7 +370,7 @@
                                                                             <integer key="NSContentPlacementTag" value="-100"/>
                                                                         </dictionary>
                                                                     </binding>
-                                                                    <binding destination="1020" name="selectedIndex" keyPath="selection.Resolution" previousBinding="1505" id="1576"/>
+                                                                    <binding destination="1020" name="selectedIndex" keyPath="selection.Resolution" previousBinding="1505" id="1578"/>
                                                                 </connections>
                                                             </popUpButton>
                                                             <textField verticalHuggingPriority="750" id="1153">
@@ -816,7 +815,7 @@
                         </tabViewItems>
                         <connections>
                             <binding destination="1020" name="selectedIndex" keyPath="selection.MainTab" id="1455"/>
-                            <outlet property="nextKeyView" destination="1562" id="1572"/>
+                            <outlet property="nextKeyView" destination="831" id="1577"/>
                         </connections>
                     </tabView>
                     <button verticalHuggingPriority="750" id="829">
@@ -832,7 +831,7 @@ Gw
                         <connections>
                             <action selector="terminate:" target="-2" id="842"/>
                             <binding destination="990" name="title" keyPath="selection.lblCancel" id="1214"/>
-                            <outlet property="nextKeyView" destination="1559" id="1569"/>
+                            <outlet property="nextKeyView" destination="824" id="1576"/>
                         </connections>
                     </button>
                     <button verticalHuggingPriority="750" id="831">
@@ -848,30 +847,6 @@ Gw
                             <outlet property="nextKeyView" destination="829" id="1568"/>
                         </connections>
                     </button>
-                    <button verticalHuggingPriority="750" id="1562">
-                        <rect key="frame" x="14" y="10" width="96" height="32"/>
-                        <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                        <buttonCell key="cell" type="push" title="Remember" bezelStyle="rounded" alignment="center" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="1563">
-                            <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
-                            <font key="font" metaFont="system"/>
-                        </buttonCell>
-                        <connections>
-                            <action selector="openPDFButton:" target="811" id="1566"/>
-                            <outlet property="nextKeyView" destination="831" id="1567"/>
-                        </connections>
-                    </button>
-                    <button verticalHuggingPriority="750" tag="2" id="1559">
-                        <rect key="frame" x="584" y="10" width="96" height="32"/>
-                        <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
-                        <buttonCell key="cell" type="push" title="Justine" bezelStyle="rounded" alignment="center" borderStyle="border" imageScaling="proportionallyDown" inset="2" id="1560">
-                            <behavior key="behavior" pushIn="YES" lightByBackground="YES" lightByGray="YES"/>
-                            <font key="font" size="13" name=".LucidaGrandeUI"/>
-                        </buttonCell>
-                        <connections>
-                            <action selector="launchButton:" target="811" id="1561"/>
-                            <outlet property="nextKeyView" destination="824" id="1571"/>
-                        </connections>
-                    </button>
                 </subviews>
             </view>
             <connections>
@@ -880,11 +855,11 @@ Gw
             </connections>
         </window>
         <window title="Add Custom Resolution" allowsToolTipsWhenApplicationIsInactive="NO" autorecalculatesKeyViewLoop="NO" releasedWhenClosed="NO" visibleAtLaunch="NO" animationBehavior="default" id="1536">
-            <windowStyleMask key="styleMask" titled="YES" closable="YES" miniaturizable="YES"/>
-            <windowPositionMask key="initialPositionMask" leftStrut="YES" rightStrut="YES" topStrut="YES" bottomStrut="YES"/>
+            <windowStyleMask key="styleMask" titled="YES"/>
             <rect key="contentRect" x="183" y="289" width="232" height="116"/>
             <rect key="screenRect" x="0.0" y="0.0" width="1920" height="1178"/>
             <value key="minSize" type="size" width="232" height="116"/>
+            <value key="maxSize" type="size" width="232" height="116"/>
             <view key="contentView" id="1537">
                 <rect key="frame" x="0.0" y="0.0" width="232" height="116"/>
                 <autoresizingMask key="autoresizingMask"/>
@@ -964,6 +939,6 @@ DQ
         </window>
     </objects>
     <resources>
-        <image name="launcher_bg" width="509.87799072265625" height="407"/>
+        <image name="background" width="507.67498779296875" height="405.26199340820312"/>
     </resources>
 </document>

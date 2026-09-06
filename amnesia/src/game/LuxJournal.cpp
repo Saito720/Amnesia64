@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxJournal.h"
@@ -44,9 +44,11 @@ static eLuxJournalState gvPressExitState[eLuxJournalState_LastEnum] =
 {
 	eLuxJournalState_LastEnum,	//Main,
 	eLuxJournalState_Main,		//Notes,
+	eLuxJournalState_Main,		//Hints,
 	eLuxJournalState_Main,		//Diaries,
 	eLuxJournalState_Main,		//QuestLog,
 	eLuxJournalState_Notes,		//OpenNote
+	eLuxJournalState_Hints,		//OpenNote
 	eLuxJournalState_Diaries,	//OpenDiary
 	eLuxJournalState_Diaries	//OpenNarratedDiary
 };
@@ -55,6 +57,7 @@ static tString gsBackgroundImage[eLuxJournalState_LastEnum] =
 {
 		"journal/bg_main.tga",	//Main,
 		"journal/bg_notes.tga",		//Notes,
+		"journal/bg_hints.tga",		//Hints,
 		"journal/bg_diaries.tga",		//Diaries,
 		"journal/bg_questlog.tga",		//QuestLog,
 		"",		//OpenNote
@@ -84,6 +87,22 @@ void cLuxJournalTextData::Update(float afTimeStep)
 	}
 }
 
+//-----------------------------------------------------------------------
+
+void cLuxJournalImageData::Update(float afTimeStep)
+{
+    if(mpWidget->GetMouseIsOver() || mpWidget->HasFocus())
+	{
+		mfEffectfAlpha += afTimeStep * 4.0f;
+		if(mfEffectfAlpha > 1) mfEffectfAlpha = 1;
+	}
+	else
+	{
+		mfEffectfAlpha -= afTimeStep * 2.0f;
+		if(mfEffectfAlpha < 0) mfEffectfAlpha = 0;
+	}
+}
+
 //////////////////////////////////////////////////////////////////////////
 // LIST ENTRY
 //////////////////////////////////////////////////////////////////////////
@@ -95,14 +114,54 @@ void cLuxJournal_ListEntry::AddWidget(iWidget *apWidget)
 	mlstWidgets.push_back(apWidget);
 }
 
+void cLuxJournal_ListEntry::AddIcon(iWidget *apWidget, int alHintID)
+{
+	mlstIcons.push_back(apWidget);
+	mlstIconHint.push_back(alHintID);
+}
+
 void cLuxJournal_ListEntry::SetVisible(bool abX)
 {
 	tWidgetListIt it = mlstWidgets.begin(); 
 	for(; it != mlstWidgets.end(); ++it)
 	{
 		iWidget *pWidget = *it;
-		pWidget->SetEnabled(abX);
-		pWidget->SetVisible(abX);
+
+		if(pWidget)
+		{
+			pWidget->SetEnabled(abX);
+			pWidget->SetVisible(abX);
+		}
+	}
+
+	it = mlstIcons.begin();
+	tIntListIt intIt = mlstIconHint.begin();
+
+	for(; intIt != mlstIconHint.end() && it != mlstIcons.end(); intIt++, it++)
+	{
+		int lHintRead = *intIt;
+		iWidget *pWidget = *it;
+
+		if(pWidget && mpJournal && lHintRead != -1 && lHintRead < mpJournal->GetHintNum())
+		{
+			cLuxHint *pHint = mpJournal->GetHint(lHintRead);
+
+			if(pHint == NULL) 
+			{	
+				pWidget->SetEnabled(false && abX);
+				pWidget->SetVisible(false && abX);
+			}
+			else if(pHint->mbHasBeenRead)
+			{
+				pWidget->SetEnabled(false && abX);
+				pWidget->SetVisible(false && abX);
+			}
+			else
+			{
+				pWidget->SetEnabled(true && abX);
+				pWidget->SetVisible(true && abX);
+			}
+		}
 	}
 }
 
@@ -144,15 +203,25 @@ void cLuxJournalStateData::Reset()
 
 void cLuxJournalStateData::OnEnter()
 {
-	if(mState == eLuxJournalState_Diaries || mState == eLuxJournalState_Notes || mState == eLuxJournalState_QuestLog)
+	if(mState == eLuxJournalState_Diaries || mState == eLuxJournalState_Notes || mState == eLuxJournalState_QuestLog || mState == eLuxJournalState_Hints)
 	{
 		int lIdx = mpJournal->GetNoteListIndex(mState);
 		
 		mpJournal->SetNoteListPage(mpJournal->mlCurrentNoteListPage[lIdx], mState);	
 	}
-	
+
 	mpJournal->mpGuiSet->SetDefaultFocusNavWidget(mpJournal->mpWidgetDefaultNav[mState]);
 	mpJournal->mpGuiSet->SetFocusedWidget(mpJournal->mpWidgetDefaultNav[mState]);
+	
+	if(mState == eLuxJournalState_Hints)
+	{
+		mpJournal->SetNoteListPageFromHint(mpJournal->GetLastReadHint());
+	}
+
+	if(mState == eLuxJournalState_Notes)
+	{
+		mpJournal->SetNoteListPageFromNote(mpJournal->GetLastReadDocument());
+	}
 }
 
 //-----------------------------------------------------------------------
@@ -203,6 +272,7 @@ void cLuxJournalStateData::OnDraw(float afFrameTime)
 	///////////////////////
 	//Note open
 	if(	mState==eLuxJournalState_OpenNote || 
+		mState == eLuxJournalState_OpenHint  || 
 		mState == eLuxJournalState_OpenDiary  || 
 		mState == eLuxJournalState_OpenNarratedDiary)
 	{
@@ -218,7 +288,7 @@ void cLuxJournalStateData::OnDraw(float afFrameTime)
 		// Text
 		cLuxNotePage *pPage = &mpJournal->mvPages[mpJournal->mlCurrentNotePage];
 
-		cVector3f vPos(400 - mpJournal->mfNoteTextWidth/2, mpJournal->mfNoteTextStartY, 3);
+		cVector3f vPos(360 - mpJournal->mfNoteTextWidth/2, mpJournal->mfNoteTextStartY, 3);
 		
 		//if(	mpJournal->mlCurrentNotePage == 0 && mpJournal->mvPages.size()==1) //Should be good to center all pages!
 		{
@@ -292,7 +362,9 @@ cLuxJournal::cLuxJournal() : iLuxUpdateable("LuxJournal")
 	mpViewport->SetVisible(false);
 
 	mpViewport->AddGuiSet(mpGuiSet);
-
+	mbDisabled = false;
+	mlLastReadHint = 0;
+	mlLastReadDocument = 0;
 
 	///////////////////////////////
 	//Load settings
@@ -312,8 +384,15 @@ cLuxJournal::cLuxJournal() : iLuxUpdateable("LuxJournal")
 	mfMaxNoteListY = 450;
 	mfNoteListHeaderY = 40;
 
-
-
+	for(int i = 0; i < eLuxJournalState_LastEnum; ++i)
+	{
+		mpWidgetReturn[i] = NULL;
+		mpWidgetDefaultNav[i] = NULL;
+		mpImageForward[i] = NULL;
+		mpWidgetReturn[i] = NULL;
+		mpImageBackward[i] = NULL;
+	}
+	
 	///////////////////////////////
 	//Load state data
 	mvStateData.resize(eLuxJournalState_LastEnum);
@@ -338,6 +417,7 @@ cLuxJournal::cLuxJournal() : iLuxUpdateable("LuxJournal")
 cLuxJournal::~cLuxJournal()
 {
 	STLDeleteAll(mvNotes);
+	STLDeleteAll(mvHints);
 	STLDeleteAll(mvQuestNotes);
 	STLDeleteAll(mvDiaryContainers);
 	STLDeleteAll(mvStateData);
@@ -379,6 +459,7 @@ void cLuxJournal::Reset()
 	mfAlpha =0;	
 
 	mbActive = false;
+	mbDisabled = false;
 
 	mfMouseOverPulse =0;
 
@@ -398,11 +479,12 @@ void cLuxJournal::Reset()
 		mpImageBackward[i] = NULL;
 	}
 
-	for(int i=0; i<3; ++i)
+	for(int i=0; i<4; ++i)
 		mlCurrentNoteListPage[i] =0;
 
 
 	STLDeleteAll(mvNotes);
+	STLDeleteAll(mvHints);
 	STLDeleteAll(mvQuestNotes);
 	STLDeleteAll(mvDiaryContainers);
 
@@ -483,7 +565,7 @@ void cLuxJournal::Update(float afTimeStep)
 
 	////////////////////////
 	//Update extra effects
-	gpBase->mpEffectHandler->GetSanityGainFlash()->Update(afTimeStep);
+//	gpBase->mpEffectHandler->GetInfectionHealFlash()->Update(afTimeStep);
 }
 
 //-----------------------------------------------------------------------
@@ -609,7 +691,7 @@ void cLuxJournal::OnDraw(float afFrameTime)
 
 	////////////////////////
 	//Draw extra effects
-	gpBase->mpEffectHandler->GetSanityGainFlash()->DrawFlash(mpGuiSet, afFrameTime);
+//	gpBase->mpEffectHandler->GetInfectionHealFlash()->DrawFlash(mpGuiSet, afFrameTime);
 }
 
 //-----------------------------------------------------------------------
@@ -632,7 +714,7 @@ void cLuxJournal::ExitPressed(bool abInstantExit)
 		Exit();
 		gpBase->mpHelpFuncs->PlayGuiSoundData("journal_close", eSoundEntryType_Gui);
 
-		gpBase->mpHintHandler->Add("RecentlyReadText", kTranslate("Hints", "RecentlyReadText"), -1);
+		//gpBase->mpHintHandler->Add("RecentlyReadText", kTranslate("Hints", "RecentlyReadText"), -1);
 	}
 	////////////////////
 	//Go to state above.
@@ -693,35 +775,71 @@ cLuxNote* cLuxJournal::AddNote(const tString& asNameAndTextEntry, const tString&
 	pNote->msIconFile = cString::SetFileExt( cString::SetFileExt(asImage,"")+"_icon",sExt);
 	
     mvNotes.push_back(pNote);
+	mlLastReadDocument = mvNotes.size() - 1;
+	
+	if(mvNotes.size() == 44)
+	{
+		gpBase->mpAchievementHandler->UnlockAchievement(eLuxAchievement_MasterArchivist);
+	}
 
-	if(gpBase->msGameName == "Amnesia - The Dark Descent -")
-	{
-		if(mvNotes.size() == 21)
-		{
-			if(gpBase->mpMainConfig->GetBool("Main", "MasterArchivis_Justine", false))
-			{
-				gpBase->mpAchievementHandler->UnlockAchievement(eLuxAchievement_MasterArchivist);
-			}
-			
-			gpBase->mpMainConfig->SetBool("Main", "MasterArchivis_TDD", true);
-			gpBase->mpMainConfig->Save();
-		}
-	}
-	if(gpBase->msGameName == "Amnesia - Justine -")
-	{
-		if(mvNotes.size() == 9)
-		{
-			if(gpBase->mpMainConfig->GetBool("Main", "MasterArchivis_TDD", false))
-			{
-				gpBase->mpAchievementHandler->UnlockAchievement(eLuxAchievement_MasterArchivist);
-			}
-			
-			gpBase->mpMainConfig->SetBool("Main", "MasterArchivis_Justine", true);
-			gpBase->mpMainConfig->Save();
-		}
-	}
 
 	return pNote;
+}
+
+//-----------------------------------------------------------------------
+
+cLuxHint* cLuxJournal::AddHint(const tString& asNameAndTextEntry, const tString& asImage)
+{
+	tString sName = "Hint_"+asNameAndTextEntry+"_Name";
+
+	for(size_t i = 0; i < mvHints.size(); ++i)
+	{
+		if(mvHints[i]->msNameEntry == sName)
+		{
+			// Dont add the same quest twice
+			return NULL;
+		}
+	}
+
+	cLuxHint *pHint = hplNew( cLuxHint, () );
+
+	pHint->msNameEntry = sName;
+	pHint->msTextEntry = "Hint_"+asNameAndTextEntry+"_Text";
+	
+	tString sExt = cString::GetFileExt(asImage);
+	pHint->msImageFile = cString::SetFileExt( cString::SetFileExt(asImage,"")+"_large",sExt);
+	pHint->msIconFile = "diary_page_icon.tga";
+
+	pHint->mbHasBeenRead = false;
+    mvHints.push_back(pHint);
+	mlLastReadHint = mvHints.size()-1;
+
+	return pHint;
+}
+
+void cLuxJournal::RemoveAllHints()
+{
+	STLDeleteAll(mvHints);
+}
+
+void cLuxJournal::RemoveHint(const tString& asNameAndTextEntry)
+{
+	tString sName = "Hint_"+asNameAndTextEntry+"_Name";
+
+	for(size_t i = 0; i < mvHints.size(); ++i)
+	{
+		if(mvHints[i]->msNameEntry == sName)
+		{
+			hplDelete(mvHints[i]);
+
+			for(size_t j = i + 1; j < mvHints.size(); j++)
+			{
+				mvHints[j - 1] = mvHints[j];
+			}
+
+			mvHints.pop_back();
+		}
+	}
 }
 
 //-----------------------------------------------------------------------
@@ -743,6 +861,7 @@ cLuxDiary* cLuxJournal::AddDiary(const tString& asNameAndTextEntry, const tStrin
 	pDiary->msIconFile = cString::SetFileExt( cString::SetFileExt(asImage,"")+"_icon",sExt);
 
 	pContainer->mvDiaries.push_back(pDiary);
+
 
 	return pDiary;
 }
@@ -852,6 +971,7 @@ void cLuxJournal::OpenNote(cLuxNote *apNote, bool abNarration)
 		if(mvNotes[i] == apNote)
 		{
 			mlLastReadTextEntry = (int)i;
+			mlLastReadDocument = i;
 			break;
 		}
 	}
@@ -869,7 +989,42 @@ void cLuxJournal::OpenNote(cLuxNote *apNote, bool abNarration)
 		LoadText(kTranslate("Journal", apNote->msNameEntry), kTranslate("Journal", apNote->msTextEntry) );
 	}
 	
-	SetStateBackgroundGfx(apNote->msImageFile);
+	SetStateBackgroundGfx(gsBackgroundImage[eLuxJournalState_Notes]);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxJournal::OpenHint(cLuxHint *apHint)
+{
+	///////////////////////////
+	// Get the entry number of the diary
+	mlLastReadTextType = 50;
+	mlLastReadTextCat =-1;
+	mlLastReadTextEntry =-1;
+	for(size_t i=0; i<mvHints.size(); ++i)
+	{
+		if(mvHints[i] == apHint)
+		{
+			mlLastReadTextEntry = i;
+			mlLastReadHint = i;
+			break;
+		}
+	}
+
+	apHint->mbHasBeenRead = true;
+	ChangeState(eLuxJournalState_OpenHint);
+	LoadText(kTranslate("Journal", apHint->msNameEntry), kTranslate("Journal", apHint->msTextEntry) );
+	
+	SetStateBackgroundGfx(gsBackgroundImage[eLuxJournalState_Hints]);
+}
+
+//-----------------------------------------------------------------------
+
+bool cLuxJournal::OpenLatestHint()
+{
+	if(mvHints.empty() == false) OpenHint(mvHints.back());
+
+	return mvHints.empty() == false;
 }
 
 //-----------------------------------------------------------------------
@@ -891,7 +1046,8 @@ void cLuxJournal::OpenDiary(cLuxDiary *apDiary, bool abNarration)
 		LoadText(kTranslate("Journal", apDiary->msNameEntry), kTranslate("Journal", apDiary->msTextEntry) );
 	}
 	
-	SetStateBackgroundGfx(apDiary->msImageFile);
+	
+	SetStateBackgroundGfx(gsBackgroundImage[eLuxJournalState_Diaries]);
 	
 }
 //-----------------------------------------------------------------------
@@ -903,6 +1059,7 @@ void cLuxJournal::SetDiaryAsLastRead(cLuxDiary *apDiary)
 	mlLastReadTextType = 1;
 	mlLastReadTextCat = -1;
 	mlLastReadTextEntry = -1;
+
 	for(size_t cat=0; cat<mvDiaryContainers.size(); ++cat)
 	{
 		cLuxDiaryContainer* pCont = mvDiaryContainers[cat];
@@ -934,6 +1091,16 @@ void cLuxJournal::OpenLastReadText()
 		SetForceInstantExit(true);
 		gpBase->mpEngine->GetUpdater()->SetContainer("Journal");
 		OpenNote(mvNotes[mlLastReadTextEntry], false);
+	}
+    ///////////////////
+	//Hint
+	else if(mlLastReadTextType == 50)
+	{
+		if(mlLastReadTextEntry >= (int)mvHints.size()) return;
+
+		SetForceInstantExit(true);
+		gpBase->mpEngine->GetUpdater()->SetContainer("Journal");
+		OpenHint(mvHints[mlLastReadTextEntry]);
 	}
 	///////////////////
 	//Diary
@@ -996,7 +1163,7 @@ void cLuxJournal::SetupImage(cWidgetImage *apImage, int alIdx, eLuxJournalState 
 	apImage->SetUserValue(alIdx);
 	AddSessionWidget(aState, apImage);
 
-	cLuxJournalTextData *pData = hplNew(cLuxJournalTextData, (apImage, aState));
+	cLuxJournalImageData *pData = hplNew(cLuxJournalImageData, (apImage, aState));
 	apImage->SetUserData(pData);
 	mlstSessionWidgetData.push_back(pData);
 }
@@ -1006,27 +1173,28 @@ void cLuxJournal::SetupImage(cWidgetImage *apImage, int alIdx, eLuxJournalState 
 void cLuxJournal::SetupNavigationWidgets(eLuxJournalState aState, int alListIndex, int alForwardIndex, int alBackwardIndex, cWidgetDummy *apRoot)
 {
 	cVector2f vSize(65,46);
-	cVector3f vPos = cVector3f(400 + mfNoteTextWidth/2 - vSize.x-80, mfNoteTextStartY + ((float)mlNoteMaxPageRows+1) * mfNoteRowDist  , 3);
+	cVector3f vPos = cVector3f(360 + mfNoteTextWidth/2 - vSize.x-80, mfNoteTextStartY + ((float)mlNoteMaxPageRows+1) * mfNoteRowDist  , 3);
 
 	iWidget* pFwd = NULL;
 	iWidget* pRet = NULL;
 	iWidget* pBck = NULL;
 
 	//Forward
-	mpImageForward[aState] = mpGuiSet->CreateWidgetImage("journal/note_forward.tga",vPos,vSize,eGuiMaterial_Alpha,false,apRoot);
+	mpImageForward[aState] = mpGuiSet->CreateWidgetImage("journal/note_forward.tga",vPos + cVector3f(41, 0, 0),vSize,eGuiMaterial_Alpha,false,apRoot);
 	mpImageForward[aState]->AddCallback(eGuiMessage_OnDraw,this, kGuiCallback(ImageButtonOnDraw));
 	mpImageForward[aState]->AddCallback(eGuiMessage_MouseDown,this, kGuiCallback(NoteArrowClick));
 	SetupImage(mpImageForward[aState], alForwardIndex, aState);
 	pFwd = mpImageForward[aState];
 
 	//Return
-	if(aState == eLuxJournalState_Diaries || aState == eLuxJournalState_Notes || aState == eLuxJournalState_QuestLog)
+	if(aState == eLuxJournalState_Diaries || aState == eLuxJournalState_Notes || aState == eLuxJournalState_Hints ||aState == eLuxJournalState_QuestLog)
 	{
 		cWidgetLabel* pLabel = mpGuiSet->CreateWidgetLabel(cVector3f(350,mfBackTextY,3) , cVector2f(100, 24),kTranslate("Journal","MainBack"), apRoot);
 		SetupLabel(pLabel,mvBackTextFontSize, aState, aState, mpFontMenu);
 		pLabel->AddCallback(eGuiMessage_MouseDown,this, kGuiCallback(NoteBackClick));
 		pLabel->AddCallback(eGuiMessage_OnDraw,this, kGuiCallback(ListTextOnDraw));
-		pLabel->AddCallback(eGuiMessage_UIButtonPress, this, kGuiCallback(UIListenerJournalPress));
+		pLabel->AddCallback(eGuiMessage_UIButtonPress, this, kGuiCallback(NoteBackClick));
+		pLabel->AddCallback(eGuiMessage_UIArrowPress, this, kGuiCallback(NoteBackClick));
 
 		pRet = pLabel;
 	}
@@ -1039,7 +1207,8 @@ void cLuxJournal::SetupNavigationWidgets(eLuxJournalState aState, int alListInde
 			pImage->SetPosition(cVector3f(400 - pImage->GetSize().x/2.0f, mfBackTextY, 3));
 			pImage->AddCallback(eGuiMessage_OnDraw,this, kGuiCallback(ImageButtonOnDraw));
 			pImage->AddCallback(eGuiMessage_MouseDown,this, kGuiCallback(NoteBackClick));
-			pImage->AddCallback(eGuiMessage_UIButtonPress, this, kGuiCallback(UIListenerJournalPress));
+			pImage->AddCallback(eGuiMessage_UIButtonPress, this, kGuiCallback(NoteBackClick));
+			pImage->AddCallback(eGuiMessage_UIArrowPress, this, kGuiCallback(NoteBackClick));
 			SetupImage(pImage, aState, aState);
 		}
 		else
@@ -1056,10 +1225,11 @@ void cLuxJournal::SetupNavigationWidgets(eLuxJournalState aState, int alListInde
 
 
 	//Backward
-	vPos.x = 400 - mfNoteTextWidth/2 + 80;
-	mpImageBackward[aState] = mpGuiSet->CreateWidgetImage("journal/note_backward.tga",vPos,vSize,eGuiMaterial_Alpha,false,apRoot);
+	vPos.x = 360 - mfNoteTextWidth/2 + 80;
+	mpImageBackward[aState] = mpGuiSet->CreateWidgetImage("journal/note_backward.tga",vPos + cVector3f(41, 0, 0),vSize,eGuiMaterial_Alpha,false,apRoot);
 	mpImageBackward[aState]->AddCallback(eGuiMessage_OnDraw,this, kGuiCallback(ImageButtonOnDraw));
 	mpImageBackward[aState]->AddCallback(eGuiMessage_MouseDown,this, kGuiCallback(NoteArrowClick));
+	mpImageBackward[aState]->AddCallback(eGuiMessage_UIButtonPress,this, kGuiCallback(NoteArrowClick));
 	SetupImage(mpImageBackward[aState], alBackwardIndex, aState);
 
 	pBck = mpImageBackward[aState];
@@ -1128,7 +1298,9 @@ void cLuxJournal::SetStateBackgroundGfx(const tString& asFile)
 	}
 	
 	if(asFile != "")
+	{
 		mpStateBackgroundGfx = mpGui->CreateGfxTexture(asFile,eGuiMaterial_Alpha, eTextureType_Rect);
+	}
 }
 
 //-----------------------------------------------------------------------
@@ -1319,6 +1491,7 @@ int cLuxJournal::GetNoteListIndex(eLuxJournalState aState)
 {
 	if(aState == eLuxJournalState_Notes)		return 0;
 	else if(aState == eLuxJournalState_Diaries)	return 1;
+	else if(aState == eLuxJournalState_Hints)	return 3;
 	else										return 2;
 }
 
@@ -1392,7 +1565,97 @@ void cLuxJournal::SetNoteListPage(int alPageNum, eLuxJournalState aState)
 	}
 }
 
+void cLuxJournal::SetNoteListPageFromHint(int alHint)
+{
+	/////////////
+	// Get page number and entry
+	int lPage = 0;
+	int lEntry = 0;
 
+	float fY = 100;
+
+	for(int i=(int)mvHints.size()-1; i>=0; --i)
+	{
+		//Check if new page is needed!
+		if(fY > mfMaxNoteListY)
+		{
+			fY = 100;
+			lPage++;
+			lEntry = 0;
+		}
+
+		if(i == alHint) break;
+
+		fY += 30;
+		lEntry++;
+	}
+
+	lPage = cMath::Min(lPage, mvNoteListPages[3].size()-1);
+
+	if(lPage > -1)
+	{
+
+		///////////
+		// Set page
+		SetNoteListPage(lPage, eLuxJournalState_Hints);
+
+		///////////
+		// Focus the correct entry
+		if(lEntry < mvNoteListPages[3][lPage].mvEntries.size())
+		{
+			iWidget* pWidget = mvNoteListPages[3][lPage].mvEntries[lEntry].mlstWidgets.empty() ? NULL : mvNoteListPages[3][lPage].mvEntries[lEntry].mlstWidgets.front();
+
+			mpGuiSet->SetDefaultFocusNavWidget(pWidget);
+			mpGuiSet->SetFocusedWidget(pWidget);
+		}
+	}
+}
+
+void cLuxJournal::SetNoteListPageFromNote(int alDiary)
+{
+	/////////////
+	// Get page number and entry
+	int lPage = 0;
+	int lEntry = 0;
+
+	float fY = 100;
+
+	for(size_t i=0; i<mvNotes.size(); ++i)
+	{
+		//Check if new page is needed!
+		if(fY > mfMaxNoteListY)
+		{
+			fY = 100;
+			lPage++;
+			lEntry = 0;
+		}
+
+		if(i == alDiary) break;
+
+		fY += 30;
+		lEntry++;
+	}
+
+	lPage = cMath::Min(lPage, mvNoteListPages[0].size()-1);
+
+	if(lPage > -1)
+	{
+
+		///////////
+		// Set page
+		SetNoteListPage(lPage, eLuxJournalState_Notes);
+
+		///////////
+		// Focus the correct entry
+		if(lEntry < mvNoteListPages[0][lPage].mvEntries.size())
+		{
+			iWidget* pWidget = mvNoteListPages[0][lPage].mvEntries[lEntry].mlstWidgets.empty() ? NULL : mvNoteListPages[0][lPage].mvEntries[lEntry].mlstWidgets.front();
+
+			mpGuiSet->SetDefaultFocusNavWidget(pWidget);
+			mpGuiSet->SetFocusedWidget(pWidget);
+		}
+	}
+}
 
 //-----------------------------------------------------------------------
 
@@ -1400,6 +1663,7 @@ void cLuxJournal::CreateGui()
 {
 	CreateMainGui();
 	CreateNotesGui();
+	CreateHintsGui();
 	CreateDiariesGui();
 	CreateOpenNoteGui();
 	CreateQuestNotesGui();
@@ -1443,20 +1707,26 @@ void cLuxJournal::CreateMainGui()
 	vLabels.push_back(pLabel);
 
 	mpWidgetDefaultNav[eLuxJournalState_Main] = pLabel;
-	
-	//Diaries
-	pLabel = mpGuiSet->CreateWidgetLabel(cVector3f(300, 250, 3),cVector2f(200, 25),kTranslate("Journal","Diaries"), pState);
-	SetupLabel(pLabel,fSize,1, eLuxJournalState_Main);
+
+    pLabel = mpGuiSet->CreateWidgetLabel(cVector3f(300, 250, 3),cVector2f(200, 25),kTranslate("Journal","Hints"), pState);
+	SetupLabel(pLabel,fSize,50, eLuxJournalState_Main);
 	pLabel->AddCallback(eGuiMessage_MouseDown,this, kGuiCallback(MainMenuTextClick));
 	pLabel->AddCallback(eGuiMessage_OnDraw,this, kGuiCallback(MainMenuTextOnDraw));
 	vLabels.push_back(pLabel);
 	
-	//Quest Log
-	pLabel = mpGuiSet->CreateWidgetLabel(cVector3f(300, 300, 3),cVector2f(200, 25),kTranslate("Journal","Quest Log"), pState);
-	SetupLabel(pLabel,fSize,2, eLuxJournalState_Main);
-	pLabel->AddCallback(eGuiMessage_MouseDown,this, kGuiCallback(MainMenuTextClick));
-	pLabel->AddCallback(eGuiMessage_OnDraw,this, kGuiCallback(MainMenuTextOnDraw));
-	vLabels.push_back(pLabel);
+	////Diaries
+	//pLabel = mpGuiSet->CreateWidgetLabel(cVector3f(300, 250, 3),cVector2f(200, 25),kTranslate("Journal","Diaries"), pState);
+	//SetupLabel(pLabel,fSize,1, eLuxJournalState_Main);
+	//pLabel->AddCallback(eGuiMessage_MouseDown,this, kGuiCallback(MainMenuTextClick));
+	//pLabel->AddCallback(eGuiMessage_OnDraw,this, kGuiCallback(MainMenuTextOnDraw));
+	//vLabels.push_back(pLabel);
+	//
+	////Quest Log
+	//pLabel = mpGuiSet->CreateWidgetLabel(cVector3f(300, 300, 3),cVector2f(200, 25),kTranslate("Journal","Quest Log"), pState);
+	//SetupLabel(pLabel,fSize,2, eLuxJournalState_Main);
+	//pLabel->AddCallback(eGuiMessage_MouseDown,this, kGuiCallback(MainMenuTextClick));
+	//pLabel->AddCallback(eGuiMessage_OnDraw,this, kGuiCallback(MainMenuTextOnDraw));
+	//vLabels.push_back(pLabel);
 
 	//Back
 	pLabel = mpGuiSet->CreateWidgetLabel(cVector3f(300, mfBackTextY, 3),cVector2f(200, 25),kTranslate("Journal","MainBack"), pState);
@@ -1493,7 +1763,6 @@ void cLuxJournal::CreateMainGui()
 }
 
 //-----------------------------------------------------------------------
-
 
 void cLuxJournal::CreateNotesGui()
 {
@@ -1548,21 +1817,24 @@ void cLuxJournal::CreateNotesGui()
 			SetupLabel(pLabel,24, (int)i, eLuxJournalState_Notes, mpFontDefault, eFontAlign_Left);
 			pLabel->AddCallback(eGuiMessage_MouseDown,this, kGuiCallback(NoteTextClick));
 			pLabel->AddCallback(eGuiMessage_OnDraw,this, kGuiCallback(ListTextOnDraw));
+			pLabel->AddCallback(eGuiMessage_GetUINavFocus,this, kGuiCallback(JournalDocumentUIFocus));
 
 			pLabel->AddCallback(eGuiMessage_UIButtonPress,this, kGuiCallback(JournalItemUIButtonPress));
 
 			//Add icon
-			pImage = mpGuiSet->CreateWidgetImage(pNote->msIconFile, vStartPos + cVector3f(-25,2,-0.05f), cVector2f(20, 20),eGuiMaterial_Alpha, false, pRoot);
-			SetupImage(pImage,(int)i,eLuxJournalState_Notes);
+			//pImage = mpGuiSet->CreateWidgetImage(pNote->msIconFile, vStartPos + cVector3f(-25,2,-0.05f), cVector2f(20, 20),eGuiMaterial_Alpha, false, pRoot);
+			//SetupImage(pImage,(int)i,eLuxJournalState_Notes);
 
 			//Add list entry
 			pListPage->mvEntries.push_back(cLuxJournal_ListEntry());
 			pListPage->mvEntries.back().AddWidget(pLabel);
-			pListPage->mvEntries.back().AddWidget(pImage);
+			//pListPage->mvEntries.back().AddWidget(pImage);
 			
 			vStartPos.y += 30;
 		}
 	}
+
+	iWidget* pLastLabel = NULL;
 
 	for(size_t i=0; i<mvNoteListPages[lListIdx].size(); ++i)
 	{
@@ -1579,17 +1851,135 @@ void cLuxJournal::CreateNotesGui()
 				pLabel->SetFocusNavigation(eUIArrow_Up, pListPage->mvEntries[lPrev].mlstWidgets.front());
 			if(lNext<pListPage->mvEntries.size())
 				pLabel->SetFocusNavigation(eUIArrow_Down, pListPage->mvEntries[lNext].mlstWidgets.front());
+		
+			pLastLabel = pLabel; 
 		}
 	}
 
 	////////////////////////
 	// Navigation
 	SetupNavigationWidgets(state, lListIdx, 2, 3, pRoot);
-
+	
+	if(pLastLabel && mpWidgetReturn[state])
+	{
+		pLastLabel->SetFocusNavigation(eUIArrow_Down, mpWidgetReturn[state]);
+		mpWidgetReturn[state]->SetFocusNavigation(eUIArrow_Up, pLastLabel);
+	}
 
 	////////////////////////
 	// Set start page
 	mlCurrentNoteListPage[lListIdx] = (int)mvNoteListPages[lListIdx].size()-1;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxJournal::CreateHintsGui()
+{
+	cWidgetDummy *pRoot = mvStateData[eLuxJournalState_Hints]->mpRootWidget;
+
+	/////////////////////////
+	// vars setup
+	cVector3f vStartPos = cVector3f(250, 100, 3);
+	cWidgetLabel *pLabel = NULL;
+	cWidgetImage *pImage = NULL;
+	eLuxJournalState state = eLuxJournalState_Hints;
+	int lListIdx = 3;
+
+
+	mvNoteListPages[lListIdx].clear();
+
+	/////////////////////////////
+	// Header
+	pLabel = mpGuiSet->CreateWidgetLabel(cVector3f(250, mfNoteListHeaderY, 3),cVector2f(300, 32),kTranslate("Journal","Hints"), pRoot);
+	SetupLabel(pLabel,28, 0, eLuxJournalState_Hints);
+
+
+	/////////////////////////////
+	// No Hints
+	if(mvHints.empty())
+	{
+		vStartPos.y = 270;
+		pLabel = mpGuiSet->CreateWidgetLabel(vStartPos,cVector2f(300, 24),kTranslate("Journal","HintsEmpty"), pRoot);
+		SetupLabel(pLabel,24, 0, eLuxJournalState_Hints,mpFontDefault);
+	}
+	/////////////////////////////
+	// Has hints
+	else
+	{
+		mvNoteListPages[lListIdx].push_back(cLuxJournal_ListPage());
+		cLuxJournal_ListPage *pListPage = &mvNoteListPages[lListIdx].back();
+
+		for(int i=(int)mvHints.size()-1; i>=0; --i)
+		{
+			cLuxHint *pHint = mvHints[i];
+
+			//Check if new page is needed!
+			if(vStartPos.y > mfMaxNoteListY)
+			{
+				vStartPos.y = 100;
+				mvNoteListPages[lListIdx].push_back(cLuxJournal_ListPage());
+				pListPage = &mvNoteListPages[lListIdx].back();
+			}
+			
+			//Add label
+			pLabel = mpGuiSet->CreateWidgetLabel(vStartPos,cVector2f(300, 24),kTranslate("Journal",pHint->msNameEntry), pRoot);
+			SetupLabel(pLabel,24, (int)i, eLuxJournalState_Hints, mpFontDefault, eFontAlign_Left);
+			pLabel->AddCallback(eGuiMessage_MouseDown,this, kGuiCallback(HintTextClick));
+			pLabel->AddCallback(eGuiMessage_OnDraw,this, kGuiCallback(ListTextOnDraw));
+
+			pLabel->AddCallback(eGuiMessage_UIButtonPress,this, kGuiCallback(JournalItemUIButtonPress));
+			pLabel->AddCallback(eGuiMessage_GetUINavFocus, this, kGuiCallback(JournalHintUIFocus));
+			pImage = NULL;
+			//Add icon
+			//if(pHint->mbHasBeenRead == false)
+			{
+				pImage = mpGuiSet->CreateWidgetImage(pHint->msIconFile, vStartPos + cVector3f(-25,2,-0.05f), cVector2f(20, 20),eGuiMaterial_Alpha, false, pRoot);
+				SetupImage(pImage,(int)i,eLuxJournalState_Hints);
+			}
+
+			//Add list entry
+			pListPage->mvEntries.push_back(cLuxJournal_ListEntry(this));
+			pListPage->mvEntries.back().AddWidget(pLabel);
+			if(pImage) pListPage->mvEntries.back().AddIcon(pImage, i);
+			
+			vStartPos.y += 30;
+		}
+	}
+
+	iWidget* pLastLabel = NULL;
+
+	for(size_t i=0; i<mvNoteListPages[lListIdx].size(); ++i)
+	{
+		cLuxJournal_ListPage *pListPage = &mvNoteListPages[lListIdx][i];
+		for(size_t j=0; j<pListPage->mvEntries.size(); ++j)
+		{
+			cLuxJournal_ListEntry* pListEntry = &pListPage->mvEntries[j];
+			int lPrev = (int)j-1;
+			int lNext = (int)j+1;
+
+			iWidget* pLabel = pListEntry->mlstWidgets.front();
+			
+			if(lPrev>=0)
+				pLabel->SetFocusNavigation(eUIArrow_Up, pListPage->mvEntries[lPrev].mlstWidgets.front());
+			if(lNext<pListPage->mvEntries.size())
+				pLabel->SetFocusNavigation(eUIArrow_Down, pListPage->mvEntries[lNext].mlstWidgets.front());
+			pLastLabel = pLabel; 
+		}
+	}
+
+	////////////////////////
+	// Navigation
+	SetupNavigationWidgets(state, lListIdx, 2, 3, pRoot);
+	
+	if(pLastLabel && mpWidgetReturn[state])
+	{
+		pLastLabel->SetFocusNavigation(eUIArrow_Down, mpWidgetReturn[state]);
+		mpWidgetReturn[state]->SetFocusNavigation(eUIArrow_Up, pLastLabel);
+	}
+
+	////////////////////////
+	// Set start page
+	mlCurrentNoteListPage[lListIdx] = 0; //mvNoteListPages[lListIdx].size()-1;
 }
 
 //-----------------------------------------------------------------------
@@ -1628,6 +2018,7 @@ void cLuxJournal::CreateDiariesGui()
 	{
 		mvNoteListPages[lListIdx].push_back(cLuxJournal_ListPage());
 		cLuxJournal_ListPage *pListPage = &mvNoteListPages[lListIdx].back();
+		int lIndex = 0;
 
 		for(size_t cont=0; cont<mvDiaryContainers.size(); ++cont)
 		{
@@ -1646,28 +2037,29 @@ void cLuxJournal::CreateDiariesGui()
 				}
 
 				pLabel = mpGuiSet->CreateWidgetLabel(vStartPos,cVector2f(300, 24),kTranslate("Journal",pDiary->msNameEntry), pRoot);
-				SetupLabel(pLabel,24, (int)i, eLuxJournalState_Diaries, mpFontDefault, eFontAlign_Left);
+				SetupLabel(pLabel,24, (int)lIndex++, eLuxJournalState_Diaries, mpFontDefault, eFontAlign_Left);
 				pLabel->AddCallback(eGuiMessage_MouseDown,this, kGuiCallback(DiaryTextClick));
 
 				pLabel->AddCallback(eGuiMessage_UIButtonPress,this, kGuiCallback(JournalItemUIButtonPress));
-
+			
 				pLabel->AddCallback(eGuiMessage_OnDraw,this, kGuiCallback(ListTextOnDraw));
 
 				cLuxJournalTextData* pData =  (cLuxJournalTextData*)pLabel->GetUserData();
 				pData->mpExtraData = pDiary;
 
-				pImage = mpGuiSet->CreateWidgetImage(pDiary->msIconFile, vStartPos - cVector3f(23,0,1), cVector2f(20, 20),eGuiMaterial_Alpha, false, pRoot);
-				SetupImage(pImage,(int)i,eLuxJournalState_Diaries);
+				//pImage = mpGuiSet->CreateWidgetImage(pDiary->msIconFile, vStartPos - cVector3f(23,0,1), cVector2f(20, 20),eGuiMaterial_Alpha, false, pRoot);
+				//SetupImage(pImage,(int)i,eLuxJournalState_Diaries);
 
 				//Add list entry
 				pListPage->mvEntries.push_back(cLuxJournal_ListEntry());
 				pListPage->mvEntries.back().AddWidget(pLabel);
-				pListPage->mvEntries.back().AddWidget(pImage);
+			//	pListPage->mvEntries.back().AddWidget(pImage);
 
 				vStartPos.y += 30;
 			}
 		}
 	}
+	iWidget* pLastLabel = NULL;
 
 	for(size_t i=0; i<mvNoteListPages[lListIdx].size(); ++i)
 	{
@@ -1684,6 +2076,8 @@ void cLuxJournal::CreateDiariesGui()
 				pLabel->SetFocusNavigation(eUIArrow_Up, pListPage->mvEntries[lPrev].mlstWidgets.front());
 			if(lNext<pListPage->mvEntries.size())
 				pLabel->SetFocusNavigation(eUIArrow_Down, pListPage->mvEntries[lNext].mlstWidgets.front());
+	
+			pLastLabel = pLabel;
 		}
 	}
 
@@ -1691,6 +2085,11 @@ void cLuxJournal::CreateDiariesGui()
 	// Navigation
 	SetupNavigationWidgets(state, lListIdx, 2, 3, pRoot);
 
+	if(pLastLabel && mpWidgetReturn[state])
+	{
+		pLastLabel->SetFocusNavigation(eUIArrow_Down, mpWidgetReturn[state]);
+		mpWidgetReturn[state]->SetFocusNavigation(eUIArrow_Up, pLastLabel);
+	}
 
 	////////////////////////
 	// Set start page
@@ -1800,9 +2199,9 @@ void cLuxJournal::CreateOpenNoteGui()
 {
 	////////////////////////////////
 	// Diary and note
-	for(int i=0; i<3; ++i)
+	for(int i=0; i<4; ++i)
 	{
-		eLuxJournalState state = i==0 ? eLuxJournalState_OpenNote : (i == 1 ? eLuxJournalState_OpenDiary : eLuxJournalState_OpenNarratedDiary);
+		eLuxJournalState state = i==0 ? eLuxJournalState_OpenNote : (i == 1 ? eLuxJournalState_OpenDiary : ( i == 2 ? eLuxJournalState_OpenHint : eLuxJournalState_OpenNarratedDiary ));
 		
 		cWidgetDummy *pRoot = mvStateData[state]->mpRootWidget;
 		
@@ -1821,8 +2220,9 @@ void cLuxJournal::CreateOpenNoteGui()
 	cWidgetDummy *pRoot = mvStateData[eLuxJournalState_OpenNarratedDiary]->mpRootWidget;
 	
 	cWidgetFrame *pClickFrame = mpGuiSet->CreateWidgetFrame(mvGuiSetStartPos, mvGuiSetSize, false, pRoot);
-	//pClickFrame->AddCallback(eGuiMessage_MouseDown,this, kGuiCallback(NoteClickFrameClick));
+	pClickFrame->AddCallback(eGuiMessage_MouseDown,this, kGuiCallback(NoteClickFrameClick));
 	pClickFrame->AddCallback(eGuiMessage_UIButtonPress,this, kGuiCallback(NoteClickFrameClick));
+	pClickFrame->AddCallback(eGuiMessage_UIArrowPress,this, kGuiCallback(NoteClickFrameClick));
 	pClickFrame->SetGlobalUIInputListener(true);
 
 	mpImageBackward[eLuxJournalState_OpenNarratedDiary]->SetVisible(false);
@@ -1889,9 +2289,11 @@ void cLuxJournal::RenderBackgroundImage()
 	pLowGfx->CopyFrameBufferToTexure(mpScreenTexture,0,pLowGfx->GetScreenSizeInt(),0);
 
 	//Bind shader and draw
-	mpEffectProgram->Bind();
 	pLowGfx->SetCurrentFrameBuffer(pEffectBuffer);
-
+	
+	mpEffectProgram->Bind();
+	
+	for(int i = 0; i < 8; ++i) pLowGfx->SetTexture(i,NULL);
 	pLowGfx->SetTexture(0,mpScreenTexture);
 
 	pLowGfx->DrawQuad(0,mvScreenSize,cVector2f(0, mvScreenSize.y),cVector2f(mvScreenSize.x,0),cColor(1,1));
@@ -1899,7 +2301,8 @@ void cLuxJournal::RenderBackgroundImage()
 
 	//Copy a copy of the full gui with all HUD!
 	pLowGfx->SetCurrentFrameBuffer(NULL);
-	pLowGfx->SetTexture(0,NULL);
+
+	for(int i = 0; i < 8; ++i) pLowGfx->SetTexture(i,NULL);
 
 	gpBase->mpHelpFuncs->RenderBackgroundScreen(true);
 	pLowGfx->CopyFrameBufferToTexure(mpScreenTexture,0,pLowGfx->GetScreenSizeInt(),0);
@@ -1953,7 +2356,7 @@ bool cLuxJournal::MainMenuTextClick(iWidget* apWidget, const cGuiMessageData& aD
 		mpWidgetDefaultNav[eLuxJournalState_Main] = apWidget;
 	}
 	//Diaries
-	else if(apWidget->GetUserValue()==1)
+	/*else if(apWidget->GetUserValue()==1)
 	{
 		ChangeState(eLuxJournalState_Diaries);
 		mpWidgetDefaultNav[eLuxJournalState_Main] = apWidget;
@@ -1962,6 +2365,12 @@ bool cLuxJournal::MainMenuTextClick(iWidget* apWidget, const cGuiMessageData& aD
 	else if(apWidget->GetUserValue()==2)
 	{
 		ChangeState(eLuxJournalState_QuestLog);
+		mpWidgetDefaultNav[eLuxJournalState_Main] = apWidget;
+	}*/
+    //Hints
+	else if(apWidget->GetUserValue()==50)
+	{
+		ChangeState(eLuxJournalState_Hints);
 		mpWidgetDefaultNav[eLuxJournalState_Main] = apWidget;
 	}
 	//Back
@@ -1998,6 +2407,13 @@ kGuiCallbackDeclaredFuncEnd(cLuxJournal, MainMenuUIButtonPress);
 
 bool cLuxJournal::MainMenuTextOnDraw(iWidget* apWidget, const cGuiMessageData& aData)
 {
+	if(apWidget->HasFocus())
+		apWidget->SetDefaultFontColor(cColor(232.0f/255.0f, 201.0f/255.0f, 28.0f/255.0f, apWidget->GetColorMul().a));
+	else
+		apWidget->SetDefaultFontColor(cColor(1.0f, apWidget->GetColorMul().a));
+
+	return true;
+	/*
 	cLuxJournalTextData *pData = (cLuxJournalTextData*)apWidget->GetUserData();
 
 	if(pData->mfEffectfAlpha >0)
@@ -2015,7 +2431,7 @@ bool cLuxJournal::MainMenuTextOnDraw(iWidget* apWidget, const cGuiMessageData& a
 							eFontAlign_Center);
 	}
 	
-	return true;
+	return true;*/
 }
 kGuiCallbackDeclaredFuncEnd(cLuxJournal, MainMenuTextOnDraw);
 
@@ -2023,6 +2439,13 @@ kGuiCallbackDeclaredFuncEnd(cLuxJournal, MainMenuTextOnDraw);
 
 bool cLuxJournal::ListTextOnDraw(iWidget* apWidget, const cGuiMessageData& aData)
 {
+	if(apWidget->HasFocus())
+		apWidget->SetDefaultFontColor(cColor(232.0f/255.0f, 201.0f/255.0f, 28.0f/255.0f, apWidget->GetColorMul().a));
+	else
+		apWidget->SetDefaultFontColor(cColor(1.0f, apWidget->GetColorMul().a));
+
+	return true;
+	/*
 	cLuxJournalTextData *pData = (cLuxJournalTextData*)apWidget->GetUserData();
 	cWidgetLabel *pLabel = static_cast<cWidgetLabel*>(apWidget);
 
@@ -2058,7 +2481,7 @@ bool cLuxJournal::ListTextOnDraw(iWidget* apWidget, const cGuiMessageData& aData
 		
 	}
 
-	return true;
+	return true;*/
 }
 kGuiCallbackDeclaredFuncEnd(cLuxJournal, ListTextOnDraw);
 
@@ -2074,12 +2497,33 @@ kGuiCallbackDeclaredFuncEnd(cLuxJournal, NoteTextClick);
 
 //-----------------------------------------------------------------------
 
+bool cLuxJournal::HintTextClick(iWidget* apWidget, const cGuiMessageData& aData)
+{
+	OpenHint(mvHints[apWidget->GetUserValue()]);
+
+	return true;
+}
+kGuiCallbackDeclaredFuncEnd(cLuxJournal, HintTextClick);
+
+//-----------------------------------------------------------------------
+
 bool cLuxJournal::NoteBackClick(iWidget* apWidget, const cGuiMessageData& aData)
 {
-	//if(UIListenerButtonPress(apWidget, aData))
-	//{
-	//	return true;
-	//}
+	if(aData.mMessage == eGuiMessage_UIArrowPress)
+	{
+		if(aData.mlVal == eUIArrow_Down)
+		{
+			cGuiMessageData data = aData;
+			data.mMessage = eGuiMessage_ButtonPressed;
+			data.mlVal = eUIButton_Secondary;
+
+			if(UIListenerButtonPress(apWidget, data)) return true;
+		} else return false;
+	}
+	else if(UIListenerButtonPress(apWidget, aData))
+	{
+		return true;
+	}
 
 	if(aData.mlVal != eUIButton_Primary && aData.mlVal != eUIButton_Secondary)
 		return true;
@@ -2089,20 +2533,6 @@ bool cLuxJournal::NoteBackClick(iWidget* apWidget, const cGuiMessageData& aData)
 	return true;
 }
 kGuiCallbackDeclaredFuncEnd(cLuxJournal, NoteBackClick);
-
-//-----------------------------------------------------------------------
-
-bool cLuxJournal::UIListenerJournalPress(iWidget* apWidget, const cGuiMessageData& aData)
-{
-	if(aData.mlVal == eUIButton_Primary)
-		UIListenerButtonPress(apWidget, aData);
-
-	else if (aData.mlVal == eUIButton_Secondary)
-		ExitPressed(false);
-
-	return true;
-}
-kGuiCallbackDeclaredFuncEnd(cLuxJournal, UIListenerJournalPress);
 
 //-----------------------------------------------------------------------
 
@@ -2144,6 +2574,7 @@ kGuiCallbackDeclaredFuncEnd(cLuxJournal, ImageButtonOnDraw);
 
 bool cLuxJournal::NoteArrowClick(iWidget* apWidget, const cGuiMessageData& aData)
 {
+
 	///////////////////////////7
 	// Open Note
 
@@ -2164,11 +2595,16 @@ bool cLuxJournal::NoteArrowClick(iWidget* apWidget, const cGuiMessageData& aData
 	else if(apWidget->GetUserValue()==2) 
 	{
 		SetNoteListPage(mlCurrentNoteListPage[GetNoteListIndex(mCurrentState)]+1, mCurrentState);
+		
+		if(mCurrentState == eLuxJournalState_Hints) mlLastReadHint = mvHints.size() - mlCurrentNoteListPage[GetNoteListIndex(mCurrentState)] * 12 - 1;
+		if(mCurrentState == eLuxJournalState_Notes) mlLastReadDocument = mlCurrentNoteListPage[GetNoteListIndex(mCurrentState)] * 12;
 	}
 	//Backward
 	else if(apWidget->GetUserValue()==3)
 	{
 		SetNoteListPage(mlCurrentNoteListPage[GetNoteListIndex(mCurrentState)]-1, mCurrentState);
+		if(mCurrentState == eLuxJournalState_Hints) mlLastReadHint = mvHints.size() - mlCurrentNoteListPage[GetNoteListIndex(mCurrentState)] * 12 - 1;
+		if(mCurrentState == eLuxJournalState_Notes) mlLastReadDocument = mlCurrentNoteListPage[GetNoteListIndex(mCurrentState)] * 12;
 	}
 
 	///////////////////////////7
@@ -2182,6 +2618,8 @@ kGuiCallbackDeclaredFuncEnd(cLuxJournal, NoteArrowClick);
 
 bool cLuxJournal::NoteClickFrameClick(iWidget* apWidget, const cGuiMessageData& aData)
 {
+	if(aData.mMessage == eGuiMessage_UIArrowPress && aData.mlVal != eUIArrow_Down) return false;
+
 	ExitPressed(false);
 	return true;
 }
@@ -2202,12 +2640,30 @@ bool cLuxJournal::JournalItemUIButtonPress(iWidget* apWidget, const cGuiMessageD
 			return DiaryTextClick(apWidget, aData);
 		case eLuxJournalState_Notes:
 			return NoteTextClick(apWidget, aData);
+        case eLuxJournalState_Hints:
+			return HintTextClick(apWidget, aData);
 		}
 	}
 
 	return false;
 }
 kGuiCallbackDeclaredFuncEnd(cLuxJournal, JournalItemUIButtonPress);
+
+bool cLuxJournal::JournalHintUIFocus(iWidget* apWidget, const cGuiMessageData& aData)
+{
+	mlLastReadHint = apWidget->GetUserValue();
+
+	return false;
+}
+kGuiCallbackDeclaredFuncEnd(cLuxJournal, JournalHintUIFocus);
+
+bool cLuxJournal::JournalDocumentUIFocus(iWidget* apWidget, const cGuiMessageData& aData)
+{
+	mlLastReadDocument = apWidget->GetUserValue();
+
+	return false;
+}
+kGuiCallbackDeclaredFuncEnd(cLuxJournal, JournalDocumentUIFocus);
 
 //-----------------------------------------------------------------------
 
@@ -2234,13 +2690,14 @@ bool cLuxJournal::UIListenerArrowPress(iWidget* apWidget, const cGuiMessageData&
 	case eUIArrow_Down:
 #ifdef USE_GAMEPAD
 # if USE_SDL2
-		if(gpBase->mpInputHandler->GetGamepad() && gpBase->mpInputHandler->GetGamepad()->ButtonIsDown(eGamepadButton_DpadDown) == false) break;
+		if(gpBase->mpInputHandler->IsGamepadPresent() && gpBase->mpInputHandler->GetGamepad()->ButtonIsDown(eGamepadButton_DpadDown) == false) break;
 # else
-		if(gpBase->mpInputHandler->GetGamepad() && gpBase->mpInputHandler->GetGamepad()->HatIsInState(eGamepadHat_0, eGamepadHatState_Down) == false) break;
+		if(gpBase->mpInputHandler->IsGamepadPresent() && gpBase->mpInputHandler->GetGamepad()->HatIsInState(eGamepadHat_0, eGamepadHatState_Down) == false) break;
 # endif
 #endif
 		if(lType == eLuxJournalState_OpenNote
 		|| lType == eLuxJournalState_OpenDiary
+		|| lType == eLuxJournalState_OpenHint
 		|| lType == eLuxJournalState_OpenNarratedDiary)
 		{
 			ExitPressed(false);
@@ -2259,7 +2716,7 @@ bool cLuxJournal::UIListenerButtonPress(iWidget* apWidget, const cGuiMessageData
 {
 	int lType = apWidget->GetUserValue();
 
-	if(!(lType == eLuxJournalState_OpenNote || lType == eLuxJournalState_OpenDiary	|| lType == eLuxJournalState_OpenNote || lType == eLuxJournalState_OpenNarratedDiary)) return false;
+	if(!(lType == eLuxJournalState_OpenNote || lType == eLuxJournalState_OpenDiary	|| lType == eLuxJournalState_OpenNote || lType == eLuxJournalState_OpenHint || lType == eLuxJournalState_OpenNarratedDiary)) return false;
 
 	iWidget* pBack = mpImageBackward[lType];
 	iWidget* pForward = mpImageForward[lType];

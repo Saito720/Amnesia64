@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "resources/WorldLoaderHplMap.h"
@@ -188,6 +188,7 @@ namespace hpl {
 			if(compBuffer.Load(asFile)==false)
 			{
 				//Log("Could not load compressed map!\n");
+				hplDelete(pDoc);
 				return NULL;
 			}
 
@@ -198,10 +199,15 @@ namespace hpl {
 			if(textBuff.DecompressAndAddFromBuffer(&compBuffer, false)==false)
 			{
 				//Log("Could not decompress map!\n");
+				hplDelete(pDoc);
 				return NULL;
 			}
 
-			if(pDoc->CreateFromString(textBuff.GetDataPointer())==false)
+			// XML needs contiguous storage, including for maps larger than one buffer chunk.
+			tString sData(textBuff.GetSize(), '\0');
+			textBuff.SetPos(0);
+			if(!sData.empty()) textBuff.GetRawData(&sData[0], sData.size());
+			if(pDoc->CreateFromString(sData.c_str())==false)
 			{
 				hplDelete(pDoc);
 				//Log("Could not parse map!\n");
@@ -222,16 +228,13 @@ namespace hpl {
 				tString sData;
 				pDoc->SaveToString(&sData);
 				
-				cBinaryBuffer textBuff;
-				textBuff.AddCharArray(sData.c_str(), sData.size()+1);
-
 				cBinaryBuffer compBuff;
-				compBuff.CompressAndAdd(textBuff.GetDataPointer(), textBuff.GetSize());
-				
-				int lKey = kEncryptKey;
-				compBuff.XorTransform((char*)&lKey, sizeof(lKey));
-
-				compBuff.Save(sCompFile);
+				if(compBuff.CompressAndAdd(const_cast<char*>(sData.c_str()), sData.size()+1))
+				{
+					int lKey = kEncryptKey;
+					compBuff.XorTransform((char*)&lKey, sizeof(lKey));
+					compBuff.Save(sCompFile);
+				}
 			}
 		}
 
@@ -557,6 +560,7 @@ namespace hpl {
 			binBuff.GetString(&sName);
 			binBuff.GetString(&sMaterial);
 			bool bCastShadows = binBuff.GetBool();
+			bool bIOccluder = binBuff.GetBool();
 
 			if(gbLogCacheLoad) Log("Mesh %d: '%s' '%s'\n", mesh, sName.c_str(), sMaterial.c_str());
 
@@ -682,6 +686,7 @@ namespace hpl {
 			//Create mesh entity
             cMeshEntity *pMeshEntity = mpCurrentWorld->CreateMeshEntity(sName, pMesh, true);	
 			pMeshEntity->SetRenderFlagBit(eRenderableFlag_ShadowCaster, bCastShadows);
+			pMeshEntity->SetIsOccluder(bIOccluder);
 		}
 
 
@@ -778,6 +783,7 @@ namespace hpl {
 			binBuff.AddString(pEntity->GetName());
 			binBuff.AddString(pSubMesh->GetMaterialName());
 			binBuff.AddBool(pSubEnt->GetRenderFlagBit(eRenderableFlag_ShadowCaster));
+			binBuff.AddBool(pSubEnt->IsOccluder());
 
 			
 			////////////////////////////
@@ -1087,6 +1093,10 @@ namespace hpl {
 			return	apObjectDataA->GetRenderFlagBit(eRenderableFlag_ShadowCaster) <
 					apObjectDataB->GetRenderFlagBit(eRenderableFlag_ShadowCaster);
 		}
+		if(	apObjectDataA->IsOccluder() != apObjectDataB->IsOccluder())
+		{
+			return	apObjectDataA->IsOccluder() < apObjectDataB->IsOccluder();
+		}
 		//Material check
 		if( apObjectDataA->GetMaterial() != apObjectDataB->GetMaterial())
 		{
@@ -1241,6 +1251,7 @@ namespace hpl {
 				//Check if next object is not part of sequence, if so combine current sequence.
 				if(	pNextObject->GetMaterial() != pMeshObject->GetMaterial() ||
 					pNextObject->GetRenderFlagBit(eRenderableFlag_ShadowCaster) != pMeshObject->GetRenderFlagBit(eRenderableFlag_ShadowCaster) ||
+					pNextObject->IsOccluder() != pMeshObject->IsOccluder() ||
 					pNextObjectUserData->mbCombine == false)
 				{
 					CombineObjectsAndCreateMeshEntity(vMeshObjects, lFirstInSequence, (int) i);
@@ -1456,7 +1467,7 @@ namespace hpl {
 		
 		//Set up variables
 		pMeshEntity->SetRenderFlagBit(eRenderableFlag_ShadowCaster, pFirstObject->GetRenderFlagBit(eRenderableFlag_ShadowCaster));
-
+		pMeshEntity->SetIsOccluder(pFirstObject->IsOccluder());
 		//Add to list
 		mlstStaticMeshEntities.push_back(pMeshEntity);
 		mlStaticMeshEntitiesCreated++;
@@ -1621,6 +1632,7 @@ namespace hpl {
 		
 		bool bCollides = apElement->GetAttributeBool("Collides", true);
 		bool bCastsShadows = apElement->GetAttributeBool("CastShadows", true);
+		bool bIsOccluder = apElement->GetAttributeBool("IsOccluder", true);
 
 		int lID = apElement->GetAttributeInt("ID",-1);
 
@@ -1652,6 +1664,7 @@ namespace hpl {
 														mpResources->GetAnimationManager()) );
 		pMeshEntity->SetRenderFlagBit(eRenderableFlag_ShadowCaster, bCastsShadows);
 		pMeshEntity->SetUniqueID(lID);
+		pMeshEntity->SetIsOccluder(bIsOccluder);
 
 		alstMeshEntities.push_back(pMeshEntity);
 
@@ -1764,6 +1777,14 @@ namespace hpl {
 		//Setup mesh entity
 		pMeshEntity->SetWorldMatrix(cMath::MatrixMul(cMath::MatrixRotate(vRotation, eEulerRotationOrder_XYZ),cMath::MatrixScale(vScale)));
 		pMeshEntity->SetPosition(vPosition);
+
+
+		// if a static object has an animation, play it.
+		if ( pMesh->GetAnimationNum() > 0 )
+		{
+			pMeshEntity->SetStatic(false);
+			pMeshEntity->Play(0,true,true);
+		}
 	}
 
 	//-----------------------------------------------------------------------
@@ -1888,6 +1909,7 @@ namespace hpl {
 		tString sMaterialName = sMaterial;
 		bool bCastsShadows = apElement->GetAttributeBool("CastShadows", true);
 		bool bCollides = apElement->GetAttributeBool("Collides", true);
+		bool bIsOccluder = apElement->GetAttributeBool("IsOccluder", true);
 		int lID = apElement->GetAttributeInt("ID",-1);
 
 		if((mlCurrentFlags & eWorldLoadFlag_FastStaticLoad))
@@ -1933,6 +1955,7 @@ namespace hpl {
 												mpResources->GetAnimationManager()) );
 			pMeshEntity->SetRenderFlagBit(eRenderableFlag_ShadowCaster, bCastsShadows);
 			pMeshEntity->GetSubMeshEntity(0)->GetSubMesh()->SetMaterialName(sMaterialName);
+			pMeshEntity->SetIsOccluder(bIsOccluder);
 		}
 
 		//////////////////////////////////
@@ -2030,6 +2053,7 @@ namespace hpl {
 											mpResources->GetMaterialManager(),
 											mpResources->GetMeshManager(), 
 											mpResources->GetAnimationManager()) );
+		pMeshEntity->SetIsOccluder(false);
 		
 		//////////////////////////////////
 		// General Final Stuff

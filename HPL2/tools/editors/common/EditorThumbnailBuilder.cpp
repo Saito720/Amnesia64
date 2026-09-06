@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "EditorThumbnailBuilder.h"
@@ -108,7 +108,7 @@ cEditorThumbnailBuilder::cEditorThumbnailBuilder(iEditorBase* apEditor)
 	mpFB128->SetTexture2D(0,mpRenderTarget128);
 	mpFB128->CompileAndValidate();
 
-	mpViewport = pScene->CreateViewport(pCamera,pWorld,true);
+	mpViewport = pScene->CreateViewport(pCamera,pWorld);
 	mpViewport->SetSize(cVector2l(128));
 	mpViewport->SetFrameBuffer(mpFB128);
 	mpViewport->SetActive(false);
@@ -330,7 +330,7 @@ tWString cEditorThumbnailBuilder::GetThumbnailNameFromFileW(const tWString& asFi
 	tWString sNormalizedFileString;
 	mSha << asFile >> sNormalizedFileString << SHA1::reset;
 
-	return mpEditor->GetThumbnailDir() + sNormalizedFileString + _W("_tmb.jpg");
+	return mpEditor->GetFolderFullPath(eEditorDir_Thumbnails) + sNormalizedFileString + _W("_tmb.jpg");
 }
 
 //-------------------------------------------------------------------

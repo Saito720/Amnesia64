@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxConfigHandler.h"
@@ -79,8 +79,8 @@ void cLuxConfigHandler::LoadMainConfig()
 	mvScreenSize.y =	gpBase->mpMainConfig->GetInt("Screen","Height", 600);
     mlDisplay =			gpBase->mpMainConfig->GetInt("Screen","Display", 0);
 	mbFullscreen =		gpBase->mpMainConfig->GetBool("Screen","FullScreen", false);
-	mbVSync =			gpBase->mpMainConfig->GetBool("Screen","Vsync", false);
-	mbAdaptiveVSync =	gpBase->mpMainConfig->GetBool("Screen","AdaptiveVsync", false);
+	mbVSync =			gpBase->mpMainConfig->GetBool("Screen","Vsync", true);
+	mbAdaptiveVSync =	gpBase->mpMainConfig->GetBool("Screen","AdaptiveVsync", true);
 
 	mbFastPhysicsLoad=	gpBase->mpMainConfig->GetBool("MapLoad","FastPhysicsLoad", false);
 	mbFastStaticLoad=	gpBase->mpMainConfig->GetBool("MapLoad","FastStaticLoad", false);
@@ -121,10 +121,14 @@ void cLuxConfigHandler::LoadMainConfig()
 	/////////////////////
 	// Sound variables
 	mlSoundDevID = gpBase->mpMainConfig->GetInt("Sound", "Device", -1);
-	mlMaxSoundChannels = gpBase->mpMainConfig->GetInt("Sound", "MaxChannels", 32);
-	mlSoundStreamBuffers = gpBase->mpMainConfig->GetInt("Sound", "StreamBuffers", 4);
+	mlMaxSoundChannels = gpBase->mpMainConfig->GetInt("Sound", "MaxChannels", 64);
+	mlSoundStreamBuffers = gpBase->mpMainConfig->GetInt("Sound", "StreamBuffers", 8);
 	mlSoundStreamBufferSize = gpBase->mpMainConfig->GetInt("Sound", "StreamBufferSize", 262144);
 	mbHRTFActive = gpBase->mpMainConfig->GetBool("Sound", "HRTFActive", false);
+
+	///////////////
+	// Engine
+	mlMaxFramesPerSec = gpBase->mpMainConfig->GetInt("Engine", "MaxFramesPerSec", 60);
 }
 
 //-----------------------------------------------------------------------
@@ -148,8 +152,10 @@ void cLuxConfigHandler::SaveMainConfig()
 	// Engine init variables
 	gpBase->mpMainConfig->SetInt("Screen","Width", mvScreenSize.x);
 	gpBase->mpMainConfig->SetInt("Screen","Height", mvScreenSize.y);
+    gpBase->mpMainConfig->SetInt("Screen","Display", mlDisplay);
 	gpBase->mpMainConfig->SetBool("Screen","FullScreen", mbFullscreen);
 	gpBase->mpMainConfig->SetBool("Screen","Vsync", mbVSync);
+	gpBase->mpMainConfig->SetBool("Screen","AdaptiveVsync", mbAdaptiveVSync);
 
 	gpBase->mpMainConfig->SetBool("MapLoad","FastPhysicsLoad", mbFastPhysicsLoad);
 	gpBase->mpMainConfig->SetBool("MapLoad","FastStaticLoad", mbFastStaticLoad);
@@ -202,6 +208,7 @@ void cLuxConfigHandler::SaveMainConfig()
 	// Engine properties
 	gpBase->mpMainConfig->SetBool("Engine","LimitFPS", gpBase->mpEngine->GetLimitFPS());
 	gpBase->mpMainConfig->SetBool("Engine","SleepWhenOutOfFocus",gpBase->mpEngine->GetWaitIfAppOutOfFocus());
+	gpBase->mpMainConfig->SetInt("Engine", "MaxFramesPerSec", mlMaxFramesPerSec);
 }
 
 //-----------------------------------------------------------------------
@@ -218,7 +225,7 @@ bool cLuxConfigHandler::ShowRestartWarning(cGuiSet* apSet, void* apObject, tGuiC
 									 kTranslate("OptionsMenu", "ReqRestartMessage"), 
 									 kTranslate("MainMenu","OK"), _W(""),
 									 apObject, apCallback);
-		pPopUp->GetGuiSet()->SetDrawFocus(true);
+		pPopUp->GetGuiSet()->SetDrawFocus(gpBase->mpInputHandler->IsGamepadPresent());
 		return true;
 	}
 

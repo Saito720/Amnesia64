@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef LUX_PLAYER_H
@@ -30,18 +30,21 @@ class iLuxMoveState;
 class iLuxPlayerState;
 
 class cLuxPlayerLightLevel;
-class cLuxPlayerInDarkness;
+//class cLuxPlayerInDarkness;
+class cLuxPlayerIsMoving;
 class cLuxPlayerHudEffect;
 class cLuxPlayerLean;
 class cLuxPlayerDeath;
 class cLuxPlayerLantern;
-class cLuxPlayerSanity;
+class cLuxPlayerInfection;
 class cLuxPlayerLookAt;
 class cLuxPlayerFlashback;
 class cLuxPlayerHurt;
 class cLuxPlayerSpawnPS;
 class cLuxPlayerCamDirEffects;
-class cLuxPlayerInsanityCollapse;
+class cLuxPlayerInfectionCollapse;
+class cLuxPlayerStamina;
+class cLuxPlayerVoiceFlashback;
 class cLuxNode_PlayerStart;
 
 class cLuxPlayerHands;
@@ -94,14 +97,13 @@ public:
 	// Actions
 	void GiveDamage(float afAmount, int alStrength, eLuxDamageType aType, bool abSpinHead, bool abLethal);
 	
-	void GiveSanityDamage(float afAmount);
-	void LowerSanity(float afAmount, bool abUseEffect);
+	void GiveInfectionDamage(float afAmount);
+	void IncreaseInfection(float afAmount, bool abUseEffect);
 
 	void Move(eCharDir aDir, float afMul);
 	void AddYaw(float afAmount);
 	void AddPitch(float afAmount);
-	void SetLean(float afMul);
-	void AddLean(float afAdd);
+	void Lean(float afMul);
 	
 	void Scroll(float afAmount);
 	
@@ -148,16 +150,21 @@ public:
 	const tString& GetCurrentPermaDeathSound(){ return msCurrentPermaDeathSound;}
 
 	void SetHealth(float afX);
-	void SetSanity(float afX);
-	void SetLampOil(float afX);
-
+	void SetInfection(float afX, bool abShowEffect=true);
+	void SetInfectionLevel( int aiInfectionLevel );
+	
 	void AddHealth(float afX);
-	void AddSanity(float afX, bool abShowEffect=true);
-	void AddLampOil(float afX);
-
+	void AddInfection(float afX, bool abShowEffect=true);
+	void VomitDamage();
+	
 	float GetHealth(){ return mfHealth; }
-	float GetSanity(){ return mfSanity; }
-	float GetLampOil(){ return mfLampOil; }
+	float GetInfection(){ return mfInfection; }
+	bool IsAtMaxInfectionLevel();
+
+	int GetNumberOfInfectionLevels() { return miNumberOfInfectionLevels; }
+	int GetInfectionLevel();
+	int GetInfectionLevelForInfection(float afInfection);
+	float GetInfectionForInfectionLevel( int aiInfectionLevel );
 
 	float GetTerror(){ return mfTerror; }
 	
@@ -209,9 +216,6 @@ public:
 	void SetCrouchDisabled(bool abX){ mbCrouchDisabled = abX; }
 	bool GetCrouchDisabled() { return mbCrouchDisabled; }
 
-	void SetSanityDrainDisabled(bool abX){ mbSanityDrainDisabled = abX;}
-	bool GetSanityDrainDisabled(){ return mbSanityDrainDisabled;}
-
 	float GetInteractionMoveSpeedMul(){ return mfInteractionMoveSpeedMul;}
 	void SetInteractionMoveSpeedMul(float afX){ mfInteractionMoveSpeedMul = afX;}
 
@@ -228,11 +232,18 @@ public:
 	void SetHurtMoveSpeedMul(float afX){ mfHurtMoveSpeedMul = afX;}
 	float GetHurtMoveSpeedMul(){ return mfHurtMoveSpeedMul;}
 
-	void SetInsanityCollapseSpeedMul(float afX){ mfInsanityCollapseSpeedMul = afX;}
-	float GetInsanityCollapseSpeedMul(){ return mfInsanityCollapseSpeedMul;}
-	
-	void SetScriptJumpForceMul(float afX){ mfScriptJumpForceMul = afX;}
-	float GetScriptJumpForceMul(){ return mfScriptJumpForceMul;}
+	void SetInfectionCollapseSpeedMul(float afX){ mfInfectionCollapseSpeedMul = afX;}
+	float GetInfectionCollapseSpeedMul(){ return mfInfectionCollapseSpeedMul;}
+
+	float GetInfectionSpeedMul();
+
+	float GetVomitProgress(){ return ( mfVomitEffectDuration <= 0.0f || mfVomitEffectDuration <= mfTimeSinceLastVomit ) ? 1.0f : mfTimeSinceLastVomit / mfVomitEffectDuration; }
+
+	void SetStaminaSpeedMul(float afX){ mfStaminaSpeedMul = afX;}
+	float GetStaminaSpeedMul(){ return mfStaminaSpeedMul;}
+	float GetExhaustionFactor();
+
+	bool CanRun();
 
 	void SetCurrentFocusDistance(float afX){ mfCurrentFocusDistance = afX;}
 	
@@ -249,9 +260,12 @@ public:
 
 	float GetAvgSpeed(){ return mfAvgSpeed; }
 
+	const cVector3f& GetAvgMoveDir2D(){ return mvAvgMoveDir2D;}
+
 	void FadeFOVMulTo(float afX, float afSpeed);
 	void FadeAspectMulTo(float afX, float afSpeed);
 	void FadeRollTo(float afX, float afSpeedMul, float afMaxSpeed);
+	void FadePitchTo(float afX, float afSpeedMul, float afMaxSpeed);
 	void FadeLeanRollTo(float afX, float afSpeedMul, float afMaxSpeed);
 	void SetRoll(float afX);
 
@@ -264,34 +278,40 @@ public:
 	eLuxFocusIconStyle GetFocusIconStyle() { return mFocusIconStyle; }
 	void SetFocusIconStyle(eLuxFocusIconStyle aX) { mFocusIconStyle = aX; }
 
+	int GetRandomEscapeFailCount() { return mlRandomEscapeFailCount--; }
+	void StartRandomEscapeFail();
+	void EndRandomEscapeFail();
+
 	static eLuxFocusIconStyle StringToFocusIconStyle(const tString& asX);
 	static tString FocusIconStyleToString(eLuxFocusIconStyle aX);
 	
-	////////////////////
-	// Free cam
-	void SetFreeCamActive(bool abX);
-	void SetFreeCamSpeed(float afSpeed);
 	
 	////////////////////
 	// Helpers
 	cLuxPlayerLightLevel *GetHelperLightLevel(){ return mpHelperLightLevel;}
-	cLuxPlayerInDarkness *GetHelperInDarkness(){ return mpHelperInDarkness;}
+	//cLuxPlayerInDarkness *GetHelperInDarkness(){ return mpHelperInDarkness;}
+	cLuxPlayerIsMoving *GetHelperIsMoving(){ return mpHelperIsMoving;}
 	cLuxPlayerHudEffect *GetHelperHudEffect(){ return mpHudEffect;}
 	cLuxPlayerLantern *GetHelperLantern(){ return mpLantern;}
-	cLuxPlayerSanity *GetHelperSanity(){ return mpSanity; }
+	cLuxPlayerInfection *GetHelperInfection(){ return mpInfection; }
 	cLuxPlayerLookAt *GetHelperLookAt(){ return mpLookAt; }
 	cLuxPlayerDeath *GetHelperDeath(){ return mpDeath; }
 	cLuxPlayerFlashback *GetHelperFlashback(){ return mpFlashback; }
 	cLuxPlayerSpawnPS* GetHelperSpawnPS(){ return mpSpawnPS;}
 	cLuxPlayerCamDirEffects* GetCamDirEffects(){ return mpCamDirEffects;}
-	cLuxPlayerInsanityCollapse* GetInsanityCollapse(){ return mpInsanityCollapse;}
+	cLuxPlayerInfectionCollapse* GetInfectionCollapse(){ return mpInfectionCollapse;}
+	cLuxPlayerVoiceFlashback* GetHelperVoiceFlashback(){ return mpVoiceFlashback;}
 
 	cLuxPlayerHands* GetHands(){ return mpHands;}
 
 	void RunHelperMessage(eUpdateableMessage aMessage, float afX);
 	void RunHelperLuxMessage(eLuxUpdateableMessage aMessage, void *apData);
 
-	
+	void ReleasePlayerFromLimbo();
+
+    void SetUsesDragFootsteps( bool abUsesDragFootsteps ) { mbUsesDragFootsteps = abUsesDragFootsteps; }
+    bool UsesDragFootsteps() { return mbUsesDragFootsteps; }
+
 private:
 	bool CanDrawCrossHair();
 	void DrawHud(float afFrameTime);
@@ -302,6 +322,7 @@ private:
 	void UpdateLean(float afTimeStep);
 	void UpdateFocusText(float afTimeStep);
 	void UpdateAvgSpeed(float afTimeStep);
+	void UpdateAvgMoveDir(float afTimeStep);
 	
 	void SpinHead(float afSpeed);
 	void UpdateHeadSpin(float afTimeStep);
@@ -314,21 +335,27 @@ private:
 	///////////////////////////////
 	// Variables
 	bool mbActive;
+    bool mbUsesDragFootsteps;
 
 	bool mbUsePermaDeath;
 	tString msCurrentPermaDeathSound;
 
 	bool mbNoFallDamage;
+	bool mbBeingChased;
 
 	eLuxPlayerState mState;
 	eLuxMoveState mMoveState;
 
+	int miNumberOfInfectionLevels;
+
 	float mfHealth;
-	float mfSanity;
-	float mfLampOil;
+	float mfInfection;
 	float mfTerror;
 	int mlCoins;
 	int mlTinderboxes;
+
+	bool mbRandomEscapeFail;
+	int mlRandomEscapeFailCount;
 
 	bool mbPressedMove;
 	bool mbPressingRun;
@@ -344,7 +371,6 @@ private:
 
 	bool mbJumpDisabled;
 	bool mbCrouchDisabled;
-	bool mbSanityDrainDisabled;
 
 	float mfEventMoveSpeedMul;
 	float mfEventRunSpeedMul;
@@ -354,9 +380,14 @@ private:
 
 	float mfHurtMoveSpeedMul;
 
-	float mfInsanityCollapseSpeedMul;
+	float mfInfectionCollapseSpeedMul;
 
-	float mfScriptJumpForceMul;
+	float mfStaminaSpeedMul;
+
+	float mfInfectionLevelOneSpeedMul;
+	float mfInfectionLevelTwoSpeedMul;
+	float mfInfectionLevelThreeSpeedMul;
+	float mfInfectionLevelFourSpeedMul;
 
 	cVector2f mvHeadSpinSpeed;
 
@@ -383,6 +414,11 @@ private:
 	float mfRollSpeedMul;
 	float mfRollMaxSpeed;
 
+    bool mbFadingPitch;
+    float mfPitchGoal;
+	float mfPitchSpeedMul;
+	float mfPitchMaxSpeed;
+
 	float mfLeanRoll;
 	float mfLeanRollGoal;
 	float mfLeanRollSpeedMul;
@@ -406,6 +442,12 @@ private:
 	int mlMaxPrevSpeeds;
 	float mfAvgSpeed;
 
+	int mnMaxInfectionLevelAtWhichPlayerCanRun;
+
+	std::list<cVector3f> mlstPrevMoveDirs;
+	cVector3f mvAvgMoveDir2D;
+	float mfAddMoveDirCount;
+
 	///////////////////////////////
 	// Data
 	cVector3f mvBodySize;
@@ -415,6 +457,8 @@ private:
 	float mfHeadSpinDamageSpeed;
 	float mfHeadSpinDeacc;
 
+	tString msHeadSpinHitSound;
+
 	float mfDefaultMass;
 
 	float mfAspect;
@@ -422,6 +466,9 @@ private:
 
 	float mfTerrorIncSpeed;
 	float mfTerrorDecSpeed;
+
+	float mfVomitEffectDuration;
+	float mfTimeSinceLastVomit;
 
 	float mfAutoKillYPos;
 
@@ -434,31 +481,27 @@ private:
 	std::vector<cLuxHeadPosAdd> mvHeadPosAdds;
 
 	cLuxPlayerLightLevel *mpHelperLightLevel;
-	cLuxPlayerInDarkness *mpHelperInDarkness;
+	//cLuxPlayerInDarkness *mpHelperInDarkness;
+    cLuxPlayerIsMoving *mpHelperIsMoving;
 	cLuxPlayerLantern *mpLantern;
 	cLuxPlayerHudEffect *mpHudEffect;
 	cLuxPlayerLean *mpLean;
 	cLuxPlayerDeath *mpDeath;
-	cLuxPlayerSanity *mpSanity;
+	cLuxPlayerInfection *mpInfection;
 	cLuxPlayerLookAt *mpLookAt;
 	cLuxPlayerFlashback *mpFlashback;
 	cLuxPlayerHurt *mpHurt;
 	cLuxPlayerSpawnPS *mpSpawnPS;
 	cLuxPlayerCamDirEffects *mpCamDirEffects;
-	cLuxPlayerInsanityCollapse *mpInsanityCollapse;
+	cLuxPlayerInfectionCollapse *mpInfectionCollapse;
+	cLuxPlayerStamina * mpPlayerStamina;
+	cLuxPlayerVoiceFlashback * mpVoiceFlashback;
 	
-
 	cLuxPlayerHands *mpHands;
 
 	std::vector<iLuxPlayerHelper*> mvHelpers;
 	std::vector<iLuxMoveState*> mvMoveStates;
 	std::vector<iLuxPlayerState*> mvStates;
-
-
-	//////////////////////
-	// Free camera
-	bool mbFreeCameraActive;
-	float mfFreeCameraSpeed;
 };
 
 //----------------------------------------------

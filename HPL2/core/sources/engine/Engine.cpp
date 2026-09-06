@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "engine/Engine.h"
@@ -190,6 +190,7 @@ namespace hpl {
 
 	bool cEngine::mbDevicePlugged = false;
 	bool cEngine::mbDeviceRemoved = false;
+	int cEngine::mlNumLogicLoops=0;
 
 	//-----------------------------------------------------------------------
 
@@ -352,8 +353,20 @@ namespace hpl {
 		mfGameTime =0;
 
 		mbLimitFPS = true;
+		mfFPSLimit = 1.0 / double(apVars->mGame.mlMaxFramesPerSec);
+		mfLastFrameRender = 0;
+
+		mvMaxGameLogic.reserve(300);
+		mvMaxRenderLogic.reserve(300);
+
+		mfMaxGameLogic = 0;
+		mfMaxRenderLogic = 0;
 
 		mpFPSCounter = hplNew( cFPSCounter,(mpSystem->GetLowLevel()) );
+		mpGameLogicTimer = cPlatform::CreateTimer();
+		mpInnerGameLogicTimer = cPlatform::CreateTimer();
+		mpRenderingLogicTimer = cPlatform::CreateTimer();
+		mpFrameLimitTimer = cPlatform::CreateTimer();
 		mpFrameTimer = cPlatform::CreateTimer();
 		Log("--------------------------------------------------------\n\n");
 
@@ -369,6 +382,10 @@ namespace hpl {
 
 		hplDelete(mpLogicTimer);
 		hplDelete(mpFPSCounter);
+		hplDelete(mpGameLogicTimer);
+		hplDelete(mpInnerGameLogicTimer);
+		hplDelete(mpRenderingLogicTimer);
+		hplDelete(mpFrameLimitTimer);
 		hplDelete(mpFrameTimer);
 		hplDelete(mpMutex);
 		
@@ -427,7 +444,7 @@ namespace hpl {
 		bool bSwappedOnce = false;
 		
 		//cMemoryManager::SetLogCreation(true);
-
+		mpFrameLimitTimer->Start();
 		while(!GetGameIsDone())
 		{
 			//////////////////////////
@@ -448,17 +465,22 @@ namespace hpl {
 			{
 				//////////////////////////
 				//Update logic.
+				int lIterations = 0;
+				mpGameLogicTimer->Start();
 				while(mpLogicTimer->WantUpdate() && !GetGameIsDone())
 				{
 					/////////////////////////////////////////////
 					// Run Update callback in updater
+					mpInnerGameLogicTimer->Start();
+					lIterations++;
+					mlNumLogicLoops++;
+
 					mpUpdater->RunMessage(eUpdateableMessage_PreUpdate, GetStepSize());
 					mpUpdater->RunMessage(eUpdateableMessage_Update, GetStepSize());
 					mpUpdater->RunMessage(eUpdateableMessage_PostUpdate, GetStepSize());
 					bIsUpdated = true;
 
                     if (mpInput->isQuitMessagePosted()) {
-
                         mpUpdater->RunMessage(eUpdateableMessage_OnQuit);
 
                         mpInput->resetQuitMessagePosted();
@@ -485,8 +507,33 @@ namespace hpl {
 				
 					//Increase game time.
 					mfGameTime += GetStepSize();
+					mpInnerGameLogicTimer->Stop();
+
+					mvMaxGameLogic.push_back(mpInnerGameLogicTimer->GetTimeInMilliSec());
 				}
 				mpLogicTimer->EndUpdateLoop();
+
+				////////////////
+				// Update timer
+				mpGameLogicTimer->Stop();
+				
+				if(lIterations > 0)
+				{
+					static double fGameLogicTime = 0;
+					static int lGameLogicCount = 0;
+					static int lGameLogicIterations = 0;
+
+					fGameLogicTime += mpGameLogicTimer->GetTimeInMilliSec() * lIterations;
+					lGameLogicCount += lIterations;
+
+					if(lGameLogicIterations++ % 60 == 0)
+					{
+						mfGameLogicTime = fGameLogicTime / double(lGameLogicCount);
+						mfGameLogicIterations = double(lGameLogicCount) / 60.0;
+						fGameLogicTime = 0;
+						lGameLogicCount = 0;
+					}
+				}
 			}
 
 			//if(GetGameIsDone()) Log("1\n");
@@ -521,14 +568,31 @@ namespace hpl {
 
 			//if(GetGameIsDone()) Log("3\n");
 
+			//////////////
+			// Limit fps
+			if(mbLimitFPS)
+			{
+				double fNextFrame = mfLastFrameRender + mfFPSLimit;
+				double fTime = mpFrameLimitTimer->GetTimeInSec();
+
+				if(fTime < fNextFrame) continue;
+				
+				////////////////
+				// If the game is running slower than fps limit set time else just add 1.0 / MaxFPS
+				if(fNextFrame + mfFPSLimit < fTime)  mfLastFrameRender = fTime;
+				else								 mfLastFrameRender = mfLastFrameRender + mfFPSLimit;
+			}
+
+
 			////////////////////////////////////
 			// Render frame
-			if(mbLimitFPS==false || bIsUpdated)
+			if(bIsUpdated)
 			{
 				///////////////////////////////////////
            		//Get the the from the last frame.
 				UpdateFrameTimer();
 
+				mpRenderingLogicTimer->Start();
 				//On draw callback sending that to gui, etc
 				START_TIMING(OnDraw)
 				mpUpdater->RunMessage(eUpdateableMessage_OnDraw, mfFrameTime);
@@ -549,14 +613,47 @@ namespace hpl {
 				
 				//Update fps counter.
 				mpFPSCounter->AddFrame();
-	           	
+	           	mpRenderingLogicTimer->Stop();
+
+				static double fRenderingLogic = 0;
+				static int lRenderingLogicIterations = 0;
+				
+				mvMaxRenderLogic.push_back(mpRenderingLogicTimer->GetTimeInMilliSec());
+				fRenderingLogic += mpRenderingLogicTimer->GetTimeInMilliSec();
+				if(lRenderingLogicIterations++ % 60 == 0)
+				{
+					mfRenderingLogicTime = fRenderingLogic / 60.0;
+					fRenderingLogic = 0;
+				}
+
 				fNumOfTimes++;
 				bIsUpdated = false;
 				bBufferSwap = true;
 			}
+			
+			if(mvMaxGameLogic.size() > 300)
+			{
+				mfMaxGameLogic = 0;
+				
+				for(size_t i = 0; i < mvMaxGameLogic.size(); ++i) mfMaxGameLogic = mfMaxGameLogic < mvMaxGameLogic[i] ? mvMaxGameLogic[i] : mfMaxGameLogic;
+
+				mvMaxGameLogic.clear();
+			}
+
+			if(mvMaxRenderLogic.size() > 300)
+			{
+				mfMaxRenderLogic = 0;
+				
+				for(size_t i = 0; i < mvMaxRenderLogic.size(); ++i) mfMaxRenderLogic = mfMaxRenderLogic < mvMaxRenderLogic[i] ? mvMaxRenderLogic[i] : mfMaxRenderLogic;
+
+				mvMaxRenderLogic.clear();
+			}
 
 			//if(GetGameIsDone()) Log("4\n");
 		}
+		
+		mpFrameLimitTimer->Stop();
+
 		Log("--------------------------------------------------------\n\n");
 	
 		Log("Statistics\n");
@@ -626,16 +723,14 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	void cEngine::SetSpeedMul(float afX)
-	{
-		mpLogicTimer->SetSpeedMul(afX);
-	}
-
-	//-----------------------------------------------------------------------
-
 	float cEngine::GetAvgFrameTimeInMS()
 	{
 		return (1.0f/mpFPSCounter->mfFPS)*1000.0f;
+	}
+
+	float cEngine::GetRenderingLogicTime()
+	{ 
+		return mfRenderingLogicTime; 
 	}
 	
 	//-----------------------------------------------------------------------
@@ -826,7 +921,7 @@ namespace hpl {
 
 	void cEngine::CheckIfAppInFocusElseWait()
 	{
-		iLowLevelGraphics *pllGfx = mpGraphics->GetLowLevel();
+        iLowLevelGraphics *pllGfx = mpGraphics->GetLowLevel();
 		while(	pllGfx->GetWindowInputFocus()==false)
 		{
 			cPlatform::Sleep(100);

@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxMainMenu.h"
@@ -33,36 +33,16 @@
 #include "LuxMainMenu_Profile.h"
 #include "LuxMainMenu_Options.h"
 #include "LuxMainMenu_KeyConfig.h"
-#include "LuxMainMenu_StartGame.h"
 #include "LuxMainMenu_LoadGame.h"
 #include "LuxMainMenu_CustomStory.h"
 
 #include "LuxDemoEnd.h"
-#include <sstream>
-#include "LuxAchievementHandler.h"
 
 //--------------------------------------------------------------------------------
 
 static const bool gbDebug_SkipBGScene = false;
 static const bool gbDebug_FastLoadOptions = false;
-const int glHardMode_SaveCost = 4;
 
-#if MAC_OS || LINUX
-std::wstring LongToWString(const long long &l)
-{
-    std::string s;
-    std::stringstream strstream;
-    strstream << l;
-    strstream >> s;
-    std::wstring temp(s.length(),L' ');
-    std::copy(s.begin(),s.end(), temp.begin());
-    return temp;
-}
-
-const tWString gsHardMode_SaveCostString = tWString(LongToWString((static_cast<long long>(glHardMode_SaveCost))));
-#else
-const tWString gsHardMode_SaveCostString = tWString(to_wstring(static_cast<long long>(glHardMode_SaveCost)));
-#endif
 //--------------------------------------------------------------------------------
 
 //////////////////////////////////////////////////////////////////////////
@@ -121,20 +101,18 @@ cLuxMainMenu::cLuxMainMenu() : iLuxUpdateable("LuxDebugHandler")
 	mpGuiSet = mpGui->CreateSet("MainMenu",mpGuiSkin);
 	mpGuiSet->SetDrawMouse(false);//Init
 	
-	//////////////////////////////
-	// Make skin font size a bit bigger if its chinese
-	if (gpBase->msCurrentLanguage == "chinese.lang")
-	{
-		mpGuiSet->GetSkin()->GetFont(eGuiSkinFont_Default)->mvSize *= 1.4f;
-		mpGuiSet->GetSkin()->GetFont(eGuiSkinFont_Disabled)->mvSize *= 1.4f;
-	}
-
+	
 	///////////////////////////////
 	//Create Viewport
 	mpViewport = mpScene->CreateViewport();
 	mpViewport->SetActive(false);
 	mpViewport->SetVisible(false);
 	mpGuiSet->SetActive(false);
+	
+	//Tonemapping
+	cGraphics *pGraphics = gpBase->mpEngine->GetGraphics();
+	cPostEffectComposite *pPostEffectComp = pGraphics->CreatePostEffectComposite();
+	mpViewport->SetPostEffectComposite(pPostEffectComp);
 
 	mpViewport->AddGuiSet(mpGuiSet);
 
@@ -146,9 +124,7 @@ cLuxMainMenu::cLuxMainMenu() : iLuxUpdateable("LuxDebugHandler")
 	mvWindows[eLuxMainMenuWindow_Options] = hplNew(cLuxMainMenu_Options, (mpGuiSet, mpGuiSkin));
 	mvWindows[eLuxMainMenuWindow_KeyConfig] = hplNew(cLuxMainMenu_KeyConfig, (mpGuiSet, mpGuiSkin));
 	mvWindows[eLuxMainMenuWindow_LoadGame] = hplNew(cLuxMainMenu_LoadGame, (mpGuiSet, mpGuiSkin));
-	mvWindows[eLuxMainMenuWindow_StartGame] = hplNew(cLuxMainMenu_StartGame, (mpGuiSet, mpGuiSkin));
-
-
+	
 	cLuxMainMenu_CustomStory* pCustomStoryWindow = hplNew(cLuxMainMenu_CustomStory,(mpGuiSet, mpGuiSkin));
 	mvWindows[eLuxMainMenuWindow_CustomStoryList] = hplNew(cLuxMainMenu_CustomStoryList, (mpGuiSet, mpGuiSkin, pCustomStoryWindow));
 	mvWindows[eLuxMainMenuWindow_CustomStory] = pCustomStoryWindow;
@@ -220,8 +196,6 @@ cLuxMainMenu::cLuxMainMenu() : iLuxUpdateable("LuxDebugHandler")
 	mCurrentWindow = eLuxMainMenuWindow_LastEnum;
 
 	mpLastFocusedItem = NULL;
-	mpSaveCost = NULL;
-	mpNumTinderboxes = NULL;
 
 	Reset();
 }
@@ -234,26 +208,6 @@ cLuxMainMenu::~cLuxMainMenu()
 	{
 		if(mvWindows[i]) hplDelete(mvWindows[i]);
 	}
-}
-
-void cLuxMainMenu::OnQuit()
-{
-    cLuxMapHandler *mpMapHandler = gpBase->mpMapHandler;
-    if(mpMapHandler->GetCurrentMap())
-    {
-        //Save
-        gpBase->mpSaveHandler->AutoSave();
-        // Destroy Map
-        mpMapHandler->DestroyMap(mpMapHandler->GetCurrentMap(),false);
-
-        //Reset game
-        gpBase->mpEngine->GetUpdater()->BroadcastMessageToAll(eUpdateableMessage_Reset);
-        gpBase->SetCustomStory(NULL);
-    }
-    
-    //Quit Game
-    mExitMessage = eLuxMainMenuExit_QuitGame;
-    OnMenuExit();
 }
 
 //-----------------------------------------------------------------------
@@ -471,8 +425,9 @@ void cLuxMainMenu::OnDraw(float afFrameTime)
 		}
 
 		//Top Menu background
-		mpGuiSet->DrawGfx(	mpTopBackground,cVector3f(0,mvTopMenuStartPos.y,0.5f),
-							cVector2f(mvScreenSize.x, mvScreenSize.y - mvTopMenuStartPos.y),
+		cVector3f vPos = gpBase->mpMapHandler->MapIsLoaded() ? cVector3f(0) : mvTopMenuStartPos;
+		mpGuiSet->DrawGfx(	mpTopBackground,cVector3f(0,vPos.y,0.5f),
+							cVector2f(mvScreenSize.x, mvScreenSize.y - vPos.y),
 							cColor(1 ,0.5f*mfTopMenuAlpha));
 	}
 	/////////////////////////////////
@@ -511,7 +466,6 @@ void cLuxMainMenu::SetWindowActive(eLuxMainMenuWindow aWindow)
 	case eLuxMainMenuWindow_KeyConfig:
 	case eLuxMainMenuWindow_LoadGame:
 	case eLuxMainMenuWindow_Profiles:
-	case eLuxMainMenuWindow_StartGame:
 		mpGuiSet->SetDrawFocus(bHasGamepad);
 		break;
 	default:
@@ -583,6 +537,26 @@ void cLuxMainMenu::AppGotInputFocus()
 	}
 }
 
+void cLuxMainMenu::OnQuit()
+{
+    cLuxMapHandler *mpMapHandler = gpBase->mpMapHandler;
+    if(mpMapHandler->GetCurrentMap())
+    {
+        //Save
+        gpBase->mpSaveHandler->AutoSave();
+        // Destroy Map
+        mpMapHandler->DestroyMap(mpMapHandler->GetCurrentMap(),false);
+
+        //Reset game
+        gpBase->mpEngine->GetUpdater()->BroadcastMessageToAll(eUpdateableMessage_Reset);
+        gpBase->SetCustomStory(NULL);
+    }
+    
+    //Quit Game
+    mExitMessage = eLuxMainMenuExit_QuitGame;
+    OnMenuExit();
+}
+
 //-----------------------------------------------------------------------
 #ifdef USE_GAMEPAD
 void cLuxMainMenu::AppDeviceWasPlugged()
@@ -621,15 +595,6 @@ void cLuxMainMenu::ExitMenu(eLuxMainMenuExit aMessage)
 	{
 		if(msZoomSound != "")
 			gpBase->mpEngine->GetSound()->GetSoundHandler()->PlayGui(msZoomSound, false,1.0f);
-	}
-
-	if (aMessage == eLuxMainMenuExit_QuitToMenu || aMessage == eLuxMainMenuExit_QuitAndSave)
-	{
-		tString mapName = gpBase->mpMapHandler->GetCurrentMap()->GetName();
-		if (mapName == "00_rainy_hall" || mapName == "01_old_archives")
-		{
-			gpBase->mpAchievementHandler->UnlockAchievement(eLuxAchievement_NOPE);
-		}
 	}
 }
 
@@ -838,37 +803,6 @@ void cLuxMainMenu::UpdateTopMenu(float afTimeStep)
 			pLabel->SetDefaultFontColor(cColor(col.r, col.g, col.b, mfTopMenuAlpha));
 		}
 	}
-
-	for (size_t i = 0; i < mvTopMenuLabels.size(); ++i)
-	{
-		cWidgetLabel *pLabel = mvTopMenuLabels[i];
-		if (pLabel->GetName() == "Save")
-		{
-			if (pLabel->HasFocus())
-			{
-				mbFadeInDescription = true;
-			}
-			else
-			{
-				mbFadeInDescription = false;
-			}
-			break;
-		}
-	}
-
-
-	if (mbFadeInDescription)
-	{
-		mfDescriptionAlpha += afTimeStep;
-		if (mfDescriptionAlpha > 1.0f)
-			mfDescriptionAlpha = 1.0f;
-	}
-	else
-	{
-		mfDescriptionAlpha -= afTimeStep;
-		if (mfDescriptionAlpha < 0.5f)
-			mfDescriptionAlpha = 0.5f;
-	}
 }
 
 //-----------------------------------------------------------------------
@@ -880,7 +814,6 @@ void cLuxMainMenu::SetTopMenuVisible(bool abVisible)
 	{
 		mpGuiSet->SetDefaultFocusNavWidget(mvTopMenuLabels.front());
 		mpGuiSet->SetFocusedWidget(mpLastFocusedItem);
-
 	}
 	else
 	{
@@ -944,7 +877,7 @@ void cLuxMainMenu::SetupTopMenuLabel(cWidgetLabel *apLabel)
 
 	/////////////////////////////////////////////////////
 	// Set up navigation
-	if (mvTopMenuLabels.empty() == false)
+	if(mvTopMenuLabels.empty()==false)
 	{
 		iWidget* pPrevLabel = mvTopMenuLabels.back();
 		pPrevLabel->SetFocusNavigation(eUIArrow_Down, apLabel);
@@ -961,9 +894,7 @@ void cLuxMainMenu::CreateTopMenuGui()
 	///////////////////
 	//Set up variables
 	cWidgetLabel *pLabel =0;
-	cWidgetLabel *pSaveLabel = 0;
-
-
+	
 	float fInvScreenRatio = mvScreenSize.y / mvScreenSize.x;
 	float fWidthMul = fInvScreenRatio / (3.0f/4.0f);
 	
@@ -997,11 +928,6 @@ void cLuxMainMenu::CreateTopMenuGui()
 	vLabels.push_back(kTranslate("MainMenu","Exit"));
 	vLabels.push_back(kTranslate("MainMenu","ExitToMainMenu"));
 	vLabels.push_back(kTranslate("MainMenu","ExitAndSave"));
-
-	//////////////////////
-	// HARDMODE
-	vLabels.push_back(kTranslate("MainMenu","Save")); // TRANSLATE THIS
-	//////////////////////
 
 
 	float fMaxLabelLength = 0;
@@ -1075,95 +1001,8 @@ void cLuxMainMenu::CreateTopMenuGui()
 	}
 
 	///////////////
-	// HARDMODE
-	// Save game
-	if (gpBase->mbPTestActivated == false && 
-		gpBase->mbHardMode && 
-		gpBase->mpMapHandler->MapIsLoaded() == true)
-	{
-		////////////////////////////
-		// Get translation and insert cost
-		pLabel = mpGuiSet->CreateWidgetLabel(vPos, 0, kTranslate("MainMenu", "Save"), NULL, "Save");
-		pLabel->AddCallback(eGuiMessage_MouseDown, this, kGuiCallback(PressSaveGame));
-		pSaveLabel = pLabel;
-		
-		SetupTopMenuLabel(pLabel);
-
-																					  
-		////////////////////////////
-		// Set enabled to false if player does not have enough resources  
-		pLabel->SetEnabled(gpBase->mpPlayer->GetTinderboxes() >= 4);
-
-		////////////////////////////
-		// Save cost label
-		tWString sText = kTranslate("MainMenu", "HardModeSaveCost");
-		size_t lNumIndex = sText.find(L"#");
-		
-		if (lNumIndex != std::wstring::npos)
-		{
-			tWString sSubString = sText.substr(lNumIndex + 1, sText.size() - lNumIndex);
-			sText = sText.substr(0, lNumIndex);
-			sText.replace(lNumIndex, gsHardMode_SaveCostString.size(), gsHardMode_SaveCostString);
-			sText += sSubString;
-		}
-
-		cVector3f vSaveDescriptionPosition = 0;
-		vSaveDescriptionPosition.x = (mvScreenSize.x / 16.0f);
-		vSaveDescriptionPosition.x = pLabel->GetGlobalPosition().x + pLabel->GetSize().x + 100;
-		vSaveDescriptionPosition.y = mvTopMenuStartPosInGame.y - (2.5f * fRowAdd);
-		vSaveDescriptionPosition.z = 2.0f;
-
-		vSaveDescriptionPosition.x = mvTopMenuStartPosInGame.x;
-
-		mpSaveCost = mpGuiSet->CreateWidgetLabel(vSaveDescriptionPosition, 0, sText, NULL, "SaveDescription");
-		mpSaveCost->SetTextAlign(eFontAlign_Center);
-		mpSaveCost->SetDefaultFontColor(cColor(0.5f, 0));
-		mpSaveCost->SetDefaultFontSize(mvTopMenuFontSize*mfTopMenuFontSizeMul * 0.85f);
-		mpSaveCost->SetDefaultFontType(mpFont);
-		mpSaveCost->SetAutogenerateSize(true);
-		mpSaveCost->AddCallback(eGuiMessage_OnDraw, this, kGuiCallback(HardModeTextDraw));
-		mpSaveCost->SetAutogenerateSize(true);
-		mpSaveCost->SetPosition(mpSaveCost->GetLocalPosition() - cVector3f(mpSaveCost->GetSize().x*0.5f, 0, 0));
-
-		vSaveDescriptionPosition.y += fRowAdd * 0.65f;
-
-		//////////////////////////////////
-		// Tinder inventory label
-		sText = kTranslate("MainMenu", "HardModeTinderboxInInventory");
-		lNumIndex = sText.find(L"#");
-
-		if (lNumIndex != std::wstring::npos)
-		{
-#if MAC_OS || LINUX
-            tWString sNumTinderboxes = tWString(LongToWString(static_cast<long long>(gpBase->mpPlayer->GetTinderboxes())));
-#else
-            tWString sNumTinderboxes = tWString(std::to_wstring(static_cast<long long>(gpBase->mpPlayer->GetTinderboxes())));
-#endif
-            
-			tWString sSubString = sText.substr(lNumIndex + 1, sText.size() - lNumIndex);
-			sText = sText.substr(0, lNumIndex);
-			sText.replace(lNumIndex, sNumTinderboxes.size(), sNumTinderboxes);
-			sText += sSubString;
-		}
-
-		mpNumTinderboxes = mpGuiSet->CreateWidgetLabel(vSaveDescriptionPosition, 0, sText, NULL, "NumTinderboxes");
-		mpNumTinderboxes->SetTextAlign(eFontAlign_Center);
-		mpNumTinderboxes->SetDefaultFontColor(cColor(0.5f, 0));
-		mpNumTinderboxes->SetDefaultFontSize(mvTopMenuFontSize*mfTopMenuFontSizeMul * 0.75f);
-		mpNumTinderboxes->SetDefaultFontType(mpFont);
-		mpNumTinderboxes->SetAutogenerateSize(true);
-		mpNumTinderboxes->AddCallback(eGuiMessage_OnDraw, this, kGuiCallback(HardModeTextDraw));
-		mpNumTinderboxes->SetAutogenerateSize(true);
-		mpNumTinderboxes->SetPosition(mpNumTinderboxes->GetLocalPosition() - cVector3f(mpNumTinderboxes->GetSize().x*0.5f, 0, 0));
-
-		mbFadeInDescription = true;
-		mfDescriptionAlpha = 0.0f;
-		vPos.y += fRowAdd;
-	}
-
-	///////////////
 	//Custom map
-	
+	/*
 	#ifndef LUX_DEMO_VERSION
 		if(	gpBase->mbPTestActivated==false &&
 			gpBase->mpMapHandler->MapIsLoaded()==false) 
@@ -1174,7 +1013,7 @@ void cLuxMainMenu::CreateTopMenuGui()
 			vPos.y += fRowAdd;
 		}
 	#endif
-	
+	*/
 
 	///////////////
 	//Options
@@ -1205,7 +1044,7 @@ void cLuxMainMenu::CreateTopMenuGui()
 		pLabel = mpGuiSet->CreateWidgetLabel(vPos,0,kTranslate("MainMenu","ExitToMainMenu"));
 		pLabel->AddCallback(eGuiMessage_MouseDown,this, kGuiCallback(PressExitToMainMenu));
 
-		if(gpBase->mbPTestActivated==false && gpBase->mpPlayer->IsDead()==false && gpBase->mbHardMode == false)
+		if(gpBase->mbPTestActivated==false && gpBase->mpPlayer->IsDead()==false )
 		{
 			// Set up label right above
 			SetupTopMenuLabel(pLabel);
@@ -1227,17 +1066,6 @@ void cLuxMainMenu::CreateTopMenuGui()
 	mpLastFocusedItem = mvTopMenuLabels.front();
 	mpGuiSet->SetDefaultFocusNavWidget(mpLastFocusedItem);
 	mpGuiSet->SetFocusedWidget(mpLastFocusedItem);
-
-	////////////////////////////////
-	// HARDMODE - Disable focus when save is disabled
-	if (pSaveLabel && pSaveLabel->IsEnabled() == false)
-	{
-		iWidget* pWidgetAbove = pSaveLabel->GetFocusNavigation(eUIArrow_Up);
-		iWidget* pWidgetBelow = pSaveLabel->GetFocusNavigation(eUIArrow_Down);
-
-		pWidgetAbove->SetFocusNavigation(eUIArrow_Down, pWidgetBelow);
-		pWidgetBelow->SetFocusNavigation(eUIArrow_Up, pWidgetAbove);
-	}
 }
 
 //-----------------------------------------------------------------------
@@ -1448,10 +1276,8 @@ void cLuxMainMenu::DestroyBackground()
 
 bool cLuxMainMenu::TopMenuTextMouseEnter(iWidget* apWidget, const cGuiMessageData& aData)
 {
-	if (mbTopMenuVisible) mpGuiSet->SetFocusedWidget(apWidget);
-	
+	if(mbTopMenuVisible) mpGuiSet->SetFocusedWidget(apWidget);
 	//apWidget->SetDefaultFontColor(cColor(232.0f/255.0f, 201.0f/255.0f, 28.0f/255.0f, mfTopMenuAlpha));
-
 	return true;
 }
 kGuiCallbackDeclaredFuncEnd(cLuxMainMenu, TopMenuTextMouseEnter);
@@ -1538,32 +1364,19 @@ bool cLuxMainMenu::PressStartGame(iWidget* apWidget, const cGuiMessageData& aDat
 {
 	if(mbTopMenuVisible==false)
 		return true;
+
+	SetTopMenuVisible(false);
 	
-	/////////////
-	//HARDMODE
+	mpGuiSet->SetDrawFocus(gpBase->mpInputHandler->IsGamepadPresent());
+	cGuiPopUpMessageBox *pPopUp = mpGuiSet->CreatePopUpMessageBox(_W(""),kTranslate("MainMenu","Start a new game?"),
+									kTranslate("MainMenu","Yes"), kTranslate("MainMenu","No"),
+									this,
+									kGuiCallback(ClickedStartGamePopup));
 
-    if (gpBase->mbAllowHardmode == true && gpBase->mpCustomStory == 0)
-	{
-		SetWindowActive(eLuxMainMenuWindow_StartGame);
-		gpBase->mbHardMode = false;
-		return true;
-	}
-	else
-	{
-		SetTopMenuVisible(false);
-	
-		mpGuiSet->SetDrawFocus(gpBase->mpInputHandler->IsGamepadPresent());
-		cGuiPopUpMessageBox *pPopUp = mpGuiSet->CreatePopUpMessageBox(_W(""), kTranslate("MainMenu", "Start a new game?"),
-			kTranslate("MainMenu", "Yes"), kTranslate("MainMenu", "No"),
-			this,
-			kGuiCallback(ClickedStartGamePopup));
+	pPopUp->GetGuiSet()->SetDrawFocus(mpGuiSet->GetDrawFocus());
+	pPopUp->SetKillOnEscapeKey(false);
 
-		pPopUp->GetGuiSet()->SetDrawFocus(mpGuiSet->GetDrawFocus());
-		pPopUp->SetKillOnEscapeKey(false);
-
-		return true;
-	}
-
+	return true;
 }
 kGuiCallbackDeclaredFuncEnd(cLuxMainMenu, PressStartGame);
 
@@ -1695,8 +1508,8 @@ kGuiCallbackDeclaredFuncEnd(cLuxMainMenu, PressExitToMainMenu);
 bool cLuxMainMenu::ClickedExitToMainMenuPopup(iWidget* apWidget, const cGuiMessageData& aData)
 {
 	bool bExit = aData.mlVal ==0 ? true : false;
+	
 	mpGuiSet->SetDrawFocus(false);
-
 	if(bExit)
 	{
 		ExitMenu(eLuxMainMenuExit_QuitToMenu);
@@ -1775,128 +1588,5 @@ bool cLuxMainMenu::PressOptions(iWidget* apWidget, const cGuiMessageData& aData)
 }
 kGuiCallbackDeclaredFuncEnd(cLuxMainMenu, PressOptions);
 
-//-----------------------------------------------------------------------
-
-//////////////////////
-// HARDMODE
-bool cLuxMainMenu::PressSaveGame(iWidget* apWidget, const cGuiMessageData& aData)
-{
-	if (mbTopMenuVisible == false)
-		return true;
-
-	SetTopMenuVisible(false);
-
-	////////////////////////////
-	// Get translation and insert cost
-	tWString sText = kTranslate("MainMenu", "HardModeSavePopup");
-	size_t lNumIndex = sText.find(L"#");
-	sText.replace(lNumIndex, gsHardMode_SaveCostString.size(), gsHardMode_SaveCostString);
-
-	mpGuiSet->SetDrawFocus(gpBase->mpInputHandler->IsGamepadPresent());
-	cGuiPopUpMessageBox *pPopUp = mpGuiSet->CreatePopUpMessageBox(_W(""), sText,
-		kTranslate("MainMenu", "Save"), kTranslate("Global", "Cancel"),
-		this,
-		kGuiCallback(ClickedSaveGamePopup));
-	
-	pPopUp->GetGuiSet()->SetDrawFocus(mpGuiSet->GetDrawFocus());
-	pPopUp->SetKillOnEscapeKey(false);
-
-	return true;
-}
-kGuiCallbackDeclaredFuncEnd(cLuxMainMenu, PressSaveGame);
 
 //-----------------------------------------------------------------------
-
-bool cLuxMainMenu::ClickedSaveGamePopup(iWidget* apWidget, const cGuiMessageData& aData)
-{
-	bool bSave = aData.mlVal == 0 ? true : false;
-	
-	mpGuiSet->SetDrawFocus(false);
-	SetTopMenuVisible(true);
-
-	if (bSave == false)
-		return true;
-
-	///////////////////////////
-	// Get num tinderboxes
-	int lNumTinderboxes = gpBase->mpPlayer->GetTinderboxes();
-
-	///////////////////////////
-	// decrement tinderboxes
-	if (lNumTinderboxes < 4)
-		return true;
-
-	gpBase->mpPlayer->SetTinderboxes(cMath::Max(0, lNumTinderboxes - 4));
-
-	///////////////////////////
-	// Save game
-	gpBase->mpSaveHandler->HardModeSave();
-
-	//////////////////////////
-	// Update Labels
-	tWString sText = kTranslate("MainMenu", "HardModeTinderboxInInventory");
-	size_t lNumIndex = sText.find(L"#");
-
-	if (lNumIndex != std::wstring::npos)
-	{
-#if MAC_OS || LINUX
-        tWString sNumTinderboxes = tWString(LongToWString(static_cast<long long>(gpBase->mpPlayer->GetTinderboxes())));
-
-#else
-        tWString sNumTinderboxes = tWString(std::to_wstring(static_cast<long long>(gpBase->mpPlayer->GetTinderboxes())));
-
-#endif
-		tWString sSubString = sText.substr(lNumIndex + 1, sText.size() - lNumIndex);
-		sText = sText.substr(0, lNumIndex);
-		sText.replace(lNumIndex, sNumTinderboxes.size(), sNumTinderboxes);
-		sText += sSubString;
-	}
-	cVector3f vGlobalPos = mpNumTinderboxes->GetGlobalPosition();
-	vGlobalPos.x = mvTopMenuStartPosInGame.x;
-	mpNumTinderboxes->SetText(sText);
-	mpNumTinderboxes->SetGlobalPosition(vGlobalPos);
-	mpNumTinderboxes->SetPosition(mpNumTinderboxes->GetLocalPosition() - cVector3f(mpNumTinderboxes->GetSize().x*0.5f, 0, 0));
-
-	///////////////////////////
-	// Get save label
-#if MAC_OS || LINUX
-    cWidgetLabel* pSaveLabel = 0;
-#else
-    cWidgetLabel* pSaveLabel = nullptr;
-#endif
-	for (size_t i = 0; i < mvTopMenuLabels.size(); ++i)
-	{
-		if (mvTopMenuLabels[i]->GetName() == "Save")
-		{
-			pSaveLabel = mvTopMenuLabels[i];
-			break;
-		}
-	}
-
-	if (pSaveLabel)
-	{
-		///////////////////////////
-		// Set save label disabled
-		pSaveLabel->SetEnabled(false);
-
-		iWidget* pWidgetAbove = pSaveLabel->GetFocusNavigation(eUIArrow_Up);
-		iWidget* pWidgetBelow = pSaveLabel->GetFocusNavigation(eUIArrow_Down);
-
-		pWidgetAbove->SetFocusNavigation(eUIArrow_Down, pWidgetBelow);
-		pWidgetBelow->SetFocusNavigation(eUIArrow_Up, pWidgetAbove);
-
-	}
-
-	return true;
-}
-kGuiCallbackDeclaredFuncEnd(cLuxMainMenu, ClickedSaveGamePopup);
-
-//-----------------------------------------------------------------------
-
-bool cLuxMainMenu::HardModeTextDraw(iWidget* apWidget, const cGuiMessageData& aData)
-{
-	apWidget->SetDefaultFontColor(cColor(mfDescriptionAlpha, mfTopMenuAlpha));
-	return false;
-}
-kGuiCallbackDeclaredFuncEnd(cLuxMainMenu, HardModeTextDraw);
-

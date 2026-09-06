@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxItemType.h"
@@ -288,7 +288,7 @@ tWString cLuxItemType_Lantern::GetDisplayedNameAdd(cLuxInventory_Item *apItem)
 cLuxItemType_Health::cLuxItemType_Health() : iLuxItemType("Health", eLuxItemType_Health)
 {
 	mbHasCount = true;
-	mlMaxCount = 99;
+	mlMaxCount = 1;
 }
 
 bool cLuxItemType_Health::BeforeAddItem(cLuxInventory_Item *apItem)
@@ -335,57 +335,14 @@ bool cLuxItemType_Sanity::BeforeAddItem(cLuxInventory_Item *apItem)
 
 void cLuxItemType_Sanity::OnUse(cLuxInventory_Item *apItem, int alSlotIndex)
 {
-	float fSanity = gpBase->mpPlayer->GetSanity();
-	if(fSanity >= 100) return;
+	float fInfection = gpBase->mpPlayer->GetInfection();
+	if(fInfection <= 0.0f) return;
 
-	gpBase->mpPlayer->AddSanity(apItem->GetAmount());
+	gpBase->mpPlayer->AddInfection(-apItem->GetAmount());
 	gpBase->mpInventory->RemoveItem(apItem);
 
-	gpBase->mpHelpFuncs->PlayGuiSoundData("ui_use_sanity", eSoundEntryType_Gui);
+	gpBase->mpHelpFuncs->PlayGuiSoundData("ui_use_healthkit", eSoundEntryType_Gui);
 }
-
-//-----------------------------------------------------------------------
-
-//////////////////////////////////////////////////////////////////////////
-// LAMP OIL
-//////////////////////////////////////////////////////////////////////////
-
-//-----------------------------------------------------------------------
-
-cLuxItemType_LampOil::cLuxItemType_LampOil()  : iLuxItemType("LampOil", eLuxItemType_LampOil)
-{
-	mbHasCount = true;
-	mlMaxCount = 99;
-}
-
-bool cLuxItemType_LampOil::BeforeAddItem(cLuxInventory_Item *apItem)
-{
-	gpBase->mpHintHandler->Add("PickOil", kTranslate("Hints", "PickOil"), 0);
-
-	return false;
-}
-
-void cLuxItemType_LampOil::OnUse(cLuxInventory_Item *apItem, int alSlotIndex)
-{
-	cLuxInventory *pInventory = gpBase->mpInventory;
-	if(pInventory->HasItemOfType(eLuxItemType_Lantern)==false)
-	{
-		pInventory->SetMessageText(kTranslate("Inventory","OilNeedsLantern"),0);
-		return;
-	}
-
-	float fLampOil = gpBase->mpPlayer->GetLampOil();
-	if(fLampOil >= 100) return;
-
-	fLampOil += apItem->GetAmount();
-	if(fLampOil > 100) fLampOil = 100;
-	gpBase->mpPlayer->SetLampOil(fLampOil);
-	pInventory->RemoveItem(apItem);
-
-	gpBase->mpHelpFuncs->PlayGuiSoundData("ui_use_oil", eSoundEntryType_Gui);
-}
-
-//-----------------------------------------------------------------------
 
 //////////////////////////////////////////////////////////////////////////
 // TINDERBOX

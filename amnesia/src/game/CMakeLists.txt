@@ -5,16 +5,15 @@ file(GLOB all_sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
     *.cpp
     *.h
 )
-file(GLOB serial_source RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
-    LuxCopyProtection.cpp
-    LuxKeyEntry.cpp
-    ../serial_gen/SerialGenAlgo.cpp
+file(GLOB excluded_sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
+    LuxInsanityHandler.cpp
+    LuxProp_OilBarrel.cpp
 )
-list(REMOVE_ITEM all_sources ${serial_source})
+list(REMOVE_ITEM all_sources ${excluded_sources})
 
 if (APPLE)
     set(mac_assets
-        Lux.icns
+        aamfp.icns
     )
     list(APPEND all_sources
         ${mac_assets}
@@ -33,13 +32,7 @@ if(USE_GAMEPAD)
 	list(APPEND compile_defs USE_GAMEPAD)
 	list(APPEND demo_compile_defs USE_GAMEPAD)
 endif()
-option(AMNESIA_WITH_SERIAL "Enable Serial Key Checking" OFF)
-if(AMNESIA_WITH_SERIAL)
-	list(APPEND compile_defs COPY_PROTECTION_ENABLED)
-	set(full_sources ${all_sources} ${serial_source})
-else()
-	set(full_sources ${all_sources})
-endif()
+set(full_sources ${all_sources})
 
 
 add_executable(Amnesia MACOSX_BUNDLE
@@ -47,14 +40,15 @@ add_executable(Amnesia MACOSX_BUNDLE
 )
 target_link_libraries(Amnesia HPL2)
 set_target_properties(Amnesia PROPERTIES
+	OUTPUT_NAME "AmnesiaAMFP"
 	COMPILE_DEFINITIONS "${compile_defs}"
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Game-Info.plist"
-	MACOSX_BUNDLE_ICON_FILE "Lux.icns"
+	MACOSX_BUNDLE_ICON_FILE "aamfp.icns"
 	MACOSX_BUNDLE_BUNDLE_VERSION ${VERSION}
 	MACOSX_BUNDLE_SHORT_VERSION_STRING ${VERSION}
-	MACOSX_BUNDLE_GUI_IDENTIFIER "com.frictionalgames.Amnesia"
-	MACOSX_BUNDLE_DISPLAY_NAME "Amnesia"
-    MACOSX_BUNDLE_BUNDLE_NAME "Amnesia: The Dark Descent"
+	MACOSX_BUNDLE_GUI_IDENTIFIER "com.frictionalgames.aamfp-game"
+	MACOSX_BUNDLE_DISPLAY_NAME "AmnesiaAMFPLauncher"
+    MACOSX_BUNDLE_BUNDLE_NAME "Amnesia: A Machine for Pigs"
 )
 
 IF(APPLE)
@@ -71,13 +65,14 @@ add_executable(AmnesiaDemo MACOSX_BUNDLE EXCLUDE_FROM_ALL
 )
 target_link_libraries(AmnesiaDemo HPL2)
 set_target_properties(AmnesiaDemo PROPERTIES
+	OUTPUT_NAME "AmnesiaAMFPDemo"
 	COMPILE_DEFINITIONS "${demo_compile_defs}"
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Game-Info.plist"
-	MACOSX_BUNDLE_ICON_FILE "Lux.icns"
+	MACOSX_BUNDLE_ICON_FILE "aamfp.icns"
 	MACOSX_BUNDLE_BUNDLE_VERSION ${VERSION}
 	MACOSX_BUNDLE_SHORT_VERSION_STRING "${VERSION}-demo"
-	MACOSX_BUNDLE_GUI_IDENTIFIER "com.frictionalgames.AmnesiaDemo"
-    MACOSX_BUNDLE_BUNDLE_NAME "Amnesia: The Dark Descent"
+	MACOSX_BUNDLE_GUI_IDENTIFIER "com.frictionalgames.aamfp-game-demo"
+    MACOSX_BUNDLE_BUNDLE_NAME "Amnesia: A Machine for Pigs"
 )
 
 IF(APPLE)

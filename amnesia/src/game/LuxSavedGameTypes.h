@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef LUX_SAVED_GAME_TYPES_H
@@ -57,40 +57,57 @@ public:
 	int mlPrevTextNumBitFlags;
 };
 
-//----------------------------------------------
-
-class cLuxInsanityHandler_Event_SaveData : public iSerializable
+class cLuxPreloadedSound_SaveData : public iSerializable
 {
-	kSerializableClassInit(cLuxInsanityHandler_Event_SaveData)
+	kSerializableClassInit(cLuxPreloadedSound_SaveData)
 public:
-	bool mbUsed;
-};
-
-//----------------------------------------------
-
-class cLuxInsanityHandler_Set_SaveData : public iSerializable
-{
-	kSerializableClassInit(cLuxInsanityHandler_Set_SaveData)
-public:
-	cLuxInsanityHandler_Set_SaveData(){}
-	cLuxInsanityHandler_Set_SaveData(const tString& asName) : msName(asName){}
-
 	tString msName;
 };
 
+class cLuxSoundManager_SaveData : public iSerializable
+{
+	kSerializableClassInit(cLuxSoundManager_SaveData)
+public:
+	void FromSoundManager(cSoundManager *apData);
+	void ToSoundManager(cSoundManager *apData);
+
+	cContainerList<cLuxPreloadedSound_SaveData> mlstPreloadedSounds;
+};
+
 //----------------------------------------------
 
-class cLuxInsanityHandler_SaveData : public iSerializable
-{
-   kSerializableClassInit(cLuxInsanityHandler_SaveData)
-public:
-	void FromInsanityHandler(cLuxInsanityHandler *apData);
-	void ToInsanityHandler(cLuxMap *apMap, cLuxInsanityHandler *apData);
-	
-	float mfNewEventCount;
-	cContainerVec<cLuxInsanityHandler_Event_SaveData> mvEvents;
-	cContainerVec<cLuxInsanityHandler_Set_SaveData> mvDisabledSets;
-};
+//class cLuxInsanityHandler_Event_SaveData : public iSerializable
+//{
+//	kSerializableClassInit(cLuxInsanityHandler_Event_SaveData)
+//public:
+//	bool mbUsed;
+//};
+//
+////----------------------------------------------
+//
+//class cLuxInsanityHandler_Set_SaveData : public iSerializable
+//{
+//	kSerializableClassInit(cLuxInsanityHandler_Set_SaveData)
+//public:
+//	cLuxInsanityHandler_Set_SaveData(){}
+//	cLuxInsanityHandler_Set_SaveData(const tString& asName) : msName(asName){}
+//
+//	tString msName;
+//};
+//
+////----------------------------------------------
+//
+//class cLuxInsanityHandler_SaveData : public iSerializable
+//{
+//   kSerializableClassInit(cLuxInsanityHandler_SaveData)
+//public:
+//	void FromInsanityHandler(cLuxInsanityHandler *apData);
+//	void ToInsanityHandler(cLuxMap *apMap, cLuxInsanityHandler *apData);
+//	
+//	float mfNewEventCount;
+//	cContainerVec<cLuxInsanityHandler_Event_SaveData> mvEvents;
+//	cContainerVec<cLuxInsanityHandler_Set_SaveData> mvDisabledSets;
+//};
 
 
 //----------------------------------------------
@@ -174,7 +191,15 @@ public:
 
 	tString msVoiceOverCallback;
 	cContainerVec<cLuxVoiceData> mvVoiceData;
+	cContainerVec<cTextQueueEntry> mvTextQueue;
 	bool mbVoiceActive;
+	float mfVoice_ElapsedTime;
+	tString msVoice_Name;
+	float mfVoice_MinDistance;
+	float mfVoice_MaxDistance;
+	cVector3f mvVoice_Position;
+	bool mbVoice_3D;
+	tString msEffect_Name;
 
 	cContainerVec<cLuxEffectHandler_SoundMul_SaveData> mvGlobalSoundVolumeMul;
 	cContainerVec<cLuxEffectHandler_SoundMul_SaveData> mvGlobalSoundSpeedMul;
@@ -245,8 +270,11 @@ public:
 	int mlLastReadTextCat;
 	int mlLastReadTextEntry;
 	int mlLastReadTextType;
+	int mlLastReadHint;
+	int mlLastReadDocument;
 
 	cContainerVec<cLuxNote> mvNotes;
+	cContainerVec<cLuxHint> mvHints;
 	cContainerVec<cLuxJournal_DiaryCont_SaveData>  mvDiaryConts;
 	cContainerVec<cLuxQuestNote> mvQuestNotes;
 };
@@ -322,6 +350,9 @@ class cLuxFlashbackData_SaveData : public iSerializable
 public:
 	tString msFile;
 	tString msCallback;
+
+    cLuxFlashbackData_SaveData() {};
+    ~cLuxFlashbackData_SaveData() {};
 };
 
 class cLuxPlayer_SaveData : public iSerializable
@@ -341,8 +372,7 @@ public:
 
 	float mfHealth;
 	float mfTerror;
-	float mfSanity;
-	float mfLampOil;
+	float mfInfection;
 	int mlCoins;
 	int mlTinderboxes;
 
@@ -354,7 +384,8 @@ public:
 
 	bool mbJumpDisabled;
 	bool mbCrouchDisabled;
-	bool mbSanityDrainDisabled;
+
+    bool mbUsesDragFootsteps;
 
 	float mfInteractionMoveSpeedMul;
 	float mfEventMoveSpeedMul;
@@ -362,9 +393,8 @@ public:
 	float mfScriptMoveSpeedMul;
 	float mfScriptRunSpeedMul;
 	float mfHurtMoveSpeedMul;
-	float mfInsanityCollapseSpeedMul;
-
-	float mfScriptJumpForceMul;
+	float mfInfectionCollapseSpeedMul;
+	float mfStaminaSpeedMul;
 
 	float mfLookSpeedMul;
 
@@ -380,6 +410,11 @@ public:
 	float mfRollSpeedMul;
 	float mfRollMaxSpeed;
 
+    bool mbFadingPitch;
+    float mfPitchGoal;
+    float mfPitchSpeedMul;
+    float mfPitchMaxSpeed;
+
 	cVector3f mvCamAnimPos;
 	cVector3f mvCamAnimPosGoal;
 	float mfCamAnimPosSpeedMul;
@@ -393,9 +428,14 @@ public:
 
 	bool mbLanternOn;
 	bool mbLanternDisabled;
-
+	bool mbLanternFlickering;
+	float mfLanternFlickeringSpeed;
+	
 	tString msDeathHintCat;
 	tString msDeathHintEntry;
+
+	bool mbRandomEscapeFail;
+	int mlRandomEscapeFailCount;
 
 	bool mbSpawnPSActive;
 	tString mbSpawnPSFile;
@@ -407,13 +447,13 @@ public:
 	tString msFlashbackCallback;
 	cContainerList<cLuxFlashbackData_SaveData> mlstFlashbackQueue;
 
-	bool mbInsanityCollapse_Active;
-	int mlInsanityCollapse_State;
-	float mfInsanityCollapse_HeightAdd;
-	float mfInsanityCollapse_Roll;
-	float mfInsanityCollapse_T;
+	bool mbInfectionCollapse_Active;
+	int mlInfectionCollapse_State;
+	float mfInfectionCollapse_HeightAdd;
+	float mfInfectionCollapse_Roll;
+	float mfInfectionCollapse_Timer;
 
-	float mfSanity_AtLowSanityCount;
+	float mfSanity_TimeAtHighInfection;
 
 	bool mbLookAt_Active;
 	cVector3f mvLookAt_TargetPos;
@@ -426,8 +466,6 @@ public:
 	float mfLookAt_FovSpeed;
 	float mfLookAt_FovMaxSpeed;
 
-	bool mfDarkness_Active;
-
 	cVector3f mvCameraAngles;
 	cEngineCharacterBody_SaveData mCharBody;
 
@@ -435,6 +473,24 @@ public:
 	float mfPitchMinLimit;
 	float mfYawMaxLimit;
 	float mfYawMinLimit;
+
+	bool mbVoiceFlashback_IsDelaying;
+	bool mbVoiceFlashback_IsPlaying;
+	bool mbVoiceFlashback_UseEffects;
+	bool mbVoiceFlashback_ObstructMovement;
+	 
+	float mfVoiceFlashback_EffectFadeInTime;			
+	float mfVoiceFlashback_EffectFadeOutTime;			
+	float mfVoiceFlashback_SepiaAmount	;			
+	float mfVoiceFlashback_LightFadeAmount	;		
+	float mfVoiceFlashback_ImageTrailAmount;			
+	float mfVoiceFlashback_BlurStartDistance;			
+	float mfVoiceFlashback_BlurAmount;			
+	float mfVoiceFlashback_FovMultiplier;		
+	float mfVoiceFlashback_MoveSpeedMultiplier;		
+	float mfVoiceFlashback_MouseSensitivityModifier;
+	
+	tString msVoiceFlashback_StopSound;				
 
 	cContainerVec<cLuxHeadPosAdd> mvHeadPosAdds;
 
@@ -452,10 +508,6 @@ class cLuxSaveGame_SaveData: public iSerializable
 public:
 	cLuxSaveGame_SaveData();
 	
-	//////////////////////
-	//HARDMODE
-	bool mbHardmode;
-
     tString msMapFolder;
 	cLuxSavedMap mMap;
 
@@ -466,8 +518,9 @@ public:
 	cLuxEffectHandler_SaveData mEffectHandler;
 	cLuxGlobalDataHandler_SaveData mGlobalDataHandler;
 	cLuxHintHandler_SaveData mHintHandler;
-	cLuxInsanityHandler_SaveData mInsanityHandler;
+	//cLuxInsanityHandler_SaveData mInsanityHandler;
 	cLuxLoadScreenHandler_SaveData mLoadScreenHandler;
+	cLuxSoundManager_SaveData mSoundManager;
 
 	cLuxSavedGameMapCollection *mpSavedMaps;
 };

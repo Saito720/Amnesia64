@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxSavedEngineTypes.h"
@@ -48,13 +48,13 @@ void cEngineCharacterBody_SaveData::ToBody(iCharacterBody *apBody)
 {
 	apBody->SetActive(mbActive);
 	apBody->SetMass(mfMass);
-	apBody->SetPosition(mvPosition);
 	apBody->SetYaw(mfYaw);
 	apBody->SetPitch(mfPitch);
 	apBody->SetMoveSpeed(eCharDir_Forward, mfSpeedForward);
 	apBody->SetMoveSpeed(eCharDir_Right, mfSpeedRight);
 	apBody->SetForceVelocity(mvForceVelocity);
 	apBody->SetActiveSize(mlActiveSize);
+	apBody->SetPosition(mvPosition);
 }
 
 //------------------------------------------------------------------------
@@ -455,6 +455,7 @@ void cEngineMeshEntity_SaveData::FromMeshEntity(cMeshEntity *apMeshEntity)
 	mbVisible = apMeshEntity->IsVisible();
 	mfIlluminationAmount = apMeshEntity->GetIlluminationAmount();
 	m_mtxTransform = apMeshEntity->GetLocalMatrix();
+	mbUpdateWhenCulled = apMeshEntity->GetUpdateBonesWhenCulled();
 
 	mvAnimations.Resize(apMeshEntity->GetAnimationStateNum());
 	//if(mvAnimations.Size()>0) Log("Saving anims  for '%s'\n", apMeshEntity->GetName().c_str());
@@ -480,6 +481,7 @@ void cEngineMeshEntity_SaveData::ToMeshEntity(cMeshEntity *apMeshEntity)
 	apMeshEntity->SetVisible(mbVisible);
 	apMeshEntity->SetIlluminationAmount(mfIlluminationAmount);
 	apMeshEntity->SetMatrix(m_mtxTransform);
+	apMeshEntity->SetUpdateBonesWhenCulled(mbUpdateWhenCulled);
 	
 	//If not equal, something is wrong so skip!
 	if(mvAnimations.Size() == apMeshEntity->GetAnimationStateNum())
@@ -508,6 +510,7 @@ void cEngineMeshEntity_SaveData::ToMeshEntity(cMeshEntity *apMeshEntity)
 kBeginSerializeBase(cEngineMeshEntity_SaveData)
 kSerializeVar(mbActive, eSerializeType_Bool)
 kSerializeVar(mbVisible, eSerializeType_Bool)
+kSerializeVar(mbUpdateWhenCulled, eSerializeType_Bool)
 kSerializeVar(mfIlluminationAmount, eSerializeType_Float32)
 kSerializeVar(m_mtxTransform, eSerializeType_Matrixf)
 kSerializeClassContainer(mvAnimations, cEngineAnimationState_SaveData, eSerializeType_Class)
@@ -731,7 +734,7 @@ void cEnginePS_SaveData::FromPS(cParticleSystem *apPS)
 		{
 			iParticleEmitter *pEmitter = apPS->GetEmitter(i);
 
-			if(pEmitter->IsDying() || pEmitter->IsDead())
+			if(pEmitter->IsDying() && mbActive || pEmitter->IsDead())
 			{
 				mvEmitterActive[i].mbActive = false;
 			}
@@ -960,6 +963,28 @@ void cEngineLight_SaveData::FromLight(iLight *apLight)
 		mfFlickerOffFadeMinLength = apLight->GetFlickerOffFadeMinLength();
 		mfFlickerOffFadeMaxLength = apLight->GetFlickerOffFadeMaxLength();
 	}
+	else
+	{
+		mDiffuseColor = apLight->GetDiffuseColor();
+		mfFarAttenuation = apLight->GetRadius();
+
+		mbFlickering = false;
+		msFlickerOffSound = "";
+		msFlickerOnSound = "";
+		msFlickerOffPS = "";
+		msFlickerOnPS = "";
+		mfFlickerOnMinLength = 0;
+		mfFlickerOffMinLength = 0;
+		mfFlickerOnMaxLength = 0;
+		mfFlickerOffMaxLength = 0;
+		mFlickerOffColor = cColor(1,1);
+		mfFlickerOffRadius = 1;
+		mbFlickerFade = false;
+		mfFlickerOnFadeMinLength = 1;
+		mfFlickerOnFadeMaxLength = 1;
+		mfFlickerOffFadeMinLength = 1;
+		mfFlickerOffFadeMaxLength = 1;
+	}
 }
 
 //------------------------------------------------------------------------
@@ -985,6 +1010,9 @@ void cEngineLight_SaveData::ToLight(iLight *apLight)
 		//TODO: Attach billboards.
 
 		apLight->SetFlickerActive(mbFlickering);
+		
+		if(mbFlickering)
+		{
 		apLight->SetFlicker(mFlickerOffColor,mfFlickerOffRadius,
 			mfFlickerOnMinLength,mfFlickerOnMaxLength,
 			msFlickerOnSound,msFlickerOnPS,
@@ -992,6 +1020,7 @@ void cEngineLight_SaveData::ToLight(iLight *apLight)
 			msFlickerOffSound,msFlickerOffPS,
 			mbFlickerFade,mfFlickerOnFadeMinLength,mfFlickerOnFadeMaxLength,
 			mfFlickerOffFadeMinLength, mfFlickerOffFadeMaxLength);
+		}
 	}
 }
 

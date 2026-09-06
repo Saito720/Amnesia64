@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "system/Platform.h"
@@ -196,6 +196,24 @@ namespace hpl {
 		return date;
 	}
 
+    static struct tm GMTimeFromDate(cDate aDate)
+	{
+		struct tm time;
+
+        memset(&time, 0, sizeof(time));
+
+		time.tm_sec = aDate.seconds;
+		time.tm_min = aDate.minutes;
+		time.tm_hour = aDate.hours;
+		time.tm_mday = aDate.month_day;
+		time.tm_mon = aDate.month;
+		time.tm_year = aDate.year - 1900;
+		time.tm_wday = aDate.week_day;
+		time.tm_yday = aDate.year_day;
+
+		return time;
+	}
+
 	cDate cPlatform::FileModifiedDate(const tWString& asFilePath)
 	{
 		struct tm pClock;
@@ -223,6 +241,34 @@ namespace hpl {
 		cDate date = DateFromGMTime(&pClock);
 
 		return date;
+	}
+
+    void cPlatform::SetFileModifiedDate(const tWString& asFilePath, cDate aDate)
+	{
+		struct tm time = GMTimeFromDate(aDate);
+
+		//////////////
+		// To global time
+		time_t gmt = timegm(&time);
+
+        struct timeval times[2];
+
+        memset(times, 0, sizeof(times));
+        times[0].tv_sec = gmt;
+        times[1].tv_sec = gmt;
+
+        utimes(cString::S16BitToUTF8(asFilePath).c_str(), times);
+	}
+
+	void cPlatform::SetFileModifiedDate(const tWString& asFilePath, unsigned long long aUTime)
+	{
+        struct timeval times[2];
+
+        memset(times, 0, sizeof(times));
+        times[0].tv_sec = aUTime;
+        times[1].tv_sec = aUTime;
+
+        utimes(cString::S16BitToUTF8(asFilePath).c_str(), times);
 	}
 
 	//-----------------------------------------------------------------------
@@ -371,7 +417,7 @@ namespace hpl {
 
 		sMess += text;
 
-#if defined(__APPLE__) && (HPL_MINIMAL || !SDL_VERSION_ATLEAST(2,0,0))
+#ifdef __APPLE__
 		OSXAlertBox(eType, cString::To8Char(asCaption), cString::To8Char(sMess));
 #elif SDL_VERSION_ATLEAST(2,0,0)
 		Uint32 type = SDL_MESSAGEBOX_WARNING;
@@ -464,16 +510,22 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
+    tWString OSXGetAppDataDir();
 	tWString cPlatform::GetSystemSpecialPath(eSystemPath aPathType)
 	{
 		switch (aPathType)
 		{
 			case eSystemPath_Personal: {
+                tWString sDir;
+#if defined(__APPLE__)
+                sDir = OSXGetAppDataDir();
+#else
 				const char *home = getenv("HOME");
-				tWString sDir = cString::To16Char(tString(home));
+				sDir = cString::To16Char(tString(home));
 				if (cString::GetLastCharW(sDir) != _W("/")) {
 					sDir += _W("/");
 				}
+#endif
 				return sDir;
 			}
 			default:
@@ -502,7 +554,7 @@ namespace hpl {
 #else
 		pid_t pID = fork();
 		if (pID == 0) {// child
-			execlp("xdg-open", "xdg-open", cString::To8Char(asURL).c_str(), (char *)0);
+			execlp("/bin/bash", "xdg-open", "xdg-open", cString::To8Char(asURL).c_str(), (char *)0);
 			exit(1);
 		} else if (pID < 0) { // Failed
 			Error("Could not Open URL %ls\n", asURL.c_str());

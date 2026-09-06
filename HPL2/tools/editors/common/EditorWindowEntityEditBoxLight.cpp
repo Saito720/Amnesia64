@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "EditorWindowEntityEditBoxLight.h"
@@ -39,6 +39,7 @@ cEditorWindowEntityEditBoxLight::cEditorWindowEntityEditBoxLight(cEditorEditMode
 
 	mpInpRadius = NULL;
 	mpGroupShadows = NULL;
+	mpInpPriority = NULL;
 
 	// Box Light specific
 	mpComboBoxBlendFunc = NULL;
@@ -97,8 +98,6 @@ void cEditorWindowEntityEditBoxLight::Create()
 	vPos.y += mpInpPosition->GetSize().y+5;
 	mpGroupGobo->SetPosition(vPos);
 	vPos.y += mpGroupGobo->GetSize().y + 5;
-	mpGroupFalloff->SetPosition(vPos);
-	vPos.y += mpGroupFalloff->GetSize().y + 5;
 	mpGroupDiffuse->SetPosition(vPos);
 }
 
@@ -107,12 +106,12 @@ void cEditorWindowEntityEditBoxLight::Create()
 void cEditorWindowEntityEditBoxLight::AddPropertyGobo(cWidgetTab *apParentTab)
 {
 	mpGroupGobo = mpSet->CreateWidgetDummy(0,apParentTab);
-
+	AddWidget(mpGroupGobo);
 	cVector3f vPos = cVector3f(0,0,0.1f);
 
 
 	mpInpGobo = CreateInputFile(vPos, _W("Gobo"), "", mpGroupGobo, 120);
-	mpInpGobo->SetInitialPath(mpEditor->GetMainLookUpDir(eDir_Lights));
+	mpInpGobo->SetInitialPath(mpEditor->GetFolderFullPath(eEditorDir_Lights));
 	mpInpGobo->SetBrowserType(eEditorResourceType_Texture);
 	if(mpLight->GetLightType()==eEditorEntityLightType_Point)
 		mpInpGobo->SetBrowserSubType(eEditorTextureResourceType_CubeMap);
@@ -135,11 +134,14 @@ void cEditorWindowEntityEditBoxLight::AddPropertyGobo(cWidgetTab *apParentTab)
 
 void cEditorWindowEntityEditBoxLight::AddPropertyFalloffMap(cWidgetTab* apParentTab)
 {
+	/*
 	mpGroupFalloff = mpSet->CreateWidgetDummy(0,apParentTab);
+	AddWidget(mpGroupFalloff);
 
 	mpInpFalloffMap = CreateInputFile(cVector3f(0,0,0.1f), _W("Falloff Map"), "", mpGroupFalloff,120);
-	mpInpFalloffMap->SetInitialPath(mpEditor->GetMainLookUpDir(eDir_Lights));
+	mpInpFalloffMap->SetInitialPath(mpEditor->GetFolderFullPath(eEditorDir_Lights));
 	mpInpFalloffMap->SetBrowserSubType(eEditorTextureResourceType_1D);
+	*/
 }
 
 //------------------------------------------------------------
@@ -147,6 +149,7 @@ void cEditorWindowEntityEditBoxLight::AddPropertyFalloffMap(cWidgetTab* apParent
 void cEditorWindowEntityEditBoxLight::AddPropertyRadius(cWidgetTab* apParentTab)
 {
 	mpGroupRadius = mpSet->CreateWidgetDummy(0,apParentTab);
+	AddWidget(mpGroupRadius);
 
 	mpInpRadius = CreateInputNumber(cVector3f(0,0,0.1f), _W("Radius"), "", mpGroupRadius, 50, 0.5f);
 }
@@ -158,8 +161,12 @@ void cEditorWindowEntityEditBoxLight::AddPropertyDiffuseColor(cWidgetTab* apPare
 	cColor col = mpLight->GetDiffuseColor();
 
 	mpGroupDiffuse= mpSet->CreateWidgetDummy(0,apParentTab);
+	AddWidget(mpGroupDiffuse);
 
 	mpInpDiffuse = CreateInputColorFrame(cVector3f(0,0,0.1f), _W("Diffuse color"), "", mpGroupDiffuse);
+
+	mpInpBrightness = CreateInputNumber(cVector3f(0,16,0.1f), _W("Brightness"), "", mpGroupDiffuse);
+	mpInpFalloff = CreateInputNumber(cVector3f(0,48,0.1f), _W("Falloff"), "", mpGroupDiffuse);
 }
 
 //------------------------------------------------------------
@@ -169,6 +176,7 @@ void cEditorWindowEntityEditBoxLight::AddPropertyDiffuseColor(cWidgetTab* apPare
 void cEditorWindowEntityEditBoxLight::AddPropertyCastShadows(cWidgetTab* apParentTab)
 {
 	mpGroupShadows = mpSet->CreateWidgetDummy(0, apParentTab);
+	AddWidget(mpGroupShadows);
 
 	cVector3f vPos = cVector3f(0,0,0.1f);
 
@@ -200,6 +208,7 @@ void cEditorWindowEntityEditBoxLight::AddPropertySetFlicker(cWidgetTab* apParent
 	// On Parameters
 	vPos.y += mpInpFlickerActive->GetSize().y;
 	mpGFlickerOn = mpSet->CreateWidgetDummy(vPos, apParentTab);
+	AddWidget(mpGFlickerOn);
 
 	vPos = cVector3f(0,0,0.1f);
 	
@@ -213,16 +222,17 @@ void cEditorWindowEntityEditBoxLight::AddPropertySetFlicker(cWidgetTab* apParent
 	// Time Params
 	mpInpFlickerOnSound = CreateInputFile(vPos, _W("On Sound"), "", mpGFlickerOn);
 	mpInpFlickerOnSound->SetBrowserType(eEditorResourceType_Sound);
-	mpInpFlickerOnSound->SetInitialPath(mpEditor->GetMainLookUpDir(eDir_Sounds));
+	mpInpFlickerOnSound->SetInitialPath(mpEditor->GetFolderFullPath(eEditorDir_Sounds));
 	vPos.y += mpInpFlickerOnSound->GetSize().y;
 	mpInpFlickerOnPS = CreateInputFile(vPos, _W("On PS"), "", mpGFlickerOn);
 	mpInpFlickerOnPS->SetBrowserType(eEditorResourceType_ParticleSystem);
-	mpInpFlickerOnPS->SetInitialPath(mpEditor->GetMainLookUpDir(eDir_Particles));
+	mpInpFlickerOnPS->SetInitialPath(mpEditor->GetFolderFullPath(eEditorDir_Particles));
 
 	////////////////////////////////////////////
 	// Off Parameters
 	vPos = mpGFlickerOn->GetLocalPosition() + cVector3f(0,mpGFlickerOn->GetSize().y + 10,0);
 	mpGFlickerOff = mpSet->CreateWidgetDummy(vPos, apParentTab);
+	AddWidget(mpGFlickerOff);
 
 	// Radius
 	vPos = cVector3f(0,0,0.1f);
@@ -236,16 +246,12 @@ void cEditorWindowEntityEditBoxLight::AddPropertySetFlicker(cWidgetTab* apParent
 	// Time Params
 	mpInpFlickerOffSound = CreateInputFile(vPos, _W("Off Sound"), "", mpGFlickerOff);
 	mpInpFlickerOffSound->SetBrowserType(eEditorResourceType_Sound);
-	mpInpFlickerOffSound->SetInitialPath(mpEditor->GetMainLookUpDir(eDir_Sounds));
-
+	mpInpFlickerOffSound->SetInitialPath(mpEditor->GetFolderFullPath(eEditorDir_Sounds));
 	vPos.y += mpInpFlickerOffSound->GetSize().y;
-
 	mpInpFlickerOffPS = CreateInputFile(vPos, _W("Off PS"), "", mpGFlickerOff);
 	mpInpFlickerOffPS->SetBrowserType(eEditorResourceType_ParticleSystem);
-	mpInpFlickerOffPS->SetInitialPath(mpEditor->GetMainLookUpDir(eDir_Particles));
-
+	mpInpFlickerOffPS->SetInitialPath(mpEditor->GetFolderFullPath(eEditorDir_Particles));
 	vPos.y += mpInpFlickerOffPS->GetSize().y + 10;
-
 	mpInpFlickerOffRadius = CreateInputNumber(vPos, _W("Off Radius"), "", mpGFlickerOff, 50, 0.1f);
 	vPos.y += mpInpFlickerOffRadius->GetSize().y + 10;
 	mpInpFlickerOffColor = CreateInputColorFrame(vPos, _W("Off Color"), "", mpGFlickerOff);
@@ -255,6 +261,7 @@ void cEditorWindowEntityEditBoxLight::AddPropertySetFlicker(cWidgetTab* apParent
 	vPos = mpGFlickerOff->GetLocalPosition() + cVector3f(0,mpGFlickerOff->GetSize().y + 10,0);
 	
 	mpGFlickerFade = mpSet->CreateWidgetDummy(vPos, apParentTab);
+	AddWidget(mpGFlickerFade);
 
 	vPos = cVector3f(0,0,0.1f);
 
@@ -308,12 +315,17 @@ void cEditorWindowEntityEditBoxLight::AddPropertySetBox(cWidgetTab* apParentTab)
 	//mvLabelScale[3]->SetText(_W("Size"));
 
 	mpLabelBlendFunc = mpSet->CreateWidgetLabel(vPos,0,_W("Blend Function"), apParentTab);
-
+	AddWidget(mpLabelBlendFunc);
 	vPos.y+= 15;
 	mpComboBoxBlendFunc = mpSet->CreateWidgetComboBox(vPos,cVector2f(90,25),_W(""),apParentTab);
 	mpComboBoxBlendFunc->AddItem(_W("Replace"));
 	mpComboBoxBlendFunc->AddItem(_W("Add"));
 	mpComboBoxBlendFunc->AddCallback(eGuiMessage_SelectionChange,this,kGuiCallback(InputCallback));
+	AddWidget(mpComboBoxBlendFunc);
+
+	vPos.y+= 25;
+
+	mpInpPriority = CreateInputNumber(vPos, _W("Priority"), "", apParentTab, 50, 1.0f);
 }
 
 //------------------------------------------------------------
@@ -345,7 +357,7 @@ void cEditorWindowEntityEditBoxLight::AddPropertySetSpot(cWidgetTab* apParentTab
 	vPos.y += mpInpSpotFOV->GetSize().y + 10;
 
 	mpInpSpotFalloffMap = CreateInputFile(vPos, _W("Spot Falloff Map"), "", apParentTab);
-	mpInpSpotFalloffMap->SetInitialPath(mpEditor->GetMainLookUpDir(eDir_Lights));
+	mpInpSpotFalloffMap->SetInitialPath(mpEditor->GetFolderFullPath(eEditorDir_Lights));
 	mpInpSpotFalloffMap->SetBrowserSubType(eEditorTextureResourceType_1D);
 }
 
@@ -363,11 +375,6 @@ void cEditorWindowEntityEditBoxLight::OnUpdate(float afTimeStep)
 		mpInpGobo->SetValue(cString::To16Char(mpLight->GetGoboFilename()),false);
 		((iEditorInput*)mpInpGoboAnimMode)->SetValue(cString::To16Char(mpLight->GetGoboAnimMode()), false);
 		mpInpGoboAnimFrameTime->SetValue(mpLight->GetGoboAnimFrameTime(), false);
-	}
-		
-	if(mpGroupFalloff)
-	{
-		mpInpFalloffMap->SetValue(cString::To16Char(mpLight->GetFalloffMap()), false);
 	}
 
 	/////////////////////////////////////////////
@@ -412,9 +419,14 @@ void cEditorWindowEntityEditBoxLight::OnUpdate(float afTimeStep)
 	mpInpFlickerFadeOffMinLength->SetValue(mpLight->GetFlickerOffFadeMinLength(), false);
 	mpInpFlickerFadeOffMaxLength->SetValue(mpLight->GetFlickerOffFadeMaxLength(), false);
 
+	mpInpBrightness->SetValue(mpLight->GetBrightness(), false);
+	mpInpFalloff->SetValue(mpLight->GetFalloff(), false);
+
 	if(mpInpRadius) mpInpRadius->SetValue(mpLight->GetRadius(), false);
 
 	if(mpComboBoxBlendFunc) mpComboBoxBlendFunc->SetSelectedItem( ((cEntityWrapperLightBox*)mpLight)->GetBlendFunc(),false,false );
+
+	if(mpInpPriority) mpInpPriority->SetValue(((cEntityWrapperLightBox*)mpLight)->GetPriority(),false);
 
 	int lightType = mpLight->GetLightType();
 	////////////
@@ -498,18 +510,6 @@ bool cEditorWindowEntityEditBoxLight::WindowSpecificInputCallback(iEditorInput* 
 	{
 		pAction = mpEntity->CreateSetPropertyActionFloat(eLightFloat_GoboAnimFrameTime, mpInpGoboAnimFrameTime->GetValue());
 	}
-	///////////////////////////////////
-	// Falloff map file
-	else if(apInput==mpInpFalloffMap)
-	{
-		strFilename = cString::To8Char(mpInpFalloffMap->GetValue());
-
-		if(strFilename=="" || cEditorHelper::LoadTextureResource(eEditorTextureResourceType_1D, strFilename, NULL))
-			pAction = mpEntity->CreateSetPropertyActionString(eLightStr_FalloffMap, strFilename);
-		else
-			mpInpFalloffMap->SetValue(_W(""), false);
-	}
-
 	///////////////////////////////////
 	// Shadow related
 
@@ -667,17 +667,20 @@ bool cEditorWindowEntityEditBoxLight::WindowSpecificInputCallback(iEditorInput* 
 		pAction = mpEntity->CreateSetPropertyActionFloat(eLightSpotFloat_NearClipPlane, mpInpSpotNearClipPlane->GetValue());
 	}
 
-	// Spot Falloff Map
-	else if(apInput==mpInpSpotFalloffMap)
+	//BOX
+	else if(apInput==mpInpPriority)
 	{
-		strFilename = cString::To8Char(mpInpFalloffMap->GetValue());
-
-		if(strFilename=="" || cEditorHelper::LoadTextureResource(eEditorTextureResourceType_1D, strFilename, NULL))
-		{
-			pAction = mpEntity->CreateSetPropertyActionString(eLightSpotStr_FalloffMap, cString::To8Char(mpInpSpotFalloffMap->GetValue()));
-		}
-		else
-			mpInpFalloffMap->SetValue(_W(""), false);
+		pAction = mpEntity->CreateSetPropertyActionInt(eLightBoxInt_Priority, int(mpInpPriority->GetValue()));
+	}
+	// Brightness
+	else if(apInput==mpInpBrightness)
+	{
+		pAction = mpEntity->CreateSetPropertyActionFloat(eLightFloat_Brightness, mpInpBrightness->GetValue());
+	}
+	// Falloff
+	else if(apInput==mpInpFalloff)
+	{
+		pAction = mpEntity->CreateSetPropertyActionFloat(eLightFloat_Falloff, mpInpFalloff->GetValue());
 	}
 
 	mpEditor->AddAction(pAction);

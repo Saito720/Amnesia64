@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "resources/BinaryBuffer.h"
@@ -23,19 +23,23 @@
 #include "system/String.h"
 #include "system/Platform.h"
 #include <cstring>
+#include <algorithm>
+#include <cstdint>
 
 #include "math/CRC.h"
 
 // Include SDL Endian code
-#ifdef USE_SDL2
-#include <SDL2/SDL_endian.h>
+#if USE_SDL2
+#include "SDL2/SDL_stdinc.h"
+#include "SDL2/SDL_endian.h"
 #else
-#include <SDL/SDL_endian.h>
+#include "SDL/SDL_endian.h"
 #endif
+#include <errno.h>
 
 #include <zlib.h>
 
-// @todo Evil quick and dirty check to Prevent me from building 64-bit until I fix this code
+// Primitive widths are part of the binary file format.
 SDL_COMPILE_TIME_ASSERT(int, sizeof(int) == 4);
 SDL_COMPILE_TIME_ASSERT(short, sizeof(short) == 2);
 SDL_COMPILE_TIME_ASSERT(float, sizeof(float) == 4);
@@ -57,6 +61,17 @@ inline static float UnSwabFloat32(int i) {
     dat1.i = SDL_SwapLE32(dat1.i);
     return dat1.f;
 }
+
+
+//-----------------------------------------------------------------------
+
+//Data chunk size, size must equal 2^bits
+#define DATA_CHUNK_BITS 24
+#define DATA_CHUNK_SIZE 16777216
+
+SDL_COMPILE_TIME_ASSERT(int, (1 << DATA_CHUNK_BITS) == DATA_CHUNK_SIZE);
+
+//----------------------------------------------------------------------
 
 
 namespace hpl {
@@ -81,7 +96,11 @@ namespace hpl {
 
 	cBinaryBuffer::~cBinaryBuffer()
 	{
-		hplFree(mpData);
+		for(size_t i = 0; i < mvDataChunks.size(); ++i)
+		{
+			if(mvDataChunks[i]) hplFree(mvDataChunks[i]);
+		}
+		mvDataChunks.clear();
 	}
 
 	//-----------------------------------------------------------------------
@@ -114,7 +133,8 @@ namespace hpl {
 		FILE *pFile = cPlatform::OpenFile(asFile,_W("rb"));
 		if(pFile==NULL)
 		{
-			Error("Could not open binary file '%s'\n", cString::To8Char(asFile).c_str());
+			//Error("Could not open binary file '%s'\n", cString::To8Char(asFile).c_str());
+			Error("Could not open binary file '%ls'\n", asFile.c_str());
 			return false;
 		}
 
@@ -124,28 +144,38 @@ namespace hpl {
 		size_t lFileSize = ftell(pFile);
 		rewind(pFile);
 
-		////////////////////////////
-		// Set up memory
-		hplFree(mpData);
-		mpData = (char*)hplMalloc(lFileSize);
-		if (mpData == NULL)
+		// Check if file is 0-sized
+		if(lFileSize==0)
 		{
-			Error("Failed to allocate %zu bytes\n", lFileSize);
+			Error("Binary file '%ls' is 0-byte sized\n", asFile.c_str());
 			return false;
 		}
+
+		////////////////////////////
+		// Set up memory
+		Clear();
+		Reserve(lFileSize);
 		mlDataSize = lFileSize;
 		mlReservedDataSize = lFileSize;
 		mlDataPos =0;
+		size_t lOut = 0;
 
 		////////////////////////////
 		// Load data from file
-		size_t lOut = fread(mpData, mlDataSize, 1, pFile);
+		for(size_t i = 0; i < mvDataChunks.size(); ++i)
+		{
+			size_t lChunkSize = lFileSize < DATA_CHUNK_SIZE ? lFileSize : DATA_CHUNK_SIZE;
+			lOut += fread(mvDataChunks[i], lChunkSize, 1, pFile);
+			lFileSize -= lChunkSize;
+		}
+
 		fclose(pFile);
 
 		//No bytes written
 		if(lOut == 0)
 		{
-			Error("Could not read from binary file '%s'\n", cString::To8Char(asFile).c_str());
+			//Error("Could not read from binary file '%s'\n", cString::To8Char(asFile).c_str());
+			Error("Could not read from binary file '%ls'\n", asFile.c_str());
 			return false;
 		}
 		
@@ -175,8 +205,16 @@ namespace hpl {
 			Error("Could not open binary file '%s'\n", cString::To8Char(asFile).c_str());
 			return false;
 		}
+
+		size_t lOut = 0;
+		size_t lSize = mlDataSize;
+		for(size_t i = 0; i < mvDataChunks.size(); ++i)
+		{
+			size_t lChunkSize = lSize < DATA_CHUNK_SIZE ? lSize : DATA_CHUNK_SIZE;
+			lOut += fwrite(mvDataChunks[i], lChunkSize, 1, pFile);
+			lSize -= lChunkSize;
+		}
 		
-		size_t lOut = fwrite(mpData, mlDataSize, 1, pFile);
 		fclose(pFile);
 
 		//No bytes written
@@ -195,15 +233,31 @@ namespace hpl {
 	{
 		////////////////////////////
 		// Set up memory
-		hplFree(mpData);
-		mpData = (char*)hplMalloc(alSize);
+		Clear();
+		Reserve(alSize);
 		mlDataSize = alSize;
 		mlReservedDataSize = alSize;
 		mlDataPos =0;
 
 		////////////////////////////
 		// Load from string
-		cString::DecodeDataFromTextString(asInputData, mpData, alSize);
+		size_t lEndChunk = alSize >> DATA_CHUNK_BITS;
+		size_t lOffset = 0;
+
+		for(size_t i = 0; i <= lEndChunk && alSize > 0; ++i)
+		{
+			/////////////////
+			// Get the offset to the data in the chunk and the size of the data to read from this chunk
+			size_t lChunk = alSize < DATA_CHUNK_SIZE ? alSize : DATA_CHUNK_SIZE;
+
+			cString::DecodeDataFromTextString(&asInputData[lOffset], mvDataChunks[i], lChunk);
+
+			//////////
+			// Setup the size and offset for the next chunk
+			mlDataPos += lChunk;
+			lOffset += lChunk;
+			alSize -= lChunk;
+		}
 	}
 
 	//-----------------------------------------------------------------------
@@ -211,7 +265,23 @@ namespace hpl {
 
 	void cBinaryBuffer::SaveToCharEncode(tString& asOutputData)
 	{
-		cString::EncodeDataToTextString(mpData, mlDataSize, asOutputData);
+		size_t lSize = mlDataSize;
+
+		for(size_t i = 0; i < mvDataChunks.size(); ++i)
+		{
+			/////////////////
+			// Get the size of the data to read from this chunk
+			size_t lChunk = lSize < DATA_CHUNK_SIZE ? lSize : DATA_CHUNK_SIZE;
+
+			tString sEncodedData;
+			cString::EncodeDataToTextString(mvDataChunks[i], lChunk, sEncodedData);
+			asOutputData += sEncodedData;
+
+			//////////
+			// Setup the size for the next chunk
+			lSize -= lChunk;
+		}
+
 	}
 
 	//-----------------------------------------------------------------------
@@ -220,10 +290,32 @@ namespace hpl {
 	{
 		if(alSize <= mlReservedDataSize) return false;
 		
-		char* pNewData = (char*)hplRealloc(mpData, alSize);
-		if(pNewData==NULL) return false;
+		//////////////
+		// Update the number of chunks
+		size_t lChunks = ((alSize - 1) >> DATA_CHUNK_BITS) + 1;
+		for(size_t i = mvDataChunks.size(); i < lChunks; ++i)
+		{
+			mvDataChunks.push_back(NULL);
+		}
 
-		mpData = pNewData;
+		/////////////
+		// Reserve the data
+		size_t lSize = alSize;
+		for(size_t i = 0; i < lChunks; ++i)
+		{
+			size_t lChunkSize = lSize < DATA_CHUNK_SIZE ? lSize : DATA_CHUNK_SIZE;
+
+			char* pNewData;
+
+			if(mvDataChunks[i]) pNewData = (char*)hplRealloc(mvDataChunks[i], lChunkSize);
+			else				pNewData = (char*)hplMalloc(lChunkSize);
+
+			if(pNewData==NULL) return false;
+			mvDataChunks[i] = pNewData;
+
+			lSize -= lChunkSize;
+		}
+
 		mlReservedDataSize = alSize;
 
 		return true;
@@ -233,16 +325,44 @@ namespace hpl {
 
 	void cBinaryBuffer::Clear()
 	{
-		hplFree(mpData);
+		for(size_t i = 0; i < mvDataChunks.size(); ++i)
+		{
+			if(mvDataChunks[i]) hplFree(mvDataChunks[i]);
+		}
+		mvDataChunks.clear();
 		
 		InitAndAllocData();
 	}
 
 	//-----------------------------------------------------------------------
 
+	char* cBinaryBuffer::GetDataPointerAtPos(size_t alPos)
+	{
+		size_t lChunk = alPos >> DATA_CHUNK_BITS;
+
+		return &mvDataChunks[lChunk][alPos - lChunk * DATA_CHUNK_SIZE];
+	}
+
+	char* cBinaryBuffer::GetDataPointerAtCurrentPos()
+	{
+		size_t lChunk = mlDataPos >> DATA_CHUNK_BITS;
+
+		return &mvDataChunks[lChunk][mlDataPos - lChunk * DATA_CHUNK_SIZE];
+	}
+
+	size_t cBinaryBuffer::GetBytesToChunkEnd()
+	{
+		size_t lChunk = mlDataPos >> DATA_CHUNK_BITS;
+		size_t lPos = mlDataPos - (lChunk << DATA_CHUNK_BITS);
+
+		return DATA_CHUNK_SIZE - lPos;
+	}
+
+	//-----------------------------------------------------------------------
+
 	bool cBinaryBuffer::SetPos(size_t alPos)
 	{
-		if(alPos >= mlDataSize) return false;
+		if(alPos > mlDataSize) return false;
 		
 		mlDataPos = alPos;
 		return true;
@@ -252,7 +372,7 @@ namespace hpl {
 
 	bool cBinaryBuffer::AddPos(size_t alSize)
 	{
-		if(mlDataPos + alSize >= mlDataSize) return false;
+		if(mlDataPos > mlDataSize || alSize > mlDataSize - mlDataPos) return false;
 
 		mlDataPos += alSize;
 		return true;
@@ -262,76 +382,48 @@ namespace hpl {
 
 	bool cBinaryBuffer::CompressAndAdd(char *apSrcData, size_t alSize, int alCompressionLevel, bool abWriteDataSize)
 	{
-		///////////////////////////
-		// Check the parameters
-		if(apSrcData==NULL) return false;
-		if(alCompressionLevel>9) return false;
+		if(apSrcData == NULL || alCompressionLevel > 9) return false;
 
-		///////////////////////////
-		// Write a dummy size for data
-		size_t lStartPos = mlDataPos;
-		if(abWriteDataSize)
-		{
-			AddInt32(0);
-		}
+		z_stream zipStream = {};
+		if(deflateInit(&zipStream, alCompressionLevel < 0 ? Z_DEFAULT_COMPRESSION : alCompressionLevel) != Z_OK)
+			return false;
 
-		///////////////////////////
-		// Set up
-		const size_t lMaxChunkSize = 65536;
+		const size_t lStartPos = mlDataPos;
+		if(abWriteDataSize) AddInt32(0);
+
+		const uInt lMaxChunkSize = 65536;
 		char vOutData[lMaxChunkSize];
-
-		z_stream zipStream;
-		zipStream.zalloc = Z_NULL;
-		zipStream.zfree = Z_NULL;
-		zipStream.opaque = Z_NULL;
-		
-		///////////////////////////
-		// Init compression
-		int ret = deflateInit(&zipStream, alCompressionLevel<0 ? Z_DEFAULT_COMPRESSION : alCompressionLevel);
-		if (ret != Z_OK) return false;
-
-		zipStream.avail_in = (uInt)alSize;
-		zipStream.next_in = (Bytef *)apSrcData;
-
-		///////////////////////////
-		// Compress, chunk by chunk
+		size_t lInputPos = 0;
+		int lRet;
 		do
 		{
-			//Set current output chunk
-			zipStream.avail_out = lMaxChunkSize;
-			zipStream.next_out = (Bytef *)&vOutData[0];
+			if(zipStream.avail_in == 0 && lInputPos < alSize)
+			{
+				const uInt lInputSize = static_cast<uInt>(std::min(alSize - lInputPos, size_t(lMaxChunkSize)));
+				zipStream.next_in = reinterpret_cast<Bytef*>(apSrcData + lInputPos);
+				zipStream.avail_in = lInputSize;
+				lInputPos += lInputSize;
+			}
 
-			//Compress as much as possible to current chunk
-			int lRet = deflate(&zipStream, Z_FINISH);
-			if(lRet == Z_STREAM_ERROR)
+			zipStream.avail_out = lMaxChunkSize;
+			zipStream.next_out = reinterpret_cast<Bytef*>(vOutData);
+			lRet = deflate(&zipStream, lInputPos == alSize ? Z_FINISH : Z_NO_FLUSH);
+			if(lRet != Z_OK && lRet != Z_STREAM_END)
 			{
 				deflateEnd(&zipStream);
 				return false;
 			}
-
-			//Write the chunk to the destination buffer
-			size_t lBytesCopied = lMaxChunkSize - zipStream.avail_out;
-	
-			AddData(vOutData, lBytesCopied);
+			AddData(vOutData, lMaxChunkSize - zipStream.avail_out);
 		}
-		while (zipStream.avail_out == 0);
-
-		///////////////////////////
-		// Exit and clean up.
+		while(lRet != Z_STREAM_END);
 		deflateEnd(&zipStream);
 
-		///////////////////////////
-		// Write a dummy size for data
 		if(abWriteDataSize)
 		{
-			size_t lTotalDataSize = mlDataPos - lStartPos - 4;
-			
-			int *pSizeDataPtr = (int*)mpData[lStartPos];
-			*pSizeDataPtr = (int)lTotalDataSize;
+			const size_t lCompressedSize = mlDataPos - lStartPos - 4;
+			if(lCompressedSize > UINT32_MAX) return false;
+			SetInt32(static_cast<int>(lCompressedSize), lStartPos);
 		}
-
-		//Log("Compress Size: %d\n", mlDataPos - lStartPos);
-
 		return true;
 	}
 
@@ -339,83 +431,77 @@ namespace hpl {
 
 	bool cBinaryBuffer::DecompressAndAdd(char *apSrcData, size_t alSize)
 	{
-		///////////////////////////
-		// Check the parameters
-		if(apSrcData==NULL) return false;
-
-		
-		///////////////////////////
-		// Set up
-		const size_t lMaxChunkSize = 65536;
-		char vOutData[lMaxChunkSize];
-
-		z_stream zipStream;
-		zipStream.zalloc = Z_NULL;
-		zipStream.zfree = Z_NULL;
-		zipStream.opaque = Z_NULL;
-		zipStream.avail_in = (uInt)alSize;
-		zipStream.next_in = (Bytef *)apSrcData;
-		
-		///////////////////////////
-		// Init decompression
-		int ret = inflateInit(&zipStream);
-		if (ret != Z_OK) return false;
-
-		///////////////////////////
-		// Decompress, chunk by chunk
-		do
-		{
-			//Set current output chunk
-			zipStream.avail_out = lMaxChunkSize;
-			zipStream.next_out = (Bytef *)&vOutData[0];
-
-			//Decompress as much as possible to current chunk
-			int ret = inflate(&zipStream, Z_NO_FLUSH);
-			if(ret != Z_OK && ret != Z_STREAM_END)
-			{
-				inflateEnd(&zipStream);
-				return false;
-			}
-
-			//Write the chunk to the destination buffer
-			size_t lBytesCopied = lMaxChunkSize - zipStream.avail_out;
-			AddData(vOutData, lBytesCopied);
-		}
-		while (zipStream.avail_out == 0 && ret != Z_STREAM_END);
-
-		///////////////////////////
-		// Exit and clean up.
-		inflateEnd(&zipStream);
-
-		return true;
+		if(apSrcData == NULL) return false;
+		return DecompressAndAddInternal(apSrcData, alSize, NULL);
 	}
 
 	//-----------------------------------------------------------------------
 
 	bool cBinaryBuffer::DecompressAndAddFromBuffer(cBinaryBuffer *apSrcBuffer, bool abSizeDataWritten)
 	{
-		////////////////////////////////
-		// Get the size of the data
-		size_t lDataSize;
+		if(apSrcBuffer == NULL || apSrcBuffer == this) return false;
+		if(apSrcBuffer->mlDataPos > apSrcBuffer->mlDataSize) return false;
+
+		size_t lDataSize = apSrcBuffer->mlDataSize - apSrcBuffer->mlDataPos;
 		if(abSizeDataWritten)
 		{
-			lDataSize = (size_t)apSrcBuffer->GetInt32();
+			if(lDataSize < 4) return false;
+			lDataSize = apSrcBuffer->GetUnsignedInt32();
+			if(lDataSize > apSrcBuffer->mlDataSize - apSrcBuffer->mlDataPos) return false;
 		}
-		else
+		return DecompressAndAddInternal(NULL, lDataSize, apSrcBuffer);
+	}
+
+	//-----------------------------------------------------------------------
+
+	bool cBinaryBuffer::DecompressAndAddInternal(char *apSrcData, size_t alSize, cBinaryBuffer *apSrcBuffer)
+	{
+		z_stream zipStream = {};
+		if(inflateInit(&zipStream) != Z_OK) return false;
+
+		const uInt lMaxChunkSize = 65536;
+		char vOutData[lMaxChunkSize];
+		size_t lInputPos = 0;
+		int lRet;
+		do
 		{
-			lDataSize = apSrcBuffer->mlDataSize - apSrcBuffer->mlDataPos;
+			if(zipStream.avail_in == 0 && alSize > 0)
+			{
+				size_t lInputSize = std::min(alSize, size_t(lMaxChunkSize));
+				char* pInput;
+				if(apSrcBuffer)
+				{
+					lInputSize = std::min(lInputSize, apSrcBuffer->GetBytesToChunkEnd());
+					pInput = apSrcBuffer->GetDataPointerAtCurrentPos();
+				}
+				else
+				{
+					pInput = apSrcData + lInputPos;
+				}
+				zipStream.next_in = reinterpret_cast<Bytef*>(pInput);
+				zipStream.avail_in = static_cast<uInt>(lInputSize);
+				lInputPos += lInputSize;
+				alSize -= lInputSize;
+			}
+
+			const uInt lInputBefore = zipStream.avail_in;
+			zipStream.avail_out = lMaxChunkSize;
+			zipStream.next_out = reinterpret_cast<Bytef*>(vOutData);
+			lRet = inflate(&zipStream, Z_NO_FLUSH);
+			if(apSrcBuffer) apSrcBuffer->mlDataPos += lInputBefore - zipStream.avail_in;
+			if(lRet != Z_OK && lRet != Z_STREAM_END)
+			{
+				inflateEnd(&zipStream);
+				return false;
+			}
+			AddData(vOutData, lMaxChunkSize - zipStream.avail_out);
 		}
-		//Log("Decompress Size: %d Pos: %d\n", lDataSize, apSrcBuffer->mlDataPos);
+		while(lRet != Z_STREAM_END);
 
-		////////////////////////////////
-		// Decompress the data to current buffer
-		bool bRet = DecompressAndAdd(apSrcBuffer->GetDataPointerAtCurrentPos(), lDataSize);
-		
-		////////////////////////////////
-		// Update the source buffer
-		apSrcBuffer->mlDataPos += lDataSize;
-
-		return bRet;
+		// A complete stream must consume its declared input, including its checksum.
+		const bool bComplete = alSize == 0 && zipStream.avail_in == 0;
+		inflateEnd(&zipStream);
+		return bComplete;
 	}
 
 	//-----------------------------------------------------------------------
@@ -423,11 +509,116 @@ namespace hpl {
 	void cBinaryBuffer::XorTransform(const char* apKeyData, size_t alKeySize)
 	{
 		size_t lCurrentKeyChar =0;
-		for(size_t i=0; i<mlDataSize;++i)
+		size_t lCount = 0;
+
+		for(size_t i=0; i<mvDataChunks.size();++i)
 		{
-			mpData[i] = mpData[i] ^ apKeyData[lCurrentKeyChar];
-			++lCurrentKeyChar;
-			if(lCurrentKeyChar >= alKeySize) lCurrentKeyChar =0;
+			for(size_t j = 0; j < DATA_CHUNK_SIZE && lCount < mlDataSize; ++j, ++lCount)
+			{
+				mvDataChunks[i][j] = mvDataChunks[i][j] ^ apKeyData[lCurrentKeyChar];
+				++lCurrentKeyChar;
+				if(lCurrentKeyChar >= alKeySize) lCurrentKeyChar =0;
+			}
+		}
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cBinaryBuffer::EncryptTEA(const uint32_t alKey[4])
+	{
+		///////////
+		// Make sure the data is 64 bit aligned
+		size_t lAlignment = mlDataSize % 8;
+		if(lAlignment != 0)
+		{
+			//////////
+			// Pad the data
+			mlDataPos = mlDataSize;
+			for(size_t i = 0; i < (8 - lAlignment); ++i)
+			{
+				AddChar(1);
+			}
+		}
+
+		for(size_t c = 0; c * DATA_CHUNK_SIZE < mlDataSize; ++c)
+		{
+			///////////////
+			// Encrypt each chunk
+			size_t lChunkSize = mlDataSize - c * DATA_CHUNK_SIZE;
+			lChunkSize = lChunkSize < DATA_CHUNK_SIZE ? lChunkSize : DATA_CHUNK_SIZE;
+
+			////////
+			// Encrypt the data 64 bits at a time
+			uint32_t* p4ByteData = reinterpret_cast<uint32_t*>(mvDataChunks[c]);
+			size_t lLength = lChunkSize / sizeof(uint32_t);
+			const uint32_t lDelta = 0x9e3779b9;
+
+			for(size_t i = 0; i < lLength; i+= 2)
+			{
+				//////////////
+				// Get data to encrypt
+				uint32_t lValue0 = SDL_SwapLE32(p4ByteData[i]);
+				uint32_t lValue1 = SDL_SwapLE32(p4ByteData[i+1]);
+				uint32_t lSum = 0;
+
+				////////////
+				// Encrypt the data using Tiny Encryption Algorithm (http://en.wikipedia.org/wiki/Tiny_Encryption_Algorithm)
+				for (int j=0; j < 32; j++)
+				{
+					lSum += lDelta;
+					lValue0 += ((lValue1<<4) + alKey[0]) ^ (lValue1 + lSum) ^ ((lValue1>>5) + alKey[1]);
+					lValue1 += ((lValue0<<4) + alKey[2]) ^ (lValue0 + lSum) ^ ((lValue0>>5) + alKey[3]);
+				}
+
+				//////////
+				// Store encrypted values
+				p4ByteData[i] = SDL_SwapLE32(lValue0);
+				p4ByteData[i+1] = SDL_SwapLE32(lValue1);
+			}
+		}
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cBinaryBuffer::DecryptTEA(const uint32_t alKey[4])
+	{
+		if(mlDataSize % 8 != 0) return; //this data isnt 64 bit aligned, not an encrypted source
+
+		for(size_t c = 0; c * DATA_CHUNK_SIZE < mlDataSize; ++c)
+		{
+			///////////////
+			// Decrypt each chunk
+			size_t lChunkSize = mlDataSize - c * DATA_CHUNK_SIZE;
+			lChunkSize = lChunkSize < DATA_CHUNK_SIZE ? lChunkSize : DATA_CHUNK_SIZE;
+
+			////////
+			// Decrypt the data 64 bits at a time
+			uint32_t* p4ByteData = reinterpret_cast<uint32_t*>(mvDataChunks[c]);
+			size_t lLength = lChunkSize / sizeof(uint32_t);
+			const uint32_t lDelta = 0x9e3779b9;
+
+			for(size_t i = 0; i < lLength; i+= 2)
+			{
+				//////////////
+				// Get data to decrypt
+				uint32_t lValue0 = SDL_SwapLE32(p4ByteData[i]);
+				uint32_t lValue1 = SDL_SwapLE32(p4ByteData[i+1]);
+				uint32_t lSum = 0xC6EF3720;
+
+				////////////
+				// Decrypt the data using Tiny Encryption Algorithm (http://en.wikipedia.org/wiki/Tiny_Encryption_Algorithm)
+				for (int j=0; j < 32; j++)
+				{
+					lValue1 -= ((lValue0<<4) + alKey[2]) ^ (lValue0 + lSum) ^ ((lValue0>>5) + alKey[3]);
+					lValue0 -= ((lValue1<<4) + alKey[0]) ^ (lValue1 + lSum) ^ ((lValue1>>5) + alKey[1]);
+					lSum -= lDelta;
+				}
+
+				//////////
+				// Store decrypted values
+				p4ByteData[i] = SDL_SwapLE32(lValue0);
+				p4ByteData[i+1] = SDL_SwapLE32(lValue1);
+			}
 		}
 	}
 
@@ -444,7 +635,7 @@ namespace hpl {
 	unsigned int cBinaryBuffer::AddCRC_End(unsigned int alKey)
 	{
 		unsigned int lCRC = GetCRC(alKey, (int)mlCRCStartPos+4, (int)(mlDataSize - mlCRCStartPos) - 4);
-		*((unsigned int*)GetDataPointerAtPos(mlCRCStartPos)) = lCRC;
+		SetInt32(static_cast<int>(lCRC), mlCRCStartPos);
 
 		mlCRCStartPos =0;
 
@@ -459,8 +650,27 @@ namespace hpl {
 		size_t lDataSize = alCount<0 ? mlDataSize - lDataPos : (size_t)alCount;
 		
 		cCRC crcData(alKey);
-		
-		crcData.PutData(&mpData[lDataPos], lDataSize);
+
+		////////////////
+		// Get the start and end chunk
+		size_t lStartChunk = lDataPos >> DATA_CHUNK_BITS;
+		size_t lEndChunk = (lDataPos + lDataSize) >> DATA_CHUNK_BITS;
+		size_t lOffset = 0;
+
+		for(size_t i = lStartChunk; i <= lEndChunk && lDataSize > 0; ++i)
+		{
+			/////////////////
+			// Get the offset to the data in the chunk and the size of the data to read from this chunk
+			size_t lChunkOffset = lDataPos - (i << DATA_CHUNK_BITS);
+			size_t lChunk = (lDataSize < (DATA_CHUNK_SIZE - lChunkOffset)) ? lDataSize : (DATA_CHUNK_SIZE - lChunkOffset);
+
+			crcData.PutData(mvDataChunks[i] + lChunkOffset, lChunk);
+
+			//////////
+			// Setup the size and offset for the next chunk
+			lDataPos += lChunk;
+			lDataSize -= lChunk;
+		}
 
 		return crcData.Done();
 	}
@@ -469,6 +679,7 @@ namespace hpl {
 
 	bool cBinaryBuffer::CheckInternalCRC(unsigned int alKey, int alCount)
 	{
+		if(mlDataPos > mlDataSize || mlDataSize - mlDataPos < 4) return false;
 		if(alCount>0) alCount = alCount-4; //Skip the first four bytes
 
 		int lSavedCRC = GetInt32();
@@ -484,6 +695,13 @@ namespace hpl {
 		int lCurrentCRC = GetCRC(alKey, -1, alCount);
 
 		return alCRC == lCurrentCRC;
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cBinaryBuffer::AddRawData(void*apData, size_t alSize)
+	{
+		AddData(apData, alSize);
 	}
 
 	//-----------------------------------------------------------------------
@@ -528,6 +746,12 @@ namespace hpl {
 	{
         alX = SDL_SwapLE32(alX);
 		AddData(&alX, sizeof(int));
+	}
+
+	void cBinaryBuffer::AddUnsignedInt32(unsigned int alX)
+	{
+		alX = SDL_SwapLE32(alX);
+		AddData(&alX, sizeof(unsigned int));
 	}
 	
 	//-----------------------------------------------------------------------
@@ -598,7 +822,9 @@ namespace hpl {
 
 	void cBinaryBuffer::AddQuaternion(const cQuaternion& aqX)
 	{
-		AddVector3f(aqX.v);
+		AddFloat32(aqX.v.x);
+		AddFloat32(aqX.v.y);
+		AddFloat32(aqX.v.z);
 		AddFloat32(aqX.w);
 	}
 	
@@ -624,7 +850,9 @@ namespace hpl {
 	
 	//-----------------------------------------------------------------------
 
-/*
+#if 0
+    // Disabling this for now so it is not accidently used
+    // this is not portable across platforms as sizeof(wchar_t) is not the same everywhere
 	void cBinaryBuffer::AddStringW(const tWString& asStr)
 	{
 #ifdef BIGENDIAN
@@ -633,7 +861,7 @@ namespace hpl {
         AddData(asStr.c_str(), sizeof(wchar_t) * (asStr.size()+1) ); //+1 for the zero!
 #endif
 	}
-*/
+#endif
 
 	//-----------------------------------------------------------------------
 
@@ -680,13 +908,29 @@ namespace hpl {
 	void cBinaryBuffer::SetInt32(int alX, size_t alPos)
     {
         //Check if requested position exists.
-        if (alPos + 4 < mlDataSize) {
-            alX = SDL_SwapLE32(alX);
-            memcpy(mpData + alPos, &alX, 4);
+        if (alPos <= mlDataSize && mlDataSize - alPos >= 4) {
+
+			for(int i = 0; i < 4; ++i)
+			{
+				//////////////
+				// Get the chunk and offset for each byte of data
+				char lData = (static_cast<uint32_t>(alX) >> (i*8)) & 0xFF;
+				size_t lChunk = (alPos + i) >> DATA_CHUNK_BITS;
+				size_t lOffset = (alPos + i) - (lChunk << DATA_CHUNK_BITS);
+
+				mvDataChunks[lChunk][lOffset] = lData;
+			}
         }
     }
 
     //-----------------------------------------------------------------------
+
+	void cBinaryBuffer::GetRawData(void*apData, size_t alSize)
+	{
+		GetData(apData, alSize);
+	}
+
+	//-----------------------------------------------------------------------
 
 	char cBinaryBuffer::GetChar()
 	{
@@ -733,6 +977,13 @@ namespace hpl {
 	{
 		int lX;
 		GetData(&lX, sizeof(int));
+		return SDL_SwapLE32(lX);
+	}
+
+	unsigned int cBinaryBuffer::GetUnsignedInt32()
+	{
+		int lX;
+		GetData(&lX, sizeof(unsigned int));
 		return SDL_SwapLE32(lX);
 	}
 	
@@ -810,7 +1061,9 @@ namespace hpl {
 
 	void cBinaryBuffer::GetQuaternion(cQuaternion* apX)
 	{
-		GetVector3f(&apX->v);
+		apX->v.x = GetFloat32();
+		apX->v.y = GetFloat32();
+		apX->v.z = GetFloat32();
 		apX->w = GetFloat32();
 	}
 
@@ -841,7 +1094,9 @@ namespace hpl {
 	}
 
 	//-----------------------------------------------------------------------
-/*
+#if 0
+    // disabling as it is not portable across platforms
+    // sizeof(wchar_t) is not the same on all systems
     void cBinaryBuffer::GetStringW(tWString *apStr)
     {
     #ifdef _WIN32
@@ -862,7 +1117,7 @@ namespace hpl {
         }
     #endif
     }
-*/
+#endif
 
 	//-----------------------------------------------------------------------
 
@@ -906,7 +1161,6 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	
 	//////////////////////////////////////////////////////////////////////////
 	// PRIVATE METHODS
 	//////////////////////////////////////////////////////////////////////////
@@ -920,21 +1174,31 @@ namespace hpl {
 		if(mlDataPos + alSize > mlReservedDataSize)
 		{
 			size_t lNewDataSize = mlDataSize*2 + alSize;
-			char* newData = (char*)hplRealloc(mpData, lNewDataSize);
-			if (newData == NULL)
-			{
-				Error("Failed to allocate %zu bytes\n", lNewDataSize);
-				return;
-			}
-			mpData = newData;
-			mlReservedDataSize = lNewDataSize;
+			Reserve(lNewDataSize);
 		}
 
 		///////////////////////////////////////
 		//Add the data
-		memcpy(mpData + mlDataPos, apData, alSize);
-		mlDataPos += alSize;
-		mlDataSize += alSize;
+		size_t lStartChunk = mlDataPos >> DATA_CHUNK_BITS;
+		size_t lEndChunk = (mlDataPos + alSize) >> DATA_CHUNK_BITS;
+		size_t lOffset = 0;
+
+		for(size_t i = lStartChunk; i <= lEndChunk && alSize > 0; ++i)
+		{
+			/////////////////
+			// Get the offset to the data in the chunk and the size of the data to read from this chunk
+			size_t lChunkOffset = mlDataPos - (i << DATA_CHUNK_BITS);
+			size_t lChunk = alSize < (DATA_CHUNK_SIZE - lChunkOffset) ? alSize : (DATA_CHUNK_SIZE - lChunkOffset);
+
+			memcpy(mvDataChunks[i] + lChunkOffset, ((char*)apData + lOffset), lChunk);
+
+			//////////
+			// Setup the size and offset for the next chunk
+			mlDataPos += lChunk;
+			mlDataSize = std::max(mlDataSize, mlDataPos);
+			lOffset += lChunk;
+			alSize -= lChunk;
+		}
 	}
 
 	//-----------------------------------------------------------------------
@@ -942,18 +1206,39 @@ namespace hpl {
 	bool cBinaryBuffer::GetData(void *apData, size_t alSize)
 	{
 		//Check if there is room left to retrieve data.
-		if(mlDataPos + alSize > mlDataSize)
+		if(mlDataPos > mlDataSize || alSize > mlDataSize - mlDataPos)
 		{
 			mlDataPos = mlDataSize; //Move to EOF!
 			return false;
 		}
 
-		memcpy(apData, mpData+mlDataPos, alSize);
+		////////////////
+		// Get the start and end chunk
+		size_t lStartChunk = mlDataPos >> DATA_CHUNK_BITS;
+		size_t lEndChunk = (mlDataPos + alSize) >> DATA_CHUNK_BITS;
+		size_t lOffset = 0;
 
-		mlDataPos += alSize;
+		for(size_t i = lStartChunk; i <= lEndChunk && alSize > 0; ++i)
+		{
+			/////////////////
+			// Get the offset to the data in the chunk and the size of the data to read from this chunk
+			size_t lChunkOffset = mlDataPos - (i << DATA_CHUNK_BITS);
+			size_t lChunk = (alSize < (DATA_CHUNK_SIZE - lChunkOffset)) ? alSize : (DATA_CHUNK_SIZE - lChunkOffset);
+
+			memcpy(((char*)apData + lOffset), mvDataChunks[i] + lChunkOffset, lChunk);
+
+			//////////
+			// Setup the size and offset for the next chunk
+			mlDataPos += lChunk;
+			lOffset += lChunk;
+			alSize -= lChunk;
+		}
 
 		return true;
 	}
+
+	//-----------------------------------------------------------------------
+
 
 	//-----------------------------------------------------------------------
 	
@@ -962,8 +1247,8 @@ namespace hpl {
 		mlCRCStartPos =0;
 		mlDataPos =0;
 		mlDataSize = 0;
-		mlReservedDataSize = 100;
-		mpData = (char*)hplMalloc(mlReservedDataSize);
+		mlReservedDataSize = 0;
+		Reserve(100);
 	}
 
 	//-----------------------------------------------------------------------

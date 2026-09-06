@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef LUX_BASE_H
@@ -28,10 +28,12 @@
 
 //----------------------------------------------
 
-class cLuxMapHandler;
-class cLuxMapHelper;
 class cLuxInputHandler;
 
+class cLuxMapHandler;
+class cLuxMapHelper;
+
+class iLuxAchievementHandler;
 class cLuxEffectHandler;
 
 class cLuxDebugHandler;
@@ -47,10 +49,10 @@ class cLuxGlobalDataHandler;
 class cLuxHintHandler;
 class cLuxConfigHandler;
 class cLuxPostEffectHandler;
-class cLuxInsanityHandler;
+//class cLuxInsanityHandler;
+class cLuxInfectionHandler;
 class cLuxProgressLogHandler;
 class cLuxLoadScreenHandler;
-class iLuxAchievementHandler;
 
 class cLuxInventory;
 
@@ -165,6 +167,8 @@ public:
 	bool InitMainConfig();
 	void ExitConfig();
 
+	void LoadCloudData();
+
 	cConfigFile* LoadConfigFile(const tWString& asDefaultPath, const tWString& asWantedPath, bool abForceLoadDefault=false, bool *abDidLoadDefault = NULL);
 		
 	bool InitEngine();
@@ -190,7 +194,7 @@ public:
 	void RaiseFirstStartFlag();
 	void LowerFirstStartFlag();
 	bool CheckFirstStartFlag();
-
+	
 	void InitAchievements();
 
 	/////////////////////////
@@ -236,7 +240,8 @@ public:
 	cLuxGlobalDataHandler *mpGlobalDataHandler;
 	cLuxHintHandler *mpHintHandler;
 	cLuxPostEffectHandler *mpPostEffectHandler;
-	cLuxInsanityHandler *mpInsanityHandler;
+	//cLuxInsanityHandler *mpInsanityHandler;
+	cLuxInfectionHandler *mpInfectionHandler;
 	cLuxProgressLogHandler *mpProgressLogHandler;
 	cLuxLoadScreenHandler *mpLoadScreenHandler;
 	cLuxCredits *mpCredits;
@@ -249,6 +254,7 @@ public:
 	bool mbShowPreMenu;
 	bool mbShowMenu;
 
+	tString msCommandLineMapFile;
 	tString msStartMapFile;
 	tString msStartMapFolder;
 	tString msStartMapPos;
@@ -270,13 +276,7 @@ public:
 	cLuxMap *mpCurrentMapLoading;
 
 	/////////////////////////
-	// HARDMODE
-	bool mbHardMode;
-	bool mbAllowHardmode;
-
-	/////////////////////////
 	// Kinda private variables
-	tWString msDefaultInitConfigFile;
 	tWString msInitConfigFile;
 
 	tWString msDefaultMainConfigPath;

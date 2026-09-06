@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "system/Platform.h"
@@ -241,6 +241,76 @@ namespace hpl {
 		cDate date = DateFromGMTime(pClock);
 
 		return date;
+	}
+
+	//-----------------------------------------------------------------------
+	
+	static tm GMTimeFromDate(cDate aDate)
+	{
+		tm time;
+
+		time.tm_sec = aDate.seconds;
+		time.tm_min = aDate.minutes;
+		time.tm_hour = aDate.hours;
+		time.tm_mday = aDate.month_day;
+		time.tm_mon = aDate.month;
+		time.tm_year = aDate.year - 1900; 
+		time.tm_wday = aDate.week_day;
+		time.tm_yday = aDate.year_day;
+		time.tm_isdst = -1;
+
+		return time;
+	}
+
+	void cPlatform::SetFileModifiedDate(const tWString& asFilePath, cDate aDate)
+	{
+		tm time = GMTimeFromDate(aDate);
+
+		//////////////
+		// To global time
+		__time64_t gmttolocal = 1000000;
+		struct tm* pGmtClock = gmtime(&gmttolocal);
+		struct tm* pLocalClock = localtime(&gmttolocal);
+
+		if(pGmtClock && pLocalClock)
+		{
+			/////////////////
+			// Convert gmt to local time
+			time.tm_sec    += pLocalClock->tm_sec  - pGmtClock->tm_sec;
+			time.tm_min	   += pLocalClock->tm_min  - pGmtClock->tm_min;
+			time.tm_hour   += pLocalClock->tm_hour - pGmtClock->tm_hour;
+			time.tm_mday   += pLocalClock->tm_mday - pGmtClock->tm_mday;
+			time.tm_mon	   += pLocalClock->tm_mon  - pGmtClock->tm_mon;
+			time.tm_year   += pLocalClock->tm_year - pGmtClock->tm_year;
+			time.tm_wday   += pLocalClock->tm_wday - pGmtClock->tm_wday;
+			time.tm_yday   += pLocalClock->tm_yday - pGmtClock->tm_yday;
+			
+			__time64_t utctime = mktime(&time);
+
+			//////////////////
+			// Convert to windows file time
+			FILETIME filetime;
+			LONGLONG ll = Int32x32To64(utctime, 10000000) + 116444736000000000;
+			filetime.dwLowDateTime = (DWORD) ll;
+			filetime.dwHighDateTime = ll >>32;
+
+			HANDLE lFile = CreateFile(asFilePath.c_str(), GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_DIRECTORY | FILE_FLAG_BACKUP_SEMANTICS, NULL);
+			SetFileTime(lFile, NULL, NULL, &filetime);
+			CloseHandle(lFile);
+		}
+	}
+
+	void cPlatform::SetFileModifiedDate(const tWString& asFilePath, unsigned long long aUTime)
+	{
+
+		FILETIME filetime;
+		LONGLONG ll = Int32x32To64(aUTime, 10000000) + 116444736000000000;
+		filetime.dwLowDateTime = (DWORD) ll;
+		filetime.dwHighDateTime = ll >>32;
+
+		HANDLE lFile = CreateFile(asFilePath.c_str(), GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_DIRECTORY | FILE_FLAG_BACKUP_SEMANTICS, NULL);
+		SetFileTime(lFile, NULL, NULL, &filetime);
+		CloseHandle(lFile);
 	}
 
 	//-----------------------------------------------------------------------
@@ -567,6 +637,31 @@ namespace hpl {
 	unsigned long cPlatform::GetSystemAvailableDrives()
 	{
 		return _getdrives();
+	}
+
+	//-----------------------------------------------------------------------
+
+	float cPlatform::GetMousePointerSpeed()
+	{
+		/////////////
+		// Retrives mouse pointer speed
+		BOOL bResult;
+		int vMouseInfo[3];    // Array for mouse information
+    
+		// Get the current mouse speed.         
+		bResult = SystemParametersInfo(SPI_GETMOUSESPEED,   // Get mouse information
+									   0,              // Not used
+									   &vMouseInfo,    // Holds mouse information
+									   0);             // Not used
+
+		if(bResult)
+		{
+			return float(vMouseInfo[0]) / 10.0f;
+		}
+		else
+		{
+			return 1.0f;
+		}
 	}
 
 	//-----------------------------------------------------------------------

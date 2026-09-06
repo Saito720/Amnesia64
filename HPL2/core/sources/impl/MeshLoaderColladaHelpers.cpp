@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "impl/MeshLoaderCollada.h"
@@ -37,6 +37,7 @@
 #include "impl/tinyXML/tinyxml.h"
 
 #include "math/Math.h"
+#include <algorithm>
 
 namespace hpl {
 
@@ -77,14 +78,7 @@ namespace hpl {
 
 	cVector3f cMeshLoaderCollada::GetVectorPosFromPtr(float *apVec)
 	{
-		if(mbZToY)
-		{
-			return cVector3f(apVec[0],apVec[2],apVec[1]);
-		}
-		else
-		{
-			return cVector3f(apVec[0],apVec[1],apVec[2]);
-		}
+		return cVector3f(apVec[0],apVec[1],apVec[2]);
 	}
 
 	cVector3f cMeshLoaderCollada::GetVectorRotationFromPtr(float *apVec)
@@ -94,14 +88,7 @@ namespace hpl {
 
 	cVector3f cMeshLoaderCollada::GetVectorScaleFromPtr(float *apVec)
 	{
-		if(mbZToY)
-		{
-			return cVector3f(apVec[0],apVec[2],apVec[1]);
-		}
-		else
-		{
-			return cVector3f(apVec[0],apVec[1],apVec[2]);
-		}
+		return cVector3f(apVec[0],apVec[1],apVec[2]);
 	}
 
 	//-----------------------------------------------------------------------
@@ -957,17 +944,16 @@ namespace hpl {
 		///////////////////////////////////////////
 		//Get properties
 		pNode->msId = cString::ToString(apRootElem->Attribute("id"),"");
-		pNode->msName = cString::ToString(apRootElem->Attribute("name"),"");
+		pNode->msName = cString::ToString(apRootElem->Attribute("name"),pNode->msId);
 		pNode->msSid = cString::ToString(apRootElem->Attribute("sid"),pNode->msId);
 		pNode->msType = cString::ToString(apRootElem->Attribute("type"),"");
 
 		// XXX
-		// Removed as it introduces backwards compatibility issues!!
-		//if(pNode->msName.empty())
-		//{
-		//	pNode->msName = pNode->msId;
-		//	Warning("Scene node with id '%s' has empty name! Setting id as name\n", pNode->msId.c_str());
-		//}
+		if(pNode->msName.empty())
+		{
+			pNode->msName = pNode->msId;
+			Warning("Scene node with id '%s' has empty name! Setting id as name\n", pNode->msId.c_str());
+		}
 
 		/////////////////////////////////////////////
 		//Get source, if there is any.
@@ -1667,6 +1653,7 @@ namespace hpl {
 				Warning("No tex coords for geometry '%s'\n",Geometry.msName.c_str());
 				continue;
 			}
+			if(Geometry.mlTexIdxNum < 0) Geometry.mlTexIdxNum = 0;
 
 			//////////////////////////////
 			// If Z is up axis or the unit scale is not 1, go through all the geometry and convert
@@ -1761,43 +1748,7 @@ namespace hpl {
 
 			////////////////////////////////////
             //Create Tangents
-			tFloatVec vPosVec;  vPosVec.resize(Geometry.mvVertexVec.size() *4);
-			tFloatVec vNormVec; vNormVec.resize(Geometry.mvVertexVec.size() *3);
-			tFloatVec vTexVec;  vTexVec.resize(Geometry.mvVertexVec.size() *3);
-			
-			float *pPosData = &vPosVec[0];
-			float *pNormData = &vNormVec[0];
-			float *pTexData = &vTexVec[0];
-			
-			//Fill vectors
-			for(size_t i=0; i<Geometry.mvVertexVec.size(); ++i)
-			{
-				cVertex &vertex = Geometry.mvVertexVec[i];
-				
-                pPosData[0] = vertex.pos.x;
-				pPosData[1] = vertex.pos.y;
-				pPosData[2] = vertex.pos.z;
-				pPosData[3] = 1;
-
-				pNormData[0] = vertex.norm.x;
-				pNormData[1] = vertex.norm.y;
-				pNormData[2] = vertex.norm.z;
-				
-				pTexData[0] = vertex.tex.x;
-				pTexData[1] = vertex.tex.y;
-				pTexData[2] = vertex.tex.z;
-
-				pPosData +=4;
-				pNormData +=3;
-				pTexData +=3;
-			}
-			
-			//Creates tangents
-			Geometry.mvTangents.resize(Geometry.mvVertexVec.size() *4);
-			cMath::CreateTriTangentVectors( &Geometry.mvTangents[0],
-						&Geometry.mvIndexVec[0], (int)Geometry.mvIndexVec.size(),
-						&vPosVec[0],4, &vTexVec[0],&vNormVec[0],
-						(int)Geometry.mvVertexVec.size());
+			GenerateTangents(Geometry);
 		}
 	}
 
@@ -2365,6 +2316,165 @@ namespace hpl {
 		Warning("Couldn't file image file id '%s'\n",sFileId.c_str());
 
 		return "";
+	}
+
+	//-----------------------------------------------------------------------
+
+	static bool Sort_Optimize(cColladaSortVertex* apA, cColladaSortVertex* apB)
+	{
+		/////////////
+		// Sort after pos, norm, tex
+		if(apA->mVertex.pos == apB->mVertex.pos)
+		{
+			if(apA->mVertex.norm == apB->mVertex.norm)
+			{
+				return apA->mVertex.tex < apB->mVertex.tex;
+			}
+
+			return apA->mVertex.norm < apB->mVertex.norm;
+		}
+
+		return apA->mVertex.pos < apB->mVertex.pos;
+	}
+
+	static bool CompareVertex(cColladaSortVertex* apA, cColladaSortVertex* apB)
+	{
+		return	apA->mVertex.pos == apB->mVertex.pos &&
+				apA->mVertex.norm == apB->mVertex.norm &&
+				apA->mVertex.tex == apB->mVertex.tex;
+	}
+
+	int cMeshLoaderCollada::OptimizeGeometry(tColladaGeometryVec &avColladaGeometryVec)
+	{
+		//////////////////
+		// Optimize the mesh by merging vertices that share texcoord, normal and position
+		std::vector<cColladaSortVertex> vOriginalVertices;
+		std::vector<cColladaSortVertex*> vSortVertices;
+
+		int lOptimization = 0;
+
+		for(size_t i = 0; i < avColladaGeometryVec.size(); ++i)
+		{
+			cColladaGeometry& pGeometry = avColladaGeometryVec[i];
+
+			/////////////////
+			// Prepare the arrays by storing the vertex with the original index
+			for(size_t j = 0; j < pGeometry.mvVertexVec.size(); ++j)
+			{
+				cColladaSortVertex vertex;
+				vertex.mlMergedIndex = j;
+				vertex.mlOriginalIndex = j;
+				vertex.mVertex = pGeometry.mvVertexVec[j];
+
+				vOriginalVertices.push_back(vertex);
+			}
+
+			for(size_t j = 0; j < pGeometry.mvVertexVec.size(); ++j)
+			{
+				vSortVertices.push_back(&vOriginalVertices[j]);
+			}
+			
+			////////////////
+			// Sort data after pairs of vertices
+			std::sort(vSortVertices.begin(), vSortVertices.end(), Sort_Optimize);
+			pGeometry.mvVertexVec.clear();
+			size_t lPairs = 1;
+
+			////////////////
+			// Seach for vertices that share the same pos, norm and tex
+			for(size_t j = 0; j < vSortVertices.size(); j+=lPairs)
+			{
+				// This vertex is the first of its kind, add it to the default vector
+				vSortVertices[j]->mlMergedIndex = -1 - static_cast<int>(pGeometry.mvVertexVec.size());
+				pGeometry.mvVertexVec.push_back(vSortVertices[j]->mVertex);
+
+				///////////////
+				// Search for pairs
+				lPairs = 1;
+				while(j + lPairs < vSortVertices.size() && CompareVertex(vSortVertices[j], vSortVertices[lPairs + j]))
+				{
+					vSortVertices[lPairs + j]->mlMergedIndex = vSortVertices[j]->mlOriginalIndex; // Set the merge id to the original id of this vertex
+					lPairs++;
+				}
+			}
+
+			/////////////
+			// Setup id for mapping the old to the new, needed for bone index and weight
+			for(size_t j = 0; j < vOriginalVertices.size(); ++j)
+			{
+				pGeometry.mvOptimizedVertexId.push_back(vOriginalVertices[j].mlMergedIndex);
+			}
+
+			////////////////
+			// Change the index mapping to the new vertex index
+			for(size_t j = 0; j < pGeometry.mvIndexVec.size(); ++j)
+			{
+				unsigned int lID = pGeometry.mvIndexVec[j];
+				int lMergeID = vOriginalVertices[lID].mlMergedIndex;
+
+				if(lMergeID >= 0)
+				{
+					// This vertex has been merged with another vertex, get the position in the new array from the id of the merged vertex
+					lMergeID = vOriginalVertices[lMergeID].mlMergedIndex;
+				}
+
+				////////////
+				// Set the new index
+				pGeometry.mvIndexVec[j] = -(lMergeID + 1);
+			}
+
+			lOptimization += (vOriginalVertices.size() - pGeometry.mvVertexVec.size());
+
+			vOriginalVertices.clear();
+			vSortVertices.clear();
+		}
+
+		return lOptimization;
+	}
+
+	//-----------------------------------------------------------------------
+	
+	void cMeshLoaderCollada::GenerateTangents(cColladaGeometry &aGeometry)
+	{
+		////////////////////////////////////
+        //Create Tangents
+		tFloatVec vPosVec;  vPosVec.resize(aGeometry.mvVertexVec.size() *4);
+		tFloatVec vNormVec; vNormVec.resize(aGeometry.mvVertexVec.size() *3);
+		tFloatVec vTexVec;  vTexVec.resize(aGeometry.mvVertexVec.size() *3);
+			
+		float *pPosData = &vPosVec[0];
+		float *pNormData = &vNormVec[0];
+		float *pTexData = &vTexVec[0];
+			
+		//Fill vectors
+		for(size_t i=0; i<aGeometry.mvVertexVec.size(); ++i)
+		{
+			cVertex &vertex = aGeometry.mvVertexVec[i];
+				
+            pPosData[0] = vertex.pos.x;
+			pPosData[1] = vertex.pos.y;
+			pPosData[2] = vertex.pos.z;
+			pPosData[3] = 1;
+
+			pNormData[0] = vertex.norm.x;
+			pNormData[1] = vertex.norm.y;
+			pNormData[2] = vertex.norm.z;
+				
+			pTexData[0] = vertex.tex.x;
+			pTexData[1] = vertex.tex.y;
+			pTexData[2] = vertex.tex.z;
+
+			pPosData +=4;
+			pNormData +=3;
+			pTexData +=3;
+		}
+			
+		//Creates tangents
+		aGeometry.mvTangents.resize(aGeometry.mvVertexVec.size() *4);
+		cMath::CreateTriTangentVectors( &aGeometry.mvTangents[0],
+					&aGeometry.mvIndexVec[0], (int)aGeometry.mvIndexVec.size(),
+					&vPosVec[0],4, &vTexVec[0],&vNormVec[0],
+					(int)aGeometry.mvVertexVec.size());
 	}
 
 	//-----------------------------------------------------------------------

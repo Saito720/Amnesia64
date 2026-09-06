@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "EditorWindowEntityEditBoxStaticObject.h"
@@ -86,6 +86,8 @@ void cEditorWindowEntityEditBoxStaticObject::Create()
 	mpInpCastShadows->SetPosition(vPos);
 	vPos.y += mpInpCastShadows->GetSize().y+5;
 	mpInpCollides->SetPosition(vPos);
+	vPos.y += mpInpCastShadows->GetSize().y+5;
+	mpInpIsOccluder->SetPosition(vPos);
 }
 
 //----------------------------------------------------------------------------
@@ -100,6 +102,7 @@ void cEditorWindowEntityEditBoxStaticObject::AddPropertySetStaticObject(cWidgetT
 {
 	mpInpCastShadows = CreateInputBool(0, _W("Cast shadows"), "", apParentTab);
 	mpInpCollides = CreateInputBool(0, _W("Collides"), "", apParentTab);
+	mpInpIsOccluder = CreateInputBool(0, _W("IsOccluder"), "", apParentTab);
 }
 
 //----------------------------------------------------------------------------
@@ -125,6 +128,10 @@ bool cEditorWindowEntityEditBoxStaticObject::WindowSpecificInputCallback(iEditor
 	{
 		pAction = mpEntity->CreateSetPropertyActionBool( eStaticObjectBool_Collides, mpInpCollides->GetValue());
 	}
+	else if(apInput==mpInpIsOccluder)
+	{
+		pAction = mpEntity->CreateSetPropertyActionBool( eStaticObjectBool_IsOccluder, mpInpIsOccluder->GetValue());
+	}
 
 	mpEditor->AddAction(pAction);
 
@@ -138,9 +145,10 @@ void cEditorWindowEntityEditBoxStaticObject::OnUpdate(float afTimeStep)
 	cEditorWindowEntityEditBox::OnUpdate(afTimeStep);
 
 	mpInpMeshFile->SetValue(cString::To16Char(mpEntity->GetFilename()), false);
-	mpInpMeshFile->GetInputWidget()->SetToolTip(mpEditor->GetPathRelToWD(mpInpMeshFile->GetFullPath()));
+	mpInpMeshFile->GetInputWidget()->SetToolTip(mpEditor->GetFilePathRelativeToWorkingDirW(mpInpMeshFile->GetFullPath()));
 	mpInpCastShadows->SetValue(mpEntity->GetCastShadows(), false);
 	mpInpCollides->SetValue(mpEntity->GetCollides(), false);
+	mpInpIsOccluder->SetValue(mpEntity->IsOccluder(), false);
 }
 
 //----------------------------------------------------------------------------

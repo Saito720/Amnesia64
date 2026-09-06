@@ -1,6 +1,6 @@
 /*
    AngelCode Scripting Library
-   Copyright (c) 2003-2010 Andreas Jonsson
+   Copyright (c) 2003-2012 Andreas Jonsson
 
    This software is provided 'as-is', without any express or implied 
    warranty. In no event will the authors be held liable for any 
@@ -47,13 +47,17 @@
 
 BEGIN_AS_NAMESPACE
 
+struct asSNameSpace;
+
 class asCObjectProperty
 {
 public:
+	asCObjectProperty() {accessMask = 0xFFFFFFFF;}
 	asCString   name;
 	asCDataType type;
 	int         byteOffset;
 	bool		isPrivate;
+	asDWORD     accessMask;
 };
 
 class asCGlobalProperty
@@ -74,6 +78,7 @@ public:
 	asCString          name;
 	asCDataType        type;
 	asUINT             id;
+	asSNameSpace      *nameSpace;
 
 	void SetInitFunc(asCScriptFunction *initFunc);
 	asCScriptFunction *GetInitFunc();
@@ -90,13 +95,12 @@ public:
 	void       *realAddress;
 
 	bool        memoryAllocated;
-	union
-	{
-		void       *memory;
-		asQWORD     storage;
-	};
+	void       *memory;
+	asQWORD     storage;
 
 	asCScriptFunction *initFunc;
+
+	asDWORD accessMask;
 
 	// The global property structure is reference counted, so that the
 	// engine can keep track of how many references to the property there are.

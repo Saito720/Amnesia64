@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef HPL_GRAPHICS_TYPES_H
@@ -98,9 +98,9 @@ namespace hpl {
 	#define eAnimTransformFlag_Rotate		(0x00000002)
 	#define eAnimTransformFlag_Scale		(0x00000004)
 	
-	#define klNumOfAnimTransformFlags (2)
+	#define klNumOfAnimTransformFlags (3)
 
-	const tAnimTransformFlag kvAnimTransformFlags[] = {eAnimTransformFlag_Translate, eAnimTransformFlag_Rotate};
+	const tAnimTransformFlag kvAnimTransformFlags[] = {eAnimTransformFlag_Translate, eAnimTransformFlag_Rotate, eAnimTransformFlag_Scale};
 
 	//-----------------------------------------
 
@@ -553,6 +553,7 @@ namespace hpl {
 		eMaterialTexture_Alpha,
 		eMaterialTexture_Height,
 		eMaterialTexture_Illumination,
+		eMaterialTexture_IlluminationModulate,
 		eMaterialTexture_CubeMap,
 		eMaterialTexture_DissolveAlpha,
 		eMaterialTexture_CubeMapAlpha,
@@ -596,6 +597,7 @@ namespace hpl {
 		eMaterialRenderMode_DiffuseFog,		//Transparent pass with fog.
 		eMaterialRenderMode_Light,			//Not used by deferred shader.
 		eMaterialRenderMode_Illumination,	//Illumination textures.
+		eMaterialRenderMode_IlluminationModulate,	//Illumination textures modulated by another texture.
 		eMaterialRenderMode_IlluminationFog,//Illumination with fog (used by transperant textures)
 		eMaterialRenderMode_LastEnum,
 	};
@@ -697,6 +699,7 @@ namespace hpl {
 	#define eRenderListCompileFlag_Translucent	(0x00000004)
 	#define eRenderListCompileFlag_Decal		(0x00000008)
 	#define eRenderListCompileFlag_Illumination	(0x00000010)
+	#define eRenderListCompileFlag_Z_Dissolve	(0x00000020)
 
 	enum eRenderListType
 	{
@@ -705,6 +708,7 @@ namespace hpl {
 		eRenderListType_Translucent,
 		eRenderListType_Decal,
 		eRenderListType_Illumination,
+		eRenderListType_Z_Dissolve,
 		eRenderListType_LastEnum
 	};
 
@@ -877,6 +881,9 @@ namespace hpl {
 
 
 	class cBoneState;
+
+	typedef std::vector<cBoneState*> tBoneStateVec;
+	typedef tBoneStateVec::iterator tBoneStateVecIt;
 
 	typedef std::vector<cBoneState*> tNodeStateVec;
 	typedef tNodeStateVec::iterator tNodeStateVecIt;

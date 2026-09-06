@@ -1,22 +1,21 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 
 #include "DirectoryHandler.h"
 
@@ -38,11 +37,6 @@ cLookupDirectory::cLookupDirectory(const tWString& asDir, bool abAddSubDirs)
 }
 
 //-------------------------------------------------------------------------
-#ifdef __APPLE__
-namespace hpl {
-	extern tString FindGameResources();
-}
-#endif
 
 cDirectoryHandler::cDirectoryHandler(iEditorBase* apEditor)
 {
@@ -52,35 +46,20 @@ cDirectoryHandler::cDirectoryHandler(iEditorBase* apEditor)
 	msHomeDir = cString::AddSlashAtEndW(msHomeDir);
 	msHomeDir = cString::ReplaceCharToW(msHomeDir, _W("\\"), _W("/"));
 
-#ifdef __APPLE__
-	// this is ONLY for OS X
-	// Save off current working directory
-	msEditorDir = cPlatform::GetWorkingDir();
-	msEditorDir = cString::AddSlashAtEndW(msEditorDir);
-	msEditorDir = cString::ReplaceCharToW(msEditorDir, _W("\\"), _W("/"));
-
-	// Now find and switch to game directory
-	tString gameDir = FindGameResources();
-	if (gameDir.empty())
-	{
-		exit(1);
-	}
-#endif
-
 	msWorkingDir = cPlatform::GetWorkingDir();
 	msWorkingDir = cString::AddSlashAtEndW(msWorkingDir);
 	msWorkingDir = cString::ReplaceCharToW(msWorkingDir, _W("\\"), _W("/"));
 	tWString sSep = _W("/");  
 	cString::GetStringVecW(msWorkingDir, mvWorkingDirPathSteps, &sSep);
 
-	// Create the base personal folders
-	tWStringVec vDirs;
+    // Create the base personal folders
+    tWStringVec vDirs;
+    SetupBaseDirs(vDirs
 #ifdef USERDIR_RESOURCES
-	SetupBaseDirs(vDirs, _W("HPL2"), _W(""), true);
-#else
-	SetupBaseDirs(vDirs);
+                  , _W(""), true
 #endif
-	CreateBaseDirs(vDirs, msHomeDir);
+                  );
+    CreateBaseDirs(vDirs, msHomeDir);
 }
 
 //-------------------------------------------------------------------------
@@ -89,14 +68,14 @@ void cDirectoryHandler::OnLoadGlobalConfig(cConfigFile* apCfg)
 {
 	////////////////////////////////////////////////
 	// Properly name folders
-	tWString sPersonalDir = msHomeDir;
+    tWString sPersonalDir = msHomeDir;
 #ifdef USERDIR_RESOURCES
-	tWString sUserParentDir = sPersonalDir + PERSONAL_RELATIVEROOT
-			+ apCfg->GetStringW("Directories", "GameHomeDir", PERSONAL_RELATIVEGAME_PARENT);
-	msUserResourceDir = sPersonalDir + PERSONAL_RELATIVEROOT
-			+ apCfg->GetStringW("Directories", "GameHomeDir", PERSONAL_RELATIVEGAME_PARENT)
-			+ PERSONAL_RESOURCES;
-	msUserResourceDir = cString::AddSlashAtEndW(msUserResourceDir);
+    tWString sUserParentDir = sPersonalDir + PERSONAL_RELATIVEROOT
+            + apCfg->GetStringW("Directories", "GameHomeDir", PERSONAL_RELATIVEGAME_PARENT);
+    msUserResourceDir = sPersonalDir + PERSONAL_RELATIVEROOT
+            + apCfg->GetStringW("Directories", "GameHomeDir", PERSONAL_RELATIVEGAME_PARENT)
+            + PERSONAL_RESOURCES;
+    msUserResourceDir = cString::AddSlashAtEndW(msUserResourceDir);
 #endif
 
 	msHomeDir = sPersonalDir + PERSONAL_RELATIVEROOT + apCfg->GetStringW("Directories", "EditorHomeDir", _W("HPL2"));
@@ -112,9 +91,9 @@ void cDirectoryHandler::OnLoadGlobalConfig(cConfigFile* apCfg)
 	// Create folders if they don't exist
 	tWString vDirs[] = { msHomeDir, msTempDir, msThumbnailDir,
 #ifdef USERDIR_RESOURCES
-		sUserParentDir, msUserResourceDir,
+        sUserParentDir, msUserResourceDir,
 #endif
-		_W("") };
+        _W("") };
 	for(int i=0; vDirs[i]!=_W(""); ++i)
 	{
 		if(cPlatform::FolderExists(vDirs[i])==false)

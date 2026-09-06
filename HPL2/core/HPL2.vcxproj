@@ -157,6 +157,7 @@
   <ItemGroup>
     <ClInclude Include="include\impl\GamepadSDL2.h" />
     <ClInclude Include="include\impl\MeshLoaderFBX.h" />
+    <ClInclude Include="..\dependencies\sources\ufbx\ufbx.h" />
     <ClInclude Include="include\gui\GuiPopUpUIKeyboard.h" />
     <ClInclude Include="include\impl\GamepadSDL.h" />
     <ClInclude Include="include\impl\GamepadXInput.h" />
@@ -243,6 +244,7 @@
     <ClInclude Include="include\graphics\MaterialType_Water.h" />
     <ClInclude Include="include\graphics\PostEffect_Bloom.h" />
     <ClInclude Include="include\graphics\PostEffect_ColorConvTex.h" />
+    <ClInclude Include="include\graphics\PostEffect_ColorGrading.h" />
     <ClInclude Include="include\graphics\PostEffect_ImageTrail.h" />
     <ClInclude Include="include\graphics\PostEffect_RadialBlur.h" />
     <ClInclude Include="include\scene\AnimationState.h" />
@@ -328,7 +330,8 @@
     <ClInclude Include="include\impl\LowLevelSystemSDL.h" />
     <ClInclude Include="include\impl\MutexWin32.h" />
     <ClInclude Include="include\impl\scripthelper.h" />
-    <ClInclude Include="include\impl\scriptstring.h" />
+    <ClInclude Include="include\impl\scriptstdstring.h" />
+    <ClInclude Include="include\impl\scriptarray.h" />
     <ClInclude Include="include\impl\SqScript.h" />
     <ClInclude Include="include\impl\ThreadWin32.h" />
     <ClInclude Include="include\impl\TimerSDL.h" />
@@ -488,7 +491,13 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="sources\impl\GamepadSDL2.cpp" />
-    <ClCompile Include="sources\impl\MeshLoaderFBX.cpp" />
+    <ClCompile Include="sources\impl\MeshLoaderFBX.cpp">
+      <AdditionalIncludeDirectories>..\dependencies\sources\ufbx;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\sources\ufbx\ufbx.c">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="sources\gui\GuiPopUpUIKeyboard.cpp" />
     <ClCompile Include="sources\impl\GamepadSDL.cpp" />
     <ClCompile Include="sources\impl\GamepadXInput.cpp" />
@@ -559,6 +568,7 @@
     <ClCompile Include="sources\graphics\MaterialType_Water.cpp" />
     <ClCompile Include="sources\graphics\PostEffect_Bloom.cpp" />
     <ClCompile Include="sources\graphics\PostEffect_ColorConvTex.cpp" />
+    <ClCompile Include="sources\graphics\PostEffect_ColorGrading.cpp" />
     <ClCompile Include="sources\graphics\PostEffect_ImageTrail.cpp" />
     <ClCompile Include="sources\graphics\PostEffect_RadialBlur.cpp" />
     <ClCompile Include="sources\scene\AnimationState.cpp" />
@@ -640,8 +650,9 @@
     <ClCompile Include="sources\impl\MutexWin32.cpp" />
     <ClCompile Include="sources\impl\PlatformWin32.cpp" />
     <ClCompile Include="sources\impl\scripthelper.cpp" />
-    <ClCompile Include="sources\impl\scriptstring.cpp" />
-    <ClCompile Include="sources\impl\scriptstring_utils.cpp" />
+    <ClCompile Include="sources\impl\scriptstdstring.cpp" />
+    <ClCompile Include="sources\impl\scriptarray.cpp" />
+    <ClCompile Include="sources\impl\scriptstdstring_utils.cpp" />
     <ClCompile Include="sources\impl\SqScript.cpp" />
     <ClCompile Include="sources\impl\ThreadWin32.cpp" />
     <ClCompile Include="sources\impl\TimerSDL.cpp" />

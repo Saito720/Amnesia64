@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "input/Input.h"
@@ -30,8 +30,6 @@
 #if USE_XINPUT
 #include "impl/GamepadXInput.h"
 #endif
-
-#include "engine/Engine.h"
 
 namespace hpl 
 {
@@ -62,6 +60,7 @@ namespace hpl
 		Log("--------------------------------------------------------\n");
 
 		STLMapDeleteAll(m_mapActions);
+		STLDeleteAll(mlstGamepads);
 
 		if(mpKeyboard)hplDelete(mpKeyboard);
 		if(mpMouse)hplDelete(mpMouse);
@@ -79,23 +78,8 @@ namespace hpl
 
 	void cInput::Update(float afTimeStep)
 	{
+		
 		mpLowLevelInput->BeginInputUpdate();
-
-		#if USE_XINPUT
-		for(int i=0; i < 4; ++i)
-		{
-			bool bConnected = cGamepadXInput::IsConnected(i);
-
-			if(bConnected == false && cGamepadXInput::GetWasConnected(i))
-			{
-				cEngine::SetDeviceWasRemoved();
-			}
-			else if(bConnected && cGamepadXInput::GetWasConnected(i) == false)
-			{
-				cEngine::SetDeviceWasPlugged();
-			}
-		}
-		#endif
 		
 		for(tInputDeviceListIt it = mlstInputDevices.begin(); it!= mlstInputDevices.end();++it)
 		{
@@ -223,17 +207,13 @@ namespace hpl
 		// First try with XInput
 		for(int i=0; i < 4; ++i)
 		{
-			bool bConnected = cGamepadXInput::IsConnected(i);
-
-			if(bConnected)
+			if(cGamepadXInput::IsConnected(i))
 			{
 				iGamepad* pGamepad = hplNew( cGamepadXInput, (i) );
 
 				mlstGamepads.push_back(pGamepad);
 				mlstInputDevices.push_back(pGamepad);
 			}
-
-			cGamepadXInput::SetWasConnected(i, bConnected);
 		}
 #else
 #ifndef USE_SDL2
@@ -245,17 +225,14 @@ namespace hpl
 		{
 			iGamepad* pGamepad = mpLowLevelInput->CreateGamepad(i);
 
-			if(pGamepad)
+			if(pGamepad->GetGamepadName() == "")
 			{
-				if(pGamepad->GetGamepadName() == "")
-				{
-					hplDelete(pGamepad);
-				}
-				else
-				{
-					mlstGamepads.push_back(pGamepad);
-					mlstInputDevices.push_back(pGamepad);
-				}
+				hplDelete(pGamepad);
+			}
+			else
+			{
+				mlstGamepads.push_back(pGamepad);
+				mlstInputDevices.push_back(pGamepad);
 			}
 		}
 #endif

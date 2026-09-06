@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxProp_OilBarrel.h"
@@ -94,71 +94,7 @@ cLuxProp_OilBarrel::~cLuxProp_OilBarrel()
 
 bool cLuxProp_OilBarrel::CanInteract(iPhysicsBody *apBody)
 {
-	return true;
-}
-
-//-----------------------------------------------------------------------
-
-bool cLuxProp_OilBarrel::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
-{
-	CalculateOilAmount();
-
-	float fOil = gpBase->mpPlayer->GetLampOil();
-
-	///////////////////////////////////
-	// Check if barrel is empty or lantern is full
-	if(mfOilAmount <= 0)
-	{
-		PlaySound("EmptyBarell",msEmptySound, true, false);
-		gpBase->mpMessageHandler->SetMessage(kTranslate("Game", "OilBarrel_Empty"), 0);
-		return false;
-	}
-	else if(fOil > 99)
-	{
-		gpBase->mpMessageHandler->SetMessage(kTranslate("Game", "OilBarrel_LanternFull"), 0);
-		return false;
-	}
-	
-	///////////////////////////////////
-	// Increase oil amount
-	fOil += mfOilAmount;
-	float fFillAmount = mfOilAmount;
-	if(fOil > 100)
-	{	
-		fFillAmount = mfOilAmount - (fOil - 100.0f);
-        mfOilAmount = fOil - 100.0f;
-		if(mfOilAmount < 1.0f) mfOilAmount =0; //If very little oil left, just let it be empty.
-		fOil = 100;
-	}
-	else
-	{
-		fFillAmount = mfOilAmount;
-		mfOilAmount = 0;
-	}
-
-	gpBase->mpPlayer->SetLampOil(fOil);
-	PlaySound("FillLantern",msFillSound, true, false);
-
-	///////////////////////////////////
-	// Display fill message
-	if(fOil >= 100)
-	{
-		gpBase->mpMessageHandler->SetMessage(kTranslate("Game", "OilBarrel_Refill_Full"), 0);
-	}
-	else
-	{
-		if(fFillAmount < 25)
-			gpBase->mpMessageHandler->SetMessage(kTranslate("Game", "OilBarrel_Refill_Amount_025"),0);
-		else if(fFillAmount < 50)
-			gpBase->mpMessageHandler->SetMessage(kTranslate("Game", "OilBarrel_Refill_Amount_050"),0);
-		else if(fFillAmount < 75)
-			gpBase->mpMessageHandler->SetMessage(kTranslate("Game", "OilBarrel_Refill_Amount_075"),0);
-		else 
-			gpBase->mpMessageHandler->SetMessage(kTranslate("Game", "OilBarrel_Refill_Amount_100"),0);
-	}
-
-	
-	return true;
+	return false;
 }
 
 //-----------------------------------------------------------------------
@@ -227,50 +163,6 @@ tWString cLuxProp_OilBarrel::GetFocusText()
 void cLuxProp_OilBarrel::OnConnectionStateChange(iLuxEntity *apEntity, int alState)
 {
 	
-}
-
-//-----------------------------------------------------------------------
-
-
-//////////////////////////////////////////////////////////////////////////
-// PRIVATE METHODS
-//////////////////////////////////////////////////////////////////////////
-
-//-----------------------------------------------------------------------
-
-void cLuxProp_OilBarrel::CalculateOilAmount()
-{
-	if(mbAmountCalculated) return;
-	
-	//////////////////////
-	// HARDMODE
-	if (gpBase->mbHardMode) 
-	{
-		mfOilAmount = 10.0f;
-		mbAmountCalculated = true;
-		return;
-	}
-
-	mfOilAmount = 10.0f; //Base amount
-
-	float fTotalOil = gpBase->mpPlayer->GetLampOil();
-	
-	//Iterate items and add amount and count to total
-	for(int i=0; i<gpBase->mpInventory->GetItemNum(); ++i)
-	{
-		cLuxInventory_Item *pItem = gpBase->mpInventory->GetItem(i);
-		if(pItem->GetType() != eLuxItemType_LampOil) continue;
-
-		fTotalOil += pItem->GetAmount() * (float)pItem->GetCount();
-	}
-	
-    float fAdd = 100 - fTotalOil;
-	if(fAdd < 0) fAdd = 0;
-	if(fAdd > 90) fAdd = 90;
-
-	mfOilAmount += fAdd;
-
-    mbAmountCalculated = true;    
 }
 
 //-----------------------------------------------------------------------

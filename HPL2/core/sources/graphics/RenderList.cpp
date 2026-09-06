@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "graphics/RenderList.h"
@@ -196,6 +196,7 @@ namespace hpl {
 	void cRenderList::Compile(tRenderListCompileFlag aFlags)
 	{
 		if(aFlags & eRenderListCompileFlag_Z) CompileArray(eRenderListType_Z);
+		if(aFlags & eRenderListCompileFlag_Z_Dissolve) CompileArray(eRenderListType_Z_Dissolve);
 		if(aFlags & eRenderListCompileFlag_Diffuse) CompileArray(eRenderListType_Diffuse);
 		if(aFlags & eRenderListCompileFlag_Decal) CompileArray(eRenderListType_Decal);
 		if(aFlags & eRenderListCompileFlag_Illumination) CompileArray(eRenderListType_Illumination);
@@ -451,7 +452,7 @@ namespace hpl {
 
 	typedef bool (*tSortRenderableFunc)(iRenderable*,iRenderable*); 
 
-	static tSortRenderableFunc vSortFunctions[eRenderListType_LastEnum] = {SortFunc_Z,SortFunc_Diffuse,SortFunc_Translucent,SortFunc_Decal,SortFunc_Illumination};
+	static tSortRenderableFunc vSortFunctions[eRenderListType_LastEnum] = {SortFunc_Z,SortFunc_Diffuse,SortFunc_Translucent,SortFunc_Decal,SortFunc_Illumination, SortFunc_Z};
 
 	//-----------------------------------------------------------------------
 
@@ -464,8 +465,38 @@ namespace hpl {
 		else if(aType == eRenderListType_Illumination)	pSourceVec = &mvIllumObjects;
 		else											pSourceVec = &mvSolidObjects;
 
-		mvSortedArrays[aType] = *pSourceVec;	//Should be fastest way to copy right, or use memcopy?
-		
+		if(aType == eRenderListType_Z_Dissolve || aType == eRenderListType_Z)
+		{
+			//////////////
+			// Only take some of the solid objects when rendering z pass
+			mvSortedArrays[aType].clear();
+
+			for(size_t i = 0; i < pSourceVec->size(); ++i)
+			{
+				iRenderable *pObject = (*pSourceVec)[i];
+				cMaterial *pMaterial = pObject->GetMaterial();
+
+				if(aType == eRenderListType_Z_Dissolve)
+				{
+					if(pObject->IsOccluder() == false && 
+					  (pObject->GetCoverageAmount() <= 1.0f || pMaterial->GetTexture(eMaterialTexture_Alpha)))
+					{
+						/////////////
+						// Only add objects that have not been rendered and that use alpha dissolving
+						mvSortedArrays[aType].push_back(pObject);			
+					}
+				}
+				else if(pObject->IsOccluder())
+				{
+					mvSortedArrays[aType].push_back(pObject);	
+				}
+			}
+		}
+		else
+		{
+			mvSortedArrays[aType] = *pSourceVec;	//Should be fastest way to copy right, or use memcopy?
+		}
+
 		std::sort(mvSortedArrays[aType].begin(), mvSortedArrays[aType].end(), vSortFunctions[aType]);
 	}
 

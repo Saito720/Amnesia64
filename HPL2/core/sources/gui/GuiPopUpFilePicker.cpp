@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "gui/GuiPopUpFilePicker.h"
@@ -40,6 +40,7 @@
 #include "gui/WidgetWindow.h"
 #include "gui/WidgetButton.h"
 #include "gui/WidgetComboBox.h"
+
 
 namespace hpl {
 
@@ -228,13 +229,14 @@ namespace hpl {
 		tWString sDir;
 		
 		////////////////////////////////////////
-        // If the selection is a system item (e.g. begins with "<") handle it differently
-        if(lSelection < (lNumItems - mvCurrentDirFullPath.size())) {
+		// If selection is a system item (e.g. begins with "<") handle it differently
+        if(lSelection < (lNumItems - mvCurrentDirFullPath.size()))
+        {
             mvCurrentDirFullPath.clear();
             NavigateTo(pBox->GetItemText(lSelection));
         }
-        // If selection is not last item, remove items from selection onwards, then navigate to selection
-        else if(lSelection != lNumItems-1)
+		// If selection is not last item, remove items from selection onwards, then navigate to selection
+		else if(lSelection != lNumItems-1)
 		{
 			sDir = pBox->GetItemText(lSelection);
 
@@ -376,8 +378,7 @@ namespace hpl {
         if (iFileBrowser::msGameDir.length()) {
             mpCurrentDirectory->AddItem(_W("<Game Folder>"));
         }
-
-		for(int i=0;i<(int)mvCurrentDirFullPath.size();++i)
+        for(int i=0;i<(int)mvCurrentDirFullPath.size();++i)
 		{
 			mpCurrentDirectory->AddItem(mvCurrentDirFullPath[i]);
 		}

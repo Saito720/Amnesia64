@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef LUX_INPUT_HANDLER_H
@@ -114,9 +114,13 @@ public:
 
 	tLuxInputVec GetDefaultInputsByActionId(int alId);
 
+	void FadeEventSensitityModifierTo(float afTime, float afGoalSensitivity);
+	void UpdateEventSensitityModifier(float afTimeStep);
+
 	void ResetSmoothMousePos();
 	cVector2f GetSmoothMousePos(const cVector2f& avRelPosMouse);
-
+	cVector2f GetSluggishMousePos(const cVector2f& avRelPosMouse);
+	
 #ifdef USE_GAMEPAD
 	bool IsGamepadPresent();
 
@@ -175,8 +179,19 @@ private:
 	int mlMaxSmoothMousePos;
 	float mfPrevSmoothMousePosMul;
 	tVector2fList mlstSmoothMousePos;
+	float mfSensitivityDropAtMaxLevel;
+
+	int mlMaxSluggishMousePos;
+	float mfPrevSluggishMousePosMul;
+	tVector2fList mlstSluggishMousePos;
 
 	cVector2l mvLastAbsMousePos;
+
+	float mfEventSensitivityModifier;
+	float mfEventSensitivityModifierGoal;
+	float mfEventSensitivityModifierSpeed;
+
+	float mfPointerSpeed;
 
 #ifdef USE_GAMEPAD
 	float mfGamepadWalkSensitivity;

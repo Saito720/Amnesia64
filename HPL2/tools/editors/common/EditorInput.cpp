@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "EditorInput.h"
@@ -33,7 +33,7 @@ iEditorInput::iEditorInput(iEditorWindow* apWindow,
 						   eEditorInputLayoutStyle aStyle)
 {
 	mpWindow = apWindow;
-	mpSet = apWindow->GetSet();
+	SetSet(apWindow->GetSet());
 
 	mLayoutStyle = aStyle;
 
@@ -42,6 +42,7 @@ iEditorInput::iEditorInput(iEditorWindow* apWindow,
 	
 	mpHandle = mpSet->CreateWidgetDummy(avPos, apParent, asName);
 	mpHandle->SetUserData(this);
+	AddWidget(mpHandle);
 
 	mfTabWidth = 0;
 
@@ -124,6 +125,7 @@ iEditorInputLabeled::iEditorInputLabeled(iEditorWindow* apWindow,
 	mpL = mpSet->CreateWidgetLabel(0,-1,asLabel, mpHandle);
 	mpL->SetAutogenerateSize(true);
 	mpL->SetDefaultFontSize(mvFontSize);
+	AddWidget(mpL);
 }
 
 //--------------------------------------------------------
@@ -152,6 +154,7 @@ cEditorInputBool::cEditorInputBool(iEditorWindow* apWindow,
 								   iWidget* apParent) : iEditorInput(apWindow,avPos, asLabel, asName, apParent)
 {
 	mpChB = mpSet->CreateWidgetCheckBox(0,0, _W(""), mpHandle, asName);
+	AddWidget(mpChB);
 
 	mpChB->AddCallback(eGuiMessage_CheckChange, (iEditorInput*)this, kGuiCallback(ValueEnter));
 	mpChB->SetDefaultFontSize(mvFontSize);
@@ -226,6 +229,7 @@ cEditorInputText::cEditorInputText(iEditorWindow* apWindow,
 			sLabel = *itLabels++;
 		}
 		cWidgetLabel* pL = mpSet->CreateWidgetLabel(0,0,sLabel, mpHandle);
+		AddWidget(pL);
 		mvL.push_back(pL);
 		pL->SetSize(cVector2f(pL->GetDefaultFontType()->GetLength(mvFontSize, sLabel.c_str()), mvFontSize.y));
 		pL->SetDefaultFontSize(mvFontSize);
@@ -238,7 +242,7 @@ cEditorInputText::cEditorInputText(iEditorWindow* apWindow,
 														 abNumeric?eWidgetTextBoxInputType_Numeric:eWidgetTextBoxInputType_Normal, 
 														 afNumericAdd,
 														 afNumericAdd!=0);
-
+		AddWidget(pTB);
 		mvTB.push_back(pTB);
 		pTB->SetDefaultFontSize(mvFontSize);
 		pTB->AddCallback(eGuiMessage_TextBoxEnter, (iEditorInput*)this, kGuiCallback(TBIdCheckerCallback));
@@ -425,8 +429,10 @@ cEditorInputFile::cEditorInputFile(iEditorWindow* apWindow,
 	const cVector3f& vPos = pTB->GetLocalPosition();
 	const cVector2f& vSize = pTB->GetSize();
 	mpBBrowse = mpSet->CreateWidgetButton(0, cVector2f(20), _W("..."), mpHandle, false, asName+"Browse");
+	AddWidget(mpBBrowse);
 
 	mpBNew = mpSet->CreateWidgetButton(0, cVector2f(20), _W("+"), mpHandle, false, asName+"New");
+	AddWidget(mpBNew);
 
 	mpBBrowse->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(BrowseButton_OnPressed));
 	mpBNew->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(NewButton_OnPressed));
@@ -435,8 +441,6 @@ cEditorInputFile::cEditorInputFile(iEditorWindow* apWindow,
 
 	SetBrowserType(eEditorResourceType_Texture);
 	mlBrowserSubtype = eEditorTextureResourceType_LastEnum;
-
-	SetInitialPath(apWindow->GetEditor()->GetWorkingDir());
 }
 
 //--------------------------------------------------------
@@ -539,18 +543,11 @@ bool cEditorInputFile::BrowseButton_OnPressed(iWidget* apWidget, const cGuiMessa
 		msTempLoadedFile=msInitialPath;
 	else
 	{
-		msTempLoadedFile = mpWindow->GetEditor()->GetPathRelToWD(msFilename);
+		msTempLoadedFile = mpWindow->GetEditor()->GetFilePathRelativeToWorkingDirW(msFilename);
 		if(cPlatform::FileExists(msTempLoadedFile)==false && cPlatform::FolderExists(msTempLoadedFile)==false)
 		{
-			if (cPlatform::FileExists(msFilename) || cPlatform::FolderExists(msFilename))
-			{
-				msTempLoadedFile = msFilename;
-			}
-			else
-			{
-				//Log("TempLoadedFile does not exist:%ls\n", msTempLoadedFile.c_str());
-				msTempLoadedFile = msInitialPath;
-			}
+			//Log("TempLoadedFile does not exist:%ls\n", msTempLoadedFile.c_str());
+			msTempLoadedFile = msInitialPath;
 		}
 	}
 
@@ -589,13 +586,11 @@ bool cEditorInputFile::BrowseButton_OnPressed(iWidget* apWidget, const cGuiMessa
 		case eEditorResourceType_Model:
 			sCatName = _W("Models");
 			lstCatString.push_back(_W("*.dae"));
-			//lstCatString.push_back(_W("*.fbx"));
 			pEditor->ShowLoadFilePicker(mvTempLoadedFiles, cString::GetFilePathW(msTempLoadedFile), this, kGuiCallback(Browser_OnOkay), sCatName, lstCatString);
 			break;
 		case eEditorResourceType_ModelAnim:
 			sCatName = _W("Animations");
 			lstCatString.push_back(_W("*.dae_anim"));
-			//lstCatString.push_back(_W("*.fbx"));
 			pEditor->ShowLoadFilePicker(mvTempLoadedFiles, cString::GetFilePathW(msTempLoadedFile), this, kGuiCallback(Browser_OnOkay), sCatName, lstCatString);
 			break;
 		case eEditorResourceType_Sound:
@@ -757,6 +752,7 @@ cEditorInputEnum::cEditorInputEnum(iEditorWindow* apWindow,
 								   iWidget* apParent) : iEditorInputLabeled(apWindow, avPos, asLabel, asName, apParent)
 {
 	mpCB = mpSet->CreateWidgetComboBox(0, cVector2f(afComboBoxWidth,25), _W(""), mpHandle);
+	AddWidget(mpCB);
 	mpCB->AddCallback(eGuiMessage_SelectionChange, (iEditorInput*)this, kGuiCallback(ValueEnter));
 	mpCB->SetDefaultFontSize(mvFontSize);
 	mpCB->SetClipActive(false);
@@ -898,6 +894,7 @@ cEditorInputColorFrame::cEditorInputColorFrame(iEditorWindow* apWindow,
 	mCol = cColor(1,1);
 
 	mpFColor = mpSet->CreateWidgetFrame(0, cVector2f(15), true, mpHandle);
+	AddWidget(mpFColor);
 	mpFColor->AddCallback(eGuiMessage_MouseUp, this, kGuiCallback(Frame_OnClick));
 	mpFColor->SetDrawBackground(true);
 	mpFColor->SetBackgroundZ(0);

@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxEnemy_WaterLurker.h"
@@ -88,6 +88,8 @@ void cLuxEnemyLoader_WaterLurker::LoadInstanceVariables(iLuxEnemy *apEnemy, cRes
 
 	float fHeight = apInstanceVars->GetVarFloat("PlayerDetectionHeight", 0);
 	if(fHeight >0) pWaterLurker->mfPlayerDetectionHeight = fHeight;
+
+	pWaterLurker->mfRunSpeedMul = apInstanceVars->GetVarFloat("RunSpeedMul", 1);
 }
 
 //-----------------------------------------------------------------------
@@ -101,8 +103,8 @@ void cLuxEnemyLoader_WaterLurker::LoadInstanceVariables(iLuxEnemy *apEnemy, cRes
 cLuxEnemy_WaterLurker::cLuxEnemy_WaterLurker(const tString &asName, int alID, cLuxMap *apMap) : iLuxEnemy(asName,alID,apMap, eLuxEnemyType_WaterLurker)
 {
 	mbUseAnimations = false;
-	mbCausesSanityDecrease = false;
-	mbCausesSanityDecreaseAsDefault = false;
+	mbCausesInfectionIncrease = false;
+	mbCausesInfectionIncreaseAsDefault = false;
 }
 
 //-----------------------------------------------------------------------
@@ -124,6 +126,14 @@ void cLuxEnemy_WaterLurker::OnSetupAfterLoad(cWorld *apWorld)
 {
 	mpMeshEntity->SetActive(false);
 	mpMeshEntity->SetVisible(false);
+
+	mpCharBody->SetGravityActive(false);
+	mpCharBody->SetDeaccelerateMoveSpeedInAir(true);
+	mpCharBody->SetCollideStaticVolatile(false);
+	mpCharBody->SetClimbHeightAdd(0);
+	mpCharBody->SetMaxStepSize(0);
+	mpCharBody->SetMaxStepSizeInAir(0);
+
 }
 
 
@@ -138,6 +148,8 @@ void cLuxEnemy_WaterLurker::OnAfterWorldLoad()
 
 void cLuxEnemy_WaterLurker::UpdateEnemySpecific(float afTimeStep)
 {
+
+	
 	}	
 
 //-----------------------------------------------------------------------
@@ -177,6 +189,9 @@ bool cLuxEnemy_WaterLurker::StateEventImplement(int alState, eLuxEnemyStateEvent
 	kLuxState(eLuxEnemyState_Idle)
 		kLuxOnEnter
 			ChangeSoundState(eLuxEnemySoundState_Idle);
+
+		kLuxOnUpdate
+			if(PlayerIsDetected()) ChangeState(eLuxEnemyState_Hunt);
 		
 		///////////////////////
 		// Heard sound
@@ -377,7 +392,7 @@ bool cLuxEnemy_WaterLurker::StateEventImplement(int alState, eLuxEnemyStateEvent
 			if(PlayerIsDetected()==false)
 			{
 				ChangeState(eLuxEnemyState_GoHome);	
-				mbCausesSanityDecrease = false;
+				mbCausesInfectionIncrease = false;
 			}
 			else if(mPreviousState == eLuxEnemyState_AttackMeleeShort)
 			{
@@ -388,10 +403,12 @@ bool cLuxEnemy_WaterLurker::StateEventImplement(int alState, eLuxEnemyStateEvent
 				ChangeSoundState(eLuxEnemySoundState_Hunt);
 
 				SetMoveSpeed(eLuxEnemyMoveSpeed_Run);
+				mfForwardSpeed *= mfRunSpeedMul;
+
 				SendMessage(eLuxEnemyMessage_TimeOut, 0.1f, true);
 				SendMessage(eLuxEnemyMessage_TimeOut_2, 0.1f, true);
 				gpBase->mpMusicHandler->AddEnemy(eLuxEnemyMusic_Attack,this);
-				mbCausesSanityDecrease = true;
+				mbCausesInfectionIncrease = true;
 			}
 			
 		///////////////////////
@@ -414,7 +431,7 @@ bool cLuxEnemy_WaterLurker::StateEventImplement(int alState, eLuxEnemyStateEvent
 			if(PlayerIsDetected()==false)
 			{
 				ChangeState(eLuxEnemyState_GoHome);	
-				mbCausesSanityDecrease = false;
+				mbCausesInfectionIncrease = false;
 			}
 		
 		///////////////////////
@@ -463,7 +480,7 @@ bool cLuxEnemy_WaterLurker::StateEventImplement(int alState, eLuxEnemyStateEvent
 		//Damage door
 		kLuxOnMessage(eLuxEnemyMessage_TimeOut)
 			//SplashWater(eWaterLurkerSplash_Attack);
-			Attack(mNormalAttackSize, mBreakDoorAttackDamage);
+			Attack(mNormalAttackSize, mBreakDoorAttackDamage, 1.0f);
 			SendMessage(eLuxEnemyMessage_TimeOut_2, cMath::RandRectf(0.5,1.5f), true);
 
 		///////////////////
@@ -500,7 +517,7 @@ bool cLuxEnemy_WaterLurker::StateEventImplement(int alState, eLuxEnemyStateEvent
 
 		kLuxOnMessage(eLuxEnemyMessage_TimeOut)
 			SplashWater(eWaterLurkerSplash_Attack);
-			Attack(mNormalAttackSize, mNormalAttackDamage);
+			Attack(mNormalAttackSize, mNormalAttackDamage, 1.0f);
 			SendMessage(eLuxEnemyMessage_TimeOut_2, 0.5f, true);
 			mpPathfinder->Stop();
 		
@@ -650,6 +667,7 @@ void cLuxEnemy_WaterLurker::PatrolEndOfPath()
 kBeginSerialize(cLuxEnemy_WaterLurker_SaveData, iLuxEnemy_SaveData)
 
 kSerializeVar(mfPlayerDetectionHeight, eSerializeType_Float32)
+kSerializeVar(mfRunSpeedMul, eSerializeType_Float32)
 
 kEndSerialize()
 
@@ -672,6 +690,7 @@ void cLuxEnemy_WaterLurker::SaveToSaveData(iLuxEntity_SaveData* apSaveData)
 	//////////////////
 	//Set variables
 	kCopyToVar(pData,mfPlayerDetectionHeight);
+	kCopyToVar(pData,mfRunSpeedMul);
 }
 
 //-----------------------------------------------------------------------
@@ -686,12 +705,7 @@ void cLuxEnemy_WaterLurker::LoadFromSaveData(iLuxEntity_SaveData* apSaveData)
 	//////////////////
 	//Set variables
 	kCopyFromVar(pData,mfPlayerDetectionHeight);
-	
-	////////////////////////
-	// Handle changed enums
-	if (mCurrentState >= eLuxEnemyState_PigEnumStart) mCurrentState = eLuxEnemyState_LastEnum;
-	if (mNextState >= eLuxEnemyState_PigEnumStart) mNextState = eLuxEnemyState_LastEnum;
-	if (mPreviousState >= eLuxEnemyState_PigEnumStart) mPreviousState = eLuxEnemyState_LastEnum;
+	kCopyFromVar(pData,mfRunSpeedMul);
 }
 
 //-----------------------------------------------------------------------

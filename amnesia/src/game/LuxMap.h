@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef LUX_MAP_H
@@ -117,11 +117,12 @@ public:
 	void ResetLatestEntity(){ mpLatestAddedEntity=NULL;}
 	bool EntityExists(iLuxEntity *apEntity);
 	cLuxEntityIterator GetEntityIterator();
+
 	cLuxEnemyIterator GetEnemyIterator();
 
 	void BroadcastEnemyMessage(eLuxEnemyMessage aType, bool abHasPosition, const cVector3f& avPos, float afRadius,
 								float afTime=0, bool abLocalScope=false, const cVector3f& avX=0,float afX=0, int alX=0);
-	void BroadcastEnemySoundMessage(const cVector3f& avPos, float afVolume ,float afMinDist, float afMaxDist);
+	void BroadcastEnemySoundMessage(const cVector3f& avPos, float afVolume ,float afMinDist, float afMaxDist, tString asSoundName);
 	/**
 	 * Gets number of enemies that are in range of player
 	 */
@@ -153,7 +154,7 @@ public:
 	void AddPosNode(cLuxNode_Pos *apNode);
 	cLuxNode_Pos *GetPosNode(const tString & asName);
 
-	void SetCheckPoint(const tString& asName, const tString& asStartPos, const tString& asCallback);
+	void SetCheckPoint(const tString& asName, const tString& asStartPos, const tString& asCallback, bool abKeepPlayerInLimbo);
 	void LoadCheckPoint();
     
 	void AddUseItemCallback(	const tString& asName, const tString& asItem, const tString& asEntity,
@@ -187,9 +188,11 @@ public:
 
 	void SetLanternLitCallback(const tString& asCallback){ msLanternLitCallback = asCallback;}
 	const tString& GetLanternLitCallback(){ return msLanternLitCallback;}
-	
+
+	void RunCheckPointCallbackScript();
 	
 private:
+
 	void CalculateTotalCompletionAmount();
 
 	int GetFreeEntityID();
@@ -198,7 +201,7 @@ private:
 	void UpdateTimers(float afTimeStep);
 	void UpdateDissolveEntities(float afTimeStep);
 	void UpdateLampLightConnections(float afTimeStep);
-	void UpdateCheckCommentaryIconActive(float afTimeStep);
+
 
 	tString msName;
 	tString msFileName;
@@ -220,8 +223,6 @@ private:
 	int mlNumberOfQuests;
 	int mlTotalCompletionAmount;
 	int mlCurrentCompletionAmount;
-
-	bool mbCommentaryIconsActive;
 
 	tString msCheckPointName;
 	tString msCheckPointStartPos;
@@ -254,6 +255,8 @@ private:
 	tLuxDissolveEntityList mlstDissolveEntities;
 
 	tLuxLampLightConnectionList mlstLampLightConnections;
+
+    float mfTimeToNexCriticalCheck;
 };
 
 //----------------------------------------------

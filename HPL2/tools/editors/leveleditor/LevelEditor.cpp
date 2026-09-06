@@ -1,28 +1,26 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "hpl.h"
 using namespace hpl;
 
 #include "LevelEditor.h"
-
-#include "../common/DirectoryHandler.h"
 
 #include "../common/EditorActionHandler.h"
 
@@ -257,6 +255,10 @@ bool cLevelEditor::MainMenu_ItemClick(iWidget* apWidget, const cGuiMessageData& 
 			AddAction(pEditMode->CreateDeleteEntitiesAction(lstEntityIDs));
 		else if(apWidget==mpMainMenuClone)
 			AddAction(pEditMode->CreateCloneEntitiesAction(lstEntityIDs));
+        else if(apWidget==mpMainMenuDeselect)
+        {
+			AddAction(pEditMode->CreateSelectEntityAction(lstEntityIDs, eSelectActionType_Deselect));
+        }
 		else if(apWidget==mpMainMenuCompound)
 		{
 			if(mpSelection->GetNumEntities()==1 && mpSelection->GetEntities().front()->GetTypeID()==eEditorEntityType_Compound)
@@ -533,6 +535,8 @@ void cLevelEditor::OnInit()
 	AddEditMode(hplNew(cEditorEditModeDecals,(this, mpEditorWorld)));
 	AddEditMode(hplNew(cEditorEditModeFogAreas,(this, mpEditorWorld)));
 	AddEditMode(hplNew(cEditorEditModeCombine, (this)));
+
+	mpEngine->GetSound()->GetSoundHandler()->SetGlobalVolume(0.0f, eSoundEntryType_World, -1);
 }
 
 //--------------------------------------------------------------------
@@ -565,18 +569,6 @@ void cLevelEditor::OnInitLayout()
 	////////////////////////////////////
 	// Search Window
 	mpWindowSearch = cEditorWindowFactory::CreateSearchWindow(this, (cEditorEditModeSelect*)GetEditMode("Select"));
-}
-
-//--------------------------------------------------------------------
-
-void cLevelEditor::OnSetUpDirectories()
-{
-	const tWString& sWorkingDir = GetWorkingDir();
-
-	mpDirHandler->AddLookUpDir(eDir_Maps, sWorkingDir + mpMainConfig->GetStringW("Directories", "MapsDir", _W("maps")), true); 
-	mpDirHandler->AddLookUpDir(eDir_StaticObjects, sWorkingDir + mpMainConfig->GetStringW("Directories", "StaticObjectsDir", _W("static_objects")), true);
-	mpDirHandler->AddLookUpDir(eDir_Entities, sWorkingDir + mpMainConfig->GetStringW("Directories", "EntitiesDir", _W("entities")), true);
-	mpDirHandler->AddLookUpDir(eDir_Decals, sWorkingDir + mpMainConfig->GetStringW("Directories", "DecalsDir", _W("textures/decals")), true);
 }
 
 //--------------------------------------------------------------------
@@ -642,7 +634,7 @@ void cLevelEditor::OnLoadConfig()
 	//////////////////////////////////////////////////////////////
 	// Set up loading stuff that is specific to this editor, 
 	// and stuff like log filename (this is done pre engine creation)
-	tWString sConfigFile = GetHomeDir() + _W("LevelEditor.cfg");
+	tWString sConfigFile = GetFolderFullPath(eEditorDir_Home) + _W("LevelEditor.cfg");
 
 	mpLocalConfig = hplNew(cConfigFile, ( sConfigFile));
 	mpLocalConfig->Load();
@@ -687,9 +679,9 @@ void cLevelEditor::OnLoadConfig()
 	// Window caption
 	msCaption = "HPL Level Editor";
 	
-	SetLogFile(GetHomeDir() + _W("LevelEditor.log"));
+	SetLogFile(GetFolderFullPath(eEditorDir_Home) + _W("LevelEditor.log"));
 
-	msLastLoadPath = mpLocalConfig->GetStringW("Directories", "LastUsedPath", GetMainLookUpDir(eDir_Maps));
+	msLastLoadPath = mpLocalConfig->GetStringW("Directories", "LastUsedPath", GetFolderFullPath(eEditorDir_Maps));
 
 	///////////////////////////////////////////
 	// Get extra dirs for static objects
@@ -800,6 +792,7 @@ cWidgetMainMenu* cLevelEditor::CreateMainMenu()
 	cWidgetMenuItem* pSubItem = NULL;
     
 	mpMainMenu = mpSet->CreateWidgetMainMenu(mpBGFrame);
+	AddWidget(mpMainMenu);
 
 	//File menu
 	pItem = mpMainMenu->AddMenuItem(_W("File"));
@@ -843,13 +836,7 @@ cWidgetMainMenu* cLevelEditor::CreateMainMenu()
 	// Quit
 	mpMainMenuExit = pItem->AddMenuItem(_W("Quit"));
 	mpMainMenuExit->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(MainMenu_ItemClick));
-#if defined(_WIN32)
 	mpMainMenuExit->AddShortcut(eKeyModifier_Alt, eKey_F4);
-#elif defined(__linux__)
-	mpMainMenuExit->AddShortcut(eKeyModifier_Ctrl, eKey_Q);
-#elif defined(__APPLE__)
-	mpMainMenuExit->AddShortcut(eKeyModifier_Ctrl, eKey_Q);
-#endif
     
 	//Edit menu
 	pItem = mpMainMenu->AddMenuItem(_W("Edit"));
@@ -873,6 +860,12 @@ cWidgetMainMenu* cLevelEditor::CreateMainMenu()
 	mpMainMenuClone = pItem->AddMenuItem(_W("Duplicate"));
 	mpMainMenuClone->AddCallback(eGuiMessage_ButtonPressed,this,kGuiCallback(MainMenu_ItemClick));
 	mpMainMenuClone->AddShortcut(eKeyModifier_Ctrl, eKey_D);
+
+    // Deselect
+	mpMainMenuDeselect = pItem->AddMenuItem(_W("Deselect"));
+	mpMainMenuDeselect->AddCallback(eGuiMessage_ButtonPressed,this,kGuiCallback(MainMenu_ItemClick));
+	mpMainMenuDeselect->AddShortcut(eKeyModifier_None, eKey_A);
+
 	// Create/Destroy compound
 	mpMainMenuCompound = pItem->AddMenuItem(_W("Create/Destroy Compound object"));
 	mpMainMenuCompound->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(MainMenu_ItemClick));

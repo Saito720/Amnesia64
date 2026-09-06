@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxMainMenu_Options.h"
@@ -125,8 +125,6 @@ cLuxMainMenu_Options::cLuxMainMenu_Options(cGuiSet *apGuiSet, cGuiSkin *apGuiSki
 	mfVolumeMin = 0.0f;
 	mfVolumeStep = 0.1f;
 	mfVolumeMax = 1.0f;
-
-	mbShowCommentary = gpBase->mpMenuCfg->GetBool("Options","ShowCommentary", false);
 
 	mbSettingInitialValues = false;
 
@@ -300,11 +298,6 @@ void cLuxMainMenu_Options::AddGameOptions(cWidgetTab* apTab)
 	mpChBShowSubtitles = mpGuiSet->CreateWidgetCheckBox(vPos, 0, kTranslate("OptionsMenu","ShowSubtitles"), apTab);
 	SetUpInput(NULL, mpChBShowSubtitles, false, kTranslate("OptionsMenu", "ShowSubtitlesTip"));
 
-	///////////////////////////////////////////////
-	// Effect subtitles Checkbox
-	mpChBShowEffectSubtitles = mpGuiSet->CreateWidgetCheckBox(vPos + cVector3f(mpChBShowSubtitles->GetSize().x+15,0,0), 0, kTranslate("OptionsMenu", "ShowEffectSubtitles"), apTab);
-	SetUpInput(NULL, mpChBShowEffectSubtitles, false, kTranslate("OptionsMenu", "ShowEffectSubtitlesTip"));
-
 	vPos.y += mpChBShowSubtitles->GetSize().y + 15;
 
 	///////////////////////////////////////////////
@@ -316,10 +309,10 @@ void cLuxMainMenu_Options::AddGameOptions(cWidgetTab* apTab)
 
 	///////////////////////////////////////////////
 	// Death Hints subtitles Checkbox
-	mpChBShowDeathHints = mpGuiSet->CreateWidgetCheckBox(vPos, 0, kTranslate("OptionsMenu","ShowDeathHints"), apTab);
-	SetUpInput(NULL, mpChBShowDeathHints, false, kTranslate("OptionsMenu", "ShowDeathHintsTip"));
+	//mpChBShowDeathHints = mpGuiSet->CreateWidgetCheckBox(vPos, 0, kTranslate("OptionsMenu","ShowDeathHints"), apTab);
+	//SetUpInput(NULL, mpChBShowDeathHints, false, kTranslate("OptionsMenu", "ShowDeathHintsTip"));
 	
-	vPos.y += mpChBShowDeathHints->GetSize().y + 15;
+	//vPos.y += mpChBShowDeathHints->GetSize().y + 15;
 
 	///////////////////////////////////////////////
 	// Crosshair Checkbox
@@ -336,15 +329,6 @@ void cLuxMainMenu_Options::AddGameOptions(cWidgetTab* apTab)
 	mpCBFocusIconStyle->AddItem(kTranslate("OptionsMenu", "FocusIconStyleSimple"));
 	vPos.y += pLabel->GetSize().y + 15;
 
-	//////////////////////////////////
-	// Commentary
-	if(mbShowCommentary)
-	{
-		mpChBShowCommentary = mpGuiSet->CreateWidgetCheckBox(vPos, 0, kTranslate("OptionsMenu", "Commentary"), apTab);
-		SetUpInput(NULL, mpChBShowCommentary, false, kTranslate("OptionsMenu", "CommentaryTip"));
-		vPos.y += mpChBShowCommentary->GetSize().y + 15;
-	}
-	
 	// Populate languages
 	PopulateLanguageList();
 
@@ -357,23 +341,13 @@ void cLuxMainMenu_Options::AddGameOptions(cWidgetTab* apTab)
 	// Down
 	mpCBLanguage->SetFocusNavigation(eUIArrow_Down, mpChBShowSubtitles);
 	mpChBShowSubtitles->SetFocusNavigation(eUIArrow_Down, mpChBShowHints);
-	mpChBShowEffectSubtitles->SetFocusNavigation(eUIArrow_Down, mpChBShowHints);
-	mpChBShowHints->SetFocusNavigation(eUIArrow_Down, mpChBShowDeathHints);
-	mpChBShowDeathHints->SetFocusNavigation(eUIArrow_Down, mpChBShowCrosshair);
+	mpChBShowHints->SetFocusNavigation(eUIArrow_Down, mpChBShowCrosshair);
+	//mpChBShowDeathHints->SetFocusNavigation(eUIArrow_Down, mpChBShowCrosshair);
 	mpChBShowCrosshair->SetFocusNavigation(eUIArrow_Down, mpCBFocusIconStyle);
-	if(mbShowCommentary)
-	{
-		mpCBFocusIconStyle->SetFocusNavigation(eUIArrow_Down, mpChBShowCommentary);
-		mpChBShowCommentary->SetFocusNavigation(eUIArrow_Down, mpBOK);
 
-		pLastWidget = mpChBShowCommentary;
-	}
-	else
-	{
-		mpCBFocusIconStyle->SetFocusNavigation(eUIArrow_Down, mpBOK);
+	mpCBFocusIconStyle->SetFocusNavigation(eUIArrow_Down, mpBOK);
 
-		pLastWidget = mpCBFocusIconStyle;
-	}
+	pLastWidget = mpCBFocusIconStyle;
 
 	apTab->SetUserData(pLastWidget);
 	apTab->GetTabLabel()->SetUserData(mpCBLanguage);
@@ -381,17 +355,10 @@ void cLuxMainMenu_Options::AddGameOptions(cWidgetTab* apTab)
 
 	// Up
 	mpChBShowSubtitles->SetFocusNavigation(eUIArrow_Up, mpCBLanguage);
-	mpChBShowEffectSubtitles->SetFocusNavigation(eUIArrow_Up, mpCBLanguage);
 	mpChBShowHints->SetFocusNavigation(eUIArrow_Up, mpChBShowSubtitles);
-	mpChBShowDeathHints->SetFocusNavigation(eUIArrow_Up, mpChBShowHints);
-	mpChBShowCrosshair->SetFocusNavigation(eUIArrow_Up, mpChBShowDeathHints);
+	//mpChBShowDeathHints->SetFocusNavigation(eUIArrow_Up, mpChBShowHints);
+	mpChBShowCrosshair->SetFocusNavigation(eUIArrow_Up, mpChBShowHints);
 	mpCBFocusIconStyle->SetFocusNavigation(eUIArrow_Up, mpChBShowCrosshair);
-	if(mbShowCommentary)
-		mpChBShowCommentary->SetFocusNavigation(eUIArrow_Up, mpCBFocusIconStyle);
-
-	// Left/Right
-	mpChBShowSubtitles->SetFocusNavigation(eUIArrow_Right, mpChBShowEffectSubtitles);
-	mpChBShowEffectSubtitles->SetFocusNavigation(eUIArrow_Left, mpChBShowSubtitles);
 }
 
 //-----------------------------------------------------------------------
@@ -480,14 +447,12 @@ void cLuxMainMenu_Options::AddBasicGfxOptions(cWidgetDummy* apDummy)
 		// Full screen and Vsync
 		mpChBFullScreen = mpGuiSet->CreateWidgetCheckBox(vPosInGroup + cVector3f(0,2,0), -1, kTranslate("OptionsMenu","FullScreen"), pGroup);
 		SetUpInput(NULL, mpChBFullScreen, true, kTranslate("OptionsMenu","FullScreenTip"));
-
+		
 		mpChBVSync = mpGuiSet->CreateWidgetCheckBox(vPosInGroup + cVector3f(0,mpChBFullScreen->GetSize().y+10,0), 0, kTranslate("OptionsMenu","VSync"), pGroup);
 		SetUpInput(NULL, mpChBVSync, false, kTranslate("OptionsMenu","VSyncTip"));
 
-
-//		mpChBAdaptiveVSync = mpGuiSet->CreateWidgetCheckBox(vPosInGroup + cVector3f(mpChBVSync->GetSize().x+10,mpChBFullScreen->GetSize().y+10,0), 0, kTranslate("OptionsMenu","AdaptiveVSync"), pGroup);
-//		SetUpInput(NULL, mpChBAdaptiveVSync, false, kTranslate("OptionsMenu","AdaptiveVSyncTip"));
-
+		mpChBAdaptiveVSync = mpGuiSet->CreateWidgetCheckBox(vPosInGroup + cVector3f(mpChBVSync->GetSize().x+10,mpChBFullScreen->GetSize().y+10,0), 0, kTranslate("OptionsMenu","AdaptiveVSync"), pGroup);
+		SetUpInput(NULL, mpChBAdaptiveVSync, false, kTranslate("OptionsMenu","AdaptiveVSyncTip"));
 	}
 
 	vPos.y += pGroup->GetSize().y + 15;
@@ -543,15 +508,15 @@ void cLuxMainMenu_Options::AddBasicGfxOptions(cWidgetDummy* apDummy)
 
 	mpChBFullScreen->SetFocusNavigation(eUIArrow_Left, mpCBResolution);
 	mpChBFullScreen->SetFocusNavigation(eUIArrow_Down, mpChBVSync);
-
+	
 	mpChBVSync->SetFocusNavigation(eUIArrow_Left, mpCBResolution);
-//	mpChBVSync->SetFocusNavigation(eUIArrow_Right, mpChBAdaptiveVSync);
+	mpChBVSync->SetFocusNavigation(eUIArrow_Right, mpChBAdaptiveVSync);
 	mpChBVSync->SetFocusNavigation(eUIArrow_Up, mpChBFullScreen);
 	mpChBVSync->SetFocusNavigation(eUIArrow_Down, mpCBTextureSizeLevel);
 	
-//	mpChBAdaptiveVSync->SetFocusNavigation(eUIArrow_Left, mpChBVSync);
-//	mpChBAdaptiveVSync->SetFocusNavigation(eUIArrow_Up, mpChBFullScreen);
-//	mpChBAdaptiveVSync->SetFocusNavigation(eUIArrow_Down, mpCBTextureSizeLevel);
+	mpChBAdaptiveVSync->SetFocusNavigation(eUIArrow_Left, mpChBVSync);
+	mpChBAdaptiveVSync->SetFocusNavigation(eUIArrow_Up, mpChBFullScreen);
+	mpChBAdaptiveVSync->SetFocusNavigation(eUIArrow_Down, mpCBTextureSizeLevel);
 
 	mpCBTextureSizeLevel->SetFocusNavigation(eUIArrow_Up, mpCBResolution);
 	mpCBTextureSizeLevel->SetFocusNavigation(eUIArrow_Down, mpSGamma);
@@ -715,8 +680,8 @@ void cLuxMainMenu_Options::AddAdvancedGfxOptions(cWidgetDummy* apDummy)
 		vPosInGroup.x += fItemSep;
 
 		// Insanity
-		mpChBInsanity = mpGuiSet->CreateWidgetCheckBox(vPosInGroup, 0, kTranslate("OptionsMenu","Insanity"), pGroup);
-		SetUpInput(NULL, mpChBInsanity, false, kTranslate("OptionsMenu","InsanityTip"));
+		mpChBColorGrading = mpGuiSet->CreateWidgetCheckBox(vPosInGroup, 0, kTranslate("OptionsMenu","ColorGrading"), pGroup);
+		SetUpInput(NULL, mpChBColorGrading, false, kTranslate("OptionsMenu","ColorGradingTip"));
 	}
 
 	vPos.y += pGroup->GetSize().y + 10;
@@ -805,7 +770,7 @@ void cLuxMainMenu_Options::AddAdvancedGfxOptions(cWidgetDummy* apDummy)
 
 	mpChBShadows; mpCBShadowQuality; mpCBShadowRes;
 
-	mpChBBloom; mpChBSepia; mpChBInsanity;
+	mpChBBloom; mpChBSepia; //mpChBInsanity;
 	mpChBImageTrail; mpChBRadialBlur;
 
 	mpChBSSAO; mpCBSSAOSamples; mpCBSSAOResolution;
@@ -838,23 +803,23 @@ void cLuxMainMenu_Options::AddAdvancedGfxOptions(cWidgetDummy* apDummy)
 
 		mpChBShadows->SetFocusNavigation(eUIArrow_Down, mpChBBloom);
 		mpCBShadowQuality->SetFocusNavigation(eUIArrow_Down, mpChBSepia);
-		mpCBShadowRes->SetFocusNavigation(eUIArrow_Down, mpChBInsanity);
+		mpCBShadowRes->SetFocusNavigation(eUIArrow_Down, mpChBSepia);
 	}
 
 	{
 		mpChBBloom->SetFocusNavigation(eUIArrow_Up, mpChBShadows);
 		mpChBSepia->SetFocusNavigation(eUIArrow_Up, mpCBShadowQuality);
-		mpChBInsanity->SetFocusNavigation(eUIArrow_Up, mpCBShadowRes);
+		mpChBColorGrading->SetFocusNavigation(eUIArrow_Up, mpCBShadowRes);
 
 		mpChBBloom->SetFocusNavigation(eUIArrow_Right, mpChBSepia);
-		mpChBSepia->SetFocusNavigation(eUIArrow_Right, mpChBInsanity);
+		mpChBSepia->SetFocusNavigation(eUIArrow_Right, mpChBColorGrading);
 
 		mpChBSepia->SetFocusNavigation(eUIArrow_Left, mpChBBloom);
-		mpChBInsanity->SetFocusNavigation(eUIArrow_Left, mpChBSepia);
+		mpChBColorGrading->SetFocusNavigation(eUIArrow_Left, mpChBSepia);
 
 		mpChBBloom->SetFocusNavigation(eUIArrow_Down, mpChBImageTrail);
 		mpChBSepia->SetFocusNavigation(eUIArrow_Down, mpChBRadialBlur);
-		mpChBInsanity->SetFocusNavigation(eUIArrow_Down, mpChBRadialBlur);
+		mpChBColorGrading->SetFocusNavigation(eUIArrow_Down, mpChBRadialBlur);
 
 		mpChBImageTrail->SetFocusNavigation(eUIArrow_Up, mpChBBloom);
 		mpChBRadialBlur->SetFocusNavigation(eUIArrow_Up, mpChBSepia);
@@ -1076,20 +1041,14 @@ void cLuxMainMenu_Options::SetInputValues(cResourceVarsObject& aObj)
 	{
 		// Show hints
 		mpChBShowSubtitles->SetChecked(aObj.GetVarBool("ShowSubtitles"),false);
-		mpChBShowEffectSubtitles->SetChecked(aObj.GetVarBool("ShowEffectSubtitles"), false);
 		mpChBShowHints->SetChecked(aObj.GetVarBool("ShowHints"), false);
-		mpChBShowDeathHints->SetChecked(aObj.GetVarBool("ShowDeathHints"), false);
+//		mpChBShowDeathHints->SetChecked(aObj.GetVarBool("ShowDeathHints"), false);
 
 		mpChBShowCrosshair->SetChecked(aObj.GetVarBool("ShowCrosshair"), false);
 
 		mpCBFocusIconStyle->SetSelectedItem(aObj.GetVarInt("FocusIconStyle"), false, false);
 		if(mpCBFocusIconStyle->GetSelectedItem()==-1)
 			mpCBFocusIconStyle->SetSelectedItem(0, false, true);
-
-		if(mbShowCommentary)
-		{
-			mpChBShowCommentary->SetChecked(aObj.GetVarBool("ShowCommentary"), false);
-		}
 
 		// Language
 		{
@@ -1193,7 +1152,7 @@ void cLuxMainMenu_Options::SetInputValues(cResourceVarsObject& aObj)
 		// Fullscreen & vsync
 		mpChBFullScreen->SetChecked(aObj.GetVarBool("FullScreen"), false);
 		mpChBVSync->SetChecked(aObj.GetVarBool("VSync"), false);
-//		mpChBAdaptiveVSync->SetChecked(aObj.GetVarBool("AdaptiveVsync"), false);
+		mpChBAdaptiveVSync->SetChecked(aObj.GetVarBool("AdaptiveVsync"), false);
 
 		/////////////////////////
 		// Texture quality and filtering
@@ -1315,7 +1274,7 @@ void cLuxMainMenu_Options::SetInputValues(cResourceVarsObject& aObj)
 			// RadialBlur
 			mpChBRadialBlur->SetChecked(aObj.GetVarBool("RadialBlurActive"), false); 
 			//Insanity
-			mpChBInsanity->SetChecked(aObj.GetVarBool("InsanityActive"), false); 
+			mpChBColorGrading->SetChecked(aObj.GetVarBool("ColorGradingActive"), false); 
 		}
 
 		// Gamma
@@ -1443,14 +1402,8 @@ void cLuxMainMenu_Options::ApplyChanges()
 	{
 		pCfgHdr->msLangFile = cString::To8Char(mvLangFiles[mpCBLanguage->GetSelectedItem()]);
 		gpBase->mpMessageHandler->SetShowSubtitles(mpChBShowSubtitles->IsChecked());
-		gpBase->mpMessageHandler->SetShowEffectSubtitles(mpChBShowEffectSubtitles->IsChecked());
 		gpBase->mpHintHandler->SetActive(mpChBShowHints->IsChecked());
-		gpBase->mpPlayer->GetHelperDeath()->SetShowHint(mpChBShowDeathHints->IsChecked());
-
-		if(mbShowCommentary)
-		{
-			gpBase->mpMapHandler->SetShowCommentary(mpChBShowCommentary->IsChecked());
-		}
+//		gpBase->mpPlayer->GetHelperDeath()->SetShowHint(mpChBShowDeathHints->IsChecked());
 
 		gpBase->mpPlayer->SetShowCrosshair(mpChBShowCrosshair->IsChecked());
 
@@ -1470,7 +1423,7 @@ void cLuxMainMenu_Options::ApplyChanges()
         pCfgHdr->mlDisplay = vidMode.mlDisplay;
 		pCfgHdr->mbFullscreen = mpChBFullScreen->IsChecked();
 		pCfgHdr->mbVSync = mpChBVSync->IsChecked();
-//		pCfgHdr->mbAdaptiveVSync = mpChBAdaptiveVSync->IsChecked();
+		pCfgHdr->mbAdaptiveVSync = mpChBAdaptiveVSync->IsChecked();
 		pGfx->GetLowLevel()->SetVsyncActive(pCfgHdr->mbVSync, pCfgHdr->mbAdaptiveVSync);
 		pGfx->GetLowLevel()->SetGammaCorrection(GetGamma());
 
@@ -1523,7 +1476,7 @@ void cLuxMainMenu_Options::ApplyChanges()
 			// RadialBlur
 			pMapHdlr->GetPostEffect_RadialBlur()->SetDisabled(mpChBRadialBlur->IsChecked()==false);
 			//Insanity
-			pPostEffects->GetInsanity()->SetDisabled(mpChBInsanity->IsChecked()==false);
+			pMapHdlr->GetPostEffect_ColorGrading()->SetDisabled(mpChBColorGrading->IsChecked()==false);
 		}
 
 		// SSAO
@@ -1759,11 +1712,9 @@ void cLuxMainMenu_Options::DumpInitialValues(cResourceVarsObject &aObj)
 		aObj.AddVarBool("ShowHints", gpBase->mpHintHandler->IsActive());
 		aObj.AddVarBool("ShowDeathHints", gpBase->mpPlayer->GetHelperDeath()->ShowHint());
 		aObj.AddVarBool("ShowSubtitles", gpBase->mpMessageHandler->ShowSubtitles());
-		aObj.AddVarBool("ShowEffectSubtitles", gpBase->mpMessageHandler->ShowEffectSubtitles());
 
 		aObj.AddVarBool("ShowCrosshair", gpBase->mpPlayer->GetShowCrosshair());
 		aObj.AddVarInt("FocusIconStyle", gpBase->mpPlayer->GetFocusIconStyle());
-		aObj.AddVarBool("ShowCommentary", gpBase->mpMapHandler->GetShowCommentary());
 
 		// Language
 		aObj.AddVarString("Language", gpBase->mpConfigHandler->msLangFile);
@@ -1821,7 +1772,7 @@ void cLuxMainMenu_Options::DumpInitialValues(cResourceVarsObject &aObj)
 		aObj.AddVarBool("ImageTrailActive", pMapHdlr->GetPostEffect_ImageTrail()->IsDisabled()==false);
 		aObj.AddVarBool("SepiaActive", pMapHdlr->GetPostEffect_Sepia()->IsDisabled()==false);
 		aObj.AddVarBool("RadialBlurActive", pMapHdlr->GetPostEffect_RadialBlur()->IsDisabled()==false);
-		aObj.AddVarBool("InsanityActive", pPostEffects->GetInsanity()->IsDisabled()==false);
+		aObj.AddVarBool("ColorGradingActive", pMapHdlr->GetPostEffect_ColorGrading()->IsDisabled()==false);
 
 
 		///////////////////
@@ -1855,9 +1806,8 @@ void cLuxMainMenu_Options::DumpCurrentValues(cResourceVarsObject &aObj)
 	// Game options
 	{
 		aObj.AddVarBool("ShowHints",		mpChBShowHints->IsChecked());
-		aObj.AddVarBool("ShowDeathHints",	mpChBShowDeathHints->IsChecked());
+//		aObj.AddVarBool("ShowDeathHints",	mpChBShowDeathHints->IsChecked());
 		aObj.AddVarBool("ShowSubtitles",	mpChBShowSubtitles->IsChecked());
-		aObj.AddVarBool("ShowEffectSubtitles", mpChBShowEffectSubtitles->IsChecked());
 
 		aObj.AddVarBool("ShowCrosshair",	mpChBShowCrosshair->IsChecked());
 		aObj.AddVarInt("FocusIconStyle",	mpCBFocusIconStyle->GetSelectedItem());
@@ -1915,7 +1865,7 @@ void cLuxMainMenu_Options::DumpCurrentValues(cResourceVarsObject &aObj)
 		aObj.AddVarBool("ImageTrailActive", mpChBImageTrail->IsChecked());
 		aObj.AddVarBool("SepiaActive", mpChBSepia->IsChecked());
 		aObj.AddVarBool("RadialBlurActive", mpChBRadialBlur->IsChecked());
-		aObj.AddVarBool("InsanityActive", mpChBInsanity->IsChecked());
+		aObj.AddVarBool("ColorGradingActive", mpChBColorGrading->IsChecked());
 
 		///////////////////
 		// Gamma
@@ -2051,6 +2001,11 @@ bool cLuxMainMenu_Options::Option_OnMouseOver(iWidget* apWidget, const cGuiMessa
 			}
 		}
 	}
+	else
+	{
+		mpGuiSet->SetFocusedWidget(apWidget);
+	}
+
 	return true;
 }
 kGuiCallbackDeclaredFuncEnd(cLuxMainMenu_Options, Option_OnMouseOver);

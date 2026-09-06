@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #if !USE_SDL2
@@ -115,16 +115,15 @@ namespace hpl {
 		{
 			SDL_Event *pEvent = &(*it);
 
-			if(pEvent->type != SDL_JOYAXISMOTION	&& 
+			if((pEvent->type != SDL_JOYAXISMOTION	&& 
 				pEvent->type != SDL_JOYBUTTONUP		&&
 				pEvent->type != SDL_JOYBUTTONDOWN	&&
 				pEvent->type != SDL_JOYHATMOTION	&& 
-				pEvent->type != SDL_JOYBALLMOTION	||
-				pEvent->jaxis.which		!= mlIndex	&&
-				pEvent->jbutton.which	!= mlIndex	&&
-				pEvent->jhat.which		!= mlIndex	&&
-				pEvent->jball.which		!= mlIndex)
+				pEvent->type != SDL_JOYBALLMOTION)	||
+				pEvent->jaxis.which	!= mlIndex)
 			{
+                // The above check works because "which" is at the same location for all joystick events
+                // so we only need to check ONE of them the way this check is written
 				continue;
 			}
 
@@ -132,8 +131,6 @@ namespace hpl {
 			{
 				eGamepadAxis axis = SDLToAxis(pEvent->jaxis.axis);
 				float fAxisValue = SDLToAxisValue(pEvent->jaxis.value);
-
-				if(axis < 0 || axis >= GetNumAxes()) continue;
 				
 				if(cMath::Abs(fAxisValue) < mfDeadZoneRadius)
 					fAxisValue = 0.0f;
@@ -152,8 +149,6 @@ namespace hpl {
 				eGamepadHat hat = SDLToHat(pEvent->jhat.hat);
 				eGamepadHatState state = SDLToHatState(pEvent->jhat.value);
 
-				if(hat < 0 || hat >= GetNumHats()) continue;
-
 				inputUpdate = cGamepadInputData(mlIndex, eGamepadInputType_Hat, hat, (float)state);
 				mlstHatStateChanges.push_back(inputUpdate);
 
@@ -165,8 +160,6 @@ namespace hpl {
 			{
 				eGamepadBall ball = SDLToBall(pEvent->jball.ball);
 				
-				if(ball < 0 || ball >= GetNumBalls()) continue;
-
 				cVector2l vDelta = cVector2l(pEvent->jball.xrel, pEvent->jball.yrel);
 				mvBallRelPosArray[ball] = vDelta;
 				mvBallAbsPosArray[ball] += vDelta;
@@ -175,8 +168,6 @@ namespace hpl {
 			{
 				eGamepadButton button = SDLToButton(pEvent->jbutton.button);
 				inputUpdate = cGamepadInputData(mlIndex, eGamepadInputType_Button, button, 0.0f);
-				
-				if(button < 0 || button >= GetNumButtons()) continue;
 
 				bool bPressed;
 				if(pEvent->type==SDL_JOYBUTTONUP)
@@ -235,12 +226,7 @@ namespace hpl {
 
     bool cGamepadSDL::ButtonIsDown(eGamepadButton aButton)
 	{
-		if(aButton >= 0 && aButton < GetNumButtons())
-		{
-			return mvButtonArray[aButton];
-		}
-
-		return false;
+		return mvButtonArray[aButton];
 	}
 
 	//-----------------------------------------------------------------------
@@ -284,12 +270,7 @@ namespace hpl {
 
 	float cGamepadSDL::GetAxisValue(eGamepadAxis aAxis)
 	{
-		if(aAxis >= 0 && aAxis < GetNumAxes())
-		{
-			return mvAxisArray[aAxis];
-		}
-
-		return 0;
+		return mvAxisArray[aAxis];
 	}
 
 	float cGamepadSDL::GetAxisDeadZoneRadiusValue()
@@ -320,12 +301,7 @@ namespace hpl {
 
 	eGamepadHatState cGamepadSDL::GetHatCurrentState(eGamepadHat aHat)
 	{
-		if(aHat >= 0 && aHat < GetNumHats())
-		{
-			return mvHatArray[aHat];
-		}
-
-		return eGamepadHatState_Centered;
+		return mvHatArray[aHat];
 	}
 
 	bool cGamepadSDL::HatIsInState(eGamepadHat aHat, eGamepadHatState aState)
@@ -349,22 +325,12 @@ namespace hpl {
 
 	cVector2l cGamepadSDL::GetBallAbsPos(eGamepadBall aBall)
 	{
-		if(aBall >= 0 && aBall < GetNumBalls())
-		{
-			return mvBallAbsPosArray[aBall];
-		}
-
-		return 0;
+		return mvBallAbsPosArray[aBall];
 	}
 
 	cVector2l cGamepadSDL::GetBallRelPos(eGamepadBall aBall)
 	{
-		if(aBall >= 0 && aBall < GetNumBalls())
-		{
-			return mvBallRelPosArray[aBall];
-		}
-
-		return 0;
+		return mvBallRelPosArray[aBall];
 	}
 	
 	//-----------------------------------------------------------------------

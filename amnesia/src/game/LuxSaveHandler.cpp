@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxSaveHandler.h"
@@ -33,7 +33,7 @@
 #include "LuxGlobalDataHandler.h"
 #include "LuxHintHandler.h"
 #include "LuxHelpFuncs.h"
-#include "LuxInsanityHandler.h"
+#include "LuxInfectionHandler.h"
 #include "LuxProgressLogHandler.h"
 #include "LuxLoadScreenHandler.h"
 #include "LuxSavedGame.h"
@@ -129,9 +129,7 @@ void cLuxSaveHandlerThreadClass::ProcessPendingSaves()
 
 			//Need to set saved maps before saving!
 			pData->mpSavedMaps = gpBase->mpMapHandler->GetSavedMapCollection();
-
 			cSerializeClass::SaveToFile(pData,sFile,"SaveGame");
-
 			hplDelete(pData);
 		}
 	}
@@ -256,15 +254,9 @@ void cLuxSaveHandler::LoadGameFromFile(const tWString& asFile)
 
 bool cLuxSaveHandler::AutoSave()
 {
-	//////////////////////
-	// HARDMODE
-	if (gpBase->mbHardMode)
-		return true;
-
-
 	DeleteOldestSaveFiles(gpBase->msProfileSavePath, mlMaxAutoSaves);
 	
-	SaveGameToFile(gpBase->msProfileSavePath+GetSaveName(_W("AutoSave")));
+	SaveGameToFile(gpBase->msProfileSavePath+GetSaveName(_W("AutoSave") ));
 
 	return true;
 }
@@ -286,18 +278,6 @@ bool cLuxSaveHandler::AutoLoad(bool abResetProgressLogger)
 		return false;
 	}
 	
-	////////////////////////////////
-	// HARDMODE
-	if (gpBase->mbHardMode)
-	{
-		if (sFile.find(_W("HardMode")) == tWString::npos)
-		{
-			Error("Could not find a hard mode save file in '%s'!\n", cString::To8Char(gpBase->msProfileSavePath).c_str());
-			return false;
-		}
-	}
-
-
 	//Reset the progress logger.
 	if(abResetProgressLogger)
 	{
@@ -321,27 +301,10 @@ bool cLuxSaveHandler::SaveFileExists()
 
 //-----------------------------------------------------------------------
 
-//////////////////////
-// HARDMODE
-bool cLuxSaveHandler::HardModeSave()
-{
-	SaveGameToFile(gpBase->msProfileSavePath + GetSaveName(_W("HardMode")));
-	return true;
-}
-
-//-----------------------------------------------------------------------
-
 cLuxSaveGame_SaveData *cLuxSaveHandler::CreateSaveGameData()
 {
 	cLuxSaveGame_SaveData *pSave = hplNew(cLuxSaveGame_SaveData, ());
-
-	/////////////////////
-	// HARDMODE
-
-	pSave->mbHardmode = gpBase->mbHardMode;
-
-	////////////////////
-
+	
 	pSave->msMapFolder = gpBase->mpMapHandler->GetMapFolder();
 
 	pSave->mInventory.FromInventory(gpBase->mpInventory);
@@ -352,9 +315,10 @@ cLuxSaveGame_SaveData *cLuxSaveHandler::CreateSaveGameData()
 	pSave->mEffectHandler.FromEffectHandler(gpBase->mpEffectHandler);
 	pSave->mGlobalDataHandler.FromGlobalDataHandler(gpBase->mpGlobalDataHandler);
 	pSave->mHintHandler.FromHintHandler(gpBase->mpHintHandler);
-	pSave->mInsanityHandler.FromInsanityHandler(gpBase->mpInsanityHandler);
+//	pSave->mInsanityHandler.FromInsanityHandler(gpBase->mpInsanityHandler);
 	pSave->mLoadScreenHandler.FromLoadScreenHandler(gpBase->mpLoadScreenHandler);
-
+	pSave->mSoundManager.FromSoundManager(gpBase->mpEngine->GetResources()->GetSoundManager());
+	
 	return pSave;
 }
 
@@ -389,7 +353,7 @@ void cLuxSaveHandler::LoadSaveGameData(cLuxSaveGame_SaveData *apSave)
 		gpBase->mpEffectHandler->Reset();
 		gpBase->mpGlobalDataHandler->Reset();
 		gpBase->mpHintHandler->Reset();
-		gpBase->mpInsanityHandler->Reset();
+		gpBase->mpInfectionHandler->Reset();
 		gpBase->mpLoadScreenHandler->Reset();
 		gpBase->mpMapHandler->GetSavedMapCollection()->Reset();
 
@@ -465,20 +429,21 @@ void cLuxSaveHandler::LoadSaveGameData(cLuxSaveGame_SaveData *apSave)
 	apSave->mMusicHandler.ToMusicHandler(pCurrentMap, gpBase->mpMusicHandler);
 	apSave->mEffectHandler.ToEffectHandler(pCurrentMap, gpBase->mpEffectHandler);
 	apSave->mGlobalDataHandler.ToGlobalDataHandler(pCurrentMap, gpBase->mpGlobalDataHandler);
-	apSave->mInsanityHandler.ToInsanityHandler(pCurrentMap, gpBase->mpInsanityHandler);
+//	apSave->mInsanityHandler.ToInsanityHandler(pCurrentMap, gpBase->mpInsanityHandler);
 	apSave->mLoadScreenHandler.ToLoadScreenHandler(pCurrentMap, gpBase->mpLoadScreenHandler);
 							 
 	///////////////////
 	// Load saved maps
 	gpBase->mpMapHandler->SetSavedMapCollection(apSave->mpSavedMaps);
-	
-	///////////////////
-	//Hardmode
-	gpBase->mbHardMode = apSave->mbHardmode;
 
 	//////////////////////////////////
 	//Clean up
 	gpBase->mpHelpFuncs->CleanupData();
+
+	////////////
+	// Preload sound after cleanup
+	apSave->mSoundManager.ToSoundManager(gpBase->mpEngine->GetResources()->GetSoundManager());
+	
 	
 	///////////////////
 	// Destroy cache
@@ -497,6 +462,10 @@ tWString cLuxSaveHandler::GetProperSaveName(const tWString &asFile)
 	cString::GetStringVecW(asFile, vSaveNameStrings, &sSeparator);
 
 	if(vSaveNameStrings.size() != 9) return _W("INVALID SAVE FILE SYNTAX");
+	
+	// Convert to upper in case of non-case sensitive name
+	vSaveNameStrings[0][0] = cString::ToUpperCaseW(vSaveNameStrings[0])[0];
+	vSaveNameStrings[1][0] = cString::ToUpperCaseW(vSaveNameStrings[1])[0];
 
 	// Store prefix
 	sProperName = vSaveNameStrings[0];

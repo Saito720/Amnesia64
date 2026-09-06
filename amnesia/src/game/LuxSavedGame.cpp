@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxSavedGame.h"
@@ -176,6 +176,7 @@ void cLuxSavedGameEnemy::FromEnemy(iLuxEnemy *apEnemy)
 		mvPatrolNodes[i].mlNodeId = 	apEnemy->GetPatrolNode(i)->mpNode->GetID();
 		mvPatrolNodes[i].mfWaitTime = 	apEnemy->GetPatrolNode(i)->mfWaitTime;
 		mvPatrolNodes[i].msAnimation = 	apEnemy->GetPatrolNode(i)->msAnimation;
+		mvPatrolNodes[i].mbLoopAnimation = apEnemy->GetPatrolNode(i)->mbLoopAnimation;
 	}
 }
 
@@ -195,7 +196,7 @@ void cLuxSavedGameEnemy::ToEnemy(cLuxMap *apMap, iLuxEnemy *apEnemy)
 			cAINode* pNode = apEnemy->GetPathFinder()->GetNodeContainer()->GetNodeFromID(mvPatrolNodes[i].mlNodeId);
 			if(pNode==NULL) continue;
 
-			apEnemy->AddPatrolNode(pNode, mvPatrolNodes[i].mfWaitTime, mvPatrolNodes[i].msAnimation);
+			apEnemy->AddPatrolNode(pNode, mvPatrolNodes[i].mfWaitTime, mvPatrolNodes[i].msAnimation, mvPatrolNodes[i].mbLoopAnimation);
 		}
 	}
 }
@@ -406,7 +407,8 @@ void cLuxSavedGameMap::FromMap(cLuxMap *apMap)
 		{
 			cParticleSystem *pPS = psIt.Next();
 
-			if(	pPS->IsSaved() && pPS->GetEntityParent() == NULL && pPS->GetParent()==NULL && pPS->IsDying()==false)// && pPS->GetUniqueID()<0)
+			if(	pPS->IsSaved() && pPS->GetEntityParent() == NULL && pPS->GetParent()==NULL && 
+			  (pPS->IsDying()==false || pPS->IsActive() == false && pPS->IsDead() == false)) //Save PS that are either looping or that have not been activated yet
 			{
 				cEnginePS_SaveData savePS;
 				savePS.FromPS(pPS);
@@ -1097,24 +1099,30 @@ cLuxSavedGameMapCollection::cLuxSavedGameMapCollection()
 
 cLuxSavedGameMapCollection::~cLuxSavedGameMapCollection()
 {
-	cContainerListIterator<cLuxSavedGameMap*> it = mlstMaps.GetIterator();
-	while(it.HasNext())
+	if(mlstMaps.Size() > 0)
 	{
-		hplDelete( it.Next() );
+		cContainerListIterator<cLuxSavedGameMap*> it = mlstMaps.GetIterator();
+		while(it.HasNext())
+		{
+			hplDelete( it.Next() );
+		}
+		mlstMaps.Clear();
 	}
-	mlstMaps.Clear();
 }
 
 //-----------------------------------------------------------------------
 
 void cLuxSavedGameMapCollection::Reset()
 {
-	cContainerListIterator<cLuxSavedGameMap*> it = mlstMaps.GetIterator();
-	while(it.HasNext())
+	if(mlstMaps.Size() > 0)
 	{
-		hplDelete( it.Next() );
+		cContainerListIterator<cLuxSavedGameMap*> it = mlstMaps.GetIterator();
+		while(it.HasNext())
+		{
+			hplDelete( it.Next() );
+		}
+		mlstMaps.Clear();
 	}
-	mlstMaps.Clear();
 }
 
 //-----------------------------------------------------------------------

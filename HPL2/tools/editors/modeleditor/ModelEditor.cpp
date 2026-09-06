@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "ModelEditor.h"
@@ -174,9 +174,7 @@ bool cModelEditor::MainMenu_ItemClick(iWidget* apWidget, const cGuiMessageData& 
 	// Menu Item "File.Import Mesh"
 	else if(apWidget==mpMainMenuImport)
 	{
-		tWStringList vFilters = tWStringList(1,_W("*.dae"));
-		//vFilters.push_back(_W("*.fbx"));
-		ShowLoadFilePicker(mvLoadFilenames, msLastMeshPath,this, kGuiCallback(MeshImport_Callback), _W("Meshes"), vFilters);
+		ShowLoadFilePicker(mvLoadFilenames, msLastMeshPath,this, kGuiCallback(MeshImport_Callback), _W("Collada Meshes"), tWStringList(1,_W("*.dae")));
 	}
 	/////////////////////////////////////////////////////////////////
 	// Menu Item "Edit.Search Entity"
@@ -335,7 +333,7 @@ void cModelEditor::OnSetUpDirectories()
 {
 	const tWString& sWorkingDir = GetWorkingDir();
 
-	mpDirHandler->AddLookUpDir(eDir_Maps, sWorkingDir + mpMainConfig->GetStringW("Directories", "MapsDir", _W("maps")), true); 
+	//mpDirHandler->AddLookUpDir(eDir_Maps, sWorkingDir + mpMainConfig->GetStringW("Directories", "MapsDir", _W("maps")), true);
 }
 
 //--------------------------------------------------------------------
@@ -408,7 +406,7 @@ void cModelEditor::OnLoadConfig()
 	//////////////////////////////////////////////////////////////
 	// Set up loading stuff that is specific to this editor, 
 	// and stuff like log filename (this is done pre engine creation)
-	tWString sConfigFile = GetHomeDir() + _W("ModelEditor.cfg");
+	tWString sConfigFile = GetFolderFullPath(eEditorDir_Home) + _W("ModelEditor.cfg");
 
 	mpLocalConfig = hplNew(cConfigFile, (sConfigFile));
 	mpLocalConfig->Load();
@@ -440,9 +438,9 @@ void cModelEditor::OnLoadConfig()
 
 
 	msCaption = "HPL Model Editor";
-	SetLogFile(GetHomeDir() + _W("ModelEditor.log"));
+	SetLogFile(GetFolderFullPath(eEditorDir_Home) + _W("ModelEditor.log"));
 
-	msLastLoadPath = mpLocalConfig->GetStringW("Directories", "LastUsedPath", GetMainLookUpDir(eDir_Maps));
+	msLastLoadPath = mpLocalConfig->GetStringW("Directories", "LastUsedPath", _W(""));
 	msLastMeshPath = mpLocalConfig->GetStringW("Directories", "LastUsedMeshPath", _W(""));
 }
 

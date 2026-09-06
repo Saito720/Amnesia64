@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "scene/Light.h"
@@ -75,6 +75,9 @@ namespace hpl {
 
 		mfShadowMapBiasMul = 1;
 		mfShadowMapSlopeScaleBiasMul = 1;
+
+		mfFalloff = 1.0f;
+		mfBrightness = 1.0f;
 			
 		///////////////////////////////
 		//Fade and flicker init
@@ -94,10 +97,6 @@ namespace hpl {
 
 		///////////////////////////////
 		//Data init
-		mpFalloffMap = mpTextureManager->Create1D("core_falloff_linear",false);
-		mpFalloffMap->SetWrapS(eTextureWrap_ClampToEdge);
-		mpFalloffMap->SetWrapT(eTextureWrap_ClampToEdge);
-
 		mpGoboTexture = NULL;
 
 
@@ -109,7 +108,6 @@ namespace hpl {
 	iLight::~iLight()
 	{
 		if(mpVisibleNodeTracker) hplDelete(mpVisibleNodeTracker);
-		if(mpFalloffMap) mpTextureManager->Destroy(mpFalloffMap);
 		if(mpGoboTexture) mpTextureManager->Destroy(mpGoboTexture);
 	}	
 
@@ -131,7 +129,9 @@ namespace hpl {
 
 	bool iLight::IsVisible()
 	{ 
-		if(mDiffuseColor.r <=0 && mDiffuseColor.g <=0 && mDiffuseColor.b <=0 && mDiffuseColor.a <=0) 
+		if(mfBrightness <= 0) return false;
+
+		if(mDiffuseColor.r <=0 && mDiffuseColor.g <=0 && mDiffuseColor.b <=0) 
 			return false;
 		if(mfRadius <= 0) return false;
 
@@ -143,11 +143,11 @@ namespace hpl {
 
 	void iLight::SetDiffuseColor(cColor aColor)
 	{
-		bool bWasVisble = (mDiffuseColor.r >0 || mDiffuseColor.g >0 || mDiffuseColor.b >0 || mDiffuseColor.a >0);
+		bool bWasVisble = IsVisible();
 		
 		mDiffuseColor = aColor;
 
-		bool bVisible = (mDiffuseColor.r >0 || mDiffuseColor.g >0 || mDiffuseColor.b >0 || mDiffuseColor.a >0);
+		bool bVisible = IsVisible();
 		
 		//Check if the light changed its visibility
 		if(mbIsVisible && bVisible != bWasVisble && mpRenderCallback)
@@ -156,6 +156,11 @@ namespace hpl {
 		}
 
 		OnSetDiffuse();
+	}
+
+	cColor iLight::GetColor()
+	{
+		return mDiffuseColor * cColor(mfBrightness, 1);
 	}
 
 	//-----------------------------------------------------------------------
@@ -273,6 +278,7 @@ namespace hpl {
 		if(afTime<=0) afTime = 0.0001f;
 
 		mfFadeTime = afTime;
+		mfFadeDuration = afTime;
 
 		mColAdd.r = (aCol.r - mDiffuseColor.r)/afTime;
 		mColAdd.g = (aCol.g - mDiffuseColor.g)/afTime;
@@ -299,6 +305,12 @@ namespace hpl {
 
 	void iLight::SetFlickerActive(bool abX)
 	{
+		/*if ( mbFlickering && !abX )
+		{
+			SetDiffuseColor(mFlickerOnColor);
+			SetRadius(mfFlickerOnRadius);
+		}*/
+
 		mbFlickering = abX;
 	}
 
@@ -410,23 +422,6 @@ namespace hpl {
 	{
 		return &GetWorldMatrix();
 	}
-	
-	//-----------------------------------------------------------------------
-	
-	iTexture *iLight::GetFalloffMap()
-	{
-		return mpFalloffMap;
-	}
-
-	void iLight::SetFalloffMap(iTexture* apTexture)
-	{
-		if(mpFalloffMap) mpTextureManager->Destroy(mpFalloffMap);
-
-		mpFalloffMap = apTexture;
-		mpFalloffMap->SetWrapS(eTextureWrap_ClampToEdge);
-		mpFalloffMap->SetWrapT(eTextureWrap_ClampToEdge);
-		
-	}
 
 	//-----------------------------------------------------------------------
 
@@ -519,9 +514,8 @@ namespace hpl {
 
 					mDiffuseColor.a = cString::ToFloat(pMainElem->Attribute("Specular"),mDiffuseColor.a);
 					
-					tString sFalloffImage = cString::ToString(pMainElem->Attribute("FalloffImage"),"");
-					iTexture *pTexture = mpTextureManager->Create1D(sFalloffImage,false);
-					if(pTexture) SetFalloffMap(pTexture);
+					mfBrightness = cString::ToFloat(pMainElem->Attribute("Brightness"), mfBrightness);
+					mfFalloff = cString::ToFloat(pMainElem->Attribute("Falloff"), mfFalloff);
 
 					ExtraXMLProperties(pMainElem);
 				}

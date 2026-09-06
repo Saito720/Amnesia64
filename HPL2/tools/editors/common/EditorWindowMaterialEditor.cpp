@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "EditorWindowMaterialEditor.h"
@@ -961,9 +961,11 @@ cTextureUnitPanel::cTextureUnitPanel(cEditorWindowMaterialEditor* apWin, eMateri
 	mpHandle = pSet->CreateWidgetDummy(0, pParent);
 	mpLUnit = pSet->CreateWidgetLabel(0, 0, cString::To16Char(sLabel), mpHandle);
 	mpLUnit->SetDefaultFontSize(cVector2f(12));
+	mpWindow->AddWidget(mpLUnit);
 
 	mpInputs = pSet->CreateWidgetDummy(cVector3f(10,10,0) + cVector3f(0,mpLUnit->GetSize().y,0), mpHandle);
 
+	mpWindow->AddWidget(mpInputs);
 	cVector3f vPos = 0;
 
 	mpInpFile = mpWindow->CreateInputFile(vPos, _W("File"), "", mpInputs);
@@ -980,6 +982,7 @@ cTextureUnitPanel::cTextureUnitPanel(cEditorWindowMaterialEditor* apWin, eMateri
 	pFThumb->SetBackGroundColor(cColor(0,1));
 	
 	mpImgThumb = pSet->CreateWidgetImage("", cVector3f(0,0,0.01f), cVector2f(100), eGuiMaterial_Diffuse, false, pFThumb);
+	mpWindow->AddWidget(mpImgThumb);
 
 	mpInpWrap = mpWindow->CreateInputEnum(vPos, _W("Wrap Mode"), "", tWStringList(), mpInputs);
 	mpInpWrap->AddValue(_W("Repeat"));
@@ -1514,6 +1517,7 @@ void cEditorWindowMaterialEditor::OnInitLayout()
 	//////////////////////////////////////////////////
 	// Window Main menu setup
 	cWidgetMainMenu* pMenu = mpSet->CreateWidgetMainMenu(pParent);
+	AddWidget(pMenu);
 	cWidgetMenuItem* pItem = pMenu->AddMenuItem(_W("File"));
 	//////////////////
 	// File.New
@@ -1547,6 +1551,7 @@ void cEditorWindowMaterialEditor::OnInitLayout()
 	// Preview
 	{
 		pGroup = mpSet->CreateWidgetGroup(cVector3f(440,fStartY,0.1f), cVector2f(450,565), _W("Preview"), pParent);
+		AddWidget(pGroup);
 
 		////////////////////////////////////////////////
 		// Set up preview viewport
@@ -1604,6 +1609,8 @@ void cEditorWindowMaterialEditor::OnInitLayout()
 	// General inputs
 	{
 		pGroup = mpSet->CreateWidgetGroup(cVector3f(10,fStartY,0.1f), cVector2f(420, 85), _W("General"), pParent);
+		AddWidget(pGroup);
+
 
 		vPos = cVector3f(10,10,0.1f);
 		// Material Type
@@ -1650,6 +1657,7 @@ void cEditorWindowMaterialEditor::OnInitLayout()
 	// Animations
 	{
 		pGroup = mpSet->CreateWidgetGroup(pGroup->GetLocalPosition() + cVector3f(0, pGroup->GetSize().y+10,0), cVector2f(420,80), _W("UV Animations"), pParent);
+		AddWidget(pGroup);
 
 		vPos = cVector3f(10,10,0.1f);
 
@@ -1658,10 +1666,12 @@ void cEditorWindowMaterialEditor::OnInitLayout()
 
 		// Add anim button
 		mpBAddAnim = mpSet->CreateWidgetButton(vPos + cVector3f(0, mpInpUVAnimation->GetSize().y + 5,0), cVector2f(50,20), _W("Create"), pGroup);
+		AddWidget(mpBAddAnim);
 		mpBAddAnim->AddCallback(eGuiMessage_ButtonPressed,this,kGuiCallback(ButtonPressed));
 
 		// Remove anim button
 		mpBRemAnim = mpSet->CreateWidgetButton(vPos + cVector3f(55,mpInpUVAnimation->GetSize().y + 5,0), cVector2f(50,20), _W("Delete"), pGroup);
+		AddWidget(mpBAddAnim);
 		mpBRemAnim->AddCallback(eGuiMessage_ButtonPressed,this,kGuiCallback(ButtonPressed));
 
 		vPos.x += mpInpUVAnimation->GetSize().x + 30;
@@ -1695,11 +1705,13 @@ void cEditorWindowMaterialEditor::OnInitLayout()
 
 
 	pGroup = mpSet->CreateWidgetGroup(pGroup->GetLocalPosition() + cVector3f(0,pGroup->GetSize().y+10,0), cVector2f(420,380), _W("Texture Units"), pParent);
+	AddWidget(pGroup);
 
 	////////////////////////////////////////////////////
 	// Texture Unit Panels
 	{
 		mpFUnits = mpSet->CreateWidgetFrame(cVector3f(110,10,0.1f), cVector2f(300,340),false, pGroup, false, true);
+		AddWidget(mpFUnits);
 
 		mvUnitSwitches.resize(eMaterialTexture_LastEnum);
 		mvUnitPanels.resize(eMaterialTexture_LastEnum);
@@ -1724,8 +1736,10 @@ void cEditorWindowMaterialEditor::OnInitLayout()
 	// Material specific vars
 	{
 		pGroup = mpSet->CreateWidgetGroup(pGroup->GetLocalPosition() + cVector3f(0,pGroup->GetSize().y+10,0), cVector2f(880, 90), _W("Material Specific Variables"), pParent);
+		AddWidget(pGroup);
 
 		mpFMaterialVars = mpSet->CreateWidgetFrame(cVector3f(15,10,0.1f), cVector2f(860,75), false, pGroup, false, true);
+		AddWidget(mpFMaterialVars);
 	}
 }
 

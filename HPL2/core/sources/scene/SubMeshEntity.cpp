@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "scene/SubMeshEntity.h"
@@ -39,6 +39,7 @@
 #include "physics/PhysicsBody.h"
 
 #include "math/Math.h"
+#include "math/Frustum.h"
 
 namespace hpl {
 	//////////////////////////////////////////////////////////////////////////
@@ -75,6 +76,7 @@ namespace hpl {
 
 		mpMaterial = NULL;
 
+		mbIsOccluder = true;
 		mpUserData = NULL;
 
 		//This is used to see if null should be returned.
@@ -82,6 +84,7 @@ namespace hpl {
 		// -1 = Matrix was not identity
 		// 1 = matrix was identiy
 		mlStaticNullMatrixCount =0;
+		mlBoneMatricesUpdateCount = -2; 
 	}
 
 	cSubMeshEntity::~cSubMeshEntity()
@@ -183,6 +186,15 @@ namespace hpl {
 	}
 
 	//-----------------------------------------------------------------------
+	
+	bool cSubMeshEntity::UpdateGraphicsForViewport(cFrustum *apFrustum,float afFrameTime)
+	{
+		/////////////////
+		// Get distance to frustum
+		if(IsStatic() == false && apFrustum) mfDistanceToFrustum = cMath::Vector3DistSqr(apFrustum->GetOrigin(), GetWorldPosition());
+
+		return true;
+	}
 
 	void cSubMeshEntity::UpdateGraphicsForFrame(float afFrameTime)
 	{
@@ -198,7 +210,13 @@ namespace hpl {
 			{
 				return;
 			}
+
+			if(mpMeshEntity->mlBoneMatricesUpdateCount == mlBoneMatricesUpdateCount)
+			{
+				return; //dont update paused animations
+			}
 			
+			mlBoneMatricesUpdateCount = mpMeshEntity->mlBoneMatricesUpdateCount;
 			mbGraphicsUpdated = true;
 
 			const float *pBindPos = mpSubMesh->GetVertexBuffer()->GetFloatArray(eVertexBufferElement_Position);
@@ -234,7 +252,7 @@ namespace hpl {
 				++pWeight; ++pBoneIdx; ++lCount;
 
 				//Iterate weights until 0 is found or count < 4
-				while(*pWeight != 0 && lCount < 4)
+				while(lCount < 4 && *pWeight != 0)
 				{
 					//Log("Boneidx: %d Count %d Weight: %f\n",(int)*pBoneIdx,lCount, *pWeight);				
 					const cMatrixf &mtxTransform = mpMeshEntity->mvBoneMatrices[*pBoneIdx];
@@ -312,14 +330,19 @@ namespace hpl {
 		}	
 		else
 		{
-			if(mbUpdateBoundingVolume)
-			{
-				mBoundingVolume.SetTransform(GetWorldMatrix());
-				mbUpdateBoundingVolume = false;
-			}
-
-			return &mBoundingVolume;
+			return GetSubMeshBoundingVolume();	
 		}
+	}
+	
+	cBoundingVolume* cSubMeshEntity::GetSubMeshBoundingVolume()
+	{
+		if(mbUpdateBoundingVolume)
+		{
+			mBoundingVolume.SetTransform(GetWorldMatrix());
+			mbUpdateBoundingVolume = false;
+		}
+
+		return &mBoundingVolume;
 	}
 
 	//-----------------------------------------------------------------------
@@ -334,6 +357,7 @@ namespace hpl {
 
 	cMatrixf* cSubMeshEntity::GetModelMatrix(cFrustum *apFrustum)
 	{
+
 		////////////////////////
 		// Static entity
 		if(IsStatic() && mlStaticNullMatrixCount>=0)

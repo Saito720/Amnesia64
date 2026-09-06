@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxMap.h"
@@ -25,6 +25,7 @@
 #include "LuxAreaNodes.h"
 
 #include "LuxPlayer.h"
+#include "LuxPlayerHelpers.h"
 #include "LuxPlayerState.h"
 #include "LuxDebugHandler.h"
 #include "LuxCompletionCountHandler.h"
@@ -41,7 +42,6 @@
 #include "LuxProp_Lamp.h"
 #include "LuxArea_Sticky.h"
 
-#include <sstream>
 
 //////////////////////////////////////////////////////////////////////////
 // DISSOLVE ENTITIES
@@ -87,7 +87,7 @@ cLuxMap::cLuxMap(const tString& asName)
 
 	mbDeletingAllWorldEntities = false;
 
-	mbCommentaryIconsActive = false;
+    mfTimeToNexCriticalCheck = 30.0f;
 }
 
 //-----------------------------------------------------------------------
@@ -200,119 +200,7 @@ bool cLuxMap::LoadFromFile(const tString & asFile, bool abLoadEntities)
 	if(abLoadEntities) AfterWorldLoadEntitySetup();
 
 	gpBase->mpCurrentMapLoading = NULL;
-	
-
-	//////////////////
-	// HARDMODE
-	if (gpBase->mbHardMode)
-	{
-		std::vector<iLuxEntity*> vEntitiesToDestroy;
-			
-		int lNumTotalTinderboxes = 0;
-		int lNumRemovedTinderboxes = 0;
-		
-
-		float fMin = 7.0f / 10.0f;
-		float fMax = 9.5f / 10.0f;
-
-		float fCurrentNumTinderBoxes = static_cast<float>(gpBase->mpPlayer->GetTinderboxes());
-		float fMaxNumTinderboxes = 6;
-
-		float fT = fCurrentNumTinderBoxes / fMaxNumTinderboxes;
-
-		float fTinderBoxRemoveEvery = (1.0f - fT)*fMin + fT*fMax;
-
-		float fTinderBoxCounter = 0.0f;
-		//float fTinderBoxRemoveEvery = 8.5f / 10.0f;
-
-		int lNumTotalOil = 0;
-		int lNumRemovedOil = 0;
-
-		float fLampOilCounter = 0.0f;
-		float fLampOilRemoveEvery = 6.5f / 10.0f;
-		
-		/////////////////////
-		// Go through all entities
-		for (tLuxEntityListIt entityIt = mlstEntities.begin(); entityIt != mlstEntities.end(); ++entityIt)
-		{
-			iLuxEntity *pEntity = *entityIt;
-
-			eLuxEntityType entityType = pEntity->GetEntityType();
-
-			/////////////////////
-			// Check if entity is right type
-			if (entityType == eLuxEntityType_Prop)
-			{
-				iLuxProp *pProp = static_cast<iLuxProp*>(pEntity);
-				eLuxPropType propType = pProp->GetPropType();
-
-
-				if (propType == eLuxPropType_Item)
-				{
-					cLuxProp_Item *pItem = static_cast<cLuxProp_Item*>(pProp);
-					eLuxItemType itemType = pItem->GetItemType();
-					
-					/////////////////////
-					// Tinderbox
-					if (itemType == eLuxItemType_Tinderbox)
-					{
-						lNumTotalTinderboxes++;
-						fTinderBoxCounter += fTinderBoxRemoveEvery; 
-
-						if (fTinderBoxCounter >= 1.0f)
-						{
-							fTinderBoxCounter -= 1.0f;
-							vEntitiesToDestroy.push_back(pEntity);
-							lNumRemovedTinderboxes++;
-							continue;
-						}
-					}
-
-					/////////////////////
-					// Lamp oil
-					if (itemType == eLuxItemType_LampOil)
-					{
-						fLampOilCounter += fLampOilRemoveEvery;
-						lNumTotalOil++;
-						if (fLampOilCounter >= 1.0f)
-						{
-							fLampOilCounter -= 1.0f;
-							vEntitiesToDestroy.push_back(pEntity);
-							lNumRemovedOil++;
-							continue;
-						}
-					}
-				}
-			}
-		}
-
-#if 0
-		//////////////////////////
-		// Print what i've done
-		#if not MAC_OS && not LINUX
-		sDebugMsg += L" of ";
-		sDebugMsg += std::to_wstring(static_cast<long long>(lNumTotalTinderboxes));
-		sDebugMsg += L" tinderboxes removed, ";
-		sDebugMsg += std::to_wstring(static_cast<long double>(fTinderBoxRemoveEvery));
-		gpBase->mpDebugHandler->AddMessage(sDebugMsg, false);
-
-		sDebugMsg = std::to_wstring(static_cast<long long>(lNumRemovedOil));
-		sDebugMsg += L" of ";
-		sDebugMsg += std::to_wstring(static_cast<long long>(lNumTotalOil));
-		sDebugMsg += L" oil removed";
-
-		gpBase->mpDebugHandler->AddMessage(sDebugMsg, false);
-        #endif
-#endif
-
-		//////////////////////////
-		// Remove the entities from above
-		for (size_t i = 0; i < vEntitiesToDestroy.size(); ++i)
-		{
-			DestroyEntity(vEntitiesToDestroy[i]);
-		}
-	}
-
+	mfTimeToNexCriticalCheck = 30.0f;
 	return true;
 }
 
@@ -377,7 +265,6 @@ void cLuxMap::OnLeave(bool abRunScript)
 
 void cLuxMap::Update(float afTimeStep)
 {
-	UpdateCheckCommentaryIconActive(afTimeStep);
     UpdateDissolveEntities(afTimeStep);
 	UpdateTimers(afTimeStep);
 	
@@ -395,7 +282,7 @@ void cLuxMap::Update(float afTimeStep)
 	}
 
 	UpdateToBeDesotroyedEntities(true);
-
+	
 	UpdateLampLightConnections(afTimeStep);
 }
 
@@ -464,11 +351,15 @@ void cLuxMap::PlacePlayerAtStartPos(const tString& asPosName)
 
 //-----------------------------------------------------------------------
 
-void cLuxMap::SetCheckPoint(const tString& asName, const tString& asStartPos, const tString& asCallback)
+void cLuxMap::SetCheckPoint(const tString& asName, const tString& asStartPos, const tString& asCallback, bool abKeepPlayerInLimbo)
 {
+    Log( "setting checkpoint checkpoint name %s", asName.c_str() );
+
 	if(msCheckPointName == asName) return;
 
 	msCheckPointName = asName;
+
+	gpBase->mpPlayer->GetHelperDeath()->SetKeepPlayerInLimbo( abKeepPlayerInLimbo );
 	msCheckPointStartPos = asStartPos;
 	msCheckPointCallback = asCallback;
 	mlCheckPointCount =0;
@@ -519,7 +410,7 @@ void cLuxMap::LoadCheckPoint()
 	for(; it != mlstEnemies.end(); ++it)
 	{
 		iLuxEnemy *pEnemy = *it;
-		pEnemy->SetActive(false);
+		pEnemy->SetActive(pEnemy->StartsActive());
 		pEnemy->ResetProperties();
 	}
 
@@ -529,20 +420,20 @@ void cLuxMap::LoadCheckPoint()
 
 	//////////////////////////////
 	// Effects
-    gpBase->mpEffectHandler->GetFade()->FadeIn(0.2f);
-    
+	gpBase->mpEffectHandler->GetFade()->FadeIn(0.2f);
+	
 	//////////////////////////////
 	// Music
 	gpBase->mpMusicHandler->Reset();
 	if(msCheckPointMusic != "")
 		gpBase->mpMusicHandler->Play(msCheckPointMusic, true, mfCheckPointMusicVolume, 1, mlCheckPointMusicPrio,mbCheckPointMusicResume, false);
 
-
-	//////////////////////////////
-	// Run script (last thing done!)
-	RunScript(msCheckPointCallback + "(\""+ msCheckPointName + "\", "+cString::ToString(mlCheckPointCount)+")"  );
-	
 	mlCheckPointCount++;
+}
+
+void cLuxMap::RunCheckPointCallbackScript()
+{
+	RunScript(msCheckPointCallback + "(\""+ msCheckPointName + "\", "+cString::ToString(mlCheckPointCount)+")"  );
 }
 
 //-----------------------------------------------------------------------
@@ -576,8 +467,6 @@ void cLuxMap::DestroyAllEntities()
 	mpLatestAddedEntity = NULL;
 	mlstEnemies.clear();
 	mlstStickyAreas.clear();
-
-	mbCommentaryIconsActive = false;//Can reset this since all commentary icons are destroyed
 }
 
 //-----------------------------------------------------------------------
@@ -698,13 +587,14 @@ void cLuxMap::BroadcastEnemyMessage(eLuxEnemyMessage aType, bool abHasPosition, 
 
 //-----------------------------------------------------------------------
 
-void cLuxMap::BroadcastEnemySoundMessage(const cVector3f& avPos, float afVolume ,float afMinDist, float afMaxDist)
+void cLuxMap::BroadcastEnemySoundMessage(const cVector3f& avPos, float afVolume ,float afMinDist, float afMaxDist, tString asSoundName)
 {
 	cLuxEnemyIterator it =GetEnemyIterator();
 	while(it.HasNext())
 	{
 		iLuxEnemy *pEnemy = it.Next();
 		if(pEnemy->IsActive()==false) continue;
+		if(pEnemy->GetDeaf()) continue;
 
 		/////////////////////////
 		//Check intersection
@@ -724,7 +614,11 @@ void cLuxMap::BroadcastEnemySoundMessage(const cVector3f& avPos, float afVolume 
 
 		/////////////////////////
 		//Send message
+        pEnemy->SetHeardSound( asSoundName );
 		pEnemy->SendMessage(eLuxEnemyMessage_SoundHeard, 0, false, avPos, fHearVolume,0);
+		
+		//Log("Broadcasted %s\n", asSoundName.c_str());
+		//DebugMessage("Sound '"+asSoundName+"' heard by '"+pEnemy->GetName()+"' Vol:"+cString::ToString(fHearVolume,2)+ "");
 	}
 }
 
@@ -1321,6 +1215,7 @@ void cLuxMap::UpdateToBeDesotroyedEntities(bool abUseCallbacks)
 
 	mlstToBeDestroyedEntities.clear();
 }
+
 //-----------------------------------------------------------------------
 
 void cLuxMap::UpdateTimers(float afTimeStep)
@@ -1405,28 +1300,6 @@ void cLuxMap::UpdateLampLightConnections(float afTimeStep)
 		cLuxLampLightConnection* pConnection = *it;
 		
 		pConnection->Update(afTimeStep);
-	}
-}
-
-//-----------------------------------------------------------------------
-
-void cLuxMap::UpdateCheckCommentaryIconActive(float afTimeStep)
-{
-	if(mbCommentaryIconsActive == gpBase->mpMapHandler->GetShowCommentary()) return;
-
-	mbCommentaryIconsActive = gpBase->mpMapHandler->GetShowCommentary();
-
-	//////////////////////////////
-	//Go through all entities and set commentary icons with proper active value
-	tLuxEntityListIt entityIt = mlstEntities.begin();
-	for(; entityIt != mlstEntities.end(); ++entityIt)
-	{
-		iLuxEntity *pEntity = *entityIt;
-
-		if(pEntity->GetEntityType() == eLuxEntityType_CommentaryIcon)
-		{
-			pEntity->SetActive(mbCommentaryIconsActive);
-		}
 	}
 }
 

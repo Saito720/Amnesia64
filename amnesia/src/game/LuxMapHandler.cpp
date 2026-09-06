@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxMapHandler.h"
@@ -32,7 +32,9 @@
 #include "LuxMainMenu.h"
 
 #include "LuxEnemy.h"
+
 #include "LuxAchievementHandler.h"
+
 
 //////////////////////////////////////////////////////////////////////////
 // SOUND ENTITY CALLBACK
@@ -88,15 +90,15 @@ void cMapHandlerSoundCallback::OnStart(cSoundEntity *apSoundEntity)
 		}
 	}
 	if(bUsed == false) return;
-	
+
 	///////////////////////////
 	//Iterate enemies and send sound message to those close enough
 	float fMaxDist = apSoundEntity->GetMaxDistance();
 	float fMinDist = apSoundEntity->GetMaxDistance();
-	float fVolume = apSoundEntity->GetVolume();
+	float fVolume =  apSoundEntity->GetData()->GetAIVolume();
 	cVector3f vPos = apSoundEntity->GetWorldPosition();
-	
-	pMap->BroadcastEnemySoundMessage(vPos, fVolume, fMinDist, fMaxDist);
+
+	pMap->BroadcastEnemySoundMessage(vPos, fVolume, fMinDist, fMaxDist, sTypeName);
 }	
 
 //-----------------------------------------------------------------------
@@ -191,7 +193,17 @@ cLuxMapHandler::cLuxMapHandler() : iLuxUpdateable("LuxMapHandler")
 	sepiaParams.mfFadeAlpha = 0.0f;
 	mpPostEffect_Sepia = pGraphics->CreatePostEffect(&sepiaParams);
 	pPostEffectComp->AddPostEffect(mpPostEffect_Sepia, 4);
-	mpPostEffect_Sepia->SetActive(false);
+	mpPostEffect_Sepia->SetActive(true);
+
+    //Color correction
+	cPostEffectParams_ColorGrading colorGradingParams;
+	colorGradingParams.msTextureFile1 = "colorgrading_base.png";
+	colorGradingParams.msTextureFile2 = "";
+    colorGradingParams.mfCrossFadeAlpha = 0.0f;
+    colorGradingParams.mbIsReinitialisation = true;
+	mpPostEffect_ColorGrading = pGraphics->CreatePostEffect(&colorGradingParams);
+	pPostEffectComp->AddPostEffect(mpPostEffect_ColorGrading, 3);
+	mpPostEffect_ColorGrading->SetActive(true);
 	
 	//////////////////////////
 	//Saving
@@ -322,17 +334,14 @@ void cLuxMapHandler::OnQuit()
     gpBase->mpMainMenu->OnEnterContainer("");
 }
 
-
 //-----------------------------------------------------------------------
 
 void cLuxMapHandler::LoadUserConfig()
 {
-	mbShowCommentary = gpBase->mpUserConfig->GetBool("Game","ShowCommentary", false);
 }
 
 void cLuxMapHandler::SaveUserConfig()
 {
-	gpBase->mpUserConfig->SetBool("Game","ShowCommentary", mbShowCommentary);
 }
 
 //-----------------------------------------------------------------------
@@ -410,11 +419,14 @@ void cLuxMapHandler::ChangeMap(const tString& asMapName, const tString& asStartP
 
 cLuxMap* cLuxMapHandler::LoadMap(const tString& asFileName, bool abLoadEntities)
 {
-	cLuxMap *pMap = hplNew( cLuxMap, ( FileToMapName(asFileName)) );
+    const tString & mapname = FileToMapName(asFileName);
+
+    gpBase->mpEffectHandler->GetColorGrading()->InitializeLUT(mapname + "_colorgrading.png");
+
+    cLuxMap *pMap = hplNew( cLuxMap, ( mapname ) );
 	
 	pMap->LoadFromFile(msMapFolder+asFileName, abLoadEntities);
-
-	mlstMaps.push_back(pMap);
+    mlstMaps.push_back(pMap);
 
 	return pMap;
 }
@@ -460,7 +472,7 @@ void cLuxMapHandler::SetCurrentMap(cLuxMap* apMap, bool abRunScript, bool abFirs
 		mpCurrentMap->PlacePlayerAtStartPos(asPlayerPos);
 
 		//Create an automatic checkpoint
-		mpCurrentMap->SetCheckPoint("_auto", asPlayerPos, "");
+		mpCurrentMap->SetCheckPoint("_auto", asPlayerPos, "", false);
 		
 		//Map enter callback
 		mpCurrentMap->OnEnter(abRunScript, abFirstTime);
@@ -551,6 +563,7 @@ void cLuxMapHandler::LoadMainConfig()
 	mpPostEffect_ImageTrail->SetDisabled(gpBase->mpMainConfig->GetBool("Graphics", "PostEffectImageTrail", true)==false);
 	mpPostEffect_Sepia->SetDisabled(gpBase->mpMainConfig->GetBool("Graphics", "PostEffectSepia", true)==false);
 	mpPostEffect_RadialBlur->SetDisabled(gpBase->mpMainConfig->GetBool("Graphics", "PostEffectRadialBlur", true)==false);
+	mpPostEffect_ColorGrading->SetDisabled(gpBase->mpMainConfig->GetBool("Graphics", "PostEffectColorGrading", true)==false);
 
 	cRenderSettings *pRenderSettings = mpViewport->GetRenderSettings();
 	pRenderSettings->mbUseEdgeSmooth = gpBase->mpConfigHandler->mbEdgeSmooth; //This is saved in config handler!
@@ -562,6 +575,7 @@ void cLuxMapHandler::SaveMainConfig()
 	gpBase->mpMainConfig->SetBool("Graphics", "PostEffectImageTrail", mpPostEffect_ImageTrail->IsDisabled()==false);
 	gpBase->mpMainConfig->SetBool("Graphics", "PostEffectSepia", mpPostEffect_Sepia->IsDisabled()==false);
 	gpBase->mpMainConfig->SetBool("Graphics", "PostEffectRadialBlur", mpPostEffect_RadialBlur->IsDisabled()==false);
+	gpBase->mpMainConfig->SetBool("Graphics", "PostEffectColorGrading", mpPostEffect_ColorGrading->IsDisabled()==false);
 }
 
 //-----------------------------------------------------------------------
@@ -569,18 +583,6 @@ void cLuxMapHandler::SaveMainConfig()
 tString cLuxMapHandler::FileToMapName(const tString& asFile)
 {
 	return cString::ToLowerCase(cString::GetFileName(cString::SetFileExt(asFile, "")));
-}
-
-//-----------------------------------------------------------------------
-
-void cLuxMapHandler::SetShowCommentary(bool abX)
-{
-	mbShowCommentary = abX;
-
-	if(mbShowCommentary==false)
-	{
-		gpBase->mpEffectHandler->GetPlayCommentary()->Stop();
-	}
 }
 
 //-----------------------------------------------------------------------
@@ -644,25 +646,28 @@ void cLuxMapHandler::CheckMapChange(float afTimeStep)
 			Error("Could not load map '%s'!\n", mMapChangeData.msMapFile.c_str());
 			return;
 		}
-		
+
+		// Achievements
 		if(pLastMap)
 		{
-			if (pLastMap->GetName() == "08_cellar_maze" && pMap->GetName() == "09_back_hall")
+			if (pLastMap->GetName() == "02_mansion_02" && pMap->GetName() == "03_cellar")
 			{
-				gpBase->mpAchievementHandler->UnlockAchievement(eLuxAchievement_EscapeArtist);
+				gpBase->mpAchievementHandler->UnlockAchievement(eLuxAchievement_TheTeeth);
 			}
 
-			if (pLastMap->GetName() == "14_elevator" && pMap->GetName() == "15_prison_south")
+			if (pLastMap->GetName() == "05_church" && pMap->GetName() == "06_factory")
 			{
-				gpBase->mpAchievementHandler->UnlockAchievement(eLuxAchievement_Descendant);
+				gpBase->mpAchievementHandler->UnlockAchievement(eLuxAchievement_TheThroat);
 			}
 
-			//////////////
-			// HARDMODE
-			if (gpBase->mbHardMode &&
-				pLastMap->GetName() == "27_torture_chancel_redux" && pMap->GetName() == "28_inner_sanctum")
+			if (pLastMap->GetName() == "08_sewers" && pMap->GetName() == "09_bilge")
 			{
-				gpBase->mpPlayer->AddSanity(100.f, true);
+				gpBase->mpAchievementHandler->UnlockAchievement(eLuxAchievement_TheGut);
+			}
+
+			if (pLastMap->GetName() == "11_engine_room" && pMap->GetName() == "12_streets")
+			{
+				gpBase->mpAchievementHandler->UnlockAchievement(eLuxAchievement_TheEntrails);
 			}
 		}
 

@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef LUX_INVENTORY_H
@@ -37,7 +37,6 @@ enum eLuxInventoryFader
 	eLuxInventoryFader_Sanity,
 	eLuxInventoryFader_Health,
 	eLuxInventoryFader_Tinderbox,
-	eLuxInventoryFader_Oil,
 
 	eLuxInventoryFader_LastEnum
 };
@@ -306,16 +305,6 @@ private:
 	bool HealthOnUpdate(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(HealthOnUpdate);
 
-	// Oil
-	bool OilOnDraw(iWidget* apWidget, const cGuiMessageData& aData);
-	kGuiCallbackDeclarationEnd(OilOnDraw);
-
-	bool OilOnUpdate(iWidget* apWidget, const cGuiMessageData& aData);
-	kGuiCallbackDeclarationEnd(OilOnUpdate);
-
-	bool OilOnMouseUp(iWidget* apWidget, const cGuiMessageData& aData);
-	kGuiCallbackDeclarationEnd(OilOnMouseUp);
-
 	// Tinderbox
 	bool TinderboxOnDraw(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(TinderboxOnDraw);
@@ -445,14 +434,6 @@ private:
 	cGuiGfxElement *mpHealthStatus[4];
 	cGuiGfxElement *mpHealthGlow[4];
 
-	cGuiGfxElement *mpRemainingOilFG;
-	cGuiGfxElement *mpRemainingOilBG;
-	cGuiGfxElement* mpOilBubble[3];
-	cGuiGfxElement* mpOilLiquid;
-	cVector3f mvOilBubblePos[3];
-	float mvOilBubbleSpeed[3];
-	float mfOilMovementT;
-
 	cGuiGfxElement *mpTinderbox;
 
 	cGuiGfxElement *mpJournalMouseOverGfx;
@@ -464,7 +445,6 @@ private:
 	iWidget * mpHealthWidget;
 	iWidget * mpSanityWidget;
 	iWidget * mpTinderboxWidget;
-	iWidget * mpOilWidget;
 	iWidget * mpJournalWidget;
 
 	////////////////////////
@@ -531,14 +511,6 @@ private:
 	cVector2f mvLayout_TinderboxesFrameHPadding;
 	cVector2f mvLayout_TinderboxesFrameVPadding;
 	cVector3f mvLayout_TinderboxesFrameOffset;
-
-	// Oil
-	cVector3f mvLayout_OilCenter;
-	cVector3f mvLayout_OilLabelCenter;
-	cVector2f mvLayout_OilFrameSize;
-	cVector2f mvLayout_OilFrameHPadding;
-	cVector2f mvLayout_OilFrameVPadding;
-	cVector3f mvLayout_OilFrameOffset;
 
 	// Item text
 	cVector3f mvLayout_ItemHeaderCenter;

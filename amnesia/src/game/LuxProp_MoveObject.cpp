@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxProp_MoveObject.h"
@@ -161,7 +161,7 @@ void cLuxProp_MoveObject::OnSetupAfterLoad(cWorld *apWorld)
 	// Angular
 	else
 	{
-		CalculateOpenRotateMatrix();
+		CalculateOpenRotateMatrix(mfOpenAmount);
 	}
 }
 
@@ -234,9 +234,20 @@ void cLuxProp_MoveObject::MoveToState(float afState, float afAcc, float afMaxSpe
 	// Angular
 	else
 	{
-		//afState = cMath::Clamp(afState,0,1);	
+		//afState = cMath::Clamp(afState,0,1);
+
+		cVector3f vMul[3] = {cVector3f(1,0,0), cVector3f(0,1,0), cVector3f(0,0,1) };
+
+		float fCurrentOpenAmount = afState * mfOpenAmount;
+
+		cMatrixf mtxWanted = m_mtxClosedTransform.GetRotation();
+
+		cMatrixf mtxRot = cMath::MatrixRotate(vMul[mMoveAxis] * kPi2f * fCurrentOpenAmount,eEulerRotationOrder_XYZ);
+		mtxWanted = cMath::MatrixMul(mtxWanted, mtxRot);
+
+		mtxWanted.SetTranslation(m_mtxClosedTransform.GetTranslation());
 		
-		cMatrixf mtxWanted = cMath::MatrixSlerp(afState, m_mtxClosedTransform,m_mtxOpenTransform, true);
+		/*cMatrixf mtxWanted = cMath::MatrixSlerp(afState, m_mtxClosedTransform,m_mtxOpenTransform, false);*/
 
 		cMatrixf mtxInvClose = cMath::MatrixInverse(m_mtxClosedTransform);
 		cVector3f vLocalOffset = cMath::MatrixMul(mtxInvClose, mvAngularOffsetPos);
@@ -268,7 +279,7 @@ void cLuxProp_MoveObject::SetAngularOffsetPos(const cVector3f& avWorldPos)
 
 	if(mMoveObjectType == eLuxMoveObjectType_Angular)
 	{
-		CalculateOpenRotateMatrix();
+		CalculateOpenRotateMatrix(mfOpenAmount);
 	}
 }
 
@@ -293,6 +304,7 @@ float cLuxProp_MoveObject::GetMoveState()
 	// Angular
 	else
 	{
+		//fT = afState;
 		vDelta = cMath::MatrixEulerAngleDistance(m_mtxClosedTransform, GetMainBody()->GetLocalMatrix());
 		vT =	vDelta / cMath::MatrixEulerAngleDistance(m_mtxClosedTransform, m_mtxOpenTransform);
 	}
@@ -301,7 +313,7 @@ float cLuxProp_MoveObject::GetMoveState()
 	if(vDelta.x != 0)		fT = vT.x;
 	else if(vDelta.y != 0)	fT = vT.y;
 	else if(vDelta.z != 0)	fT = vT.z;
-	
+
 	return fT;
 }
 
@@ -349,13 +361,13 @@ void cLuxProp_MoveObject::OnStartMove()
 	mbAutoMoveReachedGoal = false;
 }
 
-void cLuxProp_MoveObject::CalculateOpenRotateMatrix()
+void cLuxProp_MoveObject::CalculateOpenRotateMatrix( float afCurrentOpenAmount)
 {
 	cVector3f vMul[3] = {cVector3f(1,0,0), cVector3f(0,1,0), cVector3f(0,0,1) };
 
 	m_mtxOpenTransform = m_mtxClosedTransform.GetRotation();
 
-	cMatrixf mtxRot = cMath::MatrixRotate(vMul[mMoveAxis] * kPi2f * mfOpenAmount,eEulerRotationOrder_XYZ);
+	cMatrixf mtxRot = cMath::MatrixRotate(vMul[mMoveAxis] * kPi2f * afCurrentOpenAmount,eEulerRotationOrder_XYZ);
 	m_mtxOpenTransform = cMath::MatrixMul(m_mtxOpenTransform, mtxRot);
 
 	m_mtxOpenTransform.SetTranslation(m_mtxClosedTransform.GetTranslation());
@@ -416,7 +428,10 @@ void cLuxProp_MoveObject::LoadFromSaveData(iLuxEntity_SaveData* apSaveData)
 	kCopyFromVar(pData, mbUseAngularLocalOffset);
 	kCopyFromVar(pData, mbAutoMoveReachedGoal);
 
-	SetAngularOffsetPos(mvAngularOffsetPos);
+	if(mMoveObjectType == eLuxMoveObjectType_Angular)
+	{
+		CalculateOpenRotateMatrix(mfOpenAmount);
+	}
 }
 
 //-----------------------------------------------------------------------

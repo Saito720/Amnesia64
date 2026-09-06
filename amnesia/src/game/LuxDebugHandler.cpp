@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxDebugHandler.h"
@@ -32,7 +32,7 @@
 #include "LuxJournal.h"
 #include "LuxConfigHandler.h"
 #include "LuxSavedGame.h"
-#include "LuxInsanityHandler.h"
+//#include "LuxInsanityHandler.h"
 #include "LuxHelpFuncs.h"
 #include "LuxAreaNodes.h"
 #include "LuxConfigHandler.h"
@@ -42,21 +42,9 @@
 
 #include "scene/RenderableContainer_DynBoxTree.h"
 
+#include <algorithm>
 
-//////////////////////////////////////////////////////////////////////////
-// STATIC FUNCTIONS
-//////////////////////////////////////////////////////////////////////////
-
-//-----------------------------------------------------------------------
-
-static void LogMessageCallback(eLogOutputType aType, const char* asMessage)
-{
-	if (aType == eLogOutputType_Normal) return;
-
-	gpBase->mpDebugHandler->AddErrorOrWarningMessage(cString::To16Char(asMessage));
-}
-
-//-----------------------------------------------------------------------
+#define LOCAL_MaxAiLogsize    10
 
 //////////////////////////////////////////////////////////////////////////
 // CONSTRUCTORS
@@ -84,16 +72,12 @@ cLuxDebugHandler::cLuxDebugHandler() : iLuxUpdateable("LuxDebugHandler")
 	msCurrentFilePath = _W("");
 
 	mbWindowActive = false;
-	
-	mbFastForward = false;
-	mpCBFastForward = NULL;
 }
 
 //-----------------------------------------------------------------------
 
 cLuxDebugHandler::~cLuxDebugHandler()
 {
-	SetLogMessageCallback(NULL);
 }
 
 //-----------------------------------------------------------------------
@@ -117,11 +101,30 @@ void cLuxDebugHandler::LoadUserConfig()
 	mbShowPlayerInfo = gpBase->mpUserConfig->GetBool("Debug", "ShowPlayerInfo", true);
 	mbShowEntityInfo = gpBase->mpUserConfig->GetBool("Debug", "ShowEntityInfo", true);
 	mbShowDebugMessages = gpBase->mpUserConfig->GetBool("Debug", "ShowDebugMessages", true);
-	mbShowErrorMessages = gpBase->mpUserConfig->GetBool("Debug", "ShowErrorsAndWarnings", false);
 	mbScriptDebugOn = gpBase->mpUserConfig->GetBool("Debug", "ScriptDebugOn", false);
 	mbInspectionMode = gpBase->mpUserConfig->GetBool("Debug", "InspectionMode", false);
 	mbDisableFlashBacks = gpBase->mpUserConfig->GetBool("Debug", "DisableFlashBacks", false);
 	mbDrawPhysics = gpBase->mpUserConfig->GetBool("Debug", "DrawPhysics", false);
+    mbShowGbufferContent = gpBase->mpUserConfig->GetBool("Debug", "ShowGbufferContent", false);
+    mbShowAILog = gpBase->mpUserConfig->GetBool("Debug", "ShowAILog", false);
+    cRendererDeferred::SetDebugRenderFrameBuffers(mbShowGbufferContent);
+    
+    /*mbRenderLightBuffer = false;
+    cRendererDeferred::SetDebugRenderLightBuffer(mbRenderLightBuffer);
+
+    mbModulateFog = false;
+    cRendererDeferred::SetModulateFog(mbModulateFog);
+
+    mbEnableFog = true;
+    cRendererDeferred::EnableFog(mbEnableFog);*/
+
+    mbPositionAttachedProps = false;
+    mfPropOffsetPosX = 0;
+    mfPropOffsetPosY = 0;
+    mfPropOffsetPosZ = 0;
+    mfPropOffsetRotX = 0;
+    mfPropOffsetRotY = 0;
+    mfPropOffsetRotZ = 0;
 
 	mbReloadFromCurrentPosition = gpBase->mpUserConfig->GetBool("Debug", "ReloadFromCurrentPosition", true);
 
@@ -136,16 +139,17 @@ void cLuxDebugHandler::LoadUserConfig()
 			mbShowPlayerInfo = false;
 			mbShowEntityInfo = false;
 			mbShowDebugMessages = false;
-			mbShowErrorMessages = false;
 			mbScriptDebugOn = false;
 			mbInspectionMode = false;
 			mbDisableFlashBacks = false;
+			mbShowGbufferContent = false;
+            /*mbRenderLightBuffer = false;
+            mbModulateFog = false;
+            mbEnableFog = true;*/
+            mbShowAILog = false;
+            mbPositionAttachedProps = false;
 		#endif
 	}
-
-	/////////////////////////////////////////
-	// Set callback for message
-	SetLogMessageCallback(LogMessageCallback);
 
 	//////////////////////
 	//Create the debug window
@@ -159,12 +163,13 @@ void cLuxDebugHandler::SaveUserConfig()
 	 gpBase->mpUserConfig->SetBool("Debug", "ShowPlayerInfo", mbShowPlayerInfo);
 	 gpBase->mpUserConfig->SetBool("Debug", "ShowEntityInfo", mbShowEntityInfo);
 	 gpBase->mpUserConfig->SetBool("Debug", "ShowDebugMessages", mbShowDebugMessages);
-	 gpBase->mpUserConfig->SetBool("Debug", "ShowErrorsAndWarnings", mbShowErrorMessages);
 	 gpBase->mpUserConfig->SetBool("Debug", "ScriptDebugOn", mbScriptDebugOn);
 	 gpBase->mpUserConfig->SetBool("Debug", "InspectionMode", mbInspectionMode);
 	 gpBase->mpUserConfig->SetBool("Debug", "DisableFlashBacks", mbDisableFlashBacks);
 	 gpBase->mpUserConfig->SetBool("Debug", "DrawPhysics", mbDrawPhysics);
-
+	 gpBase->mpUserConfig->SetBool("Debug", "ShowGbufferContent", mbShowGbufferContent);
+	 gpBase->mpUserConfig->SetBool("Debug", "ShowAILog", mbShowAILog);
+     
 	 gpBase->mpUserConfig->SetBool("Debug", "ReloadFromCurrentPosition", mbReloadFromCurrentPosition);
 
 	 gpBase->mpUserConfig->SetBool("Debug", "AllowQuickSave", mbAllowQuickSave);
@@ -187,6 +192,34 @@ void cLuxDebugHandler::Reset()
 {
 	mbFirstUpdateOnMap = false;
 	mpInspectMeshEntity = NULL;
+}
+
+bool Sort_Complexity(const tLightComplexity &aA, const tLightComplexity &aB)
+{
+	return aA.first > aB.first;
+}
+
+
+void cLuxDebugHandler::OnPostRender(float afFrameTime)
+{
+	mvLightComplexity.clear();
+
+	if(cRendererDeferred::GetDebugRenderLightComplexity())
+	{
+		///////////////
+		// Get a list of the 5 most expensive lights
+		cRendererDeferred* pRenderer = static_cast<cRendererDeferred*>(gpBase->mpMapHandler->GetViewport()->GetRenderer());
+
+		for(int i = 0; i < pRenderer->GetDeferredLightNum(); ++i)
+		{
+			cDeferredLight *pLight = pRenderer->GetDeferredLight(i);
+
+			float fComplexity = pRenderer->GetLightComplexity(pLight);
+			mvLightComplexity.push_back(tLightComplexity(fComplexity, pLight->mpLight));
+		}
+
+		std::sort(mvLightComplexity.begin(), mvLightComplexity.end(), Sort_Complexity);
+	}
 }
 
 //-----------------------------------------------------------------------
@@ -388,14 +421,75 @@ void cLuxDebugHandler::OnDraw(float afFrameTime)
 	// FPS
 	if(mbShowFPS)
 	{
+		float fFrameTime = gpBase->mpEngine->GetAvgFrameTimeInMS();
 		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-			_W("FrameTime: %.1fms FPS: %.1f\n"),gpBase->mpEngine->GetAvgFrameTimeInMS(), gpBase->mpEngine->GetFPS());
+			_W("FrameTime: %.1fms FPS: %.1f\n"), fFrameTime, gpBase->mpEngine->GetFPS());
 		fY+=13.0f;
+	
+		float fIterations = 0;
+		float fGameLogic = gpBase->mpEngine->GetGameLogicTime(fIterations);
+		float fRenderingLogic = gpBase->mpEngine->GetRenderingLogicTime();
+
+		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+			_W("GameLogic: %05.2fms (Iterations: %03.1f / Frame) RenderingLogic: %05.2fms\n"), fGameLogic, fIterations, fRenderingLogic);
+		fY+=13.0f;
+
+		if(fGameLogic + fRenderingLogic > 16.6667f)
+		{
+			gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+						_W("GameLogic + RenderingLogic: %03.1fms > 16.7 ms, the game requires multiple updates per frame and will lag\n"), (fGameLogic + fRenderingLogic));
+		}
+		fY+=13.0f;
+		
+		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+			_W("Max GameLogic: %05.2fms Max RenderingLogic: %05.2fms\n"), gpBase->mpEngine->GetMaxGameLogic(), gpBase->mpEngine->GetMaxRenderLogic());
+		fY+=13.0f;
+	}
+
+	if(mbShowGbufferContent)
+	{
+		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+			_W("Draw Calls: %d"), iRenderer::GetDrawCalls());
+		fY+=13.0f;
+	
+	}
+
+	if(cRendererDeferred::GetDebugRenderLightComplexity())
+	{
+		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont,cVector3f(5,fY,0),14,cColor(1,1),_W("Lights Visible: %d"), mvLightComplexity.size());
+		fY+=12;
+
+		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont,cVector3f(5,fY,0),14,cColor(1,1),_W("Expensive Light(s):"));
+		fY+=12;
+
+		for(int i = 0; i < mvLightComplexity.size(); ++i)
+		{
+			float fComplexity = mvLightComplexity[i].first;
+
+			if(fComplexity < 0.08f)
+			{
+				break;
+			}
+
+			/////////////
+			// Get normalized color from green to red
+			cColor vColor = cColor(0, 1, 0, 1) + (cColor(1, 0, 0, 1) - cColor(0, 1, 0, 1)) * cMath::Min(1.0f, fComplexity * 1.5f);
+			vColor = vColor * (1.0f / cMath::Max(cMath::Max(vColor.r, vColor.g), vColor.b));
+
+			///////////
+			// Draw the name with black outline
+			gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont,cVector3f(5+1,fY+1,-1),14,cColor(0,1),_W("- %ls %g"), cString::To16Char(mvLightComplexity[i].second->GetName()).c_str(), fComplexity);
+			gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont,cVector3f(5,fY,0),14,vColor,_W("- %ls %g"), cString::To16Char(mvLightComplexity[i].second->GetName()).c_str(), fComplexity);
+			
+			fY+=12;
+		}
+
+		fY+=14;
 	}
 
 	////////////////////
 	// Messages
-	if(mbShowDebugMessages || mbShowErrorMessages)
+    if(mbShowDebugMessages)
 	{
 		float fY= gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeFloat().y - 40;
 		for(tLuxDebugMessageListIt it = mlstMessages.begin(); it != mlstMessages.end();++it)
@@ -448,16 +542,13 @@ void cLuxDebugHandler::OnDraw(float afFrameTime)
 		//							_W("Force Vel: %ls\n"), cString::To16Char(pCharBody->GetForceVelocity().ToString()).c_str() );
 
 		//fY+=13.0f;
+
 		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-							_W("ExtLightLevel: %f NormalLightlevel: %f\n"), pPlayer->GetHelperLightLevel()->GetExtendedLightLevel(), pPlayer->GetHelperLightLevel()->GetNormalLightLevel() );
+							_W("Health: %f Terror: %f LightLevel: %f\n"), pPlayer->GetHealth(), pPlayer->GetTerror() , pPlayer->GetHelperLightLevel()->GetNormalLightLevel());
 		fY+=15.0f;
 
 		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-							_W("Health: %f Terror: %f\n"), pPlayer->GetHealth(), pPlayer->GetTerror() );
-		fY+=15.0f;
-
-		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-							_W("Oil: %f Sanity: %f Tinderboxes: %d"), pPlayer->GetLampOil() , pPlayer->GetSanity(), pPlayer->GetTinderboxes());
+							_W("Infection: %.2f InfectionLevel: %d Tinderboxes: %d"), pPlayer->GetInfection(), pPlayer->GetInfectionLevel(), pPlayer->GetTinderboxes());
 		fY+=15.0f;
 
 
@@ -490,15 +581,9 @@ void cLuxDebugHandler::OnDraw(float afFrameTime)
 			fY+=15.0f;
 		}
 
-		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-			_W("Sanity Between event time: %f AtLowSanityCount: %f\n"), gpBase->mpInsanityHandler->GetNewEventCount() , pPlayer->GetHelperSanity()->GetAtLowSanityCount());
-		fY+=15.0f;
-
-		////////////////////
-		// HARDMODE
-		gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
-			_W("Hardcore mode: %d "), gpBase->mbHardMode);
-		fY+=15.0f;
+		//gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+		//	_W("Sanity Between event time: %f AtLowSanityCount: %f\n"), gpBase->mpInsanityHandler->GetNewEventCount() , pPlayer->GetHelperSanity()->GetAtLowSanityCount());
+		//fY+=15.0f;
 
         fY = pPlayer->GetStateData(pPlayer->GetCurrentState())->DrawDebug(gpBase->mpGameDebugSet,gpBase->mpDefaultFont, fY);		
 	}
@@ -587,7 +672,7 @@ void cLuxDebugHandler::OnDraw(float afFrameTime)
 				pChannel->GetTotalTime()
 				);
 			
-			lCol++;
+			lRow++;
 			if(lCol == 3)
 			{
 				lCol =0;
@@ -630,6 +715,28 @@ void cLuxDebugHandler::OnDraw(float afFrameTime)
 			fY += 15;
 		}
 	}
+
+    // AI LOG
+
+    if ( mbShowAILog )
+    {
+        fY = gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeFloat().y - 20;
+
+        int size_limiter = LOCAL_MaxAiLogsize;
+
+        tStringListIt aiLogIt = m_lstAiLogStrings.begin();
+
+        for(; aiLogIt != m_lstAiLogStrings.end() && size_limiter > 0; )
+        {
+            gpBase->mpGameDebugSet->DrawFont(gpBase->mpDefaultFont, cVector3f(5,fY,10),14,cColor(1,1),
+                 cString::To16Char(*aiLogIt ).c_str() );
+
+		    fY -= 15;
+
+            ++aiLogIt;
+            size_limiter--;
+        }
+    }
 }
 
 
@@ -656,30 +763,6 @@ void cLuxDebugHandler::RenderSolid(cRendererCallbackFunctions* apFunctions)
 
 //-----------------------------------------------------------------------
 
-void cLuxDebugHandler::AddErrorOrWarningMessage(const tWString& asText)
-{
-	if(mbShowErrorMessages==false) return;
-
-	/////////////////////////////
-	// Check if message exists
-	for(tLuxDebugMessageListIt it = mlstMessages.begin(); it != mlstMessages.end();++it)
-	{
-		cLuxDebugMessage& debugMessage = *it;
-		if(debugMessage.msText == asText) return;
-	}
-	
-	/////////////////////////////
-	// Add message
-	cLuxDebugMessage debugMessage;
-	debugMessage.mfCount = 4;
-	debugMessage.msText = asText;
-	mlstMessages.push_front(debugMessage);
-
-	if(mlstMessages.size()>100) mlstMessages.pop_back();
-}
-
-//-----------------------------------------------------------------------
-
 void cLuxDebugHandler::AddMessage(const tWString& asText, bool abCheckForDuplicates)
 {
 	if(mbShowDebugMessages==false) return;
@@ -702,22 +785,7 @@ void cLuxDebugHandler::AddMessage(const tWString& asText, bool abCheckForDuplica
 	debugMessage.msText = asText;
 	mlstMessages.push_front(debugMessage);
 
-	if(mlstMessages.size()>100) mlstMessages.pop_back();
-}
-
-//-----------------------------------------------------------------------
-
-void cLuxDebugHandler::SetFastForward(bool abX)
-{
-	if(mbFastForward == abX) return;
-
-	mbFastForward = abX;
-
-	if(mpCBFastForward) mpCBFastForward->SetChecked(mbFastForward, false);
-
-	gpBase->mpEngine->SetSpeedMul(mbFastForward ? 4.0f : 1.0f);
-
-	gpBase->mpEngine->GetSound()->GetSoundHandler()->SetGlobalSpeed(mbFastForward ? 4.0f : 1.0f,eSoundEntryType_All, eLuxGlobalVolumeType_DebugMenu);
+	if(mlstMessages.size()>30) mlstMessages.pop_back();
 }
 
 //-----------------------------------------------------------------------
@@ -961,7 +1029,7 @@ void cLuxDebugHandler::CreateGuiWindow()
 
 	///////////////////////////
 	//Window
-	cVector2f vSize = cVector2f(250, 780);
+	cVector2f vSize = cVector2f(250, 740);
 	vGroupSize.x = vSize.x - 20;
 	cVector3f vPos = cVector3f(mpGuiSet->GetVirtualSize().x - vSize.x - 10, 10, 0);
 	mpDebugWindow = mpGuiSet->CreateWidgetWindow(0,vPos,vSize,_W("Debug Toolbar") );
@@ -998,6 +1066,96 @@ void cLuxDebugHandler::CreateGuiWindow()
 		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
 		vGroupPos.y += 22;
 
+        //Show debug messages
+
+        /*pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos,vSize,_W("Show lightbuffer content"),pGroup);
+		pCheckBox->SetChecked(mbRenderLightBuffer);
+		pCheckBox->SetUserValue(26);
+		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;*/
+
+		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos,vSize,_W("Show gbuffer content"),pGroup);
+		pCheckBox->SetChecked(mbShowGbufferContent);
+		pCheckBox->SetUserValue(15);
+		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;
+		
+		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos,vSize,_W("Debug light complexity"),pGroup);
+		pCheckBox->SetChecked(false);
+		pCheckBox->SetUserValue(30);
+		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;
+
+		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos,vSize,_W("Debug overdraw"),pGroup);
+		pCheckBox->SetChecked(false);
+		pCheckBox->SetUserValue(31);
+		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;
+        
+        /*pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos,vSize,_W("Enable fog"),pGroup);
+		pCheckBox->SetChecked(mbEnableFog);
+		pCheckBox->SetUserValue(25);
+		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;
+
+        pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos,vSize,_W("Modulate fog"),pGroup);
+		pCheckBox->SetChecked(mbModulateFog);
+		pCheckBox->SetUserValue(24);
+		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;*/
+
+        pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos,vSize,_W("Show AI log on screen"),pGroup);
+		pCheckBox->SetChecked(mbShowAILog);
+		pCheckBox->SetUserValue(23);
+		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;
+
+        pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos,vSize,_W("Position attached props"),pGroup);
+		pCheckBox->SetChecked(mbPositionAttachedProps);
+		pCheckBox->SetUserValue(16);
+		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;
+
+        cWidgetTextBox * pTextBox = mpGuiSet->CreateWidgetTextBox( vGroupPos, cVector2f(70,25), _W(""), pGroup, eWidgetTextBoxInputType_Numeric, 0.1f, true );
+        pTextBox->SetDecimals(4);
+        pTextBox->SetNumericValue(mfPropOffsetPosX);
+		pTextBox->SetUserValue(17);
+        pTextBox->AddCallback(eGuiMessage_TextChange, this, kGuiCallback(ChangeDebugText));
+		
+        pTextBox = mpGuiSet->CreateWidgetTextBox( vGroupPos + cVector2f(75,0), cVector2f(70,25), _W(""), pGroup, eWidgetTextBoxInputType_Numeric, 0.1f, true );
+        pTextBox->SetDecimals(4);
+        pTextBox->SetNumericValue(mfPropOffsetPosY);
+		pTextBox->SetUserValue(18);
+        pTextBox->AddCallback(eGuiMessage_TextChange, this, kGuiCallback(ChangeDebugText));
+
+        pTextBox = mpGuiSet->CreateWidgetTextBox( vGroupPos + cVector2f(150,0), cVector2f(70,25), _W(""), pGroup, eWidgetTextBoxInputType_Numeric, 0.1f, true );
+        pTextBox->SetDecimals(4);
+        pTextBox->SetNumericValue(mfPropOffsetPosZ);
+		pTextBox->SetUserValue(19);
+        pTextBox->AddCallback(eGuiMessage_TextChange, this, kGuiCallback(ChangeDebugText));
+        
+        vGroupPos.y += 30;
+
+        pTextBox = mpGuiSet->CreateWidgetTextBox( vGroupPos, cVector2f(70,25), _W(""), pGroup, eWidgetTextBoxInputType_Numeric, 5, true );
+        pTextBox->SetDecimals(4);
+        pTextBox->SetNumericValue(mfPropOffsetRotX);
+		pTextBox->SetUserValue(20);
+        pTextBox->AddCallback(eGuiMessage_TextChange, this, kGuiCallback(ChangeDebugText));
+		
+        pTextBox = mpGuiSet->CreateWidgetTextBox( vGroupPos + cVector2f(75,0), cVector2f(70,25), _W(""), pGroup, eWidgetTextBoxInputType_Numeric, 5, true );
+        pTextBox->SetDecimals(4);
+        pTextBox->SetNumericValue(mfPropOffsetRotY);
+		pTextBox->SetUserValue(21);
+        pTextBox->AddCallback(eGuiMessage_TextChange, this, kGuiCallback(ChangeDebugText));
+
+        pTextBox = mpGuiSet->CreateWidgetTextBox( vGroupPos + cVector2f(150,0), cVector2f(70,25), _W(""), pGroup, eWidgetTextBoxInputType_Numeric, 5, true );
+        pTextBox->SetDecimals(4);
+        pTextBox->SetNumericValue(mfPropOffsetRotZ);
+		pTextBox->SetUserValue(22);
+        pTextBox->AddCallback(eGuiMessage_TextChange, this, kGuiCallback(ChangeDebugText));
+        
+        vGroupPos.y += 30;
+
 		//Show sounds playing
 		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos,vSize,_W("Show sounds playing"),pGroup);
 		pCheckBox->SetChecked(mbShowSoundPlaying);
@@ -1012,14 +1170,7 @@ void cLuxDebugHandler::CreateGuiWindow()
 		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
 		vGroupPos.y += 22;
 
-		//Show error messages
-		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos,vSize,_W("Show errors and warnings"),pGroup);
-		pCheckBox->SetChecked(mbShowErrorMessages);
-		pCheckBox->SetUserValue(12);
-		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
-		vGroupPos.y += 22;
-
-		//Inspection mode
+        //Inspection mode
 		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos,vSize,_W("Inspection mode"),pGroup);
 		pCheckBox->SetChecked(mbInspectionMode);
 		pCheckBox->SetUserValue(5);
@@ -1056,7 +1207,6 @@ void cLuxDebugHandler::CreateGuiWindow()
 		pButton = mpGuiSet->CreateWidgetButton(vGroupPos,vSize,_W("Rebuild Dyn Container"),pGroup);
 		pButton->AddCallback(eGuiMessage_ButtonPressed,this, kGuiCallback(PressRebuildDynCont));
 		vGroupPos.y += 22;
-
 
 		//Group end
 		vGroupSize.y = vGroupPos.y + 15;
@@ -1095,7 +1245,7 @@ void cLuxDebugHandler::CreateGuiWindow()
 		pButton->AddCallback(eGuiMessage_ButtonPressed,this, kGuiCallback(PressLevelReload));
 		vGroupPos.y += 22;
 
-		pButton = mpGuiSet->CreateWidgetButton(vGroupPos,vSize,_W("Quick Map Reload (F2)"),pGroup);
+		pButton = mpGuiSet->CreateWidgetButton(vGroupPos,vSize,_W("Quick Map Reload"),pGroup);
 		pButton->AddCallback(eGuiMessage_ButtonPressed,this, kGuiCallback(PressQuickLevelReload));
 		vGroupPos.y += 22;
 
@@ -1136,7 +1286,7 @@ void cLuxDebugHandler::CreateGuiWindow()
 		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
 		vGroupPos.y += 22;
 		
-		pButton = mpGuiSet->CreateWidgetButton(vGroupPos,vSize,_W("Reload Insanity Effects"),pGroup);
+		/*pButton = mpGuiSet->CreateWidgetButton(vGroupPos,vSize,_W("Reload Insanity Effects"),pGroup);
 		pButton->AddCallback(eGuiMessage_ButtonPressed,this, kGuiCallback(PressReloadInsanityEffect));
 		vGroupPos.y += 22;
 
@@ -1151,27 +1301,7 @@ void cLuxDebugHandler::CreateGuiWindow()
 			mpCBInsanityEvents->AddItem(pEvent->GetName());            
 		}
 		if(gpBase->mpInsanityHandler->GetEventNum()>0) mpCBInsanityEvents->SetSelectedItem(0);
-		vGroupPos.y += 22;
-
-		mpCBFastForward = mpGuiSet->CreateWidgetCheckBox(vGroupPos, vSize, _W("Fast Forward (F3)"), pGroup);
-		mpCBFastForward->SetChecked(mbFastForward, false);
-		mpCBFastForward->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
-		mpCBFastForward->SetUserValue(17);
-		vGroupPos.y += 22;
-
-		//Enable fly camera
-		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos, vSize, _W("Fly camera"), pGroup);
-		pCheckBox->SetChecked(false);
-		pCheckBox->SetUserValue(13);
-		pCheckBox->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(ChangeDebugText));
-		vGroupPos.y += 22;
-
-		//Set fly camera speed
-		pSlider = mpGuiSet->CreateWidgetSlider(eWidgetSliderOrientation_Horizontal, vGroupPos, vSize, 100, pGroup, ("Fly camera speed"));
-		pSlider->SetValue(10, false);
-		pSlider->SetUserValue(14);
-		pSlider->AddCallback(eGuiMessage_SliderMove, this, kGuiCallback(ChangeDebugText));
-		vGroupPos.y += 22;
+		vGroupPos.y += 22;*/
 
 
 		//Group end
@@ -1226,7 +1356,7 @@ bool cLuxDebugHandler::RecompileScript()
 void cLuxDebugHandler::ReloadTranslations()
 {
 	gpBase->mpEngine->GetResources()->ClearTranslations();
-	gpBase->LoadLanguage(gpBase->mpMainConfig->GetString("Game", "StartLanguage", gpBase->msDefaultGameLanguage), true);
+	gpBase->LoadLanguage(gpBase->mpMainConfig->GetString("Main", "StartLanguage", gpBase->msDefaultGameLanguage), true);
 }
 
 //-----------------------------------------------------------------------
@@ -1344,7 +1474,7 @@ void cLuxDebugHandler::TestChangeMapSave()
 	pMap = gpBase->mpMapHandler->LoadMap(sMapFile,true);
 	
 	gpBase->mpMapHandler->SetCurrentMap(pMap, false, false, "");
-	
+
 	pSavedMaps->LoadMap(pMap);
 
 	pMap->RunScript("OnEnter()");
@@ -1548,6 +1678,16 @@ void cLuxDebugHandler::CheckDynamicContainerBugsRec(iRenderableContainerNode *ap
 	}
 }
 
+void cLuxDebugHandler::AddAILogEntry(const tString& asText)
+{
+    m_lstAiLogStrings.push_front( asText );
+    if ( m_lstAiLogStrings.size() > LOCAL_MaxAiLogsize )
+    {
+        m_lstAiLogStrings.pop_back();
+    }
+}
+
+
 //-----------------------------------------------------------------------
 
 //////////////////////////////////////////////////////////////////////////
@@ -1573,14 +1713,56 @@ bool cLuxDebugHandler::ChangeDebugText(iWidget* apWidget, const cGuiMessageData&
 	else if(lNum == 9)	 gpBase->mpConfigHandler->mbFastPhysicsLoad = bActive;
 	else if(lNum == 10)	 mbDisableFlashBacks = bActive;
 	else if(lNum == 11)  mbDrawPhysics = bActive;
-	else if(lNum == 12)  mbShowErrorMessages = bActive;
-
-	else if(lNum == 13)  gpBase->mpPlayer->SetFreeCamActive(bActive);
-	else if(lNum == 14)  gpBase->mpPlayer->SetFreeCamSpeed( cMath::Max((float)aData.mlVal/ 100.0f, 0.001f) );
-
-	else if(lNum == 17)  SetFastForward(bActive);
-	
-
+	else if(lNum == 15) 
+    {
+        mbShowGbufferContent = bActive;
+        cRendererDeferred::SetDebugRenderFrameBuffers(bActive);
+    }
+	else if(lNum == 30) cRendererDeferred::SetDebugRenderLightComplexity(bActive);
+	else if(lNum == 31) cRendererDeferred::SetDebugRenderOverdraw(bActive);
+    /*else if(lNum == 26) 
+    {
+        mbRenderLightBuffer = bActive;
+        cRendererDeferred::SetDebugRenderLightBuffer(bActive);
+    }*/
+    else if(lNum == 16) mbPositionAttachedProps = bActive;
+    else if (lNum == 17 )
+    {
+         mfPropOffsetPosX = ((cWidgetTextBox *)apWidget)->GetNumericValue();
+    }
+    else if (lNum == 18 )
+    {
+         mfPropOffsetPosY = ((cWidgetTextBox *)apWidget)->GetNumericValue();
+    }
+    else if (lNum == 19 )
+    {
+         mfPropOffsetPosZ = ((cWidgetTextBox *)apWidget)->GetNumericValue();
+    }
+    else if (lNum == 20 )
+    {
+         mfPropOffsetRotX = ((cWidgetTextBox *)apWidget)->GetNumericValue();
+    }
+    else if (lNum == 21 )
+    {
+         mfPropOffsetRotY = ((cWidgetTextBox *)apWidget)->GetNumericValue();
+    }
+    else if (lNum == 22 )
+    {
+         mfPropOffsetRotZ = ((cWidgetTextBox *)apWidget)->GetNumericValue();
+    }
+    else if (lNum == 23 )
+    {
+        mbShowAILog = bActive;
+    }
+    /*else if (lNum == 24 )
+    {
+        cRendererDeferred::SetModulateFog(bActive);
+    }
+    else if (lNum == 25 )
+    {
+        cRendererDeferred::EnableFog(bActive);
+    }*/
+    
 	return true;
 }
 kGuiCallbackDeclaredFuncEnd(cLuxDebugHandler, ChangeDebugText);
@@ -1694,38 +1876,38 @@ bool cLuxDebugHandler::PressRecompileScript(iWidget* apWidget,const cGuiMessageD
 }
 kGuiCallbackDeclaredFuncEnd(cLuxDebugHandler, PressRecompileScript); 
 
-//-----------------------------------------------------------------------
-
-bool cLuxDebugHandler::PressReloadInsanityEffect(iWidget* apWidget,const cGuiMessageData& aData)
-{
-	mpCBInsanityEvents->ClearItems();
-	mpCBInsanityEvents->SetSelectedItem(-1);
-
-	gpBase->mpInsanityHandler->ReloadEvents();
-
-	for(int i=0; i<gpBase->mpInsanityHandler->GetEventNum(); ++i)
-	{
-		iLuxInstanityEvent *pEvent = gpBase->mpInsanityHandler->GetEvent(i);
-		mpCBInsanityEvents->AddItem(pEvent->GetName());            
-	}
-	if(gpBase->mpInsanityHandler->GetEventNum()>0) 
-		mpCBInsanityEvents->SetSelectedItem(0);	
-
-	return true;
-}
-kGuiCallbackDeclaredFuncEnd(cLuxDebugHandler, PressReloadInsanityEffect); 
-
-//-----------------------------------------------------------------------
-
-bool cLuxDebugHandler::PressStartInsanityEffect(iWidget* apWidget,const cGuiMessageData& aData)
-{
-	if(mpCBInsanityEvents->GetSelectedItem() <0) return true;
-
-	gpBase->mpInsanityHandler->StartEvent(mpCBInsanityEvents->GetSelectedItem());
-
-	return true;
-}
-kGuiCallbackDeclaredFuncEnd(cLuxDebugHandler, PressStartInsanityEffect); 
+////-----------------------------------------------------------------------
+//
+//bool cLuxDebugHandler::PressReloadInsanityEffect(iWidget* apWidget,const cGuiMessageData& aData)
+//{
+//	mpCBInsanityEvents->ClearItems();
+//	mpCBInsanityEvents->SetSelectedItem(-1);
+//
+//	gpBase->mpInsanityHandler->ReloadEvents();
+//
+//	for(int i=0; i<gpBase->mpInsanityHandler->GetEventNum(); ++i)
+//	{
+//		iLuxInstanityEvent *pEvent = gpBase->mpInsanityHandler->GetEvent(i);
+//		mpCBInsanityEvents->AddItem(pEvent->GetName());            
+//	}
+//	if(gpBase->mpInsanityHandler->GetEventNum()>0) 
+//		mpCBInsanityEvents->SetSelectedItem(0);	
+//
+//	return true;
+//}
+//kGuiCallbackDeclaredFuncEnd(cLuxDebugHandler, PressReloadInsanityEffect); 
+//
+////-----------------------------------------------------------------------
+//
+//bool cLuxDebugHandler::PressStartInsanityEffect(iWidget* apWidget,const cGuiMessageData& aData)
+//{
+//	if(mpCBInsanityEvents->GetSelectedItem() <0) return true;
+//
+//	gpBase->mpInsanityHandler->StartEvent(mpCBInsanityEvents->GetSelectedItem());
+//
+//	return true;
+//}
+//kGuiCallbackDeclaredFuncEnd(cLuxDebugHandler, PressStartInsanityEffect); 
 
 //-----------------------------------------------------------------------
 

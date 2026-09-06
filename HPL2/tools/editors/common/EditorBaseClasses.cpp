@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "EditorBaseClasses.h"
@@ -45,14 +45,113 @@
 
 #include <algorithm>
 
-#include "../common/DirectoryHandler.h"
-
 #include "../common/StdAfx.h"
+
+// Lovely magic from the "LuxBasePersonal.h" in game code.  We should maybe make this into a engine function or something
+#if defined(_WIN32)
+#define PERSONAL_RELATIVEROOT _W("")
+#define PERSONAL_RELATIVEPIECES _W(""),
+#define PERSONAL_RELATIVEPIECES_COUNT 0
+#elif defined(__linux__)
+#define PERSONAL_RELATIVEROOT _W(".frictionalgames/")
+#define PERSONAL_RELATIVEPIECES _W(""), _W(".frictionalgames"),
+#define PERSONAL_RELATIVEPIECES_COUNT 1
+#else
+#define PERSONAL_RELATIVEROOT _W("Library/Application Support/Frictional Games/")
+#define PERSONAL_RELATIVEPIECES _W(""), _W("Library"), _W("Library/Application Support"), _W("Library/Application Support/Frictional Games"),
+#define PERSONAL_RELATIVEPIECES_COUNT 3
+#endif
 
 using namespace hpl;
 
 static cVector3f gvZeroVec3f = cVector3f(0,0,0);
 static cVector2f gvZeroVec2f = cVector2f(0,0);
+
+//-----------------------------------------------------------------------
+//-----------------------------------------------------------------------
+//-----------------------------------------------------------------------
+
+/////////////////////////////////////////////////////////////////////////
+// WIDGET CONTAINER
+/////////////////////////////////////////////////////////////////////////
+
+//-----------------------------------------------------------------------
+//-----------------------------------------------------------------------
+//-----------------------------------------------------------------------
+
+/////////////////////////////////////////////////////////////////////////
+// CONSTRUCTORS
+/////////////////////////////////////////////////////////////////////////
+
+//-----------------------------------------------------------------------
+
+iWidgetContainer::iWidgetContainer()
+{
+}
+
+iWidgetContainer::~iWidgetContainer()
+{
+	DestroyWidgets(mpSet);
+}
+
+void iWidgetContainer::SetSet(cGuiSet* apSet)
+{
+	mpSet = apSet;
+}
+
+//-----------------------------------------------------------------------
+
+void iWidgetContainer::AddWidget(iWidget* apWidget)
+{
+	if(apWidget)
+	{
+		tWidgetListIt it = find(mlstWidgets.begin(), mlstWidgets.end(), apWidget);
+
+		if(it==mlstWidgets.end())
+		{
+			//Log("Adding widget with text: %s - Address:0x%x\n", cString::To8Char(apWidget->GetText()).c_str(), apWidget);
+			mlstWidgets.push_back(apWidget);
+		}
+	}
+}
+
+//-----------------------------------------------------------------------
+
+void iWidgetContainer::RemoveWidget(iWidget* apWidget)
+{
+	if(apWidget)
+	{
+		tWidgetListIt it = find(mlstWidgets.begin(), mlstWidgets.end(), apWidget);
+
+		if(it!=mlstWidgets.end())
+		{
+			//Log("Removing widget with text: %s - Address:0x%x\n", cString::To8Char(apWidget->GetText()).c_str(), apWidget);
+			mlstWidgets.erase(it);
+			mpSet->DestroyWidget(apWidget);
+		}
+	}
+}
+
+//-----------------------------------------------------------------------
+
+void iWidgetContainer::DestroyWidgets(cGuiSet* apSet)
+{
+	if(apSet==NULL) return;
+
+	if(apSet->IsDestroyingSet()==false)
+	{
+		tWidgetListIt it = mlstWidgets.begin();
+
+		for(;it!=mlstWidgets.end();++it)
+		{
+			iWidget* pWidget = *it;
+			//Log("Destroying widget with text: %s - Address:0x%x\n", cString::To8Char(pWidget->GetText()).c_str(), pWidget);
+            apSet->DestroyWidget(*it);
+		}
+	}
+
+	mlstWidgets.clear();
+}
 
 //-----------------------------------------------------------------------
 //-----------------------------------------------------------------------
@@ -173,8 +272,8 @@ iEditorBase::iEditorBase(const tWString& asFileCategoryName, const tWString& asF
 
 	mpMainMenu = NULL;
 
-	mpDirHandler = hplNew(cDirectoryHandler,(this));
 	mpActionHandler = hplNew(cEditorActionHandler, (this));
+
 	mpSelection = hplNew(cEditorSelection, (this));
 
 	mfTimer = 0;
@@ -217,7 +316,6 @@ iEditorBase::~iEditorBase()
 
 	/////////////////////////////////////
 	//Destroy all helper classes
-	hplDelete(mpDirHandler);
 	hplDelete(mpThumbnailBuilder);
 	hplDelete(mpActionHandler);
 	hplDelete(mpSelection);
@@ -226,6 +324,7 @@ iEditorBase::~iEditorBase()
 	
 	/////////////////////////////////////
 	//Destroy all Widgets
+	DestroyWidgets(mpSet);
 	mpEngine->GetGui()->DestroySet(mpSet);
 
 	if(mbDestroyEngineOnExit)
@@ -701,7 +800,7 @@ bool iEditorBase::OnChangeFlags(int alFlags)
 
 //-----------------------------------------------------------------------
 
-cEngine* iEditorBase::Init(cEngine* apEngine, const char* asName, const char* asBuildDate, bool abDestroyEngineOnExit)
+cEngine* iEditorBase::Init(cEngine* apEngine, bool abDestroyEngineOnExit)
 {
 	mbDestroyEngineOnExit = abDestroyEngineOnExit;
 
@@ -735,16 +834,13 @@ cEngine* iEditorBase::Init(cEngine* apEngine, const char* asName, const char* as
 
 		mpEngine->GetResources()->GetMaterialManager()->SetTextureSizeDownScaleLevel(cString::ToInt(GetSetting("TexQuality").c_str(), 0));
 
+		mpEngine->GetResources()->LoadResourceDirsFile("resources.cfg"
 #ifdef USERDIR_RESOURCES
-		mpEngine->GetResources()->LoadResourceDirsFile("resources.cfg", mpDirHandler->GetUserResourceDir());
-#else
-		mpEngine->GetResources()->LoadResourceDirsFile("resources.cfg");
+                                                       ,mpDirHandler->GetUserResourceDir()
 #endif
+                                                       );
 	}
 
-	Log("-----------------------------------------------------\n%s Build ID: %s\n-----------------------------------------------------\n", 
-		asName, asBuildDate);
-	
 	/////////////////////////
 	//Set up engine
 	
@@ -754,14 +850,22 @@ cEngine* iEditorBase::Init(cEngine* apEngine, const char* asName, const char* as
 	mpViewport = mpEngine->GetScene()->CreateViewport(NULL,NULL);
 	
 	//Add all used resource dirs
-	SetUpDirectories();
+	mpEngine->GetResources()->AddResourceDir(_W("editor/"),true);
+	mpEngine->GetResources()->AddResourceDir(GetFolderFullPath(eEditorDir_Thumbnails),false);
+	mpEngine->GetResources()->AddResourceDir(GetFolderFullPath(eEditorDir_Maps),true);
+	mpEngine->GetResources()->AddResourceDir(GetFolderFullPath(eEditorDir_StaticObjects),true);
+	mpEngine->GetResources()->AddResourceDir(GetFolderFullPath(eEditorDir_Entities),true);
+	mpEngine->GetResources()->AddResourceDir(GetFolderFullPath(eEditorDir_Lights),true);
+	mpEngine->GetResources()->AddResourceDir(GetFolderFullPath(eEditorDir_Billboards),true);
+	mpEngine->GetResources()->AddResourceDir(GetFolderFullPath(eEditorDir_Particles),true);
+	mpEngine->GetResources()->AddResourceDir(GetFolderFullPath(eEditorDir_Sounds),true);
 
 	mpEngine->GetUpdater()->AddUpdate("Default", this);
 
 	/////////////////////////
 	//Create and set up GUI
 	mpSkin = mpEngine->GetGui()->CreateSkin("gui_default.skin");
-	mpSet = mpEngine->GetGui()->CreateSet("MainSet",mpSkin);
+	SetSet(mpEngine->GetGui()->CreateSet("MainSet",mpSkin));
 
 	mpSet->SetDrawMouse(true);
 	mpSet->SetMouseZ(1000);
@@ -798,9 +902,6 @@ cEngine* iEditorBase::Init(cEngine* apEngine, const char* asName, const char* as
 	////////////////////////////////////
 	// Create world
 	mpEditorWorld = CreateSpecificWorld();
-
-    // Add in Thumbnail dir to resource path
-    GetEngine()->GetResources()->AddResourceDir(GetThumbnailDir(), false);
 
 	OnInit();
 	for(int i=0;i<(int)mvEditModes.size();++i)
@@ -1036,92 +1137,6 @@ void iEditorBase::ViewportMouseUp(cEditorWindowViewport* apViewport, int alButto
 
 //-----------------------------------------------------------------------
 
-void iEditorBase::SetUpDirectories()
-{
-	///////////////////////////////////////////////////
-	// Editor resources
-#ifdef __APPLE__
-	mpEngine->GetResources()->AddResourceDir(mpDirHandler->GetEditorDir() + _W("editor/"),true);
-#else
-	mpEngine->GetResources()->AddResourceDir( _W("editor/"),true);
-#endif
-
-	///////////////////////////////////////////////////
-	// Redist (global lookup dirs)
-	const tWString& sWorkingDir = GetWorkingDir();
-
-	mpDirHandler->AddLookUpDir(eDir_Lights, sWorkingDir + mpMainConfig->GetStringW("Directories", "LightsDir", _W("lights")), true);
-	mpDirHandler->AddLookUpDir(eDir_Billboards, sWorkingDir + mpMainConfig->GetStringW("Directories", "BillboardsDir", _W("billboards")), true);
-	mpDirHandler->AddLookUpDir(eDir_Particles, sWorkingDir + mpMainConfig->GetStringW("Directories", "ParticlesDir", _W("particles")), true);
-	mpDirHandler->AddLookUpDir(eDir_Sounds, sWorkingDir + mpMainConfig->GetStringW("Directories", "SoundsDir", _W("sounds")), true);
-
-	// Let derived app add its own
-	OnSetUpDirectories();
-
-	///////////////////////////////////////////////////
-	// Update lookup resources
-	mpDirHandler->RefreshLookupDirs();
-}
-
-//-----------------------------------------------------------------------
-
-const tWString& iEditorBase::GetWorkingDir()
-{
-	return mpDirHandler->GetWorkingDir();
-}
-
-//-----------------------------------------------------------------------
-
-const tWString& iEditorBase::GetHomeDir()
-{
-	return mpDirHandler->GetHomeDir();
-}
-
-//-----------------------------------------------------------------------
-
-const tWString& iEditorBase::GetTempDir()
-{
-	return mpDirHandler->GetTempDir();
-}
-
-//-----------------------------------------------------------------------
-
-const tWString& iEditorBase::GetThumbnailDir()
-{
-	return mpDirHandler->GetThumbnailDir();
-}
-
-
-//-----------------------------------------------------------------------
-
-const tWString& iEditorBase::GetMainLookUpDir(int alCategory)
-{
-    return mpDirHandler->GetMainLookUpDir(alCategory);	
-}
-
-//-----------------------------------------------------------------------
-
-tWStringVec iEditorBase::GetLookUpDirs(int alCategory)
-{
-	return mpDirHandler->GetLookUpDirs(alCategory);
-}
-
-//-----------------------------------------------------------------------
-
-tWString iEditorBase::GetPathRelToWD(const tString& asPath)
-{
-	return GetPathRelToWD(cString::To16Char(asPath));
-}
-
-//-----------------------------------------------------------------------
-
-tWString iEditorBase::GetPathRelToWD(const tWString& asPath)
-{
-	return mpDirHandler->GetPathRelToWD(asPath);
-}
-
-//-----------------------------------------------------------------------
-
 void iEditorBase::SetLayoutVec3f(int alIdx, const cVector3f& avX)
 {
 	mmapLayoutVecs3f[alIdx] = avX;
@@ -1259,7 +1274,7 @@ void iEditorBase::Update(float afTimeStep)
 	bool bKeyProcessed = false;
 	while(pKB->KeyIsPressed())
 		bKeyProcessed = pGui->SendKeyPress(pKB->GetKey());
-	while(pKB->KeyIsReleased())
+	if(pKB->KeyIsReleased())
 		bKeyProcessed = pGui->SendKeyRelease(pKB->GetReleasedKey());
 
 	////////////////////////////////////////////////////////////////////
@@ -1436,12 +1451,7 @@ void iEditorBase::InitInput()
 	pInput->CreateAction("WheelUp")->AddMouseButton(eMouseButton_WheelUp);
 	pInput->CreateAction("WheelDown")->AddMouseButton(eMouseButton_WheelDown);
 
-	cAction* pAction = pInput->CreateAction("LeftAlt");
-	pAction->AddKey(eKey_LeftAlt);
-#if defined(__linux__)
-	pAction->AddKey(eKey_LeftSuper);
-	pAction->AddKey(eKey_Z);
-#endif
+	pInput->CreateAction("LeftAlt")->AddKey(eKey_LeftAlt);
 	pInput->CreateAction("LeftShift")->AddKey(eKey_LeftShift);
 	pInput->CreateAction("LeftControl")->AddKey(eKey_LeftCtrl);
 
@@ -1461,6 +1471,7 @@ void iEditorBase::InitLayout()
 	mpBGFrame = mpSet->CreateWidgetFrame(cVector3f(0,0,-1),mvScreenSize,false);
 	mpBGFrame->SetBackGroundColor(cColor(0.5f,0.5f,0.5f,1));
 	mpBGFrame->SetDrawBackground(true);
+	AddWidget(mpBGFrame);
 	mpBGFrame->AddCallback(eGuiMessage_KeyPress, this, kGuiCallback(EscapeKeyHandlerCallback));
 
 	mpMainMenu = CreateMainMenu();
@@ -1556,7 +1567,55 @@ void iEditorBase::LoadConfig()
 	mpMainConfig = hplNew(cConfigFile, ( _W("MainEditorSettings.cfg") ));
 	mpMainConfig->Load();
 
-	mpDirHandler->OnLoadGlobalConfig(mpMainConfig);
+	msPersonalDir = cString::ReplaceCharToW(cPlatform::GetSystemSpecialPath(eSystemPath_Personal), _W("\\"), _W("/"));
+	msWorkingDir = cString::ReplaceCharToW(cPlatform::GetWorkingDir(), _W("\\"), _W("/")) + _W("/");
+
+	mvFolders.resize(eEditorDir_LastEnum);
+
+	///////////////////////////////////////////////////
+	// Personal stuff
+	mvFolders[eEditorDir_Home] = mpMainConfig->GetStringW("Directories", "EditorHomeDir", _W("HPL2"));
+	mvFolders[eEditorDir_Temp] = mpMainConfig->GetStringW("Directories", "EditorTempDir", _W("Temp"));
+	mvFolders[eEditorDir_Thumbnails] = mpMainConfig->GetStringW("Directories","ThumbnailsDir", _W("Thumbnails"));
+
+	///////////////////////////////////////////////////
+	// Redist
+	mvFolders[eEditorDir_Maps] = mpMainConfig->GetStringW("Directories", "MapsDir", _W("maps"));
+	mvFolders[eEditorDir_StaticObjects] = mpMainConfig->GetStringW("Directories", "StaticObjectsDir", _W("static_objects"));
+	mvFolders[eEditorDir_Entities] = mpMainConfig->GetStringW("Directories", "EntitiesDir", _W("entities"));
+	mvFolders[eEditorDir_Lights] = mpMainConfig->GetStringW("Directories", "LightsDir", _W("lights"));
+	mvFolders[eEditorDir_Billboards] = mpMainConfig->GetStringW("Directories", "BillboardsDir", _W("billboards"));
+	mvFolders[eEditorDir_Particles] = mpMainConfig->GetStringW("Directories", "ParticlesDir", _W("particles"));
+	mvFolders[eEditorDir_Sounds] = mpMainConfig->GetStringW("Directories", "SoundsDir", _W("sounds"));
+	mvFolders[eEditorDir_Decals] = mpMainConfig->GetStringW("Directories", "DecalsDir", _W("textures/decals"));
+
+	// Evil kludge here to work around VS C++ not liking an empty array initializer.
+	// So we skip the first "dummy" element by doing i+1 in the loop
+	tWString vDirs[] = { PERSONAL_RELATIVEPIECES  };
+	for(int i=0; i<PERSONAL_RELATIVEPIECES_COUNT; ++i) {
+		tWString sDir = msPersonalDir + vDirs[i+1];
+		if(cPlatform::FolderExists(sDir)) continue;
+
+		cPlatform::CreateFolder(sDir);
+	}
+
+	tWString sDir;
+
+	for(int i=eEditorDir_Home; i<eEditorDir_LastEnum; ++i)
+	{
+		sDir = GetFolderFullPath((eEditorDir)i);
+
+		if(cPlatform::FolderExists(sDir)==false)
+		{
+			if(i<eEditorDir_Maps)
+				cPlatform::CreateFolder(sDir);
+			else
+			{
+				cPlatform::CreateMessageBox(_W("Error"), _W("Could not find data folder: %ls"), cString::ReplaceCharToW(sDir,_W("\\"),_W("/")).c_str());
+				mvFolders[(eEditorDir)i] = GetWorkingDir();
+			}
+		}
+	}
 
 	OnLoadConfig();
 }
@@ -1567,19 +1626,17 @@ void iEditorBase::SaveConfig()
 {
 	//OnSaveConfig();
 
-	/*
-	mpMainConfig->SetString("Directories","EditorHomeDir",cString::To8Char(mvFolders[eDir_Home]));
-	mpMainConfig->SetString("Directories","EditorTempDir",cString::To8Char(mvFolders[eDir_Temp]));
-	mpMainConfig->SetString("Directories","ThumbnailsDir",cString::To8Char(mvFolders[eDir_Thumbnails]));
+	mpMainConfig->SetString("Directories","EditorHomeDir",cString::To8Char(mvFolders[eEditorDir_Home]));
+	mpMainConfig->SetString("Directories","EditorTempDir",cString::To8Char(mvFolders[eEditorDir_Temp]));
+	mpMainConfig->SetString("Directories","ThumbnailsDir",cString::To8Char(mvFolders[eEditorDir_Thumbnails]));
 	
-	mpMainConfig->SetString("Directories","MapsDir", cString::To8Char(mvFolders[eDir_Maps]));
-	mpMainConfig->SetString("Directories","StaticObjectsDir",cString::To8Char(mvFolders[eDir_StaticObjects]));
-	mpMainConfig->SetString("Directories","EntitiesDir",cString::To8Char(mvFolders[eDir_Entities]));
-	mpMainConfig->SetString("Directories","LightsDir", cString::To8Char(mvFolders[eDir_Lights]));
-	mpMainConfig->SetString("Directories","BillboardsDir", cString::To8Char(mvFolders[eDir_Billboards]));
-	mpMainConfig->SetString("Directories","ParticlesDir", cString::To8Char(mvFolders[eDir_Particles]));
-	mpMainConfig->SetString("Directories","SoundsDir", cString::To8Char(mvFolders[eDir_Sounds]));
-	*/
+	mpMainConfig->SetString("Directories","MapsDir", cString::To8Char(mvFolders[eEditorDir_Maps]));
+	mpMainConfig->SetString("Directories","StaticObjectsDir",cString::To8Char(mvFolders[eEditorDir_StaticObjects]));
+	mpMainConfig->SetString("Directories","EntitiesDir",cString::To8Char(mvFolders[eEditorDir_Entities]));
+	mpMainConfig->SetString("Directories","LightsDir", cString::To8Char(mvFolders[eEditorDir_Lights]));
+	mpMainConfig->SetString("Directories","BillboardsDir", cString::To8Char(mvFolders[eEditorDir_Billboards]));
+	mpMainConfig->SetString("Directories","ParticlesDir", cString::To8Char(mvFolders[eEditorDir_Particles]));
+	mpMainConfig->SetString("Directories","SoundsDir", cString::To8Char(mvFolders[eEditorDir_Sounds]));
 
 	mpMainConfig->Save();
 
@@ -1603,6 +1660,65 @@ void iEditorBase::AppGotInputFocus()
 }
 
 //----------------------------------------------------------------------------
+
+tWString iEditorBase::GetFolderRelativeToWorkingDirW(const tWString& asDir)
+{
+	tWString sTempDir = cString::ToLowerCaseW(cString::ReplaceCharToW(cString::GetFilePathW(asDir), _W("\\"), _W("/")));
+	tWString sWorkingDir = cString::ToLowerCaseW(cString::RemoveSlashAtEndW(GetWorkingDir()));
+	sWorkingDir = cString::SubW(sWorkingDir, cString::GetLastStringPosW(sWorkingDir, _W("/"))+1);
+	sWorkingDir = cString::AddSlashAtEndW(sWorkingDir);
+	int lPos = cString::GetLastStringPosW(sTempDir, sWorkingDir);
+	if(lPos==-1)
+	{
+		return asDir;
+	}
+	else
+		return cString::SubW(asDir, lPos + (int)sWorkingDir.size());
+}
+
+//----------------------------------------------------------------------------
+
+tWString iEditorBase::GetFilePathRelativeToWorkingDirW(const tWString& asFile)
+{
+	tWString sRelDir = GetFolderRelativeToWorkingDirW(cString::GetFilePathW(asFile));
+	sRelDir = cString::AddSlashAtEndW(sRelDir);
+
+	return sRelDir + cString::GetFileNameW(asFile);
+}
+
+//----------------------------------------------------------------------------
+
+tString iEditorBase::GetFilePathRelativeToWorkingDir(const tString& asFile)
+{
+	tWString sFile = cString::To16Char(asFile);
+
+	return cString::To8Char(GetFilePathRelativeToWorkingDirW(sFile));
+}
+
+//----------------------------------------------------------------------------
+
+tWString iEditorBase::GetFolderFullPath(eEditorDir aDir)
+{
+	tWString sPath;
+
+	switch(aDir)
+	{
+	case eEditorDir_Home:
+		sPath = msPersonalDir + PERSONAL_RELATIVEROOT;
+		break;
+	case eEditorDir_Temp:
+	case eEditorDir_Thumbnails:
+		sPath = GetFolderFullPath(eEditorDir_Home);
+		break;
+	default:
+		sPath = msWorkingDir;
+		if(cPlatform::FolderExists(sPath + mvFolders[aDir]) == false)
+			sPath = _W("");
+		break;
+	}
+
+	return cString::AddSlashAtEndW(sPath + mvFolders[aDir]);
+}
 
 //----------------------------------------------------------------------------
 

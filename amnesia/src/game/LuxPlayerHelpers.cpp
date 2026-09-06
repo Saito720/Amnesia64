@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxPlayerHelpers.h"
@@ -40,61 +40,311 @@
 #include "LuxProgressLogHandler.h"
 #include "LuxDebugHandler.h"
 #include "LuxPlayerState.h"
-#include "LuxLoadScreenHandler.h"
-#include "LuxMainMenu.h"
-
 
 //-----------------------------------------------------------------------
 
 //////////////////////////////////////////////////////////////////////////
-// PLAYER INSANITY COLLAPSE
+// PLAYER STAMINA
 //////////////////////////////////////////////////////////////////////////
+
+#define LOCAL_MinTimeBetweenPantingSounds    12.0f
 
 //-----------------------------------------------------------------------
 
-cLuxPlayerInsanityCollapse::cLuxPlayerInsanityCollapse(cLuxPlayer *apPlayer) : iLuxPlayerHelper(apPlayer, "LuxPlayerInsanityCollapse")
+cLuxPlayerStamina::cLuxPlayerStamina(cLuxPlayer *apPlayer) : iLuxPlayerHelper(apPlayer, "LuxPlayerStamina")
 {
-	mfHeightAddGoal = gpBase->mpGameCfg->GetFloat("Player_General","InsanityCollapse_HeightAddGoal",0);
+	mfStaminaTimer = 0.0f;
+	mfSprintExhaustionTime = gpBase->mpGameCfg->GetFloat("Player_General","Stamina_SprintExhaustionTime",0);
+	mfSprintSlowdownStartTime = gpBase->mpGameCfg->GetFloat("Player_General","Stamina_SprintSlowdownStartTime",0);
+	mfSprintRecoverySpeed = gpBase->mpGameCfg->GetFloat("Player_General","Stamina_SprintRecoverySpeed",0);
+	mfExhaustionSpeedMultiplier = gpBase->mpGameCfg->GetFloat("Player_General","Stamina_ExhaustionSpeedMultiplier",0);
+    mfTimeSinceLastSound = LOCAL_MinTimeBetweenPantingSounds;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayerStamina::Update(float afTimeStep)
+{
+	return;
+    mfTimeSinceLastSound += afTimeStep;
+
+	if ( mpPlayer->GetAvgSpeed() > 0.0f && mpPlayer->IsPressingRun() && mpPlayer->CanRun() )
+	{
+        if ( mfStaminaTimer < mfSprintExhaustionTime )
+        {
+		    mfStaminaTimer += afTimeStep;
+			
+		    if ( mfStaminaTimer >= mfSprintExhaustionTime )
+		    {
+			    mfStaminaTimer = mfSprintExhaustionTime;
+
+                if ( mfTimeSinceLastSound > LOCAL_MinTimeBetweenPantingSounds )
+                {
+			        gpBase->mpHelpFuncs->PlayGuiSoundData("sprint_over", eSoundEntryType_Gui);
+                    mfTimeSinceLastSound = 0.0f;
+                }
+		    }
+        }
+	}
+	else
+	{
+		if ( mfStaminaTimer > 0.0f )
+		{
+			mfStaminaTimer -= mfSprintRecoverySpeed * afTimeStep;
+			if ( mfStaminaTimer < 0.0f ) mfStaminaTimer = 0.0f;
+		}
+	}
+
+    float interp_factor = GetExhaustionFactor();
+
+    mpPlayer->SetStaminaSpeedMul( (1.0f - interp_factor ) * 1.0f + interp_factor * mfExhaustionSpeedMultiplier );
+}
+
+//-----------------------------------------------------------------------
+
+float cLuxPlayerStamina::GetExhaustionFactor()
+{
+    float factor = ( mfStaminaTimer - mfSprintSlowdownStartTime ) / ( mfSprintExhaustionTime - mfSprintSlowdownStartTime );
+
+    if ( factor < 0 ) factor = 0;
+    if ( factor > 1 ) factor = 1;
+
+    return factor;
+}
+
+//-----------------------------------------------------------------------
+
+cLuxPlayerStamina::~cLuxPlayerStamina()
+{
+
+}
+
+//-----------------------------------------------------------------------
+
+//////////////////////////////////////////////////////////////////////////
+// PLAYER VOICE FLASHBACK
+//////////////////////////////////////////////////////////////////////////
+
+//-----------------------------------------------------------------------
+
+cLuxPlayerVoiceFlashback::cLuxPlayerVoiceFlashback(cLuxPlayer *apPlayer) : iLuxPlayerHelper(apPlayer, "LuxPlayerVoiceFlashback")
+{
+    mbIsDelaying = false;
+	mbIsPlaying = false;
+    mbUseEffects = false;
+    mbObstructMovement = false;
+    m_sStopSound = "";
+
+	mfEffectFadeInTime = gpBase->mpGameCfg->GetFloat("VoiceFlashback","EffectFadeInTime",0);
+	mfEffectFadeOutTime = gpBase->mpGameCfg->GetFloat("VoiceFlashback","EffectFadeOutTime",0);
+	mfLightFadeAmount = gpBase->mpGameCfg->GetFloat("VoiceFlashback","LightFadeAmount",0);
+	mfSepiaAmount = gpBase->mpGameCfg->GetFloat("VoiceFlashback","SepiaAmount",0);
+	mfImageTrailAmount = gpBase->mpGameCfg->GetFloat("VoiceFlashback","ImageTrailAmount",0);
+	mfBlurStartDistance = gpBase->mpGameCfg->GetFloat("VoiceFlashback","BlurStartDistance",0);
+	mfBlurAmount = gpBase->mpGameCfg->GetFloat("VoiceFlashback","BlurAmount",0);
+	mfFovMultiplier = gpBase->mpGameCfg->GetFloat("VoiceFlashback","FovMultiplier",0);
+	mfMoveSpeedMultiplier = 1.0f;
+	mfMouseSensitivityModifier = 1.0f;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayerVoiceFlashback::StopPlaying()
+{
+    if ( mbIsPlaying )
+    {
+        gpBase->mpEffectHandler->GetPlayVoice()->StopVoices(0.3f);
+        
+        if ( mbUseEffects )
+        {
+            StopEffects();
+            mbUseEffects = false;
+        }
+
+        if ( mbObstructMovement )
+        {
+            StopMovementObstruction();
+            mbObstructMovement = false;
+        }
+    }
+
+    mbIsPlaying = false;
+    mbIsDelaying = false;
+
+    m_sStopSound = "";
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayerVoiceFlashback::Start(
+	const tString & asVoiceFile,
+	const tString & asTextEntry1, float afDelay1,
+	const tString & asTextEntry2, float afDelay2,
+	const tString & asTextEntry3, float afDelay3,
+	const tString & asTextEntry4, float afDelay4,
+	const tString & asTextEntry5, float afDelay5,
+	const tString & asTextEntry6, float afDelay6,
+	const tString & asTextEntry7, float afDelay7,
+	bool abUseEffects, bool abObstructMovement )
+{
+    mbUseEffects = abUseEffects;
+    mbObstructMovement = abObstructMovement;
+
+    if ( mbUseEffects )
+    {
+        StartEffects();
+    }
+
+    if ( mbObstructMovement )
+    {
+        StartMovementObstruction();
+    }
+
+	gpBase->mpEffectHandler->GetPlayVoice()->AddMultiSubbedVoice(
+		asVoiceFile,
+		"", "Voice", 
+		asTextEntry1, afDelay1,
+		asTextEntry2, afDelay2,
+		asTextEntry3, afDelay3,
+		asTextEntry4, afDelay4,
+		asTextEntry5, afDelay5,
+		asTextEntry6, afDelay6,
+		asTextEntry7, afDelay7
+		, false, cVector3f(), 0, 0
+		);
+
+    mbIsPlaying = true;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayerVoiceFlashback::Update(float afTimeStep)
+{
+	cSoundHandler *pSoundHandler = gpBase->mpEngine->GetSound()->GetSoundHandler();
+
+    if ( mbIsPlaying && gpBase->mpEffectHandler->GetPlayVoice()->VoiceDonePlaying() )
+	{
+		mbIsPlaying = false;
+        mbIsDelaying = false;
+
+        if ( mbUseEffects )
+        {
+            StopEffects();
+            mbUseEffects = false;
+        }
+
+        if ( mbObstructMovement )
+        {
+            StopMovementObstruction();
+            mbObstructMovement = false;
+        }
+
+        if ( m_sStopSound != "" )
+        {
+            gpBase->mpHelpFuncs->PlayGuiSoundData(m_sStopSound, eSoundEntryType_Gui);
+        }
+	}
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayerVoiceFlashback::StartEffects()
+{
+    gpBase->mpEffectHandler->GetFade()->FadeOut(mfEffectFadeInTime,mfLightFadeAmount);
+	gpBase->mpEffectHandler->GetSepiaColor()->FadeTo(mfSepiaAmount,mfEffectFadeInTime);
+	gpBase->mpEffectHandler->GetImageTrail()->FadeTo(mfImageTrailAmount, mfEffectFadeInTime);
+	gpBase->mpEffectHandler->GetRadialBlur()->SetBlurStartDist( mfBlurStartDistance );
+	gpBase->mpEffectHandler->GetRadialBlur()->FadeTo( mfBlurAmount, mfEffectFadeInTime );
+	gpBase->mpPlayer->FadeFOVMulTo(mfFovMultiplier, mfEffectFadeInTime);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayerVoiceFlashback::StopEffects()
+{
+    gpBase->mpEffectHandler->GetFade()->FadeOut(mfEffectFadeOutTime,0.0f);
+	gpBase->mpEffectHandler->GetSepiaColor()->FadeTo(0.0f,mfEffectFadeOutTime);
+	gpBase->mpEffectHandler->GetImageTrail()->FadeTo(0.0f, 3.0f * mfEffectFadeOutTime );
+	gpBase->mpEffectHandler->GetRadialBlur()->FadeTo( 0.0f, mfEffectFadeOutTime );
+	gpBase->mpPlayer->FadeFOVMulTo(1.0f, mfEffectFadeOutTime);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayerVoiceFlashback::StartMovementObstruction()
+{
+    gpBase->mpPlayer->SetEventMoveSpeedMul(mfMoveSpeedMultiplier);
+	gpBase->mpPlayer->SetEventRunSpeedMul(mfMoveSpeedMultiplier);
+	gpBase->mpInputHandler->FadeEventSensitityModifierTo( mfEffectFadeInTime, mfMouseSensitivityModifier );
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayerVoiceFlashback::StopMovementObstruction()
+{
+    gpBase->mpInputHandler->FadeEventSensitityModifierTo( mfEffectFadeOutTime, 1.0f );
+	gpBase->mpPlayer->SetEventMoveSpeedMul(1.0f);
+	gpBase->mpPlayer->SetEventRunSpeedMul(1.0f);
+}
+
+//-----------------------------------------------------------------------
+
+cLuxPlayerVoiceFlashback::~cLuxPlayerVoiceFlashback()
+{
+
+}
+
+//-----------------------------------------------------------------------
+
+//////////////////////////////////////////////////////////////////////////
+// PLAYER INFECTION COLLAPSE
+//////////////////////////////////////////////////////////////////////////
+
+//-----------------------------------------------------------------------
+
+cLuxPlayerInfectionCollapse::cLuxPlayerInfectionCollapse(cLuxPlayer *apPlayer) : iLuxPlayerHelper(apPlayer, "LuxPlayerInfectionCollapse")
+{
+	mfHeightAddGoal = gpBase->mpGameCfg->GetFloat("Player_General","InfectionCollapse_HeightAddGoal",0);
 	
-	mfHeightAddCollapseSpeed = gpBase->mpGameCfg->GetFloat("Player_General","InsanityCollapse_HeightAddCollapseSpeed",0);
-	mfHeightAddAwakeSpeed = gpBase->mpGameCfg->GetFloat("Player_General","InsanityCollapse_HeightAddAwakeSpeed",0);
-	mfRollCollapseSpeed = gpBase->mpGameCfg->GetFloat("Player_General","InsanityCollapse_RollCollapseSpeed",0);
-	mfRollAwakeSpeed = gpBase->mpGameCfg->GetFloat("Player_General","InsanityCollapse_RollAwakeSpeed",0);
+	mfHeightAddCollapseSpeed = gpBase->mpGameCfg->GetFloat("Player_General","InfectionCollapse_HeightAddCollapseSpeed",0);
+	mfHeightAddAwakeSpeed = gpBase->mpGameCfg->GetFloat("Player_General","InfectionCollapse_HeightAddAwakeSpeed",0);
+	mfRollCollapseSpeed = gpBase->mpGameCfg->GetFloat("Player_General","InfectionCollapse_RollCollapseSpeed",0);
+	mfRollAwakeSpeed = gpBase->mpGameCfg->GetFloat("Player_General","InfectionCollapse_RollAwakeSpeed",0);
 
-	mfSleepTime = gpBase->mpGameCfg->GetFloat("Player_General","InsanityCollapse_SleepTime",0);
+	mfSleepTime = gpBase->mpGameCfg->GetFloat("Player_General","InfectionCollapse_SleepTime",0);
 
-	mfSleepSpeedMul = gpBase->mpGameCfg->GetFloat("Player_General","InsanityCollapse_SleepSpeedMul",0);
-	mfWakeUpSpeedMul = gpBase->mpGameCfg->GetFloat("Player_General","InsanityCollapse_WakeUpSpeedMul",0);
+	mfSleepSpeedMul = gpBase->mpGameCfg->GetFloat("Player_General","InfectionCollapse_SleepSpeedMul",0);
+	mfWakeUpSpeedMul = gpBase->mpGameCfg->GetFloat("Player_General","InfectionCollapse_WakeUpSpeedMul",0);
 
-	msStartSound = gpBase->mpGameCfg->GetString("Player_General","InsanityCollapse_StartSound", "");
-	msAwakenSound = gpBase->mpGameCfg->GetString("Player_General","InsanityCollapse_AwakenSound", "");
-	msSleepLoopSound = gpBase->mpGameCfg->GetString("Player_General","InsanityCollapse_SleepLoopSound", "");
-	mfSleepLoopSoundVolume = gpBase->mpGameCfg->GetFloat("Player_General","InsanityCollapse_SleepLoopSoundVolume", 0);
+	msStartSound = gpBase->mpGameCfg->GetString("Player_General","InfectionCollapse_StartSound", "");
+	msAwakenSound = gpBase->mpGameCfg->GetString("Player_General","InfectionCollapse_AwakenSound", "");
+	msSleepLoopSound = gpBase->mpGameCfg->GetString("Player_General","InfectionCollapse_SleepLoopSound", "");
+	mfSleepLoopSoundVolume = gpBase->mpGameCfg->GetFloat("Player_General","InfectionCollapse_SleepLoopSoundVolume", 0);
 
-	msSleepRandomSound = gpBase->mpGameCfg->GetString("Player_General","InsanityCollapse_SleepRandomSound", "");
-	mfSleepRandomMinTime = gpBase->mpGameCfg->GetFloat("Player_General","InsanityCollapse_SleepRandomMinTime", 0);
-	mfSleepRandomMaxTime = gpBase->mpGameCfg->GetFloat("Player_General","InsanityCollapse_SleepRandomMaxTime", 0);
+	msSleepRandomSound = gpBase->mpGameCfg->GetString("Player_General","InfectionCollapse_SleepRandomSound", "");
+	mfSleepRandomMinTime = gpBase->mpGameCfg->GetFloat("Player_General","InfectionCollapse_SleepRandomMinTime", 0);
+	mfSleepRandomMaxTime = gpBase->mpGameCfg->GetFloat("Player_General","InfectionCollapse_SleepRandomMaxTime", 0);
 
-	mfAwakenSanity = gpBase->mpGameCfg->GetFloat("Player_General","InsanityCollapse_AwakenSanity", 0);
+	mfAwakenInfection = gpBase->mpGameCfg->GetFloat("Player_General","InfectionCollapse_AwakenInfection", 100);
 
 	//Init sound var here
 	mpLoopSound = NULL;
 }
 
-cLuxPlayerInsanityCollapse::~cLuxPlayerInsanityCollapse()
+cLuxPlayerInfectionCollapse::~cLuxPlayerInfectionCollapse()
 {
 
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxPlayerInsanityCollapse::Reset()
+void cLuxPlayerInfectionCollapse::Reset()
 {
 	mbActive = false;
 	mlState =0;
 	mfHeightAdd =0;
 	mfRoll =0;
-	mfT=0;
+	mfTimer=0;
 	mfRandomCount=0;
 
 	if(mpLoopSound && gpBase->mpEngine->GetSound()->GetSoundHandler()->IsValid(mpLoopSound, mlLoopSoundID))
@@ -106,7 +356,7 @@ void cLuxPlayerInsanityCollapse::Reset()
 
 //-----------------------------------------------------------------------
 
-void cLuxPlayerInsanityCollapse::Start()
+void cLuxPlayerInfectionCollapse::Start()
 {
 	if(mbActive) return;
 
@@ -120,13 +370,13 @@ void cLuxPlayerInsanityCollapse::Start()
 	mpPlayer->ChangeMoveState(eLuxMoveState_Normal);
 	mpPlayer->GetHelperLantern()->SetActive(false,false, false);
 	mpPlayer->SetCurrentHandObjectDrawn(false);
-	mpPlayer->SetInsanityCollapseSpeedMul(mfSleepSpeedMul);
+	mpPlayer->SetInfectionCollapseSpeedMul(mfSleepSpeedMul);
 	
 	/////////////////
 	//Set up sound
 	cSoundHandler *pSoundHandler = gpBase->mpEngine->GetSound()->GetSoundHandler();
-	pSoundHandler->FadeGlobalVolume(0.75f, 0.15f, eSoundEntryType_World,eLuxGlobalVolumeType_InsanityCollapse, false);
-	pSoundHandler->FadeGlobalSpeed(0.5f, 0.125f, eSoundEntryType_World,eLuxGlobalVolumeType_InsanityCollapse, false);
+	pSoundHandler->FadeGlobalVolume(0.75f, 0.15f, eSoundEntryType_World,eLuxGlobalVolumeType_InfectionCollapse, false);
+	//pSoundHandler->FadeGlobalSpeed(0.5f, 0.125f, eSoundEntryType_World,eLuxGlobalVolumeType_InfectionCollapse, false);
 
 	/////////////////
 	//Loop sound
@@ -148,27 +398,27 @@ void cLuxPlayerInsanityCollapse::Start()
 	}
 
 	/////////////////
-	//Setup variables.	
+	//Setup variables.
 	mbActive = true;
 
 	mlState =0;
 	mfHeightAdd =0;
 	mfRoll =0;
-	mfT=0;
+	mfTimer=0;
 	mfRandomCount=0;
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxPlayerInsanityCollapse::Stop()
+void cLuxPlayerInfectionCollapse::Stop()
 {
 	if(mbActive==false) return;
 
 	cSoundHandler *pSoundHandler = gpBase->mpEngine->GetSound()->GetSoundHandler();
-	pSoundHandler->FadeGlobalVolume(1, 0.3f, eSoundEntryType_World,eLuxGlobalVolumeType_InsanityCollapse, false);
-	pSoundHandler->FadeGlobalSpeed(1, 0.5f, eSoundEntryType_World,eLuxGlobalVolumeType_InsanityCollapse, false);
+	pSoundHandler->FadeGlobalVolume(1, 0.3f, eSoundEntryType_World,eLuxGlobalVolumeType_InfectionCollapse, false);
+	//pSoundHandler->FadeGlobalSpeed(1, 0.5f, eSoundEntryType_World,eLuxGlobalVolumeType_InfectionCollapse, false);
 
-	mpPlayer->SetInsanityCollapseSpeedMul(1.0f);
+	mpPlayer->SetInfectionCollapseSpeedMul(1.0f);
 	
 	if(mpLoopSound && pSoundHandler->IsValid(mpLoopSound, mlLoopSoundID))
 	{
@@ -178,16 +428,16 @@ void cLuxPlayerInsanityCollapse::Stop()
 	mbActive = false;
 	
 	mlState =0;
-	mfT =0;
+	mfTimer =0;
 	mfRoll =0;
 	mfHeightAdd=0;
 	mpPlayer->FadeRollTo(0, 10,10);
-	mpPlayer->MoveHeadPosAdd(eLuxHeadPosAdd_InsanityCollapse, cVector3f(0,0,0),1, 0.1f);
+	mpPlayer->MoveHeadPosAdd(eLuxHeadPosAdd_InfectionCollapse, cVector3f(0,0,0),1, 0.1f);
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxPlayerInsanityCollapse::Update(float afTimeStep)
+void cLuxPlayerInfectionCollapse::Update(float afTimeStep)
 {
 	if(mbActive==false) return;
 	
@@ -205,7 +455,7 @@ void cLuxPlayerInsanityCollapse::Update(float afTimeStep)
 				mfHeightAdd = mfHeightAddGoal;
 				mlState = 1;
 			}
-			mpPlayer->SetHeadPosAdd(eLuxHeadPosAdd_InsanityCollapse, cVector3f(0,mfHeightAdd,0));
+			mpPlayer->SetHeadPosAdd(eLuxHeadPosAdd_InfectionCollapse, cVector3f(0,mfHeightAdd,0));
 		}
 
 		//////////////////////
@@ -219,7 +469,7 @@ void cLuxPlayerInsanityCollapse::Update(float afTimeStep)
 	// Sleep
 	if(mlState == 1)
 	{
-        mfT += afTimeStep;
+        mfTimer += afTimeStep;
 
 		////////////////////////
 		// Random sounds
@@ -232,13 +482,13 @@ void cLuxPlayerInsanityCollapse::Update(float afTimeStep)
 
 		///////////////////////
 		//Wake up
-		if(mfT > mfSleepTime)
+		if(mfTimer > mfSleepTime)
 		{
 			cSoundHandler *pSoundHandler = gpBase->mpEngine->GetSound()->GetSoundHandler();
-			pSoundHandler->FadeGlobalVolume(1, 0.2f, eSoundEntryType_World,eLuxGlobalVolumeType_InsanityCollapse, false);
-			pSoundHandler->FadeGlobalSpeed(1, 0.25f, eSoundEntryType_World,eLuxGlobalVolumeType_InsanityCollapse, false);
+			pSoundHandler->FadeGlobalVolume(1, 0.2f, eSoundEntryType_World,eLuxGlobalVolumeType_InfectionCollapse, false);
+			//pSoundHandler->FadeGlobalSpeed(1, 0.25f, eSoundEntryType_World,eLuxGlobalVolumeType_InfectionCollapse, false);
 
-			mpPlayer->SetInsanityCollapseSpeedMul(mfWakeUpSpeedMul);
+			mpPlayer->SetInfectionCollapseSpeedMul(mfWakeUpSpeedMul);
 
 			mpPlayer->FadeRollTo(0, 5, 6);
 
@@ -247,7 +497,7 @@ void cLuxPlayerInsanityCollapse::Update(float afTimeStep)
 				mpLoopSound->FadeOut(0.3f);
 			}
 
-			mpPlayer->SetSanity(mfAwakenSanity);
+			mpPlayer->SetInfection(mfAwakenInfection);
 
 			gpBase->mpHelpFuncs->PlayGuiSoundData(msAwakenSound, eSoundEntryType_World);
 			mlState =2;
@@ -266,11 +516,11 @@ void cLuxPlayerInsanityCollapse::Update(float afTimeStep)
 			{
 				mfHeightAdd = 0;
 				mbActive = false;
-				mpPlayer->SetInsanityCollapseSpeedMul(1.0f);
+				mpPlayer->SetInfectionCollapseSpeedMul(1.0f);
 				mpPlayer->SetCrouchDisabled(false);
 				mpPlayer->SetJumpDisabled(false);
 			}
-			mpPlayer->SetHeadPosAdd(eLuxHeadPosAdd_InsanityCollapse, cVector3f(0,mfHeightAdd,0));
+			mpPlayer->SetHeadPosAdd(eLuxHeadPosAdd_InfectionCollapse, cVector3f(0,mfHeightAdd,0));
 		}
 	}
 }
@@ -286,8 +536,8 @@ void cLuxPlayerInsanityCollapse::Update(float afTimeStep)
 
 cLuxPlayerCamDirEffects::cLuxPlayerCamDirEffects(cLuxPlayer *apPlayer) : iLuxPlayerHelper(apPlayer, "LuxPlayerCamDirEffects")
 {
-	mfStartSwayMaxSanity =  gpBase->mpGameCfg->GetFloat("Player_Sanity","StartSwayMaxSanity",0);
-	mlMaxPositions = gpBase->mpGameCfg->GetInt("Player_Sanity","SwayMaxSavedPositions",0);
+	mfStartSwayMinInfection =  gpBase->mpGameCfg->GetFloat("Player_Infection","StartSwayMinInfection",0);
+	mlMaxPositions = gpBase->mpGameCfg->GetInt("Player_Infection","SwayMaxSavedPositions",0);
 }
 
 cLuxPlayerCamDirEffects::~cLuxPlayerCamDirEffects()
@@ -316,11 +566,11 @@ void cLuxPlayerCamDirEffects::Update(float afTimeStep)
 {
 	////////////////////
 	// Check if insane
-	if(mbSwayActive==false && mpPlayer->GetSanity() <= mfStartSwayMaxSanity)
+	if(mbSwayActive==false && mpPlayer->GetInfection() >= mfStartSwayMinInfection)
 	{
 		SetSwayActive(true);
 	}
-	else if(mbSwayActive && mpPlayer->GetSanity() > mfStartSwayMaxSanity)
+	else if(mbSwayActive && mpPlayer->GetInfection() < mfStartSwayMinInfection)
 	{
 		SetSwayActive(false);
 	}
@@ -1132,112 +1382,119 @@ void cLuxPlayerLookAt::SetActive(bool abX)
 
 
 //////////////////////////////////////////////////////////////////////////
-// PLAYER SANITY
+// PLAYER INFECTION
 //////////////////////////////////////////////////////////////////////////
 
 //-----------------------------------------------------------------------
 
-cLuxPlayerSanity::cLuxPlayerSanity(cLuxPlayer *apPlayer) : iLuxPlayerHelper(apPlayer, "LuxPlayerSanity")
+cLuxPlayerInfection::cLuxPlayerInfection(cLuxPlayer *apPlayer) : iLuxPlayerHelper(apPlayer, "LuxPlayerInfection")
 {
-	mfHitZoomInSpeed = gpBase->mpGameCfg->GetFloat("Player_Sanity","HitZoomInSpeed",0);
-	mfHitZoomOutSpeed = gpBase->mpGameCfg->GetFloat("Player_Sanity","HitZoomOutSpeed",0);
-	mfHitZoomInFOVMul = gpBase->mpGameCfg->GetFloat("Player_Sanity","HitZoomInFOVMul",0);
-	mfHitZoomInAspectMul = gpBase->mpGameCfg->GetFloat("Player_Sanity","HitZoomInAspectMul",0);
+	mfHitZoomInSpeed = gpBase->mpGameCfg->GetFloat("Player_Infection","HitZoomInSpeed",0);
+	mfHitZoomOutSpeed = gpBase->mpGameCfg->GetFloat("Player_Infection","HitZoomOutSpeed",0);
+	mfHitZoomInFOVMul = gpBase->mpGameCfg->GetFloat("Player_Infection","HitZoomInFOVMul",0);
+	mfHitZoomInAspectMul = gpBase->mpGameCfg->GetFloat("Player_Infection","HitZoomInAspectMul",0);
 
-	mfSanityRegainSpeed = gpBase->mpGameCfg->GetFloat("Player_Sanity","SanityRegainSpeed",0);
-	mfSanityRegainLimit = gpBase->mpGameCfg->GetFloat("Player_Sanity","SanityRegainLimit",0);
+	mfInfectionDecreaseSpeed = gpBase->mpGameCfg->GetFloat("Player_Infection","InfectionDecreaseSpeed",0);
+	miInfectionDecreaseLimitLevel = gpBase->mpGameCfg->GetFloat("Player_Infection","InfectionDecreaseLimitLevel",0);
 
-	mfSanityVeryLowLimit = gpBase->mpGameCfg->GetFloat("Player_Sanity","SanityVeryLowLimit",0);
-	mfSanityEffectsStart = gpBase->mpGameCfg->GetFloat("Player_Sanity","SanityEffectsStart",0);
+	mfInfectionVeryHighLimit = gpBase->mpGameCfg->GetFloat("Player_Infection","InfectionVeryHighLimit",0);
+	mfInfectionEffectsStart = gpBase->mpGameCfg->GetFloat("Player_Infection","InfectionEffectsStart",0);
 
-	mfSanityWaveAlphaMul = gpBase->mpGameCfg->GetFloat("Player_Sanity","SanityWaveAlphaMul",0);
-	mfSanityWaveSpeedMul = gpBase->mpGameCfg->GetFloat("Player_Sanity","SanityWaveSpeedMul",0);
+	mfInfectionWaveAlphaMul = gpBase->mpGameCfg->GetFloat("Player_Infection","InfectionWaveAlphaMul",0);
+	mfInfectionWaveSpeedMul = gpBase->mpGameCfg->GetFloat("Player_Infection","InfectionWaveSpeedMul",0);
 
-	mfSanityLowLimit = gpBase->mpGameCfg->GetFloat("Player_Sanity","SanityLowLimit",0);
-	mfSanityLowLimitMaxTime = gpBase->mpGameCfg->GetFloat("Player_Sanity","SanityLowLimitMaxTime",0);
-	mfSanityLowNewSanityAmount = gpBase->mpGameCfg->GetFloat("Player_Sanity","SanityLowNewSanityAmount",0);
+	mfHighInfectionLimitForDeathTimer = gpBase->mpGameCfg->GetFloat("Player_Infection","HighInfectionLimitForDeathTimer",0);
+	mfTimeUntilDeathAtHighInfection = gpBase->mpGameCfg->GetFloat("Player_Infection","TimeUntilDeathAtHighInfection",0);
 
-	mfCheckNearEnemyInterval = gpBase->mpGameCfg->GetFloat("Player_Sanity","CheckNearEnemyInterval",0);
-	mfNearEnemyDecrease = gpBase->mpGameCfg->GetFloat("Player_Sanity","NearEnemyDecrease",0);
-	mfNearCritterDecrease = gpBase->mpGameCfg->GetFloat("Player_Sanity","NearCritterDecrease",0);
+	mfCheckEnemyNearOrSeenInterval = gpBase->mpGameCfg->GetFloat("Player_Infection","CheckEnemyNearOrSeenInterval",0);
+	mfNearEnemyIncrease = gpBase->mpGameCfg->GetFloat("Player_Infection","NearEnemyIncrease",0);
+	mfNearCritterIncrease = gpBase->mpGameCfg->GetFloat("Player_Infection","NearCritterIncrease",0);
+
+	mpCurrentInfectionLoopSound = NULL;
+	mlCurrentInfectionLoopSoundID = -1;
 
 	Reset();
 }
 
 //-----------------------------------------------------------------------
 
-cLuxPlayerSanity::~cLuxPlayerSanity()
+cLuxPlayerInfection::~cLuxPlayerInfection()
 {
 
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxPlayerSanity::Reset()
+void cLuxPlayerInfection::Reset()
 {
 	mfHitAlpha =0;
 	mbHitActive = false;
-	mfSanityLostCount =0;
+	mfInfectionIncreaseSoundEffectsTimer =0;
 	mfPantCount =1;
-	mfCheckEnemySeenCount =0;
+	mfTimeUntilNextEnemySeenCheck =0;
 
-	mfT=0;
-	mfInsaneWaveAlpha =0;
+	mfTimer=0;
+	mfInfectionWaveAlpha =0;
 
-	mfSanityDrainCount =0;
-	mfSanityDrainVolume =0;
-	mfSanityHeartbeatCount =0;
+	mfInfectionIncreaseSoundTimer =0;
+	mfInfectionIncreaseVolume =0;
+	mfInfectionIncreaseHeartbeatTimer =0;
 
-	mfSeenEnemyCount =0;
+	mnPreviousSoundInfectionLevel = 0;
+
+	mfEnemySeenTimer =0;
 	mbEnemyIsSeen = false;
 
-	mbSanityEffectUpdated = false;
+	mbInfectionVisualEffectUpdated = false;
 
-	mfAtLowSanityCount =0;
+	mfTimeAtHighInfection =0;
 
 	mfShowHintTimer =0;
+
+    mbIsFauxMode = false;
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxPlayerSanity::StartHit()
+void cLuxPlayerInfection::StartHit()
 {
 	mbHitActive = true;
 
-	gpBase->mpHelpFuncs->PlayGuiSoundData("sanity_damage", eSoundEntryType_Gui);
+	gpBase->mpHelpFuncs->PlayGuiSoundData("infection_damage", eSoundEntryType_Gui);
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxPlayerSanity::SetSanityLost()
+void cLuxPlayerInfection::StartInfectionIncreaseEffects()
 {
-	mfSanityLostCount = 1.0f;
+	mfInfectionIncreaseSoundEffectsTimer = 1.0f;
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxPlayerSanity::Update(float afTimeStep)
+void cLuxPlayerInfection::Update(float afTimeStep)
 {
-	mfT += afTimeStep;
+	mfTimer += afTimeStep;
 
 	mbHitIsUpdated = false;
-	mbSanityLostIsUpdated = false;
+	mbInfectionIncreaseSoundEffectsAreUpdated = false;
 
 	//////////////////////
-	// Check if player is at low sanity level and update a timer
-	if(mpPlayer->GetSanity() < mfSanityLowLimit)
+	// Check if player is at high infection level and update a timer
+	if( mpPlayer->GetInfection() > mfHighInfectionLimitForDeathTimer )
 	{
-		mfAtLowSanityCount+=afTimeStep;
-		if(mfAtLowSanityCount > mfSanityLowLimitMaxTime)
+		mfTimeAtHighInfection += afTimeStep;
+
+		if ( mfTimeAtHighInfection > mfTimeUntilDeathAtHighInfection && !mbIsFauxMode )
 		{
-			mfAtLowSanityCount =0;
-			mpPlayer->SetSanity(mfSanityLowNewSanityAmount);
+			mfTimeAtHighInfection = 0;
+			mpPlayer->GetHelperDeath()->Start();
 		}
 	}
-	else if(mfAtLowSanityCount >0)
+	else if ( mfTimeAtHighInfection > 0 )
 	{
-		mfAtLowSanityCount -= afTimeStep;
-		if(mfAtLowSanityCount <0) mfAtLowSanityCount =0;
+		mfTimeAtHighInfection -= afTimeStep;
+		if ( mfTimeAtHighInfection < 0 ) mfTimeAtHighInfection = 0;
 	}
 
 	//////////////////////
@@ -1245,107 +1502,115 @@ void cLuxPlayerSanity::Update(float afTimeStep)
 	UpdateCheckEnemySeen(afTimeStep);
 	UpdateEnemySeenEffect(afTimeStep);
 	UpdateHit(afTimeStep);
-	UpdateInsaneEffects(afTimeStep);
+	UpdateInfectionEffects(afTimeStep);
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxPlayerSanity::OnDraw(float afFrameTime)
+void cLuxPlayerInfection::OnDraw(float afFrameTime)
 {
 	
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxPlayerSanity::UpdateInsanityVisuals(float afTimeStep)
+void cLuxPlayerInfection::UpdateInfectionVisuals(float afTimeStep)
 {
-	if(mpPlayer->GetSanity() > mfSanityEffectsStart && mfSanityDrainVolume <=0 && mfInsaneWaveAlpha <=0)
+	/*
+	if(mpPlayer->GetInfection() < mfInfectionEffectsStart && mfInfectionIncreaseVolume <=0 && mfInfectionWaveAlpha <=0)
 	{
-		gpBase->mpPostEffectHandler->GetInsanity()->SetActive(false);
+		gpBase->mpPostEffectHandler->GetInfection()->SetActive(false);
 		return;
 	}
 
-	gpBase->mpPostEffectHandler->GetInsanity()->SetActive(true);
+	gpBase->mpPostEffectHandler->GetInfection()->SetActive(true);
 
-	float fSanity = mpPlayer->GetSanity();
-	float fGoalAlpha = 1 - fSanity / mfSanityEffectsStart;
+	float fInfection = mpPlayer->GetInfection();
+	float fGoalAlpha = fInfection / mfInfectionEffectsStart;
 	if(fGoalAlpha < 0) fGoalAlpha =0;
 
 	////////////////////////////////
 	//Update wave alpha
-	if(fGoalAlpha < mfInsaneWaveAlpha)
+	if(fGoalAlpha < mfInfectionWaveAlpha)
 	{
-		mfInsaneWaveAlpha -= afTimeStep;
-		if(mfInsaneWaveAlpha < fGoalAlpha) mfInsaneWaveAlpha = fGoalAlpha;
+		mfInfectionWaveAlpha -= afTimeStep;
+		if(mfInfectionWaveAlpha < fGoalAlpha) mfInfectionWaveAlpha = fGoalAlpha;
 	}
 	else
 	{
-		mfInsaneWaveAlpha += afTimeStep;
-		if(mfInsaneWaveAlpha > fGoalAlpha) mfInsaneWaveAlpha = fGoalAlpha;
+		mfInfectionWaveAlpha += afTimeStep;
+		if(mfInfectionWaveAlpha > fGoalAlpha) mfInfectionWaveAlpha = fGoalAlpha;
 	}
 
 	////////////////////////////////
 	//Set up effects
-	//Log("Zoom: %f Wave: %f\n", mfSanityDrainVolume, mfInsaneWaveAlpha);
+	//Log("Zoom: %f Wave: %f\n", mfInfectionIncreaseVolume, mfInfectionWaveAlpha);
 	
-	float fZoomMul = (sin(mfT*2)+1)*0.5f*0.4f + 0.6f; 
+	float fZoomMul = (sin(mfTimer*2)+1)*0.5f*0.4f + 0.6f; 
 
-	gpBase->mpPostEffectHandler->GetInsanity()->SetWaveAlpha(mfInsaneWaveAlpha * mfSanityWaveAlphaMul);//mfInsaneWaveAlpha);
-	gpBase->mpPostEffectHandler->GetInsanity()->SetWaveSpeed(mfInsaneWaveAlpha * mfSanityWaveSpeedMul);//*mfInsaneWaveAlpha);
-	gpBase->mpPostEffectHandler->GetInsanity()->SetZoomAlpha(mfSanityDrainVolume * fZoomMul);
+	gpBase->mpPostEffectHandler->GetInfection()->SetWaveAlpha(mfInfectionWaveAlpha * mfInfectionWaveAlphaMul);//mfInfectionWaveAlpha);
+	gpBase->mpPostEffectHandler->GetInfection()->SetWaveSpeed(mfInfectionWaveAlpha * mfInfectionWaveSpeedMul);//*mfInfectionWaveAlpha);
+	gpBase->mpPostEffectHandler->GetInfection()->SetZoomAlpha(mfInfectionIncreaseVolume * fZoomMul);
+	gpBase->mpPostEffectHandler->GetInfection()->SetInfectionGoal(fInfection/100.0f);
+	gpBase->mpPostEffectHandler->GetInfection()->SetVomitBlendFactor(1.0f - gpBase->mpPlayer->GetVomitProgress());
+	*/
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxPlayerSanity::UpdateInsaneEffects(float afTimeStep)
+void cLuxPlayerInfection::UpdateInfectionEffects(float afTimeStep)
 {
-	if(mbHitIsUpdated) return;
+	if ( mbHitIsUpdated ) return;
 
-	if(mbSanityEffectUpdated)
+	if ( mbInfectionVisualEffectUpdated )
 	{
 		gpBase->mpEffectHandler->GetImageTrail()->FadeTo(0, 1);
 		mpPlayer->FadeAspectMulTo(1, 1);
 		mpPlayer->FadeFOVMulTo(1, 1);
 
-		mbSanityEffectUpdated = false;
+		mbInfectionVisualEffectUpdated = false;
 	}
 
 	////////////////////////////////
-	// Insanity visual effect
-	UpdateInsanityVisuals(afTimeStep);
+	// Infection visual effect
+	UpdateInfectionVisuals(afTimeStep);
 
 	if(mpPlayer->IsDead()) return;
-	////////////////////////////////
-	// Player is loosing sanity!
-	UpdateLosingSanity(afTimeStep);
 
 	////////////////////////////////
-	// Show that sanity is low
-	UpdateLowSanity(afTimeStep);
+	// Player is gaining infection!
+	UpdateInfectionIncreaseSounds(afTimeStep);
 
 	////////////////////////////////
-	// Regain some sanity
-	float fSanity = mpPlayer->GetSanity();
-	if(fSanity < mfSanityRegainLimit)
+	// Show that infection is high
+	UpdateHighInfection(afTimeStep);
+
+	////////////////////////////////
+	// Lose some infection
+	float fInfection = mpPlayer->GetInfection();
+	
+	if ( mpPlayer->GetInfectionLevel() <= miInfectionDecreaseLimitLevel && fInfection > 0.0f )
 	{
-		fSanity += afTimeStep * mfSanityRegainSpeed;
-		mpPlayer->SetSanity(fSanity);
+		fInfection -= afTimeStep * mfInfectionDecreaseSpeed;
+		if ( fInfection < 0.0f ) fInfection = 0.0f;
+		mpPlayer->SetInfection(fInfection);
 	}
 
+	UpdateStingersAndLoops(afTimeStep);
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxPlayerSanity::UpdateCheckEnemySeen(float afTimeStep)
+void cLuxPlayerInfection::UpdateCheckEnemySeen(float afTimeStep)
 {
 	/////////////////////////////////////
 	// Check if it is time for a check!
-	if(mfCheckEnemySeenCount >0)
+	if ( mfTimeUntilNextEnemySeenCheck > 0 )
 	{
-		mfCheckEnemySeenCount-=afTimeStep;
+		mfTimeUntilNextEnemySeenCheck-=afTimeStep;
 		return;
 	}
-	mfCheckEnemySeenCount = mfCheckNearEnemyInterval;
+	mfTimeUntilNextEnemySeenCheck = mfCheckEnemyNearOrSeenInterval;
 
 	/////////////////////////////////////
 	// Init vars
@@ -1376,7 +1641,7 @@ void cLuxPlayerSanity::UpdateCheckEnemySeen(float afTimeStep)
 
 		iLuxProp_CritterBase *pCritter = static_cast<iLuxProp_CritterBase*>(pProp);
 		
-		if(pCritter->CausesSanityDecrease()==false) continue;
+		if( !pCritter->CausesInfectionIncrease() ) continue;
 		
 		float fDistSqrt = cMath::Vector3DistSqr(pProp->GetBody(0)->GetLocalPosition(), vPlayerHeadPos); 
 		if(fDistSqrt > fMinCritterDistSqrt) continue;
@@ -1385,9 +1650,9 @@ void cLuxPlayerSanity::UpdateCheckEnemySeen(float afTimeStep)
 		break;
 	}
 
-	if(bNearCritter)
+	if( bNearCritter )
 	{
-		mpPlayer->LowerSanity(mfNearCritterDecrease, true);
+		mpPlayer->IncreaseInfection(mfNearCritterIncrease, true);
 	}
 	
 	/////////////////////////////////////
@@ -1399,7 +1664,7 @@ void cLuxPlayerSanity::UpdateCheckEnemySeen(float afTimeStep)
 		pEnemy->SetIsSeenByPlayer(false);
 		
 		if(pEnemy->IsActive()==false) continue;
-		if(pEnemy->CausesSanityDecrease()==false) continue;
+		if(pEnemy->CausesInfectionIncrease()==false) continue;
 
 		iCharacterBody *pCharBody = pEnemy->GetCharacterBody();
 
@@ -1445,10 +1710,10 @@ void cLuxPlayerSanity::UpdateCheckEnemySeen(float afTimeStep)
 	}
 
 	/////////////////////////////////////
-	// If seen, lower sanity and increase seen count
+	// If seen, increase infection and increase seen count
 	if(bSeenEnemy)
 	{
-      	mpPlayer->LowerSanity(mfNearEnemyDecrease, true);
+      	//mpPlayer->IncreaseInfection(mfNearEnemyIncrease, true);
 		
 		//do this in update instead!
 		//gpBase->mpEffectHandler->GetRadialBlur()->SetBlurStartDist(0.3f);
@@ -1470,7 +1735,7 @@ void cLuxPlayerSanity::UpdateCheckEnemySeen(float afTimeStep)
 //-----------------------------------------------------------------------
 
 
-void cLuxPlayerSanity::UpdateHit(float afTimeStep)
+void cLuxPlayerInfection::UpdateHit(float afTimeStep)
 {
 	if(mpPlayer->IsDead()) return;
 	if(mfHitAlpha<=0 && mbHitActive==false) return;
@@ -1496,114 +1761,216 @@ void cLuxPlayerSanity::UpdateHit(float afTimeStep)
 	mpPlayer->FadeAspectMulTo(1 - mfHitAlpha * mfHitZoomInAspectMul, 100);
 	mpPlayer->FadeFOVMulTo(1 - mfHitAlpha * mfHitZoomInFOVMul, 100);
 
-	mbSanityEffectUpdated = true;
+	mbInfectionVisualEffectUpdated = true;
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxPlayerSanity::UpdateEnemySeenEffect(float afTimeStep)
+void cLuxPlayerInfection::UpdateEnemySeenEffect(float afTimeStep)
 {
-	if(mbEnemyIsSeen)
+	if ( mbEnemyIsSeen )
 	{
-		if(mfSeenEnemyCount <1)
+		if ( mfEnemySeenTimer < 1 )
 		{
-			mfSeenEnemyCount += afTimeStep * 0.3f;
-			if(mfSeenEnemyCount>1)
+			mfEnemySeenTimer += afTimeStep * 0.3f;
+			if(mfEnemySeenTimer>1)
 			{
-				mfSeenEnemyCount =1;
-				gpBase->mpHintHandler->Add("EnemySeen", kTranslate("Hints", "EnemySeen"), 0);
+				mfEnemySeenTimer =1;
+				//gpBase->mpHintHandler->Add("EnemySeen", kTranslate("Hints", "EnemySeen"), 0);
 			}
 		}
 		
-		float fPulse = 0.5f + (sin(mfT*2.5f)*0.5f + 0.5f)*0.5f;
+		float fPulse = 0.5f + (sin(mfTimer*2.5f)*0.5f + 0.5f)*0.5f;
 		
 		gpBase->mpEffectHandler->GetRadialBlur()->SetBlurStartDist(0.2f);
-		gpBase->mpEffectHandler->GetRadialBlur()->FadeTo(0.12f * mfSeenEnemyCount*fPulse, 10.0f);
+		gpBase->mpEffectHandler->GetRadialBlur()->FadeTo(0.12f * mfEnemySeenTimer*fPulse, 10.0f);
 	}
 	else
 	{
-		if(mfSeenEnemyCount > 0)
+		if(mfEnemySeenTimer > 0)
 		{
-			mfSeenEnemyCount -= afTimeStep * 0.15f;
-			if(mfSeenEnemyCount<0)mfSeenEnemyCount =0;
+			mfEnemySeenTimer -= afTimeStep * 0.15f;
+			if(mfEnemySeenTimer<0)mfEnemySeenTimer =0;
 		}
 	}
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxPlayerSanity::UpdateLosingSanity(float afTimeStep)
+void cLuxPlayerInfection::UpdateInfectionIncreaseSounds(float afTimeStep)
 {
-	if(mfSanityLostCount <= 0)
+	if ( mfInfectionIncreaseSoundEffectsTimer <= 0 )
 	{
-		mfSanityDrainCount = 0;
-		mfSanityHeartbeatCount =0;
-		mfSanityDrainVolume -= afTimeStep*0.5f;
-		if(mfSanityDrainVolume < 0) mfSanityDrainVolume =0;
+		mfInfectionIncreaseSoundTimer = 0;
+		mfInfectionIncreaseHeartbeatTimer = 0;
+		mfInfectionIncreaseVolume -= afTimeStep * 0.5f;
+
+		if( mfInfectionIncreaseVolume < 0 )
+		{
+			mfInfectionIncreaseVolume = 0;
+		}
 		
 		return;
 	}
 	
-	float fSanity = mpPlayer->GetSanity();
-	float fNormalizedSanity = fSanity / 100.0f;
+	float fInfection = mpPlayer->GetInfection();
+	float fNormalizedInfection = fInfection / 100.0f;
 
-	mbSanityLostIsUpdated = true;
-	mfSanityLostCount -= afTimeStep;
+	mbInfectionIncreaseSoundEffectsAreUpdated = true;
+	mfInfectionIncreaseSoundEffectsTimer -= afTimeStep;
 
-	mfSanityDrainVolume += afTimeStep * 0.1f;
-	if(mfSanityDrainVolume > 1) mfSanityDrainVolume =1;
+	mfInfectionIncreaseVolume += afTimeStep * 0.1f;
+	if ( mfInfectionIncreaseVolume > 1 ) mfInfectionIncreaseVolume =1;
 
-	float mfSpeedMul = 1 + (1 - fNormalizedSanity) * 2.0f;
+	float mfSpeedMul = 1 + (1 - fNormalizedInfection) * 2.0f;
 	
-	mfSanityHeartbeatCount += afTimeStep * mfSpeedMul * 0.1f;
-	if(mfSanityHeartbeatCount >= 1)
+	mfInfectionIncreaseHeartbeatTimer += afTimeStep * mfSpeedMul * 0.1f;
+	if(mfInfectionIncreaseHeartbeatTimer >= 1)
 	{
-		mfSanityHeartbeatCount =0;
+		mfInfectionIncreaseHeartbeatTimer =0;
 		
-		float fVol = (1.0f - fNormalizedSanity*0.5f) * mfSanityDrainVolume;
+		float fVol = (1.0f - fNormalizedInfection*0.5f) * mfInfectionIncreaseVolume;
 
 		if(mpPlayer->IsDead()==false)
-			gpBase->mpHelpFuncs->PlayGuiSoundData("sanity_heartbeat", eSoundEntryType_Gui, fVol);
+			gpBase->mpHelpFuncs->PlayGuiSoundData("infection_heartbeat", eSoundEntryType_Gui, fVol);
 	}
 	
-	mfSanityDrainCount += afTimeStep * mfSpeedMul * 0.33f;
-	if(mfSanityDrainCount >= 1)
+	mfInfectionIncreaseSoundTimer += afTimeStep * mfSpeedMul * 0.33f;
+	if(mfInfectionIncreaseSoundTimer >= 1)
 	{
-		mfSanityDrainCount =0;
+		mfInfectionIncreaseSoundTimer =0;
 		tString sSoundFile="";
-		if(fSanity > 75)
-			sSoundFile = "sanity_drain_low";
-		else if(fSanity > 50)
-			sSoundFile = "sanity_drain_med"; 
+		if(fInfection > 75)
+			sSoundFile = "infection_drain_low";
+		else if(fInfection > 50)
+			sSoundFile = "infection_drain_med"; 
 		else
-			sSoundFile = "sanity_drain_high";
+			sSoundFile = "infection_drain_high";
 		
 		if(mpPlayer->IsDead()==false)
-			gpBase->mpHelpFuncs->PlayGuiSoundData(sSoundFile, eSoundEntryType_Gui, mfSanityDrainVolume);
+			gpBase->mpHelpFuncs->PlayGuiSoundData(sSoundFile, eSoundEntryType_Gui, mfInfectionIncreaseVolume);
 	}
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxPlayerSanity::UpdateLowSanity(float afTimeStep)
+void cLuxPlayerInfection::UpdateStingersAndLoops(float afTimeStep)
 {
-	if(mpPlayer->GetSanity() > mfSanityVeryLowLimit) return;
+    if ( mbIsFauxMode )
+    {
+        cSoundHandler *pSoundHandler = gpBase->mpEngine->GetSound()->GetSoundHandler();
+
+		if( mpCurrentInfectionLoopSound && pSoundHandler->IsValid(mpCurrentInfectionLoopSound, mlCurrentInfectionLoopSoundID) )
+		{
+			mpCurrentInfectionLoopSound->FadeOut(1.0f);
+			mpCurrentInfectionLoopSound = NULL;
+		} 
+        return;
+    }
+
+	int nInfectionLevel = mpPlayer->GetInfectionLevel();
+	
+	if ( nInfectionLevel > mnPreviousSoundInfectionLevel )
+	{
+		switch (nInfectionLevel)
+		{
+			case 1:
+				{
+					gpBase->mpHelpFuncs->PlayGuiSoundData("infection_stinger_1", eSoundEntryType_Gui, 1.0f);
+					break;
+				}
+			case 2:
+				{
+					gpBase->mpHelpFuncs->PlayGuiSoundData("infection_stinger_2", eSoundEntryType_Gui, 1.0f);
+					break;
+				}
+			case 3:
+				{
+					gpBase->mpHelpFuncs->PlayGuiSoundData("infection_stinger_3", eSoundEntryType_Gui, 1.0f);
+					break;
+				}
+			case 4:
+				{
+					gpBase->mpHelpFuncs->PlayGuiSoundData("infection_stinger_4", eSoundEntryType_Gui, 1.0f);
+					break;
+				}
+		}
+	}
+	
+	if ( nInfectionLevel != mnPreviousSoundInfectionLevel )
+	{
+		cSoundHandler *pSoundHandler = gpBase->mpEngine->GetSound()->GetSoundHandler();
+
+		//pSoundHandler->FadeGlobalVolume(1, 0.3f, eSoundEntryType_World,eLuxGlobalVolumeType_InfectionCollapse, false);
+		//pSoundHandler->FadeGlobalSpeed(1, 0.5f, eSoundEntryType_World,eLuxGlobalVolumeType_InfectionCollapse, false);
+
+		float fCrossFadeTime = nInfectionLevel > mnPreviousSoundInfectionLevel ? 0.5f : 2.0f;
+
+		if( mpCurrentInfectionLoopSound && pSoundHandler->IsValid(mpCurrentInfectionLoopSound, mlCurrentInfectionLoopSoundID) )
+		{
+			mpCurrentInfectionLoopSound->FadeOut(fCrossFadeTime);
+		}
+
+		switch ( nInfectionLevel )
+		{
+		case 0:
+			{
+				mpCurrentInfectionLoopSound = NULL;
+				break;
+			}
+		case 1:
+			{
+				mpCurrentInfectionLoopSound = pSoundHandler->PlayGui("infection_loop_1",true,1.0f);
+				break;
+			}
+		case 2:
+			{
+				mpCurrentInfectionLoopSound = pSoundHandler->PlayGui("infection_loop_2",true,1.0f);
+				break;
+			}
+		case 3:
+			{
+				mpCurrentInfectionLoopSound = pSoundHandler->PlayGui("infection_loop_3",true,1.0f);
+				break;
+			}
+		case 4:
+			{
+				mpCurrentInfectionLoopSound = pSoundHandler->PlayGui("infection_loop_4",true,1.0f);
+				break;
+			}
+		}
+
+		if(mpCurrentInfectionLoopSound)
+		{
+			mpCurrentInfectionLoopSound->GetSoundChannel()->SetPriority(10);
+			mpCurrentInfectionLoopSound->FadeIn(1.0f, fCrossFadeTime);
+			mlCurrentInfectionLoopSoundID = mpCurrentInfectionLoopSound->GetId();
+		}
+	}
+
+	mnPreviousSoundInfectionLevel = nInfectionLevel;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayerInfection::UpdateHighInfection( float afTimeStep )
+{
+	if ( mpPlayer->GetInfection() < mfInfectionVeryHighLimit ) return;
 	
 	if(mfShowHintTimer<=0)
 	{
 		mfShowHintTimer = 3.0f;
-        gpBase->mpHintHandler->Add("SanityLow", kTranslate("Hints", "SanityLow"), 0);
+        gpBase->mpHintHandler->Add("InfectionHigh", kTranslate("Hints", "InfectionHigh"), 0);
 	}
 	else
 	{
 		mfShowHintTimer -= afTimeStep;
 	}
 
-
-	if(mbSanityLostIsUpdated==false)
+	if ( !mbInfectionIncreaseSoundEffectsAreUpdated )
 	{
 		gpBase->mpEffectHandler->GetImageTrail()->FadeTo(1.6f, 3);
-		mbSanityEffectUpdated = true;
+		mbInfectionVisualEffectUpdated = true;
 	}
 
 	if(mfPantCount < 0)
@@ -1612,7 +1979,7 @@ void cLuxPlayerSanity::UpdateLowSanity(float afTimeStep)
 
 		//Play pant sound
 		if(mpPlayer->IsDead()==false)
-			gpBase->mpHelpFuncs->PlayGuiSoundData("sanity_pant", eSoundEntryType_Gui);
+			gpBase->mpHelpFuncs->PlayGuiSoundData("infection_pant", eSoundEntryType_Gui);
 	}
 	else
 	{
@@ -1636,10 +2003,7 @@ cLuxPlayerLantern::cLuxPlayerLantern(cLuxPlayer *apPlayer) : iLuxPlayerHelper(ap
 	msGobo = gpBase->mpGameCfg->GetString("Player_Lantern","Gobo","");
 	mvLocalOffset = gpBase->mpGameCfg->GetVector3f("Player_Lantern","LocalOffset",0);
 	mbCastShadows = gpBase->mpGameCfg->GetBool("Player_Lantern","CastShadows",false);
-	mfLowerOilSpeed = gpBase->mpGameCfg->GetFloat("Player_Lantern","LowerOilSpeed",0);
-	mfFadeLightOilAmount = gpBase->mpGameCfg->GetFloat("Player_Lantern","FadeLightOilAmount",0);
 
-	msOutOfOilSound = gpBase->mpGameCfg->GetString("Player_Lantern","OutOfOilSound","");
 	msDisabledSound = gpBase->mpGameCfg->GetString("Player_Lantern","DisabledSound","");
 	msTurnOnSound = gpBase->mpGameCfg->GetString("Player_Lantern","TurnOnSound","");
 	msTurnOffSound = gpBase->mpGameCfg->GetString("Player_Lantern","TurnOffSound","");
@@ -1690,28 +2054,7 @@ void cLuxPlayerLantern::Update(float afTimeStep)
 	}
 
 	cColor lightColor = mDefaultColor;
-	float fOil = gpBase->mpPlayer->GetLampOil();
-	if(fOil < mfFadeLightOilAmount)
-	{
-		lightColor =  mDefaultColor * (fOil / mfFadeLightOilAmount);
-	}
 	mpLight->SetDiffuseColor(lightColor * mfAlpha);
-
-
-	////////////////////////////
-	// Lower oil
-	if(mbActive && gpBase->mpEffectHandler->GetEmotionFlash()->IsActive()==false)
-	{
-		float fOil = mpPlayer->GetLampOil();
-		fOil -= mfLowerOilSpeed *afTimeStep;
-		if(fOil <=0)
-		{
-			fOil = 0;
-			gpBase->mpHelpFuncs->PlayGuiSoundData(msOutOfOilSound, eSoundEntryType_Gui);
-			SetActive(false, true);
-		}
-		mpPlayer->SetLampOil(fOil);
-	}
 
 	////////////////////////////
 	// Update light matrix
@@ -1731,7 +2074,6 @@ void cLuxPlayerLantern::Update(float afTimeStep)
 //-----------------------------------------------------------------------
 void cLuxPlayerLantern::OnMapEnter(cLuxMap *apMap)
 {
-	
 }
 
 void cLuxPlayerLantern::OnMapLeave(cLuxMap *apMap)
@@ -1794,19 +2136,6 @@ void cLuxPlayerLantern::SetActive(bool abX, bool abUseEffects, bool abCheckForOi
 		return;
 	}
 	
-	/////////////////
-	// Check if there is enough oil
-    if(abCheckForOilAndItems && abX && mpPlayer->GetLampOil() <=0)
-	{
-		if(abUseEffects)
-		{
-			gpBase->mpHintHandler->Add("LanternNoOil", kTranslate("Hints", "LanternNoOil"), 0);
-			gpBase->mpHelpFuncs->PlayGuiSoundData(msOutOfOilSound, eSoundEntryType_Gui);
-		}
-		return;
-	}
-
-
 	/////////////////
 	// Turn on / off
 	mbActive = abX;
@@ -1884,11 +2213,12 @@ cLuxPlayerDeath::cLuxPlayerDeath(cLuxPlayer *apPlayer) : iLuxPlayerHelper(apPlay
 	msStartSound = gpBase->mpGameCfg->GetString("Player_General","Death_StartSound", "");
 	msAwakenSound = gpBase->mpGameCfg->GetString("Player_General","Death_AwakenSound", "");
 
+	mbKeepPlayerInLimbo = false;
+	mbHoldsPlayerInLimbo = false;
+
 	mpFont = NULL;
 
 	mFlashOscill.SetUp(0,1,0,0.5,0.5);
-
-	mbToMainMenu = false;
 }
 
 cLuxPlayerDeath::~cLuxPlayerDeath()
@@ -1938,7 +2268,7 @@ void cLuxPlayerDeath::Reset()
 
 	mlState =0;
 
-	mfT =0;
+	mfTimer =0;
 
 	mbActive = false;
 }
@@ -1950,6 +2280,9 @@ void cLuxPlayerDeath::Start()
 	if(mbActive) return;
 
 	mbActive = true;
+
+	mbHoldsPlayerInLimbo = mbKeepPlayerInLimbo;
+	mbHasRunCheckPointCallbackScript = false;
 
 	//////////////////////////////////
 	//Progress log
@@ -1963,19 +2296,12 @@ void cLuxPlayerDeath::Start()
 	mpPlayer->ChangeMoveState(eLuxMoveState_Normal);
 	mpPlayer->GetHelperLantern()->SetActive(false,false, false);
 	mpPlayer->SetCurrentHandObjectDrawn(false);
-	mpPlayer->GetInsanityCollapse()->Stop();
+	mpPlayer->GetInfectionCollapse()->Stop();
 
 	//////////////////////////////////
 	//Text
 	msCurrentHintText = msHintCat != "" ? kTranslate(msHintCat, msHintEntry) : kTranslate("Hints", "DefaultDeath");
-
-	//////////////////////////////////
-	// HARDMODE
-	if (gpBase->mbHardMode && (msHintEntry != "DeathGrunt_22_Chancel"))
-	{
-		msCurrentHintText = kTranslate("Hints", "HardModeDeath");
-	}
-
+   
 	//////////////////////////////////
 	//Sound
 	for(int i=0; i<=gpBase->mpMusicHandler->GetMaxPrio(); ++i)
@@ -1989,8 +2315,9 @@ void cLuxPlayerDeath::Start()
 	
 	cSoundHandler *pSoundHandler = gpBase->mpEngine->GetSound()->GetSoundHandler();
 	pSoundHandler->FadeGlobalVolume(0, 0.15f,eSoundEntryType_World,eLuxGlobalVolumeType_Death,false);
-	pSoundHandler->FadeGlobalSpeed(0.5f, 0.125f,eSoundEntryType_World,eLuxGlobalVolumeType_Death,false);
-	
+	//pSoundHandler->FadeGlobalSpeed(0.5f, 0.125f,eSoundEntryType_World,eLuxGlobalVolumeType_Death,false);
+		
+
 	///////////////////////////
 	// Broadcast to all enemies
 	gpBase->mpMapHandler->GetCurrentMap()->BroadcastEnemyMessage(eLuxEnemyMessage_PlayerDead, false,0,0);
@@ -2020,7 +2347,7 @@ void cLuxPlayerDeath::Update(float afTimeStep)
 {
 	if(mbActive==false) return;
 
-	mfT += afTimeStep;
+	mfTimer += afTimeStep;
 	mFlashOscill.Update(afTimeStep);
 
 	//////////////////////
@@ -2052,11 +2379,13 @@ void cLuxPlayerDeath::Update(float afTimeStep)
 		mfFadeAlpha += afTimeStep * (1.0f/ mfFadeOutTime);
 		if(mfFadeAlpha > 1)
 		{
+			mpPlayer->SetInfection(0.0f);
+			
 			mfFadeAlpha = 1;
 
 			if(mpPlayer->UsePermaDeath())
 			{
-				mlState = 4;
+				mlState = 5;
 
 				cLuxSoundExtraData extraData;
 				if(gpBase->mpHelpFuncs->PlayGuiSoundData(mpPlayer->GetCurrentPermaDeathSound(), eSoundEntryType_Gui, 1, eSoundEntityType_Main, true, &extraData))
@@ -2084,33 +2413,42 @@ void cLuxPlayerDeath::Update(float afTimeStep)
 			if(mfTextOnScreenCount > 5.5f || mbShowHint==false)
 			{
 				mlState = 2;
-
-				ResetGame();
-				gpBase->mpEffectHandler->GetFlash()->Start(0.7f, 1.2f, 2.5f);
-				gpBase->mpHelpFuncs->PlayGuiSoundData(msAwakenSound, eSoundEntryType_Gui);
-
-				/////////////////////////////
-				//// HARDMODE
-				//if (gpBase->mbHardMode && gpBase->mpPlayer->IsActive())
-				//{
-				//	mlState = 5;
-				//}
 			}
 		}
 	}
+
+	if ( mbHoldsPlayerInLimbo )
+	{
+		if (!mbHasRunCheckPointCallbackScript )
+		{
+			mbHasRunCheckPointCallbackScript = true;
+			gpBase->mpMapHandler->GetCurrentMap()->RunCheckPointCallbackScript();
+		}
+		return;
+	}
+
+	if(mlState == 2)
+	{
+		ResetGame();
+		gpBase->mpEffectHandler->GetFlash()->Start(0.7f, 1.2f, 2.5f);
+		gpBase->mpHelpFuncs->PlayGuiSoundData(msAwakenSound, eSoundEntryType_Gui);
+
+		mlState = 3;
+	}
+
 	//////////////////////
 	// Fade to white
-	if(mlState == 2)
+	if(mlState == 3)
 	{
 		mfWhiteCount += afTimeStep;
 		if(mfWhiteCount >= 0.5f)
 		{
-			mlState = 3;			
+			mlState = 4;			
 		}
 	}
 	//////////////////////
 	// Fade In
-	if(mlState == 3)
+	if(mlState == 4)
 	{
 		mfTextAlpha1 -= afTimeStep*0.85f;
 		mfFadeAlpha -= afTimeStep*0.75f;
@@ -2128,24 +2466,11 @@ void cLuxPlayerDeath::Update(float afTimeStep)
 
 			msHintCat = sTempCat;
 			msHintEntry = sTempEntry;
-
-			//////////////////////
-			// HARDMODE
-			if (gpBase->mbHardMode && gpBase->mpPlayer->IsActive()) // Check if active since player is set inactive in ambush
-			{
-				//////////////////////
-				// Load latest save
-
-				if (gpBase->mpSaveHandler->AutoLoad(true) == false)
-				{
-					mbToMainMenu = true;
-				}
-			}
 		}
 	}
 	//////////////////////
 	// Play voice
-	if(mlState == 4)
+	if(mlState == 5)
 	{
 		cSoundHandler *pSoundHandler = gpBase->mpEngine->GetSound()->GetSoundHandler();
 		if(mpVoiceEntry==NULL || pSoundHandler->IsValid(mpVoiceEntry, mlVoiceEntryId)==false)
@@ -2153,45 +2478,6 @@ void cLuxPlayerDeath::Update(float afTimeStep)
 			gpBase->mpEngine->Exit();
 		}
 	}
-	//////////////////////
-	// HARDMODE
-	if (mlState == 5)
-	{
-		//////////////////////
-		// Load latest save
-		if (gpBase->mpSaveHandler->AutoLoad(true) == false)
-		{
-			mbToMainMenu = true;
-		}
-	}
-}
-
-
-void cLuxPlayerDeath::PostUpdate(float afTimeStep)
-{
-	///////////////////////////
-	// HARDMODE
-	if (gpBase->mbHardMode == false) return;
-
-	///////////////////////////
-	// Wants to go to main menu, 
-	// cant be in update since the playerclass will go bananas
-	if (mbToMainMenu == false) return;
-	
-	//////////////////////////
-	// Set MainMenu container
-	gpBase->mpEngine->GetUpdater()->SetContainer("MainMenu");
-	gpBase->mpLoadScreenHandler->DrawMenuScreen();
-
-	//Reset game
-	gpBase->mpEngine->GetUpdater()->BroadcastMessageToAll(eUpdateableMessage_Reset);
-	gpBase->SetCustomStory(NULL);
-
-	//Start up menu again
-	gpBase->mpMainMenu->OnLeaveContainer("");
-	gpBase->mpMainMenu->OnEnterContainer("");
-
-	mbToMainMenu = false;
 }
 
 //-----------------------------------------------------------------------
@@ -2222,7 +2508,7 @@ void cLuxPlayerDeath::OnDraw(float afFrameTime)
 		for(size_t i=0;i<sStr.length(); ++i)
 		{
 			float fTAdd = 0.3f * (float)i;
-			float fYAdd = sin(mfT*0.5f + fTAdd) * 5.0f + cos(mfT*0.97f - fTAdd*2.73f) * 3.5f;
+			float fYAdd = sin(mfTimer*0.5f + fTAdd) * 5.0f + cos(mfTimer*0.97f - fTAdd*2.73f) * 3.5f;
 					
 			tWString sChar = cString::SubW(sStr, (int)i, 1);
 			cVector3f vPos = cVector3f(fX, fY + fYAdd - vFontSize.y*0.5f*fMul, 6);
@@ -2260,8 +2546,7 @@ void cLuxPlayerDeath::OnPressButton()
 		// Increase player attributes if low
 		float fHealth = mpPlayer->GetHealth();
 		float fSanity = mpPlayer->GetSanity();
-		float fOil = mpPlayer->GetLampOil();
-
+		
 		if(fHealth < mfMaxHealthGain)
 		{
 			fHealth = cMath::RandRectf(cMath::Max(fHealth, mfMinHealthGain), mfMaxHealthGain);
@@ -2277,7 +2562,6 @@ void cLuxPlayerDeath::OnPressButton()
 
 		mpPlayer->SetHealth(fHealth);
 		mpPlayer->SetSanity(fSanity);
-		mpPlayer->SetLampOil(fOil);
 	}*/
 }
 
@@ -2302,21 +2586,26 @@ void cLuxPlayerDeath::ResetGame()
 	mpPlayer->GetCharacterBody()->SetMoveSpeed(eCharDir_Forward,0);
 	mpPlayer->GetCharacterBody()->SetMoveSpeed(eCharDir_Right,0);
 	
-	mpPlayer->SetHealth(50.0f);
-	if(mpPlayer->GetSanity()<40.0f) mpPlayer->SetSanity(40.0f);
+	mpPlayer->SetHealth(100.0f);
+	mpPlayer->SetInfection(0.0f);
 
 	//////////////////////////////////
 	//Sound
 	cSoundHandler *pSoundHandler = gpBase->mpEngine->GetSound()->GetSoundHandler();
 	pSoundHandler->FadeGlobalVolume(1, 1,eSoundEntryType_World,eLuxGlobalVolumeType_Death,false);
-	pSoundHandler->FadeGlobalSpeed(1, 0.5,eSoundEntryType_World,eLuxGlobalVolumeType_Death,false);
+	//pSoundHandler->FadeGlobalSpeed(1, 0.5,eSoundEntryType_World,eLuxGlobalVolumeType_Death,false);
 
 	//////////////////////////////////
 	//Check point
-	gpBase->mpMapHandler->GetCurrentMap()->LoadCheckPoint();	
+	gpBase->mpMapHandler->GetCurrentMap()->LoadCheckPoint();
+	if ( !mbKeepPlayerInLimbo )
+	{
+		gpBase->mpMapHandler->GetCurrentMap()->RunCheckPointCallbackScript();
+	}
 }
 
 //-----------------------------------------------------------------------
+
 
 //////////////////////////////////////////////////////////////////////////
 // PLAYER LEAN
@@ -2342,7 +2631,6 @@ cLuxPlayerLean::~cLuxPlayerLean()
 void cLuxPlayerLean::Reset()
 {
 	mfDir = 0;
-	mfDirAdd = 0;
 	mfMaxTime = 0.8f;
 	mfMovement = 0;
 	mfRotation =0;
@@ -2386,18 +2674,16 @@ void cLuxPlayerLean::Update(float afTimeStep)
 	//If pressed move in direction
 	if(mbPressed)
 	{
-		float fDir = mfDir + mfDirAdd;
-
 		mbPressed = false;
 
-		float fGoalPos = mfMaxMovement * fDir;
-		float fGoalRot = mfMaxRotation * -fDir;
+		float fGoalPos = mfMaxMovement * mfDir;
+		float fGoalRot = mfMaxRotation * -mfDir;
 
 		//////////////
 		//Position
 		float fPrevMovement = mfMovement;
 		float fMoveSpeed = (fGoalPos - mfMovement);
-		if(fabsf(fMoveSpeed) <0.1f) fMoveSpeed = 0.1f*fDir;
+		if(fabsf(fMoveSpeed) <0.1f) fMoveSpeed = 0.1f*mfDir;
 		mfMovement += fMoveSpeed * afTimeStep * 3;
 
 		if(fGoalPos < 0 && mfMovement < fGoalPos) mfMovement =fGoalPos;
@@ -2407,7 +2693,7 @@ void cLuxPlayerLean::Update(float afTimeStep)
 		//Rotation
 		float fPrevRotation = mfRotation;
 		float fRotSpeed = fGoalRot - mfRotation;
-		if(fabsf(fRotSpeed) <0.13f) fRotSpeed = 0.13f*-fDir;
+		if(fabsf(fRotSpeed) <0.13f) fRotSpeed = 0.13f*-mfDir;
 
 		mfRotation += fRotSpeed * afTimeStep * 2;
 
@@ -2460,12 +2746,10 @@ void cLuxPlayerLean::Update(float afTimeStep)
 	}
 	////////////////////////////
 	// Not pressed move back
-	else if (mfMovement !=0 || mfRotation != 0)
+	else if(mfMovement !=0 || mfRotation != 0)
 	{
 		mfRotation =0;
 		mfMovement =0;
-		mfDir = 0;
-		mfDirAdd = 0;
 
 		mpPlayer->FadeLeanRollTo(0, 4,2);
 		mpPlayer->MoveHeadPosAdd(eLuxHeadPosAdd_Lean, cVector3f(0,0,0), 1.3f, 0.1f);
@@ -2475,23 +2759,13 @@ void cLuxPlayerLean::Update(float afTimeStep)
 //-----------------------------------------------------------------------
 
 
-void cLuxPlayerLean::SetLean(float afMul)
+void cLuxPlayerLean::Lean(float afMul)
 {
-	mfDir = cMath::Clamp(afMul, -1.0f, 1.0f);
-	if (fabsf(afMul) > 0)
-	{
-		mfDirAdd = 0;
-		mbPressed = true;
-	}
+	mbPressed = true;
+	mfDir = afMul;
 }
 
-//-----------------------------------------------------------------------
 
-void cLuxPlayerLean::AddLean(float afAdd)
-{
-	mfDirAdd = cMath::Clamp(mfDirAdd+afAdd, -1.0f, 1.0f);
-	mbPressed = fabsf(mfDirAdd) > 0;
-}
 
 //-----------------------------------------------------------------------
 
@@ -2700,6 +2974,7 @@ void cLuxPlayerHudEffect::LoadDamageData(cLuxPlayerDamageData *apData, const tSt
 	}
 }
 
+//-----------------------------------------------------------------------
 
 //-----------------------------------------------------------------------
 
@@ -2736,7 +3011,7 @@ void cLuxPlayerLightLevel::Reset()
 
 void cLuxPlayerLightLevel::Update(float afTimeStep)
 {
-	///////////////////////////////////////
+    ///////////////////////////////////////
 	//If count reaches 0, update light level
 	if(mfUpdateCount <=0.0f)
 	{
@@ -2764,7 +3039,7 @@ void cLuxPlayerLightLevel::Update(float afTimeStep)
 		////////////////////////////////
 		//Get lights to skip
 		std::vector<iLight*> vSkipLights;
-		vSkipLights.push_back(mpPlayer->GetHelperInDarkness()->GetAmbientLight());
+		//vSkipLights.push_back(mpPlayer->GetHelperInDarkness()->GetAmbientLight());
 		
 		////////////////////////////////
 		//Get light level at all positions and then calculate median.
@@ -2787,7 +3062,7 @@ void cLuxPlayerLightLevel::Update(float afTimeStep)
 			mfExtendedLightLevel = cMath::Max(fExtLight, mfExtendedLightLevel);
 			mfNormalLightLevel = cMath::Max(fNormalLight, mfNormalLightLevel);
 		}
-
+		
 		//mfLightLevel = fTotalLight / (float)lTestPos;
 	}
 	else
@@ -2808,7 +3083,72 @@ void cLuxPlayerLightLevel::OnMapEnter(cLuxMap *apMap)
 
 //-----------------------------------------------------------------------
 
+//////////////////////////////////////////////////////////////////////////
+// PLAYER IS MOVING
+//////////////////////////////////////////////////////////////////////////
 
+cLuxPlayerIsMoving::cLuxPlayerIsMoving(cLuxPlayer *apPlayer) : iLuxPlayerHelper(apPlayer, "LuxPlayerIsMoving")
+{
+    mfImmediatePlayerSpeed = 0.0f;
+    mfAveragePlayerSpeed = 0.0f;
+
+	mfSlowMovementThreshold = gpBase->mpGameCfg->GetFloat("Player_IsMovingHelper","SlowMovementThreshold",0);
+	mfFastMovementThreshold = gpBase->mpGameCfg->GetFloat("Player_IsMovingHelper","FastMovementThreshold",0);
+
+}
+
+//-----------------------------------------------------------------------
+
+cLuxPlayerIsMoving::~cLuxPlayerIsMoving()
+{
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayerIsMoving::OnStart()
+{
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayerIsMoving::Update(float afTimeStep)
+{
+    iCharacterBody *pCharBody = mpPlayer->GetCharacterBody();
+	mfImmediatePlayerSpeed = pCharBody->GetVelocity(afTimeStep).Length();
+    mfAveragePlayerSpeed = mpPlayer->GetAvgSpeed();
+
+}
+
+//-----------------------------------------------------------------------
+
+bool cLuxPlayerIsMoving::PlayerIsMovingFast()
+{
+    return mfAveragePlayerSpeed > mfFastMovementThreshold;
+}
+
+//-----------------------------------------------------------------------
+
+bool cLuxPlayerIsMoving::PlayerIsMovingSlowly()
+{
+    return mfImmediatePlayerSpeed > mfSlowMovementThreshold;
+}
+
+//-----------------------------------------------------------------------
+
+/*
+bool cLuxPlayerIsMoving::PlayerIsMovingMouseFast()
+{
+    return mfMouseMovementSpeed > mfFastMouseMovementThreshold;
+}*/
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayerIsMoving::Reset()
+{
+    mfImmediatePlayerSpeed = 0.0f;
+}
+
+/*
 //////////////////////////////////////////////////////////////////////////
 // PLAYER IN DARKNESS
 //////////////////////////////////////////////////////////////////////////
@@ -2832,8 +3172,6 @@ cLuxPlayerInDarkness::cLuxPlayerInDarkness(cLuxPlayer *apPlayer) : iLuxPlayerHel
 	mfLoopSoundStartupTime = gpBase->mpGameCfg->GetFloat("Player_Darkness", "LoopSoundStartupTime",0);
 	mfLoopSoundFadeInSpeed = gpBase->mpGameCfg->GetFloat("Player_Darkness", "LoopSoundFadeInSpeed",0);
 	mfLoopSoundFadeOutSpeed = gpBase->mpGameCfg->GetFloat("Player_Darkness", "LoopSoundFadeOutSpeed",0);
-
-	mfSanityLossPerSecond = gpBase->mpGameCfg->GetFloat("Player_Darkness", "SanityLossPerSecond",0);
 }
 
 cLuxPlayerInDarkness::~cLuxPlayerInDarkness()
@@ -2849,8 +3187,6 @@ void cLuxPlayerInDarkness::OnStart()
 }
 void cLuxPlayerInDarkness::Reset()
 {
-	mbActive = true;
-
 	mpAmbientLight =NULL;
 
 	mbAmbientLightIsOn = false;
@@ -2859,18 +3195,13 @@ void cLuxPlayerInDarkness::Reset()
 	mpLoopSound = NULL;
 	mfLoopSoundCount =0;
 
-	mfSanityLossMul =0;
-
 	mfShowHintTimer = 0;
 }
 
 //-----------------------------------------------------------------------
 
-
 void cLuxPlayerInDarkness::Update(float afTimeStep)
 {
-	if (!mbActive) return;
-
 	///////////////////////
 	// Get light level
     float fExtLightLevel = mpPlayer->GetHelperLightLevel()->GetExtendedLightLevel();
@@ -2899,14 +3230,7 @@ void cLuxPlayerInDarkness::Update(float afTimeStep)
 		if(mbAmbientLightIsOn==false)
 		{
 			mbAmbientLightIsOn = true;
-
-			////////////////////////
-			// HARDMODE
-			if (gpBase->mbHardMode)
-				mpAmbientLight->FadeTo(mAmbientLightColor*mfAmbientLightIntensity * 0.75f , mpAmbientLight->GetRadius(), mfAmbientLightFadeInTime * 2.5f);
-			else
-				mpAmbientLight->FadeTo(mAmbientLightColor*mfAmbientLightIntensity, mpAmbientLight->GetRadius(), mfAmbientLightFadeInTime);
-
+			mpAmbientLight->FadeTo(mAmbientLightColor*mfAmbientLightIntensity,mpAmbientLight->GetRadius(),mfAmbientLightFadeInTime);	
 		}
 
 	}
@@ -2917,59 +3241,35 @@ void cLuxPlayerInDarkness::Update(float afTimeStep)
 	{
 		////////////////////////////
 		//Turn off loop sound
-		/*if(mpLoopSound)
-		{
-			if(mfLoopSoundCount <= 0)
-			{
-				mpLoopSound->FadeOut(mfLoopSoundFadeOutSpeed);
-				mpLoopSound = NULL;
-			}
-		}*/
+		//if(mpLoopSound)
+		//{
+		//	if(mfLoopSoundCount <= 0)
+		//	{
+		//		mpLoopSound->FadeOut(mfLoopSoundFadeOutSpeed);
+		//		mpLoopSound = NULL;
+		//	}
+		//}
         
 		mfLoopSoundCount-= afTimeStep;
 		if(mfLoopSoundCount <= 0) mfLoopSoundCount = 0;
 
 
 		mbInDarkness = false;
-		
-		mfSanityLossMul -= afTimeStep*0.3f;
-		if(mfSanityLossMul < 0) mfSanityLossMul = 0;
 	}
 	///////////////////////
 	// Darkness
 	else
 	{
-		mfSanityLossMul += afTimeStep*0.1f;
-		if(mfSanityLossMul > 1) mfSanityLossMul = 1;
-
-		////////////////////////////
-		//Lower sanity
-		if(	mpPlayer->GetHelperFlashback()->IsActive()==false && mpPlayer->GetSanityDrainDisabled()==false && 
-			gpBase->mpEffectHandler->GetEmotionFlash()->IsActive()==false)
-		{
-			mpPlayer->LowerSanity(mfSanityLossPerSecond*afTimeStep*mfSanityLossMul, true);
-
-			if(mfShowHintTimer<=0 && mfSanityLossMul > 0.05f)
-			{
-				mfShowHintTimer = 3.0f;
-				gpBase->mpHintHandler->Add("DarknessDecrease", kTranslate("Hints", "DarknessDecrease"), 0);
-			}
-			else
-			{
-				mfShowHintTimer -= afTimeStep;
-			}
-		}
-				
 		////////////////////////////
 		//Check if sound should be played
-		/*if(mpLoopSound == NULL)
-		{
-			if(mfLoopSoundCount >= mfLoopSoundStartupTime)
-			{
-				mpLoopSound = mpSoundHandler->PlayGuiStream(msLoopSoundFile,true,mfLoopSoundVolume);
-				if(mpLoopSound) mpLoopSound->FadeIn(1.0f, mfLoopSoundFadeInSpeed);
-			}
-		}*/
+		//if(mpLoopSound == NULL)
+		//{
+		//	if(mfLoopSoundCount >= mfLoopSoundStartupTime)
+		//	{
+		//		mpLoopSound = mpSoundHandler->PlayGuiStream(msLoopSoundFile,true,mfLoopSoundVolume);
+		//		if(mpLoopSound) mpLoopSound->FadeIn(1.0f, mfLoopSoundFadeInSpeed);
+		//	}
+		//}
 
 		mfLoopSoundCount+= afTimeStep;
 		if(mfLoopSoundCount >= mfLoopSoundStartupTime) mfLoopSoundCount = mfLoopSoundStartupTime;
@@ -3000,15 +3300,7 @@ void cLuxPlayerInDarkness::CreateWorldEntities(cLuxMap *apMap)
 
 	mpAmbientLight = pWorld->CreateLightPoint("PlayerDarknessAmbient","",false);
 	mpAmbientLight->SetDiffuseColor(cColor(0.0f, 0.0f));
-
 	mpAmbientLight->SetRadius(mfAmbientLightRadius);
-
-	/////////////////////
-	// HARDMODE
-	if(gpBase->mbHardMode)
-		mpAmbientLight->SetRadius(mfAmbientLightRadius*0.5f);
-
-
 	mpAmbientLight->SetCastShadows(false);
 	mpAmbientLight->SetIsSaved(false);
 }
@@ -3026,25 +3318,5 @@ bool cLuxPlayerInDarkness::InDarkness()
 	float fLightLevel = mpPlayer->GetHelperLightLevel()->GetExtendedLightLevel();
 	return fLightLevel <= mfMinDarknessLightLevel;
 }
-
-//-----------------------------------------------------------------------
-
-void cLuxPlayerInDarkness::SetActive(bool abX)
-{
-	mbActive = abX;
-
-	if (abX == false)
-	{
-		if(mbAmbientLightIsOn)
-		{
-			mbAmbientLightIsOn = false;
-			mpAmbientLight->FadeTo(cColor(0.0f, 0.0f),mpAmbientLight->GetRadius(),mfAmbientLightFadeOutTime);
-		}
-        
-		mfLoopSoundCount = 0;
-		mbInDarkness = false;
-		mfSanityLossMul = 0;
-	}
-}
-
+*/
 //-----------------------------------------------------------------------

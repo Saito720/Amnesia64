@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef HPLEDITOR_ENTITY_WRAPPER_LIGHT_H
@@ -85,6 +85,8 @@ enum eLightFloat
 	eLightFloat_FlickerOnFadeMaxLength,
 	eLightFloat_FlickerOffFadeMinLength,
 	eLightFloat_FlickerOffFadeMaxLength,
+	eLightFloat_Brightness,
+	eLightFloat_Falloff,
 	
 	eLightFloat_LastEnum,	
 };
@@ -93,7 +95,6 @@ enum eLightStr
 {
 	eLightStr_Gobo = LightPropIdStart,
 	eLightStr_GoboAnimMode,
-	eLightStr_FalloffMap,
 	eLightStr_FlickerOnSound,
 	eLightStr_FlickerOffSound,
 	eLightStr_FlickerOnPS,
@@ -132,11 +133,12 @@ public:
 		AddBool(eLightBool_ShadowsAffectDynamic, "ShadowsAffectDynamic");
 
 		AddFloat(eLightFloat_Radius, "Radius", 1.0f);
-		AddString(eLightStr_FalloffMap, "FalloffMap");
 		AddString(eLightStr_Gobo, "Gobo");
 		AddString(eLightStr_GoboAnimMode, "GoboAnimMode", "None");
 		AddFloat(eLightFloat_GoboAnimFrameTime, "GoboAnimFrameTime");
 		AddColor(eLightCol_Diffuse, "DiffuseColor", cColor(1));
+		AddFloat(eLightFloat_Brightness, "Brightness", 1.0f);
+		AddFloat(eLightFloat_Falloff, "Falloff", 1.0f);
 
 		AddBool(eLightBool_FlickerActive, "FlickerActive", false);
 		AddFloat(eLightFloat_FlickerOnMinLength, "FlickerOnMinLength");
@@ -222,9 +224,6 @@ public:
 
 	virtual void SetRadius(float afRadius);
 	float GetRadius() { return mfRadius; }
-
-	void SetFalloffMap(const tString& asFalloffMap);
-	const tString& GetFalloffMap() { return msFalloffMap; }
 	
 	void SetDiffuseColor(const cColor& aDiffuseColor);
 	cColor GetDiffuseColor() { return mcolDiffuseColor; }
@@ -253,6 +252,9 @@ public:
 	float GetFlickerOffFadeMinLength() { return mfFlickerOffFadeMinLength; }
 	float GetFlickerOffFadeMaxLength() { return mfFlickerOffFadeMaxLength; }
 
+	float GetBrightness() { return mfBrightness; }
+	float GetFalloff() { return mfFalloff; }
+
 
 	void SetFlickerActive(bool abX);
 
@@ -275,6 +277,9 @@ public:
 	void SetFlickerOnFadeMaxLength(float afX);
 	void SetFlickerOffFadeMinLength(float afX);
 	void SetFlickerOffFadeMaxLength(float afX);
+
+	void SetBrightness(float afX);
+	void SetFalloff(float afX);
 
 	void UpdateFlickerParams();
 
@@ -315,6 +320,8 @@ protected:
 	float mfRadius;
 
 	cColor mcolDiffuseColor;
+	float mfBrightness;
+	float mfFalloff;
 
 	tString msFalloffMap;
 

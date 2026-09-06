@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "impl/GamepadXInput.h"
@@ -37,7 +37,7 @@ namespace hpl {
 	//-----------------------------------------------------------------------
 
 	float cGamepadXInput::mfInvAxisMax = 1.0f/(float(32768));
-	float cGamepadXInput::mfDeadZoneRadius = 3200.0f*cGamepadXInput::mfInvAxisMax;
+	float cGamepadXInput::mfDeadZoneRadius = 5000.0f*cGamepadXInput::mfInvAxisMax;
 	bool cGamepadXInput::mbDeviceConnected[4] = { false, false, false, false };
 
 	//-----------------------------------------------------------------------
@@ -62,10 +62,16 @@ namespace hpl {
 		mvBallRelPosArray.resize(0);
 		mvBallRelPosArray.assign(mvBallRelPosArray.size(), cVector2l(0,0));
 
-		mfLeftTrigger = 0;
-		mfRightTrigger = 0;
+		SetWasConnected(alIndex, true);
 	}
 	
+	//-----------------------------------------------------------------------
+
+	cGamepadXInput::~cGamepadXInput()
+	{
+		SetWasConnected(mlIndex, false);
+	}
+
 	//-----------------------------------------------------------------------
 
 	//////////////////////////////////////////////////////////////////////////
@@ -331,6 +337,23 @@ namespace hpl {
 		return mvBallRelPosArray[aBall];
 	}
 
+	//------------------------------------------------------------------------
+
+	int cGamepadXInput::GetNumConnected()
+	{
+		int lConnected = 0;
+
+		for(int i = 0; i < 4; ++i)
+		{
+			if(IsConnected(i))
+			{
+				lConnected = i + 1;
+			}
+		}
+
+		return lConnected;
+	}
+
 	bool cGamepadXInput::IsConnected(int alIndex)
 	{
 		XINPUT_STATE state;
@@ -338,6 +361,43 @@ namespace hpl {
 		memset(&state, 0, sizeof(state));
 
 		return XInputGetState(alIndex, &state) == ERROR_SUCCESS;
+	}
+
+	int cGamepadXInput::GetDeviceChange()
+	{
+		static int lDeviceChange = 0;
+		static int lDeviceUpdateCount = 0;
+
+		////////////
+		// Check currently connected devices
+		for(int i = 0; i < 4; ++i)
+		{
+			if(GetWasConnected(i))
+			{
+				///////////
+				// Check for disconnect
+				if(IsConnected(i) == false)
+				{
+					return -1;
+				}
+			}
+		}
+
+		if(((lDeviceUpdateCount++) % (5 * 60)) > 0) return 0; //Update once every 5 seconds
+
+		///////////
+		// Check one device at a time, to not stall to much
+		int lCurrentDevice = (lDeviceChange++) % 4;
+
+		///////////////
+		// Check if a device has been connected
+		if(IsConnected(lCurrentDevice))
+		{
+			// Connected
+			return 1;
+		}
+
+		return 0;
 	}
 	
 	//-----------------------------------------------------------------------
@@ -364,7 +424,7 @@ namespace hpl {
 		mvAxisArray[alAxis] = afVal;
 	}
 
-	//----------------------------------------------------------------------
+	//-----------------------------------------------------------------------
 
 	void cGamepadXInput::UpdateTrigger(float afLVal, float afRVal)
 	{

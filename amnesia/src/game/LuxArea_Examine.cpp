@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxArea_Examine.h"
@@ -63,11 +63,11 @@ void cLuxAreaLoader_Examine::LoadVariables(iLuxArea *apArea, cWorld *apWorld)
 	pExamineArea->msDescCat = GetVarString("DescCat","");
 	pExamineArea->msDescEntry = GetVarString("DescEntry","");
 
-	pExamineArea->msDescInsaneCat = GetVarString("DescInsaneCat","");
-	pExamineArea->msDescInsaneEntry = GetVarString("DescInsaneEntry","");
+	pExamineArea->msDescInfectedCat = GetVarString("DescInfectedCat","");
+	pExamineArea->msDescInfectedEntry = GetVarString("DescInfectedEntry","");
 
 	pExamineArea->msSound = GetVarString("Sound","");
-	pExamineArea->msInsaneSound = GetVarString("InsaneSound","");
+	pExamineArea->msInfectedSound = GetVarString("InfectedSound","");
 }
 
 void cLuxAreaLoader_Examine::SetupArea(iLuxArea *apArea, cWorld *apWorld)
@@ -86,7 +86,7 @@ void cLuxAreaLoader_Examine::SetupArea(iLuxArea *apArea, cWorld *apWorld)
 cLuxArea_Examine::cLuxArea_Examine(const tString &asName, int alID, cLuxMap *apMap)  : iLuxArea(asName,alID,apMap, eLuxAreaType_Examine)
 {
 	mfMaxFocusDistance = gpBase->mpGameCfg->GetFloat("Player_Interaction","Examine_MaxFocusDist",0);
-	mfInsaneLimit = gpBase->mpGameCfg->GetFloat("Player_Interaction","MaxExamineSanity",0);
+	mfInfectedLimit = gpBase->mpGameCfg->GetFloat("Player_Interaction","MinExamineInfection",0);
 
 	mfPlaySoundCount =0;
 
@@ -129,7 +129,7 @@ bool cLuxArea_Examine::CanInteract(iPhysicsBody *apBody)
 
 bool cLuxArea_Examine::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 {
-	float fSanity = gpBase->mpPlayer->GetSanity();
+	float fInfection = gpBase->mpPlayer->GetInfection();
 	
 	////////////////////////////////
 	// Show text
@@ -137,10 +137,10 @@ bool cLuxArea_Examine::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 	{
 		tString sCat = msDescCat;
 		tString sEntry = msDescEntry;
-		if(fSanity < mfInsaneLimit && msDescInsaneCat != "" && msDescInsaneEntry != "")
+		if(fInfection > mfInfectedLimit && msDescInfectedCat != "" && msDescInfectedEntry != "")
 		{
-			sCat = msDescInsaneCat;
-			sEntry = msDescInsaneEntry;
+			sCat = msDescInfectedCat;
+			sEntry = msDescInfectedEntry;
 		}
 
 		gpBase->mpMessageHandler->SetMessage(kTranslate(sCat, sEntry), 0);
@@ -151,8 +151,8 @@ bool cLuxArea_Examine::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 	if(mfPlaySoundCount <=0 && msSound != "")
 	{
 		tString sSound = msSound;
-		if(fSanity < mfInsaneLimit && msInsaneSound != "")
-			sSound = msInsaneSound;
+		if(fInfection > mfInfectedLimit && msInfectedSound != "")
+			sSound = msInfectedSound;
 
 		if(sSound != "")
 			gpBase->mpHelpFuncs->PlayGuiSoundData(sSound, eSoundEntryType_Gui);
@@ -191,11 +191,11 @@ kBeginSerialize(cLuxArea_Examine_SaveData, iLuxArea_SaveData)
 kSerializeVar(msDescCat, eSerializeType_String)
 kSerializeVar(msDescEntry, eSerializeType_String)
 
-kSerializeVar(msDescInsaneCat, eSerializeType_String)
-kSerializeVar(msDescInsaneEntry, eSerializeType_String)
+kSerializeVar(msDescInfectedCat, eSerializeType_String)
+kSerializeVar(msDescInfectedEntry, eSerializeType_String)
 
 kSerializeVar(msSound, eSerializeType_String)
-kSerializeVar(msInsaneSound, eSerializeType_String)
+kSerializeVar(msInfectedSound, eSerializeType_String)
 
 kEndSerialize()
 
@@ -223,11 +223,11 @@ void cLuxArea_Examine::SaveToSaveData(iLuxEntity_SaveData* apSaveData)
     kCopyToVar(pData, msDescCat);
 	kCopyToVar(pData, msDescEntry);
 
-	kCopyToVar(pData, msDescInsaneCat);
-	kCopyToVar(pData, msDescInsaneEntry);
+	kCopyToVar(pData, msDescInfectedCat);
+	kCopyToVar(pData, msDescInfectedEntry);
 
 	kCopyToVar(pData, msSound);
-	kCopyToVar(pData, msInsaneSound);
+	kCopyToVar(pData, msInfectedSound);
 }
 
 //-----------------------------------------------------------------------
@@ -240,11 +240,11 @@ void cLuxArea_Examine::LoadFromSaveData(iLuxEntity_SaveData* apSaveData)
 	kCopyFromVar(pData, msDescCat);
 	kCopyFromVar(pData, msDescEntry);
 
-	kCopyFromVar(pData, msDescInsaneCat);
-	kCopyFromVar(pData, msDescInsaneEntry);
+	kCopyFromVar(pData, msDescInfectedCat);
+	kCopyFromVar(pData, msDescInfectedEntry);
 
 	kCopyFromVar(pData, msSound);
-	kCopyFromVar(pData, msInsaneSound);
+	kCopyFromVar(pData, msInfectedSound);
 }
 
 //-----------------------------------------------------------------------

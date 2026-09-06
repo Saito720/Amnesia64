@@ -1,26 +1,27 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef HPL_BINARY_BUFFER_H
 #define HPL_BINARY_BUFFER_H
 
 #include "system/SystemTypes.h"
+#include <cstdint>
 #include "math/MathTypes.h"
 #include "graphics/GraphicsTypes.h"
 
@@ -85,9 +86,11 @@ namespace hpl {
 		size_t GetSize(){ return mlDataSize; }
 		size_t GetReservedSize(){ return mlReservedDataSize; }
 
-		char* GetDataPointer(){ return mpData; }
-		char* GetDataPointerAtPos(size_t alPos){ return &mpData[alPos]; }
-		char* GetDataPointerAtCurrentPos(){ return &mpData[mlDataPos]; }
+		char* GetDataPointerAtPos(size_t alPos);
+		char* GetDataPointerAtCurrentPos();
+		size_t GetBytesToChunkEnd();
+		int GetDataChunkNum() { return int(mvDataChunks.size()); }
+
 
 		////////////////////////////////
 		// FILE SEARCHING
@@ -131,6 +134,16 @@ namespace hpl {
 		* Runs an XOR the entire buffer using simple XOR
 		*/
 		void XorTransform(const char* apKeyData, size_t alKeySize);
+
+		/**
+		* Encrypt using Tiny Encryption Algorithm
+		*/
+		void EncryptTEA(const uint32_t alKey[4]);
+
+		/**
+		* Decrypt this buffer using Tiny Encryption Algorithm
+		*/
+		void DecryptTEA(const uint32_t alKey[4]);
 		
 		////////////////////////////////
 		// TESTS
@@ -166,12 +179,18 @@ namespace hpl {
 		////////////////////////////////
 		// DATA INPUT
 		////////////////////////////////
+		/**
+		  * As this function does not conversion, it is not adviced to use.
+		  */
+		void AddRawData(void*apData, size_t alSize);
+
 		void AddChar(char alX);
 		void AddUnsignedChar(unsigned char alX);
 		void AddBool(bool abX);
 		void AddShort16(short alX);
 		void AddUnsignedShort16(unsigned short alX);
 		void AddInt32(int alX);
+		void AddUnsignedInt32(unsigned int alX);
 		void AddFloat32(float afX);
 		void AddVector2f(const cVector2f& avX);
 		void AddVector3f(const cVector3f& avX);
@@ -183,7 +202,7 @@ namespace hpl {
 		void AddString(const tString& asStr);
 //      Must rethink how to store, as Mac/Linux is UTF-32 and Windows is UTF-16.  Better to store as UTF-8 on all platforms.
 //      Also, must take care of Endianess for PPC
-//		void AddStringW(const tWString& asStr);
+		void AddStringW(const tWString& asStr);
 
 		void AddCharArray(const char* apData, size_t alSize);
 		void AddShort16Array(const short* apData, size_t alSize);
@@ -198,12 +217,19 @@ namespace hpl {
 		////////////////////////////////
 		// DATA OUTPUT
 		////////////////////////////////
+
+		/**
+		  * As this function does not conversion, it is not adviced to use.
+		  */
+		void GetRawData(void*apData, size_t alSize);
+
 		char GetChar();
 		unsigned char GetUnsignedChar();
 		bool GetBool();
 		short GetShort16();
 		unsigned short GetUnsignedShort16();
 		int GetInt32();
+		unsigned int GetUnsignedInt32();
 		float GetFloat32();
 		void GetVector2f(cVector2f *apX);
 		void GetVector3f(cVector3f *apX);
@@ -213,13 +239,13 @@ namespace hpl {
 		void GetQuaternion(cQuaternion* apX);
 		void GetColor(cColor *apX);
 		void GetString( tString *apStr);
-//		void GetStringW(tWString *apStr);
+		void GetStringW(tWString *apStr);
 
 		void GetCharArray(char* apData, size_t alSize);
 		void GetShort16Array(short* apData, size_t alSize);
 		void GetInt32Array(int* apData, size_t alSize);
 		void GetFloat32Array(float* apData, size_t alSize);
-					        		
+
 	private:
 		/**
 		 * Adds data to the buffer and will increase the pos to point at byte after written data (usually EOF). Will increase reserved size when it runs out of space.
@@ -235,11 +261,13 @@ namespace hpl {
 		*/
 		bool GetData(void *apData, size_t alSize);
 
+		bool DecompressAndAddInternal(char *apSrcData, size_t alSize, cBinaryBuffer *apSrcBuffer);
+
 		void InitAndAllocData();
 
 		tWString msFile;
 
-		char *mpData;
+		std::vector<char*> mvDataChunks;
 		size_t mlDataPos;
 		size_t mlDataSize;
 		size_t mlReservedDataSize;

@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "EditorIndex.h"
@@ -61,7 +61,7 @@ iEditorObjectIndex::iEditorObjectIndex(iEditorBase* apEditor,
 
 	msBaseFolder = cString::SubW(msBaseFolderFullPath, lLastSlashPos+1);
 	
-	msFilename = mpEditor->GetTempDir() + msBaseFolder + _W(".") + msIndexExt;
+	msFilename = mpEditor->GetFolderFullPath(eEditorDir_Temp) + msBaseFolder + _W(".") + msIndexExt;
 
 	mbUpdated = false;
 	mbRefreshThumbnails = false;
@@ -132,7 +132,7 @@ bool iEditorObjectIndex::Refresh()
 	if(mbRefreshThumbnails)
 	{
 		mbRefreshThumbnails = false;
-		mpEditor->GetEngine()->GetResources()->AddResourceDir(mpEditor->GetThumbnailDir(), false);
+		mpEditor->GetEngine()->GetResources()->AddResourceDir(mpEditor->GetFolderFullPath(eEditorDir_Thumbnails), false);
 		
 		mpEditor->GetThumbnailBuilder()->CleanUp();
 	}
@@ -390,14 +390,9 @@ bool iEditorObjectIndexDir::Refresh(cXmlElement* apElement, bool abAddSubDirs)
 
 				if(pDir->Refresh(pXmlDir, abAddSubDirs))
 				{
-					const tWString& sRelPath = pDir->GetDirName();
+					const tWString& sRelPath = pDir->GetRelPath();
 					mmapSubDirs.insert(std::pair<tWString,iEditorObjectIndexDir*>(sRelPath, pDir));
-					tWStringListIt it = find(lstDirs.begin(),lstDirs.end(), sRelPath);
-					if (it == lstDirs.end()) {
-						Warning("Error finding Directory %ls in list for path %ls\n",sRelPath.c_str(), sFullPath.c_str());
-					} else {
-						lstDirs.erase(it);
-					}
+					lstDirs.erase(find(lstDirs.begin(),lstDirs.end(), sRelPath));
 				}
 				else
 				{
@@ -550,7 +545,7 @@ bool iEditorObjectIndexEntry::CheckNeedsUpdate()
 tWString iEditorObjectIndexEntry::GetFileNameRelPath()
 {
 	tWString sRelPath = mpParentDir->GetRelPath();
-	tWString sFilenameRelPath = cString::AddSlashAtEndW(sRelPath) + cString::To16Char(msFileName);
+	tWString sFilenameRelPath = (sRelPath==_W("")?sRelPath:sRelPath + _W("/")) + cString::To16Char(msFileName);
 
 	return sFilenameRelPath;
 }
@@ -559,7 +554,8 @@ tWString iEditorObjectIndexEntry::GetFileNameRelPath()
 
 tWString iEditorObjectIndexEntry::GetFileNameFullPath()
 {
-	tWString sFilenameFullPath = cString::AddSlashAtEndW(mpParentDir->GetFullPath()) + cString::To16Char(msFileName);
+	//tWString sFilenameFullPath = mpParentDir->GetIndex()->GetEditor()->GetEngine()->GetResources()->GetFileSearcher()->GetFilePath(msFileName);
+	tWString sFilenameFullPath = cString::AddSlashAtEndW(mpParentDir->GetFullPath(),_W('/')) + cString::To16Char(msFileName);
 
 	return sFilenameFullPath;
 }

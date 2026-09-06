@@ -1,6 +1,6 @@
 /*
    AngelCode Scripting Library
-   Copyright (c) 2003-2010 Andreas Jonsson
+   Copyright (c) 2003-2012 Andreas Jonsson
 
    This software is provided 'as-is', without any express or implied 
    warranty. In no event will the authors be held liable for any 
@@ -40,7 +40,6 @@
 #include "as_tokendef.h"
 #include "as_objecttype.h"
 #include "as_scriptengine.h"
-#include "as_arrayobject.h"
 #include "as_tokenizer.h"
 
 BEGIN_AS_NAMESPACE
@@ -69,6 +68,15 @@ asCDataType::asCDataType(const asCDataType &dt)
 
 asCDataType::~asCDataType()
 {
+}
+
+bool asCDataType::IsValid() const
+{
+	if( tokenType == ttUnrecognizedToken &&
+		!isObjectHandle )
+		return false;
+
+	return true;
 }
 
 asCDataType asCDataType::CreateObject(asCObjectType *ot, bool isConst)
@@ -114,17 +122,6 @@ asCDataType asCDataType::CreatePrimitive(eTokenType tt, bool isConst)
 	return dt;
 }
 
-asCDataType asCDataType::CreateDefaultArray(asCScriptEngine *engine)
-{
-	asCDataType dt;
-
-	// _builtin_array_<T> represents the default array
-	dt.objectType       = engine->defaultArrayObjectType;
-	dt.tokenType        = ttIdentifier;
-
-	return dt;
-}
-
 asCDataType asCDataType::CreateNullHandle()
 {
 	asCDataType dt;
@@ -147,7 +144,7 @@ bool asCDataType::IsNullHandle() const
 	return false;
 }
 
-asCString asCDataType::Format() const
+asCString asCDataType::Format(bool includeNamespace) const
 {
 	if( IsNullHandle() )
 		return "<null handle>";
@@ -157,13 +154,21 @@ asCString asCDataType::Format() const
 	if( isReadOnly )
 		str = "const ";
 
+	if( includeNamespace )
+	{
+		if( objectType )
+			str += objectType->nameSpace->name + "::";
+		else if( funcDef )
+			str += funcDef->nameSpace->name + "::";
+	}
+
 	if( tokenType != ttIdentifier )
 	{
-		str += asGetTokenDefinition(tokenType);
+		str += asCTokenizer::GetDefinition(tokenType);
 	}
-	else if( IsArrayType() )
+	else if( IsArrayType() && objectType && !objectType->engine->ep.expandDefaultArrayToTemplate )
 	{
-		str += objectType->templateSubType.Format();
+		str += objectType->templateSubType.Format(includeNamespace);
 		str += "[]";
 	}
 	else if( funcDef )
@@ -176,7 +181,7 @@ asCString asCDataType::Format() const
 		if( objectType->flags & asOBJ_TEMPLATE )
 		{
 			str += "<";
-			str += objectType->templateSubType.Format();
+			str += objectType->templateSubType.Format(includeNamespace);
 			str += ">";
 		}
 	}
@@ -197,7 +202,6 @@ asCString asCDataType::Format() const
 
 	return str;
 }
-
 
 asCDataType &asCDataType::operator =(const asCDataType &dt)
 {
@@ -222,17 +226,23 @@ int asCDataType::MakeHandle(bool b, bool acceptHandleForScope)
 	else if( b && !isObjectHandle )
 	{
 		// Only reference types are allowed to be handles, 
-		// but not nohandle reference types, and not scoped references (except when returned from registered function)
-		// funcdefs are special reference types, and support handles
+		// but not nohandle reference types, and not scoped references 
+		// (except when returned from registered function)
+		// funcdefs are special reference types and support handles
+		// value types with asOBJ_ASHANDLE are treated as a handle
 		if( !funcDef && 
 			(!objectType || 
-			!((objectType->flags & asOBJ_REF) || (objectType->flags & asOBJ_TEMPLATE_SUBTYPE)) || 
+			!((objectType->flags & asOBJ_REF) || (objectType->flags & asOBJ_TEMPLATE_SUBTYPE) || (objectType->flags & asOBJ_ASHANDLE)) || 
 			(objectType->flags & asOBJ_NOHANDLE) || 
 			((objectType->flags & asOBJ_SCOPED) && !acceptHandleForScope)) )
 			return -1;
 
 		isObjectHandle = b;
 		isConstHandle = false;
+
+		// ASHANDLE supports being handle, but as it really is a value type it will not be marked as a handle
+		if( (objectType->flags & asOBJ_ASHANDLE) )
+			isObjectHandle = false;
 	}
 
 	return 0;
@@ -240,6 +250,9 @@ int asCDataType::MakeHandle(bool b, bool acceptHandleForScope)
 
 int asCDataType::MakeArray(asCScriptEngine *engine)
 {
+	if( engine->defaultArrayObjectType == 0 )
+		return asINVALID_TYPE;
+
 	bool tmpIsReadOnly = isReadOnly;
 	isReadOnly = false;
 	asCObjectType *at = engine->GetTemplateInstanceType(engine->defaultArrayObjectType, *this);
@@ -343,8 +356,11 @@ bool asCDataType::IsHandleToConst() const
 // TODO: 3.0.0: This should be removed
 bool asCDataType::IsArrayType() const
 {
-	// TODO: array: The default array type should be defined by the application
-	return objectType ? (objectType->name == objectType->engine->defaultArrayObjectType->name) : false;
+	// This is only true if the type used is the default array type, i.e. the one used for the [] syntax form
+	if( objectType && objectType->engine->defaultArrayObjectType )
+		return objectType->name == objectType->engine->defaultArrayObjectType->name;
+	
+	return false;
 }
 
 bool asCDataType::IsTemplate() const
@@ -426,7 +442,13 @@ bool asCDataType::IsEqualExceptInterfaceType(const asCDataType &dt) const
 	if( objectType != dt.objectType )
 	{
 		if( !objectType || !dt.objectType ) return false;
-		if( !objectType->IsInterface() || !dt.objectType->IsInterface() ) return false;
+
+		// If the types are not interfaces or templates with interfaces then the they are not equal
+		if( !objectType->IsInterface() && !((objectType->flags & asOBJ_TEMPLATE) && objectType->templateSubType.GetObjectType() && objectType->templateSubType.GetObjectType()->IsInterface()) ) return false;
+		if( !dt.objectType->IsInterface() && !((dt.objectType->flags & asOBJ_TEMPLATE) && dt.objectType->templateSubType.GetObjectType() && dt.objectType->templateSubType.GetObjectType()->IsInterface()) ) return false;
+
+		// If one is interface and the other is not, then it is not equal
+		if( objectType->IsInterface() != dt.objectType->IsInterface() ) return false;
 	}
 
 	if( funcDef != dt.funcDef ) return false;
@@ -565,6 +587,7 @@ int asCDataType::GetSizeInMemoryDWords() const
 
 int asCDataType::GetSizeOnStackDWords() const
 {
+	// If the type is the variable type then the typeid is stored on the stack too
 	int size = tokenType == ttQuestion ? 1 : 0;
 
 	if( isReference ) return AS_PTR_SIZE + size;

@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "resources/LanguageFile.h"
@@ -55,14 +55,14 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 	
-	bool cLanguageFile::AddFromFile(const tWString& asFile, bool abAddResourceDirs, const tWString& asAltPath)
+	bool cLanguageFile::AddFromFile(const tString& asFile, bool abAddResourceDirs, const tWString& asAltPath)
 	{
 		const bool bLog =false;
 		TiXmlDocument *pDoc = hplNew(TiXmlDocument,() );
 
-		tWString sPath = asFile;
-		if (asAltPath.length() > 0 && cPlatform::FileExists(asAltPath + asFile)) {
-			sPath = asAltPath + asFile;
+		tWString sPath = cString::To16Char(asFile);
+		if (asAltPath.length() > 0 && cPlatform::FileExists(asAltPath + sPath)) {
+			sPath = asAltPath + sPath;
 		}
 
 		FILE *pFile = cPlatform::OpenFile(sPath, _W("rb"));
@@ -75,11 +75,11 @@ namespace hpl {
 		if (!bRet)
 		{
 			hplDelete(pDoc);
-			Error("Couldn't load language file '%ls'\n",asFile.c_str());
+			Error("Couldn't load language file '%s'\n",asFile.c_str());
 			return false;
 		}
 
-		if(bLog) Log("Loading lang file '%ls'\n---------------------\n",asFile.c_str());
+		if(bLog) Log("Loading lang file '%s'\n---------------------\n",asFile.c_str());
 
 		TiXmlElement *pRootElem = pDoc->FirstChildElement();
 
@@ -112,7 +112,7 @@ namespace hpl {
 			}
 			else
 			{
-				Warning("No resources element found in '%ls'\n",asFile.c_str());
+				Warning("No resources element found in '%s'\n",asFile.c_str());
 			}
 		}
 

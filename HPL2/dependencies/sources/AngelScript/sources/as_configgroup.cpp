@@ -1,6 +1,6 @@
 /*
    AngelCode Scripting Library
-   Copyright (c) 2003-2010 Andreas Jonsson
+   Copyright (c) 2003-2012 Andreas Jonsson
 
    This software is provided 'as-is', without any express or implied 
    warranty. In no event will the authors be held liable for any 
@@ -46,7 +46,6 @@ BEGIN_AS_NAMESPACE
 asCConfigGroup::asCConfigGroup()
 {
 	refCount = 0;
-	defaultAccess = true;
 }
 
 asCConfigGroup::~asCConfigGroup()
@@ -97,7 +96,7 @@ bool asCConfigGroup::HasLiveObjects()
 	return false;
 }
 
-void asCConfigGroup::RemoveConfiguration(asCScriptEngine *engine)
+void asCConfigGroup::RemoveConfiguration(asCScriptEngine *engine, bool notUsed)
 {
 	asASSERT( refCount == 0 );
 
@@ -115,6 +114,7 @@ void asCConfigGroup::RemoveConfiguration(asCScriptEngine *engine)
 			engine->registeredGlobalProps[index] = 0;
 		}
 	}
+	globalProps.SetLength(0);
 
 	// Remove global functions
 	for( n = 0; n < scriptFunctions.GetLength(); n++ )
@@ -140,29 +140,34 @@ void asCConfigGroup::RemoveConfiguration(asCScriptEngine *engine)
 		engine->registeredFuncDefs.RemoveValue(funcDefs[n]);
 		funcDefs[n]->Release();
 	}
+	funcDefs.SetLength(0);
 
-	// Remove object types
-	for( n = 0; n < objTypes.GetLength(); n++ )
+	// Remove object types (skip this if it is possible other groups are still using the types)
+	if( !notUsed )
 	{
-		asCObjectType *t = objTypes[n];
-		int idx = engine->objectTypes.IndexOf(t);
-		if( idx >= 0 )
+		for( n = 0; n < objTypes.GetLength(); n++ )
 		{
+			asCObjectType *t = objTypes[n];
+			int idx = engine->objectTypes.IndexOf(t);
+			if( idx >= 0 )
+			{
 #ifdef AS_DEBUG
-			ValidateNoUsage(engine, t);
+				ValidateNoUsage(engine, t);
 #endif
 
-			engine->objectTypes.RemoveIndex(idx);
+				engine->objectTypes.RemoveIndex(idx);
 
-			if( t->flags & asOBJ_TYPEDEF )
-				engine->registeredTypeDefs.RemoveValue(t);
-			else if( t->flags & asOBJ_ENUM )
-				engine->registeredEnums.RemoveValue(t);
-			else
-				engine->registeredObjTypes.RemoveValue(t);
+				if( t->flags & asOBJ_TYPEDEF )
+					engine->registeredTypeDefs.RemoveValue(t);
+				else if( t->flags & asOBJ_ENUM )
+					engine->registeredEnums.RemoveValue(t);
+				else
+					engine->registeredObjTypes.RemoveValue(t);
 
-			asDELETE(t, asCObjectType);
+				asDELETE(t, asCObjectType);
+			}
 		}
+		objTypes.SetLength(0);
 	}
 
 	// Release other config groups
@@ -200,39 +205,5 @@ void asCConfigGroup::ValidateNoUsage(asCScriptEngine *engine, asCObjectType *typ
 	// TODO: Check also usage of the type as sub types in other types
 }
 #endif
-
-int asCConfigGroup::SetModuleAccess(const char *module, bool hasAccess)
-{
-	if( module == asALL_MODULES )
-	{
-		// Set default module access
-		defaultAccess = hasAccess;
-	}
-	else
-	{
-		asCString mod(module ? module : "");
-		asSMapNode<asCString,bool> *cursor = 0;
-		if( moduleAccess.MoveTo(&cursor, mod) )
-		{
-			moduleAccess.GetValue(cursor) = hasAccess;
-		}
-		else
-		{
-			moduleAccess.Insert(mod, hasAccess);
-		}
-	}
-
-	return 0;
-}
-
-bool asCConfigGroup::HasModuleAccess(const char *module)
-{
-	asCString mod(module ? module : "");
-	asSMapNode<asCString,bool> *cursor = 0;
-	if( moduleAccess.MoveTo(&cursor, mod) )
-		return moduleAccess.GetValue(cursor);
-	
-	return defaultAccess;
-}
 
 END_AS_NAMESPACE

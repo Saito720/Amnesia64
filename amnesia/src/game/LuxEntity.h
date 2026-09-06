@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef LUX_ENTITY_H
@@ -56,6 +56,7 @@ public:
 
 	tString msName;
 	bool mbActive;
+	bool mbStartsActive;
 	bool mbFullGameSave;
 	int mlEntityType;
 	int mlID;
@@ -63,6 +64,10 @@ public:
 	float mfMaxFocusDistance;
 
 	bool mbInteractionDisabled;
+
+    bool mbIsCriticalEntity;
+    tString msCriticalRootName;
+    float mfCriticalEntityRadius;
 
 	tString msCallbackFunc;
 	tString msConnectionStateChangeCallback;
@@ -78,6 +83,8 @@ public:
 	cContainerList<cLuxCollideCallback_SaveData> mlstCollideCallbacks;
 
 	virtual iLuxEntity* CreateEntity(cLuxMap *apMap)=0;
+    virtual iLuxEntity* CreateAndAddEntity(cLuxMap *apMap) { return NULL; }
+
 };
 
 //----------------------------------------------
@@ -153,6 +160,9 @@ public:
 	void SetActive(bool abX);
 	bool IsActive(){ return mbActive;}
 
+	void SetStartsActive(bool abX);
+	bool StartsActive(){ return mbStartsActive;}
+
 	cLuxMap *GetMap(){ return mpMap;}
 
 	void SetFullGameSave(bool abX){ mbFullGameSave=abX;}
@@ -227,6 +237,7 @@ protected:
 	tString msName;
 	bool mbFullGameSave;
 	bool mbActive;
+	bool mbStartsActive;
 	bool mbIsSaved;
 	int mlID;
 
@@ -252,6 +263,7 @@ protected:
 	cLuxMap *mpMap;
 
 	bool mbDestroyMe;
+
 	
 	iLuxEntity_SaveData *mpSaveData;
 

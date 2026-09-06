@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "EditorWindowEntityEditBoxJoint.h"
@@ -221,6 +221,7 @@ void cEditorWindowEntityEditBoxJoint::AddPropertySetJointBase(cWidgetTab* apPare
 	{
 		mvButtons[i] = mpSet->CreateWidgetButton( vPos + cVector3f(0,(float)i*30,0), cVector2f(160,25), _W(""), apParentTab);
 		mvButtons[i]->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(Button_OnPressed));
+		AddWidget(mvButtons[i]);
 	}
 
 	mvButtons[0]->SetText(_W("Set Parent Body"));
@@ -229,45 +230,46 @@ void cEditorWindowEntityEditBoxJoint::AddPropertySetJointBase(cWidgetTab* apPare
 	vPos.y += 60;
 
 	mpCheckBoxStickyMinLimit = mpSet->CreateWidgetCheckBox(vPos, 0, _W("Sticky Min Limit"), apParentTab);
-
+	AddWidget(mpCheckBoxStickyMinLimit);
 	mpCheckBoxStickyMinLimit->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(InputCallback));
 	
 	vPos.y += fAddNear;
 
 	mpCheckBoxStickyMaxLimit = mpSet->CreateWidgetCheckBox(vPos, 0, _W("Sticky Max Limit"), apParentTab);
-
+	AddWidget(mpCheckBoxStickyMaxLimit);
 	mpCheckBoxStickyMaxLimit->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(InputCallback));
 
 	vPos.y += fAddFar;
 	
 	mpLabelLimitStepCount = mpSet->CreateWidgetLabel(vPos, 0, _W("Limit Step Count"), apParentTab);
-
+	AddWidget(mpLabelLimitStepCount);
 	vPos.y+=fAddNearLabel;
 	mpInputLimitStepCount = mpSet->CreateWidgetTextBox(vPos, cVector2f(120,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric,1);
 	mpInputLimitStepCount->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
 	mpInputLimitStepCount->SetDecimals(0);
-
+	AddWidget(mpInputLimitStepCount);
 
 	vPos.y += fAddFar;
 	
 	mpCheckBoxCollideBodies = mpSet->CreateWidgetCheckBox(vPos, cVector2f(120,25), _W("Collide Bodies"), apParentTab);
 	mpCheckBoxCollideBodies->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpCheckBoxCollideBodies);
 
 	vPos.y += fAddFar;
 	
 	mpCheckBoxBreakable = mpSet->CreateWidgetCheckBox(vPos, cVector2f(120,25), _W("Breakable"), apParentTab);
 	mpCheckBoxBreakable->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpCheckBoxBreakable);
 
 	vPos.y += fAddNear;
 
 	mpLabelBreakForce = mpSet->CreateWidgetLabel(vPos, 0, _W("Break Force"), apParentTab);
-
+	AddWidget(mpLabelBreakForce);
 	vPos.y+=fAddNearLabel;
 	mpInputBreakForce = mpSet->CreateWidgetTextBox(vPos, cVector2f(120,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric,0.5f);
 	mpInputBreakForce->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
 	mpInputBreakForce->SetDecimals(3);
+	AddWidget(mpInputBreakForce);
 }
 
 //----------------------------------------------------------------------------
@@ -291,27 +293,27 @@ void cEditorWindowEntityEditBoxJoint::AddPropertySetJointSounds(cWidgetTab* apPa
 	cWidgetLabel* pLabel = NULL;
 
 	mpLabelMoveSound = mpSet->CreateWidgetLabel(vPos, 0, _W("Move Sound"), apParentTab);
-
+	AddWidget(mpLabelMoveSound);
 	vPos.y+=fAddNearLabel;
 	mpInputMoveSound = mpSet->CreateWidgetTextBox(vPos, cVector2f(120,25), _W(""), apParentTab);
 	mpInputMoveSound->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpInputMoveSound);
 	mpButtonMoveSoundBrowse = mpSet->CreateWidgetButton(vPos + cVector3f(123,0,0), cVector2f(20), _W("..."), apParentTab);
-
+	AddWidget(mpButtonMoveSoundBrowse);
 	mpButtonMoveSoundBrowse->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(BrowseButton_OnPressed));
 
 	vPos.y += fAddFar;
 
 	pLabel = mpSet->CreateWidgetLabel(vPos, 0, _W("Min"), apParentTab);
-
+	AddWidget(pLabel);
 
 	vPos.y += fAddNearLabel;
 
 	mpLabelMinMoveSpeed = mpSet->CreateWidgetLabel(vPos, 0, _W("Speed"), apParentTab);
-
+	AddWidget(mpLabelMinMoveSpeed);
 	vPos.x += 75;
 	mpLabelMinMoveFreq = mpSet->CreateWidgetLabel(vPos, 0, _W("Freq"), apParentTab);
-
+	AddWidget(mpLabelMinMoveFreq);
 
 	vPos.x = 15;
 	vPos.y+=fAddNearLabel;
@@ -319,21 +321,21 @@ void cEditorWindowEntityEditBoxJoint::AddPropertySetJointSounds(cWidgetTab* apPa
 	mpInputMinMoveSpeed = mpSet->CreateWidgetTextBox(vPos, cVector2f(70,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric,0.5f);
 	mpInputMinMoveSpeed->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
 	mpInputMinMoveSpeed->SetDecimals(3);
-
+	AddWidget(mpInputMinMoveSpeed);
 	vPos.x += 75;
 	mpInputMinMoveFreq = mpSet->CreateWidgetTextBox(vPos, cVector2f(70,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric,0.5f);
 	mpInputMinMoveFreq->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
 	mpInputMinMoveFreq->SetDecimals(3);
-
+	AddWidget(mpInputMinMoveFreq);
 
 	vPos.x = 15;
 	vPos.y += fAddFar;
 
 	mpLabelMinMoveFreqSpeed = mpSet->CreateWidgetLabel(vPos, 0, _W("Freq Speed"), apParentTab);
-
+	AddWidget(mpLabelMinMoveFreqSpeed);
 	vPos.x += 75;
 	mpLabelMinMoveVolume = mpSet->CreateWidgetLabel(vPos, 0, _W("Volume"), apParentTab);
-
+	AddWidget(mpLabelMinMoveVolume);
 	
 	vPos.x = 15;
 	vPos.y+=fAddNearLabel;
@@ -341,27 +343,27 @@ void cEditorWindowEntityEditBoxJoint::AddPropertySetJointSounds(cWidgetTab* apPa
 	mpInputMinMoveFreqSpeed = mpSet->CreateWidgetTextBox(vPos, cVector2f(70,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric,0.5f);
 	mpInputMinMoveFreqSpeed->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
 	mpInputMinMoveFreqSpeed->SetDecimals(3);
-
+	AddWidget(mpInputMinMoveFreqSpeed);
 	vPos.x += 75;
 	mpInputMinMoveVolume = mpSet->CreateWidgetTextBox(vPos, cVector2f(70,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric,0.5f);
 	mpInputMinMoveVolume->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
 	mpInputMinMoveVolume->SetDecimals(3);
-
+	AddWidget(mpInputMinMoveVolume);
 
 	vPos.x = 15;
 	vPos.y += fAddFar;
 
 	pLabel = mpSet->CreateWidgetLabel(vPos, 0, _W("Max"), apParentTab);
-
+	AddWidget(pLabel);
 
 	vPos.y += fAddNearLabel;
 
 
 	mpLabelMaxMoveSpeed = mpSet->CreateWidgetLabel(vPos, 0, _W("Speed"), apParentTab);
-
+	AddWidget(mpLabelMaxMoveSpeed);
 	vPos.x += 75;
 	mpLabelMaxMoveFreq = mpSet->CreateWidgetLabel(vPos, 0, _W("Freq"), apParentTab);
-
+	AddWidget(mpLabelMaxMoveFreq);
 
 	vPos.x = 15;
 	vPos.y+=fAddNearLabel;
@@ -369,132 +371,133 @@ void cEditorWindowEntityEditBoxJoint::AddPropertySetJointSounds(cWidgetTab* apPa
 	mpInputMaxMoveSpeed = mpSet->CreateWidgetTextBox(vPos, cVector2f(70,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric,0.5f);
 	mpInputMaxMoveSpeed->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
 	mpInputMaxMoveSpeed->SetDecimals(3);
-
+	AddWidget(mpInputMaxMoveSpeed);
 	vPos.x += 75;
 	mpInputMaxMoveFreq = mpSet->CreateWidgetTextBox(vPos, cVector2f(70,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric,0.5f);
 	mpInputMaxMoveFreq->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
 	mpInputMaxMoveFreq->SetDecimals(3);
-
+	AddWidget(mpInputMaxMoveFreq);
 
 	vPos.x = 15;
 	vPos.y += fAddFar;
 
 	mpLabelMaxMoveFreqSpeed = mpSet->CreateWidgetLabel(vPos, 0, _W("Freq Speed"), apParentTab);
-
+	AddWidget(mpLabelMaxMoveFreqSpeed);
 	vPos.x += 75;
 	mpLabelMaxMoveVolume = mpSet->CreateWidgetLabel(vPos, 0, _W("Volume"), apParentTab);
-
+	AddWidget(mpLabelMaxMoveVolume);
 	
 	vPos.x = 15;
 	vPos.y+=fAddNearLabel;
 
 	mpInputMaxMoveFreqSpeed = mpSet->CreateWidgetTextBox(vPos, cVector2f(70,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric,0.5f);
 	mpInputMaxMoveFreqSpeed->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpInputMaxMoveFreqSpeed);
 	vPos.x += 75;
 	mpInputMaxMoveVolume = mpSet->CreateWidgetTextBox(vPos, cVector2f(70,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric,0.5f);
 	mpInputMaxMoveVolume->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpInputMaxMoveVolume);
 
 	vPos.x = 15;
 	vPos.y += fAddFar;
 
 	pLabel = mpSet->CreateWidgetLabel(vPos, 0, _W("Middle"), apParentTab);
-
+	AddWidget(pLabel);
 
 	vPos.y += fAddNearLabel;
 
 	mpLabelMiddleMoveSpeed = mpSet->CreateWidgetLabel(vPos, 0, _W("Speed"), apParentTab);
-
+	AddWidget(mpLabelMiddleMoveSpeed);
 	vPos.x += 75;
 	mpLabelMiddleMoveVolume = mpSet->CreateWidgetLabel(vPos, 0, _W("Volume"), apParentTab);
-
+	AddWidget(mpLabelMiddleMoveVolume);
 
 	vPos.x =15;	
 	vPos.y+=fAddNearLabel;
 
 	mpInputMiddleMoveSpeed = mpSet->CreateWidgetTextBox(vPos, cVector2f(70,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric,0.5f);
 	mpInputMiddleMoveSpeed->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpInputMiddleMoveSpeed);
 	vPos.x += 75;
 	mpInputMiddleMoveVolume = mpSet->CreateWidgetTextBox(vPos, cVector2f(70,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric,0.5f);
 	mpInputMiddleMoveVolume->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpInputMiddleMoveVolume);
 
 	vPos.x = 15;
 	vPos.y += fAddFar;
 
 	mpLabelBreakSound = mpSet->CreateWidgetLabel(vPos, 0, _W("Break Sound"), apParentTab);
-
+	AddWidget(mpLabelBreakSound);
 	vPos.y+=fAddNearLabel;
 	mpInputBreakSound = mpSet->CreateWidgetTextBox(vPos, cVector2f(120,25), _W(""), apParentTab);
 	mpInputBreakSound->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpInputBreakSound);
 	mpButtonBreakSoundBrowse = mpSet->CreateWidgetButton(vPos + cVector3f(123,0,0), cVector2f(20), _W("..."), apParentTab);
-
+	AddWidget(mpButtonBreakSoundBrowse);
 	mpButtonBreakSoundBrowse->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(BrowseButton_OnPressed));
 
 	vPos.y += fAddFar;
 
 	mpLabelMinLimitSound = mpSet->CreateWidgetLabel(vPos, 0, _W("Min Limit Sound"), apParentTab);
-
+	AddWidget(mpLabelMinLimitSound);
 	vPos.y+=fAddNearLabel;
 	mpInputMinLimitSound = mpSet->CreateWidgetTextBox(vPos, cVector2f(120,25), _W(""), apParentTab);
 	mpInputMinLimitSound->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpInputMinLimitSound);
 	mpButtonMinLimitSoundBrowse = mpSet->CreateWidgetButton(vPos + cVector3f(123,0,0), cVector2f(20), _W("..."), apParentTab);
-
+	AddWidget(mpButtonMinLimitSoundBrowse);
 	mpButtonMinLimitSoundBrowse->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(BrowseButton_OnPressed));
 
 	vPos.y += fAddFar;
 
 	mpLabelMinLimitMinSpeed = mpSet->CreateWidgetLabel(vPos, 0, _W("Min Speed"), apParentTab);
-
+	AddWidget(mpLabelMinLimitMinSpeed);
 	vPos.x += 75;
 	mpLabelMinLimitMaxSpeed = mpSet->CreateWidgetLabel(vPos, 0, _W("Max Speed"), apParentTab);
-
+	AddWidget(mpLabelMinLimitMaxSpeed);
 
 	vPos.x = 15;
 	vPos.y+=fAddNearLabel;
 
 	mpInputMinLimitMinSpeed = mpSet->CreateWidgetTextBox(vPos, cVector2f(70,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric,0.5f);
 	mpInputMinLimitMinSpeed->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpInputMinLimitMinSpeed);
 	vPos.x += 75;
 	mpInputMinLimitMaxSpeed = mpSet->CreateWidgetTextBox(vPos, cVector2f(70,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric,0.5f);
 	mpInputMinLimitMaxSpeed->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpInputMinLimitMaxSpeed);
 
 	vPos.x = 15;
 	vPos.y += fAddFar;
 
 	mpLabelMaxLimitSound = mpSet->CreateWidgetLabel(vPos, 0, _W("Max Limit Sound"), apParentTab);
-
+	AddWidget(mpLabelMaxLimitSound);
 	vPos.y+=fAddNearLabel;
 	mpInputMaxLimitSound = mpSet->CreateWidgetTextBox(vPos, cVector2f(120,25), _W(""), apParentTab);
 	mpInputMaxLimitSound->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpInputMaxLimitSound);
 	mpButtonMaxLimitSoundBrowse = mpSet->CreateWidgetButton(vPos + cVector3f(123,0,0), cVector2f(20), _W("..."), apParentTab);
-
+	AddWidget(mpButtonMaxLimitSoundBrowse);
 	mpButtonMaxLimitSoundBrowse->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(BrowseButton_OnPressed));
 
 	vPos.y += fAddFar;
 
 	mpLabelMinLimitMinSpeed = mpSet->CreateWidgetLabel(vPos, 0, _W("Min Speed"), apParentTab);
-
+	AddWidget(mpLabelMinLimitMinSpeed);
 	vPos.x += 75;
 	mpLabelMinLimitMaxSpeed = mpSet->CreateWidgetLabel(vPos, 0, _W("Max Speed"), apParentTab);
-
+	AddWidget(mpLabelMinLimitMaxSpeed);
 
 	vPos.x = 15;
 	vPos.y+=fAddNearLabel;
 
 	mpInputMaxLimitMinSpeed = mpSet->CreateWidgetTextBox(vPos, cVector2f(70,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric,0.5f);
 	mpInputMaxLimitMinSpeed->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpInputMinLimitMinSpeed);
 	vPos.x += 75;
 	mpInputMaxLimitMaxSpeed = mpSet->CreateWidgetTextBox(vPos, cVector2f(70,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric,0.5f);
 	mpInputMaxLimitMaxSpeed->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
+	AddWidget(mpInputMaxLimitMaxSpeed);
 
 }
 
@@ -507,22 +510,22 @@ void cEditorWindowEntityEditBoxJoint::AddPropertySetBall(cWidgetTab* apParentTab
 	float fAddFar = 25;
 
 	mpLabelMaxConeAngle = mpSet->CreateWidgetLabel(vPos, 0, _W("Max Cone Angle"), apParentTab);
-
+	AddWidget(mpLabelMaxConeAngle);
 	vPos.y+=fAddNearLabel;
 	mpInputMaxConeAngle = mpSet->CreateWidgetTextBox(vPos, cVector2f(100,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric);
 	mpInputMaxConeAngle->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
 	mpInputMaxConeAngle->SetDecimals(3);
-
+	AddWidget(mpInputMaxConeAngle);
 
 	vPos.y += fAddFar;
 
 	mpLabelMaxTwistAngle = mpSet->CreateWidgetLabel(vPos, 0, _W("Max Twist Angle"), apParentTab);
-
+	AddWidget(mpLabelMaxTwistAngle);
 	vPos.y+=fAddNearLabel;
 	mpInputMaxTwistAngle = mpSet->CreateWidgetTextBox(vPos, cVector2f(100,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric);
 	mpInputMaxTwistAngle->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
 	mpInputMaxTwistAngle->SetDecimals(3);
-
+	AddWidget(mpInputMaxTwistAngle);
 }
 
 //----------------------------------------------------------------------------
@@ -534,22 +537,22 @@ void cEditorWindowEntityEditBoxJoint::AddPropertySetHinge(cWidgetTab* apParentTa
 	float fAddNearLabel = 18;
 
 	mpLabelMinAngle = mpSet->CreateWidgetLabel(vPos, 0, _W("Min Angle"), apParentTab);
-
+	AddWidget(mpLabelMinAngle);
 	vPos.y+=fAddNearLabel;
 	mpInputMinAngle = mpSet->CreateWidgetTextBox(vPos, cVector2f(100,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric);
 	mpInputMinAngle->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
 	mpInputMinAngle->SetDecimals(3);
-
+	AddWidget(mpInputMinAngle);
 
 	vPos.y += fAddFar;
 
 	mpLabelMaxAngle = mpSet->CreateWidgetLabel(vPos, 0, _W("Max Angle"), apParentTab);
-
+	AddWidget(mpLabelMaxAngle);
 	vPos.y+=fAddNearLabel;
 	mpInputMaxAngle = mpSet->CreateWidgetTextBox(vPos, cVector2f(100,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric);
 	mpInputMaxAngle->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
 	mpInputMaxAngle->SetDecimals(3);
-
+	AddWidget(mpInputMaxAngle);
 }
 
 //----------------------------------------------------------------------------
@@ -563,22 +566,22 @@ void cEditorWindowEntityEditBoxJoint::AddPropertySetScrewSlider(cWidgetTab* apPa
 
 
 	mpLabelMinDistance = mpSet->CreateWidgetLabel(vPos, 0, _W("Min Distance"), apParentTab);
-
+	AddWidget(mpLabelMinDistance);
 	vPos.y+=fAddNearLabel;
 	mpInputMinDistance = mpSet->CreateWidgetTextBox(vPos, cVector2f(100,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric);
 	mpInputMinDistance->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
 	mpInputMinDistance->SetDecimals(3);
-
+	AddWidget(mpInputMinDistance);
 
 	vPos.y += fAddFar;
 
 	mpLabelMaxDistance = mpSet->CreateWidgetLabel(vPos, 0, _W("Max Distance"), apParentTab);
-
+	AddWidget(mpLabelMaxDistance);
 	vPos.y+=fAddNearLabel;
 	mpInputMaxDistance = mpSet->CreateWidgetTextBox(vPos, cVector2f(100,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric);
 	mpInputMaxDistance->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
 	mpInputMaxDistance->SetDecimals(3);
-
+	AddWidget(mpInputMaxDistance);
 
 	vPos.y += fAddFar;
 
@@ -586,7 +589,7 @@ void cEditorWindowEntityEditBoxJoint::AddPropertySetScrewSlider(cWidgetTab* apPa
 	{
 		mvInputPin[i] = mpSet->CreateWidgetTextBox(vPos, cVector2f(100,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric);
 		mvInputPin[i]->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
-
+		AddWidget(mvInputPin[i]);
 
 		vPos.y += fAddNear;
 	}
@@ -611,7 +614,6 @@ bool cEditorWindowEntityEditBoxJoint::InputCallback(iWidget* apWidget, const cGu
 	//////////////////////////////////
 	// Sticky Min Limit
 	if(apWidget == mpCheckBoxStickyMinLimit)
-
 	{
 		pAction = mpEntity->CreateSetPropertyActionBool(eJointBool_StickyMinLimit, mpCheckBoxStickyMinLimit->IsChecked());
 	}

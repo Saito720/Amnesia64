@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxTypes.h"
@@ -153,7 +153,7 @@ void iLuxCollideCallbackContainer::DestroyCollideCallbacks()
 void iLuxCollideCallbackContainer::CheckCollisionCallback(const tString& asName, cLuxMap *apMap)
 {
 	mbUpdatingCollideCallbacks = true;
-    
+
 	/////////////////////
 	//Iterate the collide callbacks
 	for(tLuxCollideCallbackListIt it = mlstCollideCallbacks.begin(); it != mlstCollideCallbacks.end(); ++it)
@@ -443,6 +443,22 @@ kEndSerialize()
 //-----------------------------------------------------------------------
 
 //////////////////////////////////////////////////////////////////////////
+// HINT
+//////////////////////////////////////////////////////////////////////////
+
+//-----------------------------------------------------------------------
+
+kBeginSerializeBase(cLuxHint)
+kSerializeVar(msNameEntry, eSerializeType_String)
+kSerializeVar(msTextEntry, eSerializeType_String)
+
+kSerializeVar(msIconFile, eSerializeType_String)
+kSerializeVar(msImageFile, eSerializeType_String)
+kSerializeVar(mbHasBeenRead, eSerializeType_Bool)
+kEndSerialize()
+//-----------------------------------------------------------------------
+
+//////////////////////////////////////////////////////////////////////////
 // DIARY
 //////////////////////////////////////////////////////////////////////////
 
@@ -487,9 +503,28 @@ kEndSerialize()
 //////////////////////////////////////////////////////////////////////////
 
 //-----------------------------------------------------------------------
+kBeginSerializeBase(cTextQueueEntry)
+kSerializeVar(msTextEntry, eSerializeType_WString)
+kSerializeVar(mfDelay, eSerializeType_Float32)
+kEndSerialize()
+
+//-----------------------------------------------------------------------
 kBeginSerializeBase(cLuxVoiceData)
 
 kSerializeVar(msText, eSerializeType_WString)
+kSerializeVar(mfTextDelay, eSerializeType_Float32)
+kSerializeVar(msText2, eSerializeType_WString)
+kSerializeVar(mfText2Delay, eSerializeType_Float32)
+kSerializeVar(msText3, eSerializeType_WString)
+kSerializeVar(mfText3Delay, eSerializeType_Float32)
+kSerializeVar(msText4, eSerializeType_WString)
+kSerializeVar(mfText4Delay, eSerializeType_Float32)
+kSerializeVar(msText5, eSerializeType_WString)
+kSerializeVar(mfText5Delay, eSerializeType_Float32)
+kSerializeVar(msText6, eSerializeType_WString)
+kSerializeVar(mfText6Delay, eSerializeType_Float32)
+kSerializeVar(msText7, eSerializeType_WString)
+kSerializeVar(mfText7Delay, eSerializeType_Float32)
 kSerializeVar(msVoiceFile, eSerializeType_String)
 kSerializeVar(msEffectFile, eSerializeType_String)
 kSerializeVar(mbUsePosition, eSerializeType_Bool)

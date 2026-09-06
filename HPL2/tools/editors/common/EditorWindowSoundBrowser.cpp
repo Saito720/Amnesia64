@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "EditorWindowSoundBrowser.h"
@@ -88,6 +88,7 @@ void cEditorWindowSoundBrowser::OnInitLayout()
 	cVector3f vPos = cVector3f(15,30,0.1f);
 	
 	mpCBCurrentDirectory = mpSet->CreateWidgetComboBox(vPos-cVector3f(1,0,0), cVector2f(200,25), _W(""), mpWindow);
+	AddWidget(mpCBCurrentDirectory);
 	mpCBCurrentDirectory->SetCanEdit(false);
 	mpCBCurrentDirectory->AddCallback(eGuiMessage_SelectionChange, this, kGuiCallback(CurrentDirectory_OnSelectionChange));
 
@@ -95,7 +96,7 @@ void cEditorWindowSoundBrowser::OnInitLayout()
 
 	// File ListBox        
 	mpLBFiles = mpSet->CreateWidgetMultiPropertyListBox(vPos,cVector2f(540,300),mpWindow);
-
+	AddWidget(mpLBFiles);
 	mpLBFiles->AddCallback(eGuiMessage_SelectionChange, this, kGuiCallback(FileList_OnClick)); 
 	mpLBFiles->AddCallback(eGuiMessage_SelectionDoubleClick, this, kGuiCallback(FileList_OnDblClick)); 
 	mpLBFiles->SetBackgroundZ(-0.01f);
@@ -111,11 +112,11 @@ void cEditorWindowSoundBrowser::OnInitLayout()
 	vPos.y += mpLBFiles->GetSize().y+10;
 
 	mpBPlayStop = mpSet->CreateWidgetButton(vPos, cVector2f(22), _W(""), mpWindow);
-
+	AddWidget(mpBPlayStop);
 	mpBPlayStop->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(PlayStop_OnClick));
 	vPos.x += mpBPlayStop->GetSize().x+2;
 	mpTBCurrentFileName = mpSet->CreateWidgetTextBox(vPos, cVector2f(300,25), _W(""), mpWindow);
-
+	AddWidget(mpTBCurrentFileName);
 	mpTBCurrentFileName->SetForceCallBackOnEnter(true);
 	mpTBCurrentFileName->SetCallbackOnLostFocus(false);
 	mpTBCurrentFileName->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(Button_OnPressed));
@@ -125,7 +126,7 @@ void cEditorWindowSoundBrowser::OnInitLayout()
 	for(int i=1; i>=0; --i)
 	{
 		mvButtons[i] = mpSet->CreateWidgetButton(vPos,cVector2f(70,25), _W(""), mpWindow);
-
+		AddWidget(mvButtons[i]);
 		mvButtons[i]->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(Button_OnPressed));
 
 		vPos.x -= mvButtons[i]->GetSize().x+5;
@@ -338,15 +339,8 @@ bool cEditorWindowSoundBrowser::FileList_OnClick(iWidget* apWidget, const cGuiMe
 		{
 			cSoundManager* pMgr = mpEditor->GetEngine()->GetResources()->GetSoundManager();
 			mpSoundEntity = pWorld->CreateSoundEntity("", cString::To8Char(sPath), false);
-			if (mpSoundEntity)
-			{
-				mpSoundEntity->Stop();
-				mpSoundEntity->SetForcePlayAsGUISound(true);
-			}
-			else
-			{
-				sPath = _W("");
-			}
+			mpSoundEntity->Stop();
+			mpSoundEntity->SetForcePlayAsGUISound(true);
 		}
 		else
 			sPath = _W("");

@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef LUX_JOURNAL_H
@@ -30,9 +30,11 @@ enum eLuxJournalState
 {
 	eLuxJournalState_Main,
 	eLuxJournalState_Notes,
+	eLuxJournalState_Hints,
 	eLuxJournalState_Diaries,
 	eLuxJournalState_QuestLog,
 	eLuxJournalState_OpenNote,
+	eLuxJournalState_OpenHint,
 	eLuxJournalState_OpenDiary,
 	eLuxJournalState_OpenNarratedDiary,
 
@@ -75,6 +77,8 @@ public:
 typedef std::list<iLuxJournalWidgetData*> tLuxJournalWidgetData;
 typedef tLuxJournalWidgetData::iterator tLuxJournalWidgetDataIt;
 
+class cLuxJournal;
+
 //----------------------------------------
 
 class cLuxJournalTextData : public iLuxJournalWidgetData
@@ -88,9 +92,20 @@ public:
 	float mfEffectfAlpha;
 };
 
+class cLuxJournalImageData : public iLuxJournalWidgetData
+{
+public:	
+	cLuxJournalImageData(iWidget *apWidget, eLuxJournalState aType) : iLuxJournalWidgetData(apWidget), mType(aType), mfEffectfAlpha(0){}
+
+	void Update(float afTimeStep);
+
+	eLuxJournalState mType;
+	float mfEffectfAlpha;
+};
+
+
 //----------------------------------------
 
-class cLuxJournal;
 
 class cLuxJournalStateData
 {
@@ -117,10 +132,16 @@ private:
 class cLuxJournal_ListEntry
 {
 public:
+	cLuxJournal_ListEntry() : mpJournal(NULL) {}
+	cLuxJournal_ListEntry(cLuxJournal *apJournal) : mpJournal(apJournal) {} 
 	void AddWidget(iWidget *apWidget);
+	void AddIcon(iWidget *apWidget, int alHintID);
 	void SetVisible(bool abX);
-
+	
 	tWidgetList mlstWidgets;
+	tWidgetList mlstIcons;
+	tIntList mlstIconHint;
+	cLuxJournal *mpJournal;
 };
 
 class cLuxJournal_ListPage
@@ -163,10 +184,15 @@ public:
 
 	void Exit();
 
+	void RemoveAllHints();
+
 	void SetForceInstantExit(bool abX){ mbForceInstantExit = abX;}
 	void SetOpenedFromInventory(bool abX){ mbOpenedFromInventory = abX;}
 
     cLuxNote* AddNote(const tString& asNameAndTextEntry, const tString& asImage);
+    cLuxHint* AddHint(const tString& asNameAndTextEntry, const tString& asImage);
+	void RemoveHint(const tString& asNameAndTextEntry);
+	
 	cLuxDiary* AddDiary(const tString& asNameAndTextEntry, const tString& asImage, int &alCurrentEntryIdx);
 	
 	bool AddQuestNote(const tString& asName, const tString& asNameAndTextEntry);
@@ -178,10 +204,22 @@ public:
 	void OpenNote(cLuxNote *apNote, bool abNarration);
 	cLuxNote* GetNote(int alIdx){ return mvNotes[alIdx];}
 
+
+    void OpenHint(cLuxHint *apHint);
+	cLuxHint* GetHint(int alIdx){ return mvHints[alIdx];}
+	int GetHintNum(){ return (int)mvHints.size();}
+	bool OpenLatestHint();
+
 	void OpenDiary(cLuxDiary *apDiary, bool abNarration);
 	void SetDiaryAsLastRead(cLuxDiary *apDiary);
 
+	bool GetDisabled() { return mbDisabled; }
+	void SetDisabled(bool abX) { mbDisabled = abX; }
+
 	void OpenLastReadText();
+
+	int GetLastReadHint() { return mlLastReadHint; }
+	int GetLastReadDocument() { return mlLastReadDocument; }
 	
 private:
 	cLuxDiaryContainer* CreateDiaryContainer(const tString& asType);
@@ -199,14 +237,17 @@ private:
 	void LoadNarrationText(const tWString &asName ,const tWString &asText);
 	void SetNotePage(int alPageNum);
 	
-	int GetNoteListIndex(eLuxJournalState aState);//Return values: 0=notes, 1=diaries, 2=quests
+	int GetNoteListIndex(eLuxJournalState aState);//Return values: 0=notes, 1=diaries, 2=quests, 3 = hints
 	void SetNoteListPage(int alPageNum, eLuxJournalState aState);
+	void SetNoteListPageFromHint(int alHint);
+	void SetNoteListPageFromNote(int alDiary);
 
 	void CreateGui();
 	void DestroyGui();
 
 	void CreateMainGui();
 	void CreateNotesGui();
+	void CreateHintsGui();
 	void CreateDiariesGui();
 	void CreateQuestNotesGui();
 	void CreateOpenNoteGui();
@@ -236,8 +277,8 @@ private:
 	bool NoteBackClick(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(NoteBackClick);
 
-	bool UIListenerJournalPress(iWidget* apWidget, const cGuiMessageData& aData);
-	kGuiCallbackDeclarationEnd(UIListenerJournalPress);
+    bool HintTextClick(iWidget* apWidget, const cGuiMessageData& aData);
+	kGuiCallbackDeclarationEnd(HintTextClick);
 
 	bool DiaryTextClick(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(DiaryTextClick);
@@ -250,9 +291,15 @@ private:
 
 	bool NoteClickFrameClick(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(NoteClickFrameClick);
-
+	
 	bool JournalItemUIButtonPress(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(JournalItemUIButtonPress);
+	
+	bool JournalHintUIFocus(iWidget* apWidget, const cGuiMessageData& aData);
+	kGuiCallbackDeclarationEnd(JournalHintUIFocus);
+
+	bool JournalDocumentUIFocus(iWidget* apWidget, const cGuiMessageData& aData);
+	kGuiCallbackDeclarationEnd(JournalDocumentUIFocus);
 
 	bool UIListenerArrowPress(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(UIListenerArrowPress);
@@ -267,6 +314,7 @@ private:
 	// Variables
 	bool mbActive;
 	float mfAlpha;
+	bool mbDisabled;
 
 	bool mbForceInstantExit;
 	bool mbOpenedFromInventory;
@@ -274,10 +322,16 @@ private:
 	int mlLastReadTextCat; //Only used by diary
 	int mlLastReadTextEntry;
 	int mlLastReadTextType;	//0=note 1=diary
+	
+	int mlLastReadHint;
+	int mlLastReadDocument;
 
 	std::vector<cLuxNote*> mvNotes;
 	std::vector<cLuxDiaryContainer*> mvDiaryContainers;
 	std::vector<cLuxQuestNote*> mvQuestNotes;
+
+	std::vector<cLuxHint*> mvHints;
+
 	
 	cGuiGfxElement *mpStateBackgroundGfx;
 
@@ -290,8 +344,8 @@ private:
 	cSoundEntry *mpVoiceEntry;
 	int mlVoiceEntryID;
 
-	std::vector<cLuxJournal_ListPage> mvNoteListPages[3];//0=notes, 1=diaries, 2=quests
-	int mlCurrentNoteListPage[3];
+	std::vector<cLuxJournal_ListPage> mvNoteListPages[4];//0=notes, 1=diaries, 2=quests, 3=hints
+	int mlCurrentNoteListPage[4];
 
 	//////////////
 	// Data

@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxMainMenu_KeyConfig.h"
@@ -46,13 +46,7 @@ cLuxInputMenuEntry::cLuxInputMenuEntry(cLuxMainMenu_KeyConfig* apWindow, cLuxAct
 	mpLAction->AddCallback(eGuiMessage_TextChange, this, kGuiCallback(InputEntryChange));
 	//mpLAction->AddCallback(eGuiMessage_MouseDown, this, kGuiCallback(InputEntryClick));
 	//mpLAction->AddCallback(eGuiMessage_KeyPress, this, kGuiCallback(InputEntryKeyPress));
-
-	if((apAction->msName == "LeanLeft"
-	|| apAction->msName == "LeanRight") == false)
-	{
-		mpLAction->AddCallback(eGuiMessage_UIButtonPress, this, kGuiCallback(InputEntryUIButtonPress));
-	}
-
+	mpLAction->AddCallback(eGuiMessage_UIButtonPress, this, kGuiCallback(InputEntryUIButtonPress));
 	mpLAction->AddCallback(eGuiMessage_UIArrowPress, this, kGuiCallback(InputEntryUIArrowPress));
 
 	mpLAction->SetUserData(this);
@@ -65,28 +59,16 @@ cLuxInputMenuEntry::cLuxInputMenuEntry(cLuxMainMenu_KeyConfig* apWindow, cLuxAct
 		pLabel->SetDefaultFontColor(cColor(1,1));
 
 		pLabel->SetTextAlign(eFontAlign_Center);
-
-		if(i == 0)
-		{
-			////////////
-			// It should only be possible to bind mouse to primary
-			pLabel->AddCallback(eGuiMessage_MouseEnter, this, kGuiCallback(InputEntryMouseOver));
-			pLabel->AddCallback(eGuiMessage_MouseLeave, this, kGuiCallback(InputEntryMouseOver));
-			pLabel->AddCallback(eGuiMessage_MouseEnter, this, kGuiCallback(InputEntryMouseEnter));
-			pLabel->AddCallback(eGuiMessage_MouseLeave, this, kGuiCallback(InputEntryMouseLeave));
-			pLabel->AddCallback(eGuiMessage_MouseDown, this, kGuiCallback(InputEntryClick));
-		}
+		pLabel->AddCallback(eGuiMessage_MouseEnter, this, kGuiCallback(InputEntryMouseOver));
+		pLabel->AddCallback(eGuiMessage_MouseLeave, this, kGuiCallback(InputEntryMouseOver));
+		pLabel->AddCallback(eGuiMessage_MouseEnter, this, kGuiCallback(InputEntryMouseEnter));
+		pLabel->AddCallback(eGuiMessage_MouseLeave, this, kGuiCallback(InputEntryMouseLeave));
 		//pLabel->AddCallback(eGuiMessage_MouseMove, this, kGuiCallback(InputEntryMouseMove));
 		pLabel->AddCallback(eGuiMessage_TextChange, this, kGuiCallback(InputEntryChange));
+		pLabel->AddCallback(eGuiMessage_MouseDown, this, kGuiCallback(InputEntryClick));
 		pLabel->AddCallback(eGuiMessage_KeyPress, this, kGuiCallback(InputEntryKeyPress));
-		
-		if((apAction->msName == "LeanLeft"
-		|| apAction->msName == "LeanRight") == false)
-		{
-			//////////////
-			// Not possible to bind lean to gamepad
-			pLabel->AddCallback(eGuiMessage_GamepadInput, this, kGuiCallback(InputEntryGamepadButtonPress));
-		}
+		pLabel->AddCallback(eGuiMessage_GamepadInput, this, kGuiCallback(InputEntryGamepadButtonPress));
+
 		pLabel->SetUserData(this);
 		pLabel->SetUserValue(i);
 

@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef HPL_GAMEPAD_XINPUT_H
@@ -31,14 +31,45 @@
 #include <list>
 #include "system/SystemTypes.h"
 #include "input/Gamepad.h"
-//#include "input/InputTypes.h"
 
 namespace hpl {
+
+	
+	//------------------------------
+
+	///////////////////////////////////////////////////////////////////////
+	// Gamepad layout
+	// ----------Buttons---------
+	// 0 --> A
+	// 1 --> B
+	// 2 --> X
+	// 3 --> Y
+	// 4 --> LB
+	// 5 --> RB
+	// 6 --> Back
+	// 7 --> Start
+	// 8 --> LA
+	// 9 --> RA
+	// ------------Hat-------------
+	// Up --> DPAD-Up
+	// Down --> DPAD-Down
+	// Left --> DPAD-Left
+	// Right --> DPAD-Right
+	// ------------Axis-------------
+	// 0 --> (-) LStick-Left, (+) LStick-Right
+	// 1 --> (-) LStick-Forward, (+) LStick-Back
+	// 2 --> (-) RStick-Down, (+) RStick-Up
+	// 3 --> (-) RStick-Left, (+) RStick-Right
+	// 4 --> (+) LTrigger
+	// 5 --> (+) RTrigger
+
+	//---------------------------------------------------------------------
 
 	class cGamepadXInput : public iGamepad
 	{
 	public:
 		cGamepadXInput(int alIndex);
+		~cGamepadXInput();
 
 		tString GetGamepadName() { return msGamepadName; }
 
@@ -73,21 +104,19 @@ namespace hpl {
 		cVector2l GetBallAbsPos(eGamepadBall aBall);
 		cVector2l GetBallRelPos(eGamepadBall aBall);
 
+		static int GetNumConnected();
 		static bool IsConnected(int alIndex);
-
 		static bool GetWasConnected(int alIndex) { return mbDeviceConnected[alIndex]; }
-		static void SetWasConnected(int alIndex, bool abVal) { mbDeviceConnected[alIndex] = abVal; }
+		static int GetDeviceChange();
 	private:
+		static void SetWasConnected(int alIndex, bool abVal) { mbDeviceConnected[alIndex] = abVal; }
+
 		void UpdateAxis(int alAxis, float afVal);
 		void UpdateTrigger(float afLVal, float afRVal);
 
 		eGamepadButton		XInputToButton(size_t alButton);
 		float				XInputToAxisValue(SHORT alAxisValue);
 		float				XInputToTriggerValue(BYTE alTriggerValue);
-        //void ClearKeyList();
-		//eKey AsciiToKey(int alChar);
-
-		//void AddKeyToList(int alSDLMod, eKey aKey, int alUnicode, std::list<cKeyPress>& alstKeys);
 
 		tString msGamepadName;
 
@@ -106,14 +135,13 @@ namespace hpl {
 		std::list<cGamepadInputData> mlstAxisChanges;
 
 		std::list<cGamepadInputData> mlstHatStateChanges;
+		float mfLeftTrigger;
+		float mfRightTrigger;
 
 		static float mfInvAxisMax;
 		static float mfDeadZoneRadius;
 
 		XINPUT_STATE mState;
-
-		float mfLeftTrigger;
-		float mfRightTrigger;
 
 		static bool mbDeviceConnected[4];
 	};

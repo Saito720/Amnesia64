@@ -1,29 +1,29 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxProp.h"
 
+#include "LuxDebugHandler.h"
 #include "LuxMap.h"
 #include "LuxPlayer.h"
 #include "LuxInteractConnections.h"
-
-
+#include "LuxEffectRenderer.h"
 
 //////////////////////////////////////////////////////////////////////////
 // LOADER
@@ -110,7 +110,7 @@ void iLuxPropLoader::AfterLoad(cXmlElement *apRootElem, const cMatrixf &a_mtxTra
 	pProp->mEffectsOffLightColor = GetVarColor("EffectsOffLightColor", cColor(0,0));
 	pProp->mfEffectsOffLightRadius = GetVarFloat("EffectsOffLightRadius", 1);
 
-	//////////////////////////////
+    //////////////////////////////
 	// Load move properties
 	pProp->mbMoveCheckCollision = GetVarBool("StaticMoveCheckCollision", true);
 	pProp->msMoveStartSound = GetVarString("StaticMoveStartSound", "");
@@ -157,6 +157,7 @@ void iLuxPropLoader::AfterLoad(cXmlElement *apRootElem, const cMatrixf &a_mtxTra
 		if(pProp->mpMeshEntity)
 		{
 			pProp->mpMeshEntity->SetRenderFlagBit(eRenderableFlag_ShadowCaster, apInstanceVars->GetVarBool("CastShadows", true));
+			pProp->mpMeshEntity->SetUpdateBonesWhenCulled(apInstanceVars->GetVarBool("UpdateAnimationWhenCulled", false));
 		}
 
 		tString sConnectedProps = apInstanceVars->GetVarString("ConnectedProps", "");
@@ -174,8 +175,11 @@ void iLuxPropLoader::AfterLoad(cXmlElement *apRootElem, const cMatrixf &a_mtxTra
 
 		pProp->SetStaticPhysics(apInstanceVars->GetVarBool("StaticPhysics", false));
 
+		pProp->SetGlowColor(apInstanceVars->GetVarColor("GlowColor", cColor( 0.5,0.5,1.0,0 )));
+		pProp->SetGlowOutlineColor(apInstanceVars->GetVarColor("GlowOutlineColor", cColor( 0,0,0.5,0 )));
+		pProp->SetGlowEnabled(apInstanceVars->GetVarBool("GlowEnabled", false));
 
-		LoadInstanceVariables(pProp, apInstanceVars);
+        LoadInstanceVariables(pProp, apInstanceVars);
 	}
 }
 
@@ -230,6 +234,17 @@ iLuxProp::iLuxProp(const tString &asName, int alID, cLuxMap *apMap, eLuxPropType
 	mfFadeInSpeed =0;
  
 	m_mtxLastBodyMoveMatrix = cMatrixf::Identity;
+
+	mfFlashAlpha = 0;
+
+    mcGlowColor = cColor(1,1,1,1);
+    mcGlowOutlineColor = cColor(1,1,1,1);
+    mbGlowEnabled = true;
+
+    mpParentBone = NULL;
+
+	msParentBoneName = "";
+	msParentEntityName = "";
 }
 
 //-----------------------------------------------------------------------
@@ -241,7 +256,7 @@ iLuxProp::~iLuxProp()
 
 	////////////////////
 	// Attachment
-	if(mpAttachmentParent && mpMap && mpMap->IsDeletingAllWorldEntities()==false)
+	if(mpAttachmentParent)
 	{
 		mpAttachmentParent->RemoveAttachedProp(this);
 		mpAttachmentParent = NULL;
@@ -377,8 +392,78 @@ void iLuxProp::SetupAfterLoad(cWorld *apWorld)
 
 //-----------------------------------------------------------------------
 
+void iLuxProp::SetParentBone(cBoneState * apParentBone, const cMatrixf & apParentBoneOffsetMatrix, tString asParentName, tString asParentBoneName)
+{
+    mpParentBone = apParentBone;
+    mpParentBoneOffsetMatrix = apParentBoneOffsetMatrix;
+
+	msParentEntityName = asParentName;
+	msParentBoneName = asParentBoneName;
+
+    if ( mvBodies.size() > 0 )
+    {
+        iPhysicsBody *pBody = mvBodies[0];
+
+        mfBodyMassBackup = pBody->GetMass();
+        mbBodyCollideBackup = pBody->GetCollide();
+        mbBodyCollideCharacterBackup = pBody->GetCollideCharacter();
+        mbBodyActiveBackup = pBody->IsActive();
+        mBodyMatrixBackup = pBody->GetLocalMatrix();
+
+		pBody->SetMass(0);
+		pBody->SetCollide(false);
+		pBody->SetCollideCharacter(false);
+		pBody->SetActive(false);
+		pBody->SetMatrix(cMath::MatrixMul(mpParentBone->GetWorldMatrix(),mpParentBoneOffsetMatrix));
+    }
+}
+
+//-----------------------------------------------------------------------
+
+void iLuxProp::DetachFromParentBone()
+{
+    if ( mpParentBone != NULL && mvBodies.size() > 0 )
+    {
+        mpParentBone = NULL;
+
+        iPhysicsBody *pBody = mvBodies[0];
+        pBody->SetMass(mfBodyMassBackup);
+		pBody->SetCollide(mbBodyCollideBackup);
+		pBody->SetCollideCharacter(mbBodyCollideCharacterBackup);
+		pBody->SetActive(mbBodyActiveBackup);
+		//pBody->SetMatrix(mBodyMatrixBackup);
+    }
+
+	msParentBoneName = "";
+	msParentEntityName = "";
+}
+
+//-----------------------------------------------------------------------
+
+void iLuxProp::UpdateParentBone(float afTimeStep)
+{
+    if ( mpParentBone && mvBodies.size() > 0)
+	{
+        //this->GetMeshEntity()->SetWorldMatrix(cMath::MatrixMul(mpParentBone->GetWorldMatrix(),mpParentBoneOffsetMatrix));
+        iPhysicsBody *pBody = mvBodies[0];
+
+        if ( gpBase->mpDebugHandler->GetPositionAttachedProps() )
+        {
+    		pBody->SetMatrix(cMath::MatrixMul(mpParentBone->GetWorldMatrix(),gpBase->mpDebugHandler->GetParentBoneOffsetMatrix()));
+        }
+        else
+        {
+    		pBody->SetMatrix(cMath::MatrixMul(mpParentBone->GetWorldMatrix(),mpParentBoneOffsetMatrix));
+        }
+	}
+}
+
+//-----------------------------------------------------------------------
+
 void iLuxProp::OnUpdate(float afTimeStep)
 {
+	UpdateParentBone(afTimeStep);
+
 	///////////////////////
 	// Prop update
 	UpdateMoving(afTimeStep);
@@ -402,6 +487,44 @@ void iLuxProp::OnUpdate(float afTimeStep)
 
 	//if(mvLights.size() > 0)
 	//	Log("End Color: %s\n", mvLights[0]->GetDiffuseColor().ToString().c_str());
+}
+
+//-----------------------------------------------------------------------
+
+void iLuxProp::FlashIfNearPlayer(float afTimeStep)
+{
+    if ( !mbGlowEnabled ) return;
+
+    /////////////////////////////////
+	// If near player, flash
+	cCamera *pCam =  gpBase->mpPlayer->GetCamera();
+	cVector3f vCameraPos = pCam->GetPosition();
+	cVector3f vBodyPos = mvBodies[0]->GetLocalPosition();
+	vCameraPos.y=0; 
+	vBodyPos.y =0;
+
+	float fDistSqrt = cMath::Vector3DistSqr(vCameraPos, vBodyPos);
+	if(fDistSqrt < 4.0f * 4.0f)
+	{
+		mfFlashAlpha += afTimeStep;
+		if(mfFlashAlpha >1)mfFlashAlpha =1;
+	}
+	else
+	{
+		mfFlashAlpha -=afTimeStep;
+		if(mfFlashAlpha <0)mfFlashAlpha =0;
+	}
+
+	if(mfFlashAlpha> 0)
+	{
+		for(int i=0; i<mpMeshEntity->GetSubMeshEntityNum(); ++i)
+		{
+			cSubMeshEntity *pSubEnt = mpMeshEntity->GetSubMeshEntity(i);
+
+			if(pCam->GetFrustum()->CollideBoundingVolume(pSubEnt->GetBoundingVolume()) != eCollision_Outside)
+				gpBase->mpEffectRenderer->AddFlashObject(pSubEnt, mfFlashAlpha, GetGlowColor());
+		}
+	}
 }
 
 //-----------------------------------------------------------------------
@@ -743,6 +866,71 @@ void iLuxProp::PlayAnimation(const tString& asName, float afFadeTime, bool abLoo
 
 //-------------------------------------------------------------------
 
+void iLuxProp::StopAnimation()
+{
+	if(mpMeshEntity==NULL) return;
+
+	mpMeshEntity->Stop();
+}
+
+//-------------------------------------------------------------------
+
+void iLuxProp::PlayCurrentAnimation(float afFadeTime, bool abLoop)
+{
+	if(mpMeshEntity==NULL) return;
+
+	mpMeshEntity->FadeInCurrent(afFadeTime, abLoop);
+}
+	
+void iLuxProp::PauseCurrentAnimation(float afFadeTime)
+{
+	if(mpMeshEntity==NULL) return;
+
+	mpMeshEntity->FadeOutCurrent(afFadeTime);
+}
+
+//-------------------------------------------------------------------
+
+void iLuxProp::SetAnimationSpeed(float afSpeed)
+{
+	if(mpMeshEntity==NULL) return;
+
+	//////////////
+	// Set the animation speed of all states
+	for(int i = 0; i < mpMeshEntity->GetAnimationStateNum(); ++i)
+	{
+		cAnimationState *pState = mpMeshEntity->GetAnimationState(i);
+
+		if(pState)
+		{
+			////////////
+			// Set the speed
+			pState->SetSpeed(afSpeed);
+		}
+	}
+}
+
+void iLuxProp::SetAnimationPosition(float afPosition)
+{
+	if(mpMeshEntity==NULL) return;
+
+	//////////////
+	// Set the animation speed of all states
+	for(int i = 0; i < mpMeshEntity->GetAnimationStateNum(); ++i)
+	{
+		cAnimationState *pState = mpMeshEntity->GetAnimationState(i);
+
+		if(pState->IsActive())
+		{
+			////////////
+			// Set the speed
+			pState->SetTimePosition(afPosition);
+		}
+	}
+}
+
+//-------------------------------------------------------------------
+
 void iLuxProp::SetHealth(float afX)
 {
 	mfHealth = afX;
@@ -830,7 +1018,6 @@ void iLuxProp::AddAndAttachProp(const tString& asName, const tString& asFileName
 	pAttachProp->mpProp = pProp;
 
 	mlstAttachedProps.push_back(pAttachProp);
-	pProp->SetAttachmentParent(this);
 
 	//////////////////////////////////
 	// Update the attached prop matrix so it starts out properly!
@@ -1187,13 +1374,20 @@ void iLuxProp::UpdateAttachedProps(float afTimeStep, bool abForceUpdate)
 	{
 		cLuxProp_AttachedProp *pAttachProp = *it;
 		iLuxProp *pProp = pAttachProp->mpProp;
-		if(pProp->GetBodyNum()<=0) continue;
-
-		iPhysicsBody *pBody = pProp->GetBody(0);
+		if(pProp->GetBodyNum()>0)
+        {
+		    iPhysicsBody *pBody = pProp->GetBody(0);
 		
-		cMatrixf mtxProp = cMath::MatrixMul(GetMainBody()->GetLocalMatrix(), 
-											cMath::MatrixMul(pAttachProp->m_mtxOffset, pProp->mvBodyExtraData[0].m_mtxLocalTransform));
-		pBody->SetMatrix(mtxProp);
+		    cMatrixf mtxProp = cMath::MatrixMul(GetMainBody()->GetLocalMatrix(), 
+											    cMath::MatrixMul(pAttachProp->m_mtxOffset, pProp->mvBodyExtraData[0].m_mtxLocalTransform));
+		    pBody->SetMatrix(mtxProp);
+        }
+        else if ( pProp->GetMeshEntity() != NULL )
+        {
+            cMatrixf mtxProp = cMath::MatrixMul(GetMainBody()->GetWorldMatrix(), pAttachProp->m_mtxOffset);
+
+            pProp->GetMeshEntity()->SetWorldMatrix( mtxProp );
+        }
 	}
 }
 
@@ -1660,8 +1854,20 @@ kSerializeVar(mvMoveAngularLocalOffset, eSerializeType_Vector3f)
 kSerializeVar(mbMoveAngularNoGoal, eSerializeType_Bool)
 kSerializeVar(mvMoveAngularNoGoalDir, eSerializeType_Vector3f)
 
+kSerializeVar(mbGlowEnabled, eSerializeType_Bool)
+
 kSerializeVar(mlCurrentNonLoopAnimIndex, eSerializeType_Int32)
 kSerializeVar(msAnimCallback, eSerializeType_String)
+
+kSerializeVar(msParentEntityName, eSerializeType_String)
+kSerializeVar(msParentBoneName, eSerializeType_String)
+kSerializeVar(mpParentBoneOffsetMatrix, eSerializeType_Matrixf)
+
+kSerializeVar(mfBodyMassBackup, eSerializeType_Float32)
+kSerializeVar(mbBodyCollideBackup, eSerializeType_Bool)
+kSerializeVar(mbBodyCollideCharacterBackup, eSerializeType_Bool)
+kSerializeVar(mbBodyActiveBackup, eSerializeType_Bool)
+kSerializeVar(mBodyMatrixBackup, eSerializeType_Matrixf)
 
 kSerializeClassContainer(mvAttachedProps, cLuxProp_AttachedProp, eSerializeType_Class)
 
@@ -1730,6 +1936,19 @@ iLuxEntity* iLuxProp_SaveData::CreateEntity(cLuxMap *apMap)
 
 //-----------------------------------------------------------------------
 
+// CreateEntity seems broken. It does not add the entity to the map, but returns map->GetLatestEntity(). I do not want to interfere with the rest at this point, so creating a second method for my means.
+iLuxEntity* iLuxProp_SaveData::CreateAndAddEntity(cLuxMap *apMap)
+{
+	cWorld *pWorld = apMap->GetWorld();
+	apMap->ResetLatestEntity();
+    iLuxEntity * last_entity_before = apMap->GetLatestEntity();
+	pWorld->CreateEntity(msName,m_mtxOnLoadTransform, msFileName, mlID, true, mvOnLoadScale);
+    iLuxEntity * last_entity = apMap->GetLatestEntity();
+	return last_entity;
+}
+
+//-----------------------------------------------------------------------
+
 void iLuxProp::SaveToSaveData(iLuxEntity_SaveData* apSaveData)
 {
 	///////////////////////
@@ -1770,6 +1989,8 @@ void iLuxProp::SaveToSaveData(iLuxEntity_SaveData* apSaveData)
 	kCopyToVar(pData, mfMoveAngularSpeed);
 	kCopyToVar(pData, mfMoveAngularSlowdownDist);
 	kCopyToVar(pData, m_mtxMoveAngularGoal);
+
+	kCopyToVar(pData, mbGlowEnabled);
 	
 	kCopyToVar(pData, mbMoveAngularNoGoal);
 	kCopyToVar(pData, mvMoveAngularNoGoalDir);
@@ -1780,6 +2001,16 @@ void iLuxProp::SaveToSaveData(iLuxEntity_SaveData* apSaveData)
 
 	kCopyToVar(pData, mlCurrentNonLoopAnimIndex);
 	kCopyToVar(pData, msAnimCallback);
+
+    kCopyToVar(pData, mpParentBoneOffsetMatrix);
+    kCopyToVar(pData, msParentEntityName);
+	kCopyToVar(pData, msParentBoneName);
+
+	kCopyToVar(pData, mfBodyMassBackup);
+	kCopyToVar(pData, mbBodyCollideBackup);
+	kCopyToVar(pData, mbBodyCollideCharacterBackup);
+	kCopyToVar(pData, mbBodyActiveBackup);
+	kCopyToVar(pData, mBodyMatrixBackup);
 
 	///////////////////////
 	//Attached props
@@ -1916,9 +2147,22 @@ void iLuxProp::LoadFromSaveData(iLuxEntity_SaveData* apSaveData)
 	kCopyFromVar(pData, mvMoveAngularWorldOffset);
 	kCopyFromVar(pData, mvMoveAngularLocalOffset);
 
+	kCopyFromVar(pData, mbGlowEnabled);
+
 	kCopyFromVar(pData, mlCurrentNonLoopAnimIndex);
 	kCopyFromVar(pData, msAnimCallback);
 
+    kCopyFromVar(pData, mpParentBoneOffsetMatrix);
+    kCopyFromVar(pData, msParentEntityName);
+	kCopyFromVar(pData, msParentBoneName);
+
+	kCopyFromVar(pData, mfBodyMassBackup);
+	kCopyFromVar(pData, mbBodyCollideBackup);
+	kCopyFromVar(pData, mbBodyCollideCharacterBackup);
+	kCopyFromVar(pData, mbBodyActiveBackup);
+	kCopyFromVar(pData, mBodyMatrixBackup);
+
+	if(mfBodyMassBackup == 0 || mfBodyMassBackup < 0 || (mfBodyMassBackup == mfBodyMassBackup) == false) mfBodyMassBackup = 1;
 	
 	///////////////////////
 	//Connections
@@ -2041,6 +2285,26 @@ void iLuxProp::SetupSaveData(iLuxEntity_SaveData *apSaveData)
 		iLuxInteractConnection *pConn = pSaveConn->CreateConnection(mpMap);
 
 		if(pConn) mvInteractConnections.push_back(pConn);
+	}
+	
+
+	
+
+	///////////////////
+	// Bone attachment
+	if(msParentBoneName != "" && msParentEntityName != "")
+	{
+		iLuxEntity * pParentEntity = mpMap->GetEntityByName(msParentEntityName);
+
+		if(pParentEntity)
+		{	
+			cMeshEntity * pParentMeshEntity = pParentEntity->GetMeshEntity();
+
+			if ( pParentMeshEntity )
+			{
+				mpParentBone = pParentMeshEntity->GetBoneStateFromName( msParentBoneName );
+			}
+		}
 	}
 }
 

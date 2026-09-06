@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "scene/SoundEntity.h"
@@ -31,6 +31,7 @@
 #include "engine/Engine.h"
 #include "scene/Scene.h"
 #include "scene/World.h"
+#include "system/Platform.h"
 
 namespace hpl {
 
@@ -519,7 +520,7 @@ namespace hpl {
 			// If the sound is looped and out of range, stop it
 			if(	mvSoundEntries[eSoundEntityType_Start]==NULL && mpData->GetLoop() && mpData->GetUse3D())
 			{
-				if(CheckIsOutOfRange())
+				if(CheckIsOutOfRange() && !mpData->GetKeepPlayingOutOfRange())
 				{
 					//////////////////////
 					//If fading out, then just stop the sound directly

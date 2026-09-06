@@ -52,10 +52,10 @@ target_link_libraries(HPL2_Minimal
 SET(RESOURCE_FILES
     MainWindow.xib
     Startup.plist
-    ../game/Lux.icns
+    ../game/aamfp.icns
 )
 SET(BACKGROUND_FILE
-    launcher_bg.jpg
+    ../launcher/background.jpg
 )
 add_executable(Launcher MACOSX_BUNDLE
     ../launcher/Qualitychooser.h
@@ -74,14 +74,14 @@ set_source_files_properties(${RESOURCE_FILES} ${BACKGROUND_FILE}
         MACOSX_PACKAGE_LOCATION Resources
 )
 set_target_properties(Launcher PROPERTIES
-    OUTPUT_NAME "Launcher"
+    OUTPUT_NAME "AmnesiaAMFPLauncher"
     COMPILE_DEFINITIONS "${compile_defs}"
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Launcher-Info.plist"
-    MACOSX_BUNDLE_ICON_FILE "Lux.icns"
+    MACOSX_BUNDLE_ICON_FILE "aamfp.icns"
     MACOSX_BUNDLE_BUNDLE_VERSION ${VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${VERSION}
-    MACOSX_BUNDLE_GUI_IDENTIFIER "com.frictionalgames.AmnesiaLauncher"
-    MACOSX_BUNDLE_BUNDLE_NAME "Amnesia Launcher"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.frictionalgames.aamfp"
+    MACOSX_BUNDLE_BUNDLE_NAME "Amnesia: A Machine for Pigs"
 )
 
 FIND_LIBRARY(COCOA_LIBRARY Cocoa)

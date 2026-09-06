@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxInventory.h"
@@ -30,8 +30,6 @@
 #include "LuxHelpFuncs.h"
 #include "LuxEffectHandler.h"
 #include "LuxJournal.h"
-#include "LuxGlobalDataHandler.h"
-#include "LuxAchievementHandler.h"
 
 
 //////////////////////////////////////////////////////////////////////////
@@ -90,11 +88,7 @@ cLuxInventory::cLuxInventory() : iLuxUpdateable("LuxInventory")
 	mvItemTypes[eLuxItemType_Lantern] = hplNew( cLuxItemType_Lantern, ());
 	mvItemTypes[eLuxItemType_Health] = hplNew( cLuxItemType_Health, ());
 	mvItemTypes[eLuxItemType_Sanity] = hplNew( cLuxItemType_Sanity, ());
-	mvItemTypes[eLuxItemType_LampOil] = hplNew( cLuxItemType_LampOil, ());
 	mvItemTypes[eLuxItemType_Tinderbox] = hplNew( cLuxItemType_Tinderbox, ());
-
-	mfPickedUpAt = -1;
-	mbPickedObjectMoved = false;
 
 	
 	///////////////////////////////
@@ -111,44 +105,44 @@ cLuxInventory::cLuxInventory() : iLuxUpdateable("LuxInventory")
 	/////////////////
 	// Sanity frame
 	// Corners
-	mpFrameSanityCorners[0] = mpGui->CreateGfxImage("inventory_frame_sanity_corner_lu.tga", eGuiMaterial_Alpha);
-	mpFrameSanityCorners[1] = mpGui->CreateGfxImage("inventory_frame_sanity_corner_ru.tga", eGuiMaterial_Alpha);
-	mpFrameSanityCorners[2] = mpGui->CreateGfxImage("inventory_frame_sanity_corner_rd.tga", eGuiMaterial_Alpha);
-	mpFrameSanityCorners[3] = mpGui->CreateGfxImage("inventory_frame_sanity_corner_ld.tga", eGuiMaterial_Alpha);
+	mpFrameSanityCorners[0] = NULL; //mpGui->CreateGfxImage("inventory_frame_sanity_corner_lu.tga", eGuiMaterial_Alpha);
+	mpFrameSanityCorners[1] = NULL; //mpGui->CreateGfxImage("inventory_frame_sanity_corner_ru.tga", eGuiMaterial_Alpha);
+	mpFrameSanityCorners[2] = NULL; //mpGui->CreateGfxImage("inventory_frame_sanity_corner_rd.tga", eGuiMaterial_Alpha);
+	mpFrameSanityCorners[3] = NULL; //mpGui->CreateGfxImage("inventory_frame_sanity_corner_ld.tga", eGuiMaterial_Alpha);
 
 	// Borders
-	mpFrameSanityBorders[0] = mpGui->CreateGfxImage("inventory_frame_sanity_border_u.tga", eGuiMaterial_Alpha);
-	mpFrameSanityBorders[1] = mpGui->CreateGfxImage("inventory_frame_sanity_border_r.tga", eGuiMaterial_Alpha);
-	mpFrameSanityBorders[2] = mpGui->CreateGfxImage("inventory_frame_sanity_border_d.tga", eGuiMaterial_Alpha);
-	mpFrameSanityBorders[3] = mpGui->CreateGfxImage("inventory_frame_sanity_border_l.tga", eGuiMaterial_Alpha);
+	mpFrameSanityBorders[0] = NULL; //mpGui->CreateGfxImage("inventory_frame_sanity_border_u.tga", eGuiMaterial_Alpha);
+	mpFrameSanityBorders[1] = NULL; //mpGui->CreateGfxImage("inventory_frame_sanity_border_r.tga", eGuiMaterial_Alpha);
+	mpFrameSanityBorders[2] = NULL; //mpGui->CreateGfxImage("inventory_frame_sanity_border_d.tga", eGuiMaterial_Alpha);
+	mpFrameSanityBorders[3] = NULL; //mpGui->CreateGfxImage("inventory_frame_sanity_border_l.tga", eGuiMaterial_Alpha);
 
 	/////////////////
 	// Health frame
 	// Corners
-	mpFrameHealthCorners[0] = mpGui->CreateGfxImage("inventory_frame_health_corner_lu.tga", eGuiMaterial_Alpha);
-	mpFrameHealthCorners[1] = mpGui->CreateGfxImage("inventory_frame_health_corner_ru.tga", eGuiMaterial_Alpha);
-	mpFrameHealthCorners[2] = mpGui->CreateGfxImage("inventory_frame_health_corner_rd.tga", eGuiMaterial_Alpha);
-	mpFrameHealthCorners[3] = mpGui->CreateGfxImage("inventory_frame_health_corner_ld.tga", eGuiMaterial_Alpha);
+	mpFrameHealthCorners[0] = NULL; //mpGui->CreateGfxImage("inventory_frame_health_corner_lu.tga", eGuiMaterial_Alpha);
+	mpFrameHealthCorners[1] = NULL; //mpGui->CreateGfxImage("inventory_frame_health_corner_ru.tga", eGuiMaterial_Alpha);
+	mpFrameHealthCorners[2] = NULL; //mpGui->CreateGfxImage("inventory_frame_health_corner_rd.tga", eGuiMaterial_Alpha);
+	mpFrameHealthCorners[3] = NULL; //mpGui->CreateGfxImage("inventory_frame_health_corner_ld.tga", eGuiMaterial_Alpha);
 
 	// Borders
-	mpFrameHealthBorders[0] = mpGui->CreateGfxImage("inventory_frame_health_border_u.tga", eGuiMaterial_Alpha);
-	mpFrameHealthBorders[1] = mpGui->CreateGfxImage("inventory_frame_health_border_r.tga", eGuiMaterial_Alpha);
-	mpFrameHealthBorders[2] = mpGui->CreateGfxImage("inventory_frame_health_border_d.tga", eGuiMaterial_Alpha);
-	mpFrameHealthBorders[3] = mpGui->CreateGfxImage("inventory_frame_health_border_l.tga", eGuiMaterial_Alpha);
+	mpFrameHealthBorders[0] = NULL; //mpGui->CreateGfxImage("inventory_frame_health_border_u.tga", eGuiMaterial_Alpha);
+	mpFrameHealthBorders[1] = NULL; //mpGui->CreateGfxImage("inventory_frame_health_border_r.tga", eGuiMaterial_Alpha);
+	mpFrameHealthBorders[2] =NULL; // mpGui->CreateGfxImage("inventory_frame_health_border_d.tga", eGuiMaterial_Alpha);
+	mpFrameHealthBorders[3] =NULL; // mpGui->CreateGfxImage("inventory_frame_health_border_l.tga", eGuiMaterial_Alpha);
 
 	//////////////////
 	// Generic frame
 	// Corners
-	mpFrameGenericCorners[0] = mpGui->CreateGfxImage("inventory_frame_generic_corner_lu.tga", eGuiMaterial_Alpha);
-	mpFrameGenericCorners[1] = mpGui->CreateGfxImage("inventory_frame_generic_corner_ru.tga", eGuiMaterial_Alpha);
-	mpFrameGenericCorners[2] = mpGui->CreateGfxImage("inventory_frame_generic_corner_rd.tga", eGuiMaterial_Alpha);
-	mpFrameGenericCorners[3] = mpGui->CreateGfxImage("inventory_frame_generic_corner_ld.tga", eGuiMaterial_Alpha);
+	mpFrameGenericCorners[0] = NULL; //mpGui->CreateGfxImage("inventory_frame_generic_corner_lu.tga", eGuiMaterial_Alpha);
+	mpFrameGenericCorners[1] = NULL; //mpGui->CreateGfxImage("inventory_frame_generic_corner_ru.tga", eGuiMaterial_Alpha);
+	mpFrameGenericCorners[2] = NULL; //mpGui->CreateGfxImage("inventory_frame_generic_corner_rd.tga", eGuiMaterial_Alpha);
+	mpFrameGenericCorners[3] = NULL; //mpGui->CreateGfxImage("inventory_frame_generic_corner_ld.tga", eGuiMaterial_Alpha);
 
 	// Borders
-	mpFrameGenericBorders[0] = mpGui->CreateGfxImage("inventory_frame_generic_border_u.tga", eGuiMaterial_Alpha);
-	mpFrameGenericBorders[1] = mpGui->CreateGfxImage("inventory_frame_generic_border_r.tga", eGuiMaterial_Alpha);
-	mpFrameGenericBorders[2] = mpGui->CreateGfxImage("inventory_frame_generic_border_d.tga", eGuiMaterial_Alpha);
-	mpFrameGenericBorders[3] = mpGui->CreateGfxImage("inventory_frame_generic_border_l.tga", eGuiMaterial_Alpha);
+	mpFrameGenericBorders[0] = NULL; //mpGui->CreateGfxImage("inventory_frame_generic_border_u.tga", eGuiMaterial_Alpha);
+	mpFrameGenericBorders[1] = NULL; //mpGui->CreateGfxImage("inventory_frame_generic_border_r.tga", eGuiMaterial_Alpha);
+	mpFrameGenericBorders[2] = NULL; //mpGui->CreateGfxImage("inventory_frame_generic_border_d.tga", eGuiMaterial_Alpha);
+	mpFrameGenericBorders[3] = NULL; //mpGui->CreateGfxImage("inventory_frame_generic_border_l.tga", eGuiMaterial_Alpha);
 
 	mpWhiteGfx = mpGui->CreateGfxFilledRect(cColor(1,1), eGuiMaterial_Alpha);
  
@@ -746,7 +740,7 @@ void cLuxInventory::Update(float afTimeStep)
 	////////////////////////
 	//Update hints and effects
 	gpBase->mpHintHandler->UpdateHintText(afTimeStep);
-	gpBase->mpEffectHandler->GetSanityGainFlash()->Update(afTimeStep);
+//	gpBase->mpEffectHandler->GetInfectionHealFlash()->Update(afTimeStep);
 }
 
 
@@ -804,7 +798,7 @@ void cLuxInventory::OnEnterContainer(const tString& asOldContainer)
 
 	/////////////////////
 	//Effects
-	gpBase->mpMapHandler->GetCurrentMap()->GetPhysicsWorld()->FadeoutAllLoopSounds(1.0f);
+	if(gpBase->mpMapHandler->GetCurrentMap()) gpBase->mpMapHandler->GetCurrentMap()->GetPhysicsWorld()->FadeoutAllLoopSounds(1.0f);
 	gpBase->mpPlayer->StopTerrorSound();
 
 	///////////////////////////
@@ -911,10 +905,6 @@ void cLuxInventory::OnDraw(float afFrameTime)
 	cVector3f vPlayerDataStart = cVector3f(10,300,1);
 	float fPlayerDataXAdd = 140;
     
-	mpGuiSet->DrawFont(	mpFontDefault, vPlayerDataStart,20,cColor(1,mfAlpha),_W("%ls"), kTranslate("Inventory", "LampOil:").c_str());
-	mpGuiSet->DrawFont(	mpFontDefault, vPlayerDataStart+cVector3f(fPlayerDataXAdd,0,0),20,cColor(1,mfAlpha),_W("%.0f%%"), gpBase->mpPlayer->GetLampOil());
-	vPlayerDataStart.y+= 22;
-
 	mpGuiSet->DrawFont(	mpFontDefault, vPlayerDataStart,20,cColor(1,mfAlpha),_W("%ls"), kTranslate("Inventory", "Thalers:").c_str());
 	mpGuiSet->DrawFont(	mpFontDefault, vPlayerDataStart+cVector3f(fPlayerDataXAdd,0,0),20,cColor(1,mfAlpha),_W("%d"), gpBase->mpPlayer->GetCoins());
 	vPlayerDataStart.y+= 22;
@@ -978,7 +968,7 @@ void cLuxInventory::OnDraw(float afFrameTime)
 	////////////////////////
 	//Draw extra effects and hints
 	gpBase->mpHintHandler->DrawHintText(afFrameTime, mpGuiSet);
-	gpBase->mpEffectHandler->GetSanityGainFlash()->DrawFlash(mpGuiSet, afFrameTime);
+//	gpBase->mpEffectHandler->GetInfectionHealFlash()->DrawFlash(mpGuiSet, afFrameTime);
 }
 
 //-----------------------------------------------------------------------
@@ -1044,32 +1034,6 @@ cLuxInventory_Item * cLuxInventory::AddItem(const tString& asName, eLuxItemType 
 
 	if(apRemoveItemProp) *apRemoveItemProp = false;
 
-	/////////////
-	// Tinderbox achievemtn
-	if (aType == eLuxItemType_Tinderbox)
-	{
-		cLuxScriptVar* pVar = gpBase->mpGlobalDataHandler->GetVar("TinderboxesCollected");
-		if (pVar == NULL)
-		{
-			Error("Couldn't find Global var '%s'\n", asName.c_str());
-			return NULL;
-		}
-		tString sVal = pVar->msVal;
-		int intVal = 0;
-		if (sVal != "")
-		{
-			intVal = cString::ToInt(sVal.c_str(), 0);
-			intVal += 1;
-		}
-
-		pVar->msVal = cString::ToString(intVal);
-
-		if (intVal >= 150)
-		{
-			gpBase->mpAchievementHandler->UnlockAchievement(eLuxAchievement_Illuminatus);
-		}
-	}
-
 	////////////
 	// Check if has max amount
 	if(pItemType->GetHasMaxAmount())
@@ -1114,12 +1078,7 @@ cLuxInventory_Item * cLuxInventory::AddItem(const tString& asName, eLuxItemType 
 	pItem->SetImageName(sFullImageName);
 	pItem->SetStringVal(asVal);
 	pItem->SetExtraStringVal(asExtraVal);
-
-	if (asVal == "L02_Shipment")
-	{
-		gpBase->mpAchievementHandler->UnlockAchievement(eLuxAchievement_StillAlive);
-	}	
-
+	
 	//Log("Loaded image %d for '%s'\n", pImage, asSubTypeName.c_str());
 	//Log("  Image: %d Offset: (%s) Size: (%s)\n", pImage->GetImage(0), pImage->GetOffset().ToString().c_str(), 
 	//												pImage->GetActiveSize().ToString().c_str());
@@ -1494,8 +1453,6 @@ void cLuxInventory::ResetSessionVars()
 
 	mbMessageActive = false;
 
-	mfOilMovementT =0;
-
 	msHeaderText = _W("");
 	msNormalText = _W("");
 
@@ -1517,14 +1474,6 @@ bool cLuxInventory::CheckSpecialCombineAction(cLuxInventory_Item *apItemA, cLuxI
 {
 	/////////////////////////////
 	//Combine lantern and oil
-	if(CheckItemTypeCombo(apItemA, apItemB, eLuxItemType_Lantern, eLuxItemType_LampOil))
-	{
-		cLuxInventory_Item *pOilItem = apItemA->GetType()==eLuxItemType_LampOil ? apItemA : apItemB;
-        
-		GetItemTypeData(eLuxItemType_LampOil)->OnUse(pOilItem, alSlotIndex);
-		return true;
-	}
-
 	
 	return false;
 }
@@ -1707,21 +1656,6 @@ void cLuxInventory::CreateGui()
 	mvLayout_TinderboxesFrameVPadding = pMenuCfg->GetVector2f("Inventory", "TinderboxesFrameVPadding", 0);
 	mvLayout_TinderboxesFrameOffset = pMenuCfg->GetVector3f("Inventory", "TinderboxesFrameOffset", 0);
 
-	// Oil
-	mvLayout_OilCenter = pMenuCfg->GetVector3f("Inventory", "OilCenter", 0);
-	mvLayout_OilLabelCenter = pMenuCfg->GetVector3f("Inventory", "OilLabelCenter", 0);
-	mvLayout_OilFrameSize = pMenuCfg->GetVector2f("Inventory", "OilFrameSize", -1);
-	mvLayout_OilFrameHPadding = pMenuCfg->GetVector2f("Inventory", "OilFrameHPadding", 0);
-	mvLayout_OilFrameVPadding = pMenuCfg->GetVector2f("Inventory", "OilFrameVPadding", 0);
-	mvLayout_OilFrameOffset = pMenuCfg->GetVector3f("Inventory", "OilFrameOffset", 0);
-
-	for(int i=0; i<3; ++i)
-	{
-		mvOilBubbleSpeed[i] = 40.0f;
-		mvOilBubblePos[i] = pMenuCfg->GetVector3f("Inventory", "OilCenter", 0) +	cVector3f(0,0,0.7f) + 
-																					cMath::RandRectVector3f(cVector3f(-10,-10, 0), cVector3f(10,10, 0));
-	}
-
 	// Item text
 	mvLayout_ItemHeaderCenter = pMenuCfg->GetVector3f("Inventory", "ItemHeaderCenter", 0);
 	mvLayout_ItemDescCenter = pMenuCfg->GetVector3f("Inventory", "ItemDescCenter", 0);
@@ -1753,11 +1687,11 @@ void cLuxInventory::CreateGui()
 
     for(int i=0; i<4; ++i)
 	{
-		mpSanityStatus[i] = pGui->CreateGfxImage("inventory/inventory_sanity_"+sStatusSuffix[i]+".tga", eGuiMaterial_Alpha);
-		mpSanityGlow[i] = pGui->CreateGfxImage("inventory/inventory_sanity_glow_"+sStatusSuffix[i]+".tga", eGuiMaterial_Alpha);
+		mpSanityStatus[i] = NULL; //pGui->CreateGfxImage("inventory/inventory_sanity_"+sStatusSuffix[i]+".tga", eGuiMaterial_Alpha);
+		mpSanityGlow[i] = NULL; //pGui->CreateGfxImage("inventory/inventory_sanity_glow_"+sStatusSuffix[i]+".tga", eGuiMaterial_Alpha);
 
-		mpHealthStatus[i] = pGui->CreateGfxImage("inventory/inventory_health_"+sStatusSuffix[i]+".tga", eGuiMaterial_Alpha);
-		mpHealthGlow[i] = pGui->CreateGfxImage("inventory/inventory_health_glow_"+sStatusSuffix[i]+".tga", eGuiMaterial_Alpha);
+		mpHealthStatus[i] = NULL; //pGui->CreateGfxImage("inventory/inventory_health_"+sStatusSuffix[i]+".tga", eGuiMaterial_Alpha);
+		mpHealthGlow[i] = NULL; //pGui->CreateGfxImage("inventory/inventory_health_glow_"+sStatusSuffix[i]+".tga", eGuiMaterial_Alpha);
 
 		mvPulseMiddle.push_back(fGlowPulseMiddle[i]);
 		mvPulseFreq.push_back(fGlowPulseFreq[i]);
@@ -1773,6 +1707,7 @@ void cLuxInventory::CreateGui()
 	pImage->AddCallback(eGuiMessage_MouseLeave,this, kGuiCallback(InventoryWidgetMouseEnter));
 	pImage->AddCallback(eGuiMessage_UIButtonPress, this, kGuiCallback(UIButtonPress));
 	pImage->SetGlobalUIInputListener(true);
+	pImage->SetUserValue(1);
 	mvImageWidgets.push_back(pImage);
 	iWidget* pSanity = mpSanityWidget = pImage;
 
@@ -1784,41 +1719,24 @@ void cLuxInventory::CreateGui()
 	pImage->AddCallback(eGuiMessage_OnUpdate,this, kGuiCallback(HealthOnUpdate));
 	pImage->AddCallback(eGuiMessage_MouseEnter,this, kGuiCallback(InventoryWidgetMouseEnter));
 	pImage->AddCallback(eGuiMessage_MouseLeave,this, kGuiCallback(InventoryWidgetMouseEnter));
+	pImage->SetUserValue(2);
 	mvImageWidgets.push_back(pImage);
 	iWidget* pHealth = mpHealthWidget = pImage;
 
 	/////////////////////////////////
-	// Create remaining oil display
-	mpRemainingOilFG = pGui->CreateGfxImage("inventory/inventory_oil_fg.tga", eGuiMaterial_Alpha);
-	for(int i=0; i<3; ++i)
-		mpOilBubble[i] = pGui->CreateGfxImage("inventory/inventory_oil_bubble_"+cString::ToString(i+1)+".tga", eGuiMaterial_Alpha);
-	mpOilLiquid = pGui->CreateGfxImage("inventory/inventory_oil_liquid.tga", eGuiMaterial_Alpha);
-
-	pImage = mpGuiSet->CreateWidgetImage("inventory/inventory_oil_bg.tga", eGuiMaterial_Alpha);
-	pImage->SetPosition(mvLayout_OilCenter-cVector2f(pImage->GetSize())*0.5f);
-	pImage->SetUserValue(eLuxInventoryFader_Oil);
-	pImage->AddCallback(eGuiMessage_OnDraw, this, kGuiCallback(OilOnDraw));
-	pImage->AddCallback(eGuiMessage_OnUpdate,this, kGuiCallback(OilOnUpdate));
-	pImage->AddCallback(eGuiMessage_MouseEnter,this, kGuiCallback(InventoryWidgetMouseEnter));
-	pImage->AddCallback(eGuiMessage_MouseLeave,this, kGuiCallback(InventoryWidgetMouseEnter));
-	pImage->AddCallback(eGuiMessage_MouseUp,this, kGuiCallback(OilOnMouseUp));
-	mvImageWidgets.push_back(pImage);
-
-	iWidget* pOil = mpOilWidget = pImage;
-
-	/////////////////////////////////
 	// Create tinderbox icon
-	pImage = mpGuiSet->CreateWidgetImage("inventory/inventory_tinderboxes.tga", 0, -1, eGuiMaterial_Alpha, false);
+	/*pImage = mpGuiSet->CreateWidgetImage("inventory/inventory_tinderboxes.tga", 0, -1, eGuiMaterial_Alpha, false);
 	pImage->SetUserValue(eLuxInventoryFader_Tinderbox);
 	pImage->SetPosition(mvLayout_TinderboxesCenter-cVector2f(pImage->GetSize())*0.5f);
 	pImage->AddCallback(eGuiMessage_OnDraw, this, kGuiCallback(TinderboxOnDraw));
 	pImage->AddCallback(eGuiMessage_OnUpdate,this, kGuiCallback(TinderboxOnUpdate));
 	pImage->AddCallback(eGuiMessage_MouseEnter,this, kGuiCallback(InventoryWidgetMouseEnter));
 	pImage->AddCallback(eGuiMessage_MouseLeave,this, kGuiCallback(InventoryWidgetMouseEnter));
+	pImage->SetUserValue(3);
 	mvImageWidgets.push_back(pImage);
-
+	
 	iWidget* pTinderbox = mpTinderboxWidget= pImage;
-
+	*/
 	/////////////////////////////////
 	// Equip slot
 	/*pImage = mpGuiSet->CreateWidgetImage("inventory/inventory_equip_slot.tga", 0,-1,eGuiMaterial_Alpha,false,pSlotGroup);
@@ -1828,8 +1746,8 @@ void cLuxInventory::CreateGui()
 	
 	/////////////////////////////////
 	// Journal
-	mpJournalMouseOverGfx = pGui->CreateGfxImage("inventory/inventory_journal_mouse_over.tga",eGuiMaterial_Alpha);
-
+	mpJournalMouseOverGfx = NULL; //pGui->CreateGfxImage("inventory/inventory_journal_mouse_over.tga",eGuiMaterial_Alpha);
+	/*
 	pImage = mpGuiSet->CreateWidgetImage("inventory/inventory_journal.tga", 0,-1,eGuiMaterial_Alpha,false);
 	pImage->SetPosition(mvLayout_JournalCenter-cVector2f(pImage->GetSize())*0.5f);
 	pImage->SetUserValue(eLuxInventoryFader_Journal);
@@ -1839,8 +1757,9 @@ void cLuxInventory::CreateGui()
 	pImage->AddCallback(eGuiMessage_UIButtonPress, this, kGuiCallback(JournalUIButtonPress));
 	pImage->AddCallback(eGuiMessage_MouseEnter,this, kGuiCallback(InventoryWidgetMouseEnter));
 	pImage->AddCallback(eGuiMessage_MouseLeave,this, kGuiCallback(InventoryWidgetMouseEnter));
+	pImage->SetUserValue(5);
 	mvImageWidgets.push_back(pImage);
-
+	*/
 	
 
 	for(size_t i=0; i<mvImageWidgets.size(); ++i)
@@ -1889,12 +1808,9 @@ void cLuxInventory::CreateGui()
 	pHealth->SetFocusNavigation(eUIArrow_Right, mvSlots[0+0]->GetImageWidget());
 	pSanity->SetFocusNavigation(eUIArrow_Up, pHealth);
 	pSanity->SetFocusNavigation(eUIArrow_Right, mvSlots[2*mlLayout_SlotsColumns+0]->GetImageWidget());
-	pTinderbox->SetFocusNavigation(eUIArrow_Left, mvSlots[0+mlLayout_SlotsColumns-1]->GetImageWidget());
-	pTinderbox->SetFocusNavigation(eUIArrow_Down, pOil);
-	pOil->SetFocusNavigation(eUIArrow_Up, pTinderbox);
-	pOil->SetFocusNavigation(eUIArrow_Left, mvSlots[1*mlLayout_SlotsColumns+mlLayout_SlotsColumns-1]->GetImageWidget());
-	pOil->SetFocusNavigation(eUIArrow_Down, pJournal);
-	pJournal->SetFocusNavigation(eUIArrow_Up, pOil);
+	//pTinderbox->SetFocusNavigation(eUIArrow_Left, mvSlots[0+mlLayout_SlotsColumns-1]->GetImageWidget());
+	//pTinderbox->SetFocusNavigation(eUIArrow_Down, pJournal);
+	//pJournal->SetFocusNavigation(eUIArrow_Up, pTinderbox);
 	pJournal->SetFocusNavigation(eUIArrow_Left, mvSlots[2*mlLayout_SlotsColumns+mlLayout_SlotsColumns-1]->GetImageWidget());
 
 
@@ -1935,9 +1851,9 @@ void cLuxInventory::CreateGui()
 	mvSlots[mlLayout_SlotsColumns+0]->GetImageWidget()->SetFocusNavigation(eUIArrow_Left, pHealth);
 	mvSlots[2*mlLayout_SlotsColumns+0]->GetImageWidget()->SetFocusNavigation(eUIArrow_Left, pSanity);
 
-	mvSlots[0+mlLayout_SlotsColumns-1]->GetImageWidget()->SetFocusNavigation(eUIArrow_Right, pTinderbox);
-	mvSlots[mlLayout_SlotsColumns+mlLayout_SlotsColumns-1]->GetImageWidget()->SetFocusNavigation(eUIArrow_Right, pOil);
-	mvSlots[2*mlLayout_SlotsColumns+mlLayout_SlotsColumns-1]->GetImageWidget()->SetFocusNavigation(eUIArrow_Right, pOil);
+//	mvSlots[0+mlLayout_SlotsColumns-1]->GetImageWidget()->SetFocusNavigation(eUIArrow_Right, pTinderbox);
+	mvSlots[mlLayout_SlotsColumns+mlLayout_SlotsColumns-1]->GetImageWidget()->SetFocusNavigation(eUIArrow_Right, pJournal);
+	mvSlots[2*mlLayout_SlotsColumns+mlLayout_SlotsColumns-1]->GetImageWidget()->SetFocusNavigation(eUIArrow_Right, pJournal);
 }
 
 //-----------------------------------------------------------------------
@@ -1956,12 +1872,12 @@ void cLuxInventory::DrawElementAtCenter(const cVector3f& avCenter, cGuiGfxElemen
 
 bool cLuxInventory::SanityOnDraw(iWidget* apWidget, const cGuiMessageData& aData)
 {
-	int lSanityStatus = StatusToIndex(gpBase->mpPlayer->GetSanity());
+	int lInfectionStatus = StatusToIndex(gpBase->mpPlayer->GetInfection());
 	const cVector3f& vSanityPos = mvLayout_SanityCenter;
 
 	/////////////////////////////////////////
 	// Draw glow
-	StatusWidgetDraw(vSanityPos, lSanityStatus, mpSanityGlow); 
+	StatusWidgetDraw(vSanityPos, lInfectionStatus, mpSanityGlow); 
 	
 	//mpGuiSet->DrawFont(	mpFontDefault, mvLayout_SanityLabelCenter,
 	//					mvLayout_FontSize_Label, cColor(1,mfAlpha), eFontAlign_Center, eGuiMaterial_FontNormal, 
@@ -1981,11 +1897,11 @@ kGuiCallbackDeclaredFuncEnd(cLuxInventory, SanityOnDraw);
 
 bool cLuxInventory::SanityOnUpdate(iWidget* apWidget, const cGuiMessageData& aData)
 {
-	int lSanityStatus = StatusToIndex(gpBase->mpPlayer->GetSanity());
-	StatusWidgetUpdate(apWidget, lSanityStatus, mpSanityStatus, mvLayout_SanityCenter);
+	int lInfectionStatus = StatusToIndex(gpBase->mpPlayer->GetInfection());
+	StatusWidgetUpdate(apWidget, lInfectionStatus, mpSanityStatus, mvLayout_SanityCenter);
 	
-	tString sSanityDesc = "SanityDesc"+cString::ToString(lSanityStatus);
-	MouseOverWidgetUpdate(apWidget, kTranslate("Inventory", "Sanity"), kTranslate("Inventory", sSanityDesc));
+	tString sInfectionDesc = "InfectionDesc"+cString::ToString(lInfectionStatus);
+	MouseOverWidgetUpdate(apWidget, kTranslate("Inventory", "Infection"), kTranslate("Inventory", sInfectionDesc));
 	
 	return true;
 }
@@ -2029,129 +1945,6 @@ bool cLuxInventory::HealthOnUpdate(iWidget* apWidget, const cGuiMessageData& aDa
 	return true;
 }
 kGuiCallbackDeclaredFuncEnd(cLuxInventory, HealthOnUpdate);
-
-//-----------------------------------------------------------------------
-
-bool cLuxInventory::OilOnDraw(iWidget* apWidget, const cGuiMessageData& aData)
-{
-	const cVector3f& vOilCenter = mvLayout_OilCenter;
-
-	////////////////////////
-	//Oil container with remaining oil
-	const cVector2f& vFullOilSize = apWidget->GetSize();
-	float fRemainingOilHeight = gpBase->mpPlayer->GetLampOil()*0.01f * vFullOilSize.y;
-
-	cVector3f vOilStart = vOilCenter-cVector3f(vFullOilSize)*0.5f;
-	cVector2f vSize = cVector2f(vFullOilSize.x, fRemainingOilHeight);
-
-	////////////////////////////////////
-	// Set clip region so nothing is drawn outside the oil height
-	cGuiClipRegion* pOldClipRegion = mpGuiSet->GetCurrentClipRegion();
-	cGuiClipRegion* pChildClipRegion = pOldClipRegion->CreateChild(vOilStart + cVector3f(0,vFullOilSize.y-fRemainingOilHeight, 0.6f),
-																	cVector2f(vFullOilSize.x,fRemainingOilHeight));
-	
-	mpGuiSet->SetCurrentClipRegion(pChildClipRegion);
-
-	//////////////////////////////
-	// Draw oil liquid
-	cVector2f vLiguidSize = apWidget->GetSize()*2;
-	cVector3f vLiquidPos = apWidget->GetGlobalPosition() - cVector3f(vLiguidSize.x*0.25f, vLiguidSize.y*0.25f, 0);
-
-	cVector3f vLiquidPosAdd1 = cVector3f(	sin(mfOilMovementT*0.3f) * apWidget->GetSize().x*0.5f, 
-											cos(mfOilMovementT*0.2f) * apWidget->GetSize().y*0.2f, 0.6f);
-	cVector3f vLiquidPosAdd2 = cVector3f(  cos(mfOilMovementT*0.2f) * apWidget->GetSize().x*0.3f, 
-											sin(mfOilMovementT*0.15f) * apWidget->GetSize().y*0.15f, 0.6f);
-	
-	mpGuiSet->DrawGfx(mpOilLiquid, vLiquidPos + vLiquidPosAdd1, vLiguidSize, cColor(1,0.75f*mfAlpha));
-	mpGuiSet->DrawGfx(mpOilLiquid, vLiquidPos + vLiquidPosAdd2, vLiguidSize, cColor(1,0.25f*mfAlpha));
-
-	//////////////////////////////
-	// Draw bubbles
-	for(int i=0; i<3; ++i)
-		mpGuiSet->DrawGfx(mpOilBubble[i], mvOilBubblePos[i], mpOilBubble[i]->GetActiveSize(), cColor(1, mfAlpha));
-
-
-	///////////////////////////////
-	// Return to normal
-	mpGuiSet->SetCurrentClipRegion(pOldClipRegion);
-	
-	///////////////////////////////
-	// Draw frame
-	DrawElementAtCenter(vOilCenter+cVector3f(0,0,1), mpRemainingOilFG, mfAlpha);
-	
-	//mpGuiSet->DrawFont(	mpFontDefault, mvLayout_OilLabelCenter,
-	//					mvLayout_FontSize_Label, cColor(1,mfAlpha), eFontAlign_Center, eGuiMaterial_FontNormal, 
-	//					_W("%ls"), kTranslate("Inventory", "LampOil").c_str());
-
-	DrawFrameAroundWidget(mpFrameGenericCorners, mpFrameGenericBorders, apWidget, 
-							mvLayout_OilFrameHPadding, mvLayout_OilFrameVPadding,
-							mvLayout_OilFrameOffset, mvLayout_OilFrameSize);
-
-	return true;
-}
-kGuiCallbackDeclaredFuncEnd(cLuxInventory, OilOnDraw);
-
-//-----------------------------------------------------------------------
-
-
-bool cLuxInventory::OilOnUpdate(iWidget* apWidget, const cGuiMessageData& aData)
-{
-	MouseOverWidgetUpdate(apWidget, kTranslate("Inventory", "LampOil"), kTranslate("Inventory", "LampOilDesc"));
-
-	const cVector2f& vFullOilSize = apWidget->GetSize();
-	float fRemainingOilHeight = gpBase->mpPlayer->GetLampOil()*0.01f * vFullOilSize.y;
-
-	if(fRemainingOilHeight<kEpsilonf)
-		return true;
-
-
-	///////////////////////////////////
-	// Update a var used to move oil
-	mfOilMovementT += aData.mfVal;
-
-	///////////////////////////////////
-	// Update bubble position
-	int lOutsideCount = 0; //The number of bubbles that reached the top
-	const cVector3f& vOilPos=  apWidget->GetGlobalPosition();
-	for(int i=0; i<3; ++i)
-	{
-		if(mvOilBubblePos[i].y < vOilPos.y-30) 
-		{
-			lOutsideCount++;
-			continue;
-		}
-		
-		mvOilBubblePos[i].y -= aData.mfVal*mvOilBubbleSpeed[i];
-	}
-	
-	//If all outside, start over.
-	if(lOutsideCount==3)
-	{
-		for(int i=0; i<3; ++i)
-		{
-			mvOilBubbleSpeed[i] = vFullOilSize.y*0.5f * cMath::RandRectf(0.5f, 1.25f);
-
-			mvOilBubblePos[i].y = vOilPos.y+vFullOilSize.y;
-			mvOilBubblePos[i].x = cMath::RandRectf(vOilPos.x, vOilPos.x+vFullOilSize.x);
-		}
-	}
-	
-	return true;
-}
-kGuiCallbackDeclaredFuncEnd(cLuxInventory, OilOnUpdate);
-
-//-----------------------------------------------------------------------
-
-bool cLuxInventory::OilOnMouseUp(iWidget* apWidget, const cGuiMessageData& aData)
-{
-	if(mpPickedItem && mpPickedItem->GetType()==eLuxItemType_LampOil)
-	{
-		GetItemTypeData(eLuxItemType_LampOil)->OnUse(mpPickedItem, 0);
-	}
-
-	return true;
-}
-kGuiCallbackDeclaredFuncEnd(cLuxInventory, OilOnMouseUp);
 
 //-----------------------------------------------------------------------
 
@@ -2318,7 +2111,7 @@ bool cLuxInventory::UIButtonPress(iWidget* apWidget, const cGuiMessageData& aDat
 		{
 		case 1:
 		case 2: SetCurrentWidget(mpTinderboxWidget); return true;
-		case 3: SetCurrentWidget(mpOilWidget); return true;
+		case 3:
 		case 4: SetCurrentWidget(mpJournalWidget); return true;
 		default: SetCurrentWidget(mpTinderboxWidget); return true;
 		}
@@ -2378,10 +2171,6 @@ void cLuxInventory::StatusWidgetDraw(const cVector3f& avPos, int alStatusIdx, cG
 void cLuxInventory::MouseOverWidgetUpdate(iWidget* apWidget, const tWString& asDescHeader, const tWString& asDescMsg)
 {
 	int lFaderID = apWidget->GetUserValue();
-	if (lFaderID >= eLuxInventoryFader_LastEnum) {
-		Warning("Invalid InventoryFader %d\n", lFaderID);
-		return;
-	}
 	if(mbMessageActive==false && apWidget==mpCurrentWidget && mvAlphaFader[lFaderID].mbActive==false)
 	{
 		mvAlphaFader[lFaderID].mbActive=true;
@@ -2609,9 +2398,9 @@ tWString cLuxInventory::AddGamepadTextAtPosition(const tWString& asCommand, int 
 {
 	////////////
 	// Convert the command from wString to tString
-	tString sCommand;
-	sCommand.resize(asCommand.size());
-	std::copy(asCommand.begin(), asCommand.end(), sCommand.begin());
+	tString sCommand = cString::To8Char(asCommand);
+	//sCommand.resize(asCommand.size());
+	//std::copy(asCommand.begin(), asCommand.end(), sCommand.begin());
 
 	////////////////
 	// Get icon from command string

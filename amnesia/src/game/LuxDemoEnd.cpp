@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxDemoEnd.h"
@@ -99,6 +99,8 @@ cLuxDemoEnd::cLuxDemoEnd() : iLuxUpdateable("LuxDemoEnd")
 
 	mfFadeSpeed = gpBase->mpDemoCfg->GetFloat("DemoEnd","FadeSpeed",0);
 
+	mbIsSteamVersion = gpBase->mpDemoCfg->GetBool("DemoEnd","IsSteamVersion",false);
+
 	mbShowOnAllExit = gpBase->mpDemoCfg->GetBool("DemoEnd","ShowOnAllExit",false);
 	
 	//Create buttons label buttons
@@ -108,13 +110,21 @@ cLuxDemoEnd::cLuxDemoEnd() : iLuxUpdateable("LuxDemoEnd")
 	vButtonPos.x = 400;// - vButtonSize.x/2;
 	vButtonPos.z = 10;
 
-	vButtonPos.y = mfBuyButtonY;
-	mpLBuyNow = mpGuiSet->CreateWidgetLabel(vButtonPos, vButtonSize, kTranslate("Demo", "BuyNow"), NULL);
+	if(mbIsSteamVersion==false)
+	{
+		vButtonPos.y = mfBuyButtonY;
+		mpLBuyNow = mpGuiSet->CreateWidgetLabel(vButtonPos, vButtonSize, kTranslate("Demo", "BuyNow"), NULL);
+	}
+	else
+	{
+		mpLBuyNow = NULL;
+	}
 	
 	vButtonPos.y = mfExitButtonY;
 	mpLExit = mpGuiSet->CreateWidgetLabel(vButtonPos, vButtonSize, kTranslate("Demo", "Exit"), NULL);
 
-	SetUpButtonLabel(mpLBuyNow, &mfBuyNowFade, kGuiCallback(BuyNowOnPressed));
+	if(mbIsSteamVersion==false)
+		SetUpButtonLabel(mpLBuyNow, &mfBuyNowFade, kGuiCallback(BuyNowOnPressed));
 	SetUpButtonLabel(mpLExit, &mfExitFade, kGuiCallback(ExitOnPressed));
 
 	///////////////////////////////
@@ -145,7 +155,8 @@ void cLuxDemoEnd::LoadFonts()
 
 	if(mpFontButton)
 	{
-		mpLBuyNow->SetDefaultFontType(mpFontButton);
+		if(mbIsSteamVersion==false)
+			mpLBuyNow->SetDefaultFontType(mpFontButton);
 		mpLExit->SetDefaultFontType(mpFontButton);
 	}
 }
@@ -278,7 +289,11 @@ void cLuxDemoEnd::OnDraw(float afFrameTime)
 
 			fY += mvMessageFontSize.y + 1;
 		}
-		mpGuiSet->DrawFont( kTranslate("Demo", "AvailableAt"), mpFontMessage, cVector3f(400.0f,mfAvailableAtY,10), mvAvailableAtFontSize, mAvailableAtFontColor,eFontAlign_Center);
+
+		if(mbIsSteamVersion)
+			mpGuiSet->DrawFont( _W("Available now on Steam!"), mpFontMessage, cVector3f(400.0f,mfAvailableAtY,10), mvAvailableAtFontSize, mAvailableAtFontColor,eFontAlign_Center);
+		else
+			mpGuiSet->DrawFont( kTranslate("Demo", "AvailableAt"), mpFontMessage, cVector3f(400.0f,mfAvailableAtY,10), mvAvailableAtFontSize, mAvailableAtFontColor,eFontAlign_Center);
 	}
 
 

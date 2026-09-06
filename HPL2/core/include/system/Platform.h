@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef HPL_PLATFORM_H
@@ -61,6 +61,9 @@ namespace hpl {
 		
 		static cDate FileModifiedDate(const tWString& asFilePath);
 		static cDate FileCreationDate(const tWString& asFilePath);
+
+		static void SetFileModifiedDate(const tWString& asFilePath, cDate aDate);
+		static void SetFileModifiedDate(const tWString& asFilePath, unsigned long long aUTime);
 
 		/**
 		* Returns a list of files in a dir
@@ -117,6 +120,8 @@ namespace hpl {
 		static tWString LoadTextFromClipboard();
 
 		static tWString GetSystemSpecialPath(eSystemPath aPathType);
+
+		static float GetMousePointerSpeed(); //can return 1.0 on all but windows platforms
 
 		static unsigned long GetSystemAvailableDrives();
 

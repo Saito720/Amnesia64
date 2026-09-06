@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "EditorWindowEntityEditBox.h"
@@ -186,6 +186,7 @@ void cEditorWindowEntityEditBox::AddPropertySetAttachments(cWidgetTab* apParentT
 	{
 		iEntityWrapperType* pType = this->mpEditor->GetEditorWorld()->GetEntityTypeByID(vFilters[i]);
 		cWidgetButton* pButton = mpSet->CreateWidgetButton(vPos, 20, _W(""), apParentTab);
+		AddWidget(pButton);
 		pButton->SetToggleable(true);
 		pButton->SetUserValue(pType->GetID());
 		pButton->SetText(cString::SubW(pType->GetName(),0,2));
@@ -205,12 +206,12 @@ void cEditorWindowEntityEditBox::AddPropertySetAttachments(cWidgetTab* apParentT
 	vPos.y += 25;
 	vPos.x = 15;
 	mpBEditAttachments = mpSet->CreateWidgetButton(vPos, cVector2f(160,25), _W("Attach"), apParentTab);
-
+	AddWidget(mpBEditAttachments);
 	mpBEditAttachments->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(InputCallback));
 
 	vPos.y += 28;
 	mpBClearAttachments = mpSet->CreateWidgetButton(vPos, cVector2f(160, 25), _W("Clear attachments"), apParentTab);
-
+	AddWidget(mpBClearAttachments);
 	mpBClearAttachments->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(InputCallback));
 }
 
@@ -291,6 +292,7 @@ void cEditorWindowEntityEditBox::OnInitLayout()
 	mpBGFrame->SetSize(cVector2f(200,620));
 
 	mpTabs = mpSet->CreateWidgetTabFrame(cVector3f(5,10,0.1f),cVector2f(190,600),_W(""), mpBGFrame);
+	AddWidget(mpTabs);
 
 	Create();
 }
@@ -448,6 +450,7 @@ void cEditorWindowEntityEditBoxUserDefinedEntity::AddInputs(cWidgetTab* apParent
 {
 	cVector3f vPos = cVector3f(4,4,0.1f);
 	mpFVars = mpSet->CreateWidgetFrame(vPos, apParentTab->GetSize()-cVector2f(12,40), false, apParentTab);
+	AddWidget(mpFVars);
 
 	mpInputPanel = mpEntity->GetClass()->CreateInputPanel(this, mpFVars, false);
 	mpInputPanel->SetCallback(this, VarInputCallbackStaticHelper);

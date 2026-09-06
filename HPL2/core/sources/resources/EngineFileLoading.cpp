@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "resources/EngineFileLoading.h"
@@ -109,7 +109,9 @@ namespace hpl {
 			pPS->SetMinFadeDistanceEnd(apElement->GetAttributeFloat("MinFadeDistanceEnd"));
 			pPS->SetMaxFadeDistanceStart(apElement->GetAttributeFloat("MaxFadeDistanceStart"));
 			pPS->SetMaxFadeDistanceEnd(apElement->GetAttributeFloat("MaxFadeDistanceEnd"));
+		    pPS->SetActive(apElement->GetAttributeBool("Active", true));
 		}
+
 		
 		kEndWorldEntityLoad(pPS);
 	}
@@ -219,6 +221,7 @@ namespace hpl {
 
 			pLightBox->SetSize(apElement->GetAttributeVector3f("Size", 1));
 			pLightBox->SetBlendFunc((eLightBoxBlendFunc) apElement->GetAttributeInt("BlendFunc", 1));
+			pLightBox->SetBoxLightPrio(apElement->GetAttributeInt("Priority", 0));
 		}
 		//////////////////////////
 		// Spotlightt
@@ -260,14 +263,6 @@ namespace hpl {
 		//Spot and point
 		if(lightType == eLightType_Point || lightType == eLightType_Spot)
 		{
-			//Falloff
-			tString sFalloffMap = apElement->GetAttributeString("FalloffMap");
-			if(sFalloffMap != "")
-			{
-				iTexture *pFalloff = apResources->GetTextureManager()->Create1D(sFalloffMap,true);
-				if(pFalloff) pLight->SetFalloffMap(pFalloff);
-			}
-
 			//Gobo
 			tString sGobo = apElement->GetAttributeString("Gobo","");
 			if(sGobo  != "")
@@ -305,6 +300,9 @@ namespace hpl {
 		pLight->SetDefaultDiffuseColor(pLight->GetDiffuseColor());
 		pLight->SetRadius(apElement->GetAttributeFloat("Radius", 1));
 
+		pLight->SetBrightness(apElement->GetAttributeFloat("Brightness", 1));
+		pLight->SetFalloff(apElement->GetAttributeFloat("Falloff", 1));
+
 		pLight->SetShadowMapResolution( ToShadowMapResolution(apElement->GetAttributeString("ShadowResolution", "High")) );
 		
 		bool bShadowsAffectDynamic = apElement->GetAttributeBool("ShadowsAffectDynamic", true);
@@ -314,6 +312,8 @@ namespace hpl {
 		if(bShadowsAffectStatic)	lFlags |= eObjectVariabilityFlag_Static;
 		pLight->SetShadowCastersAffected(lFlags);
 
+		pLight->SetActive(apElement->GetAttributeBool("Active", true));
+		
 		//////////////////////
 		// Backwards compitabilty:
 		float fDefaultFadeOn = apElement->GetAttributeFloat("FlickerOnFadeLength",0);

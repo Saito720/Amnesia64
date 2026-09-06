@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxPostEffects.h"
@@ -27,28 +27,33 @@
 
 //-----------------------------------------------------------------------
 
-#define kVar_afAlpha			0
-#define kVar_afT				1
-#define kVar_avScreenSize		2
-#define kVar_afAmpT				3
-#define kVar_afWaveAlpha		4
-#define kVar_afZoomAlpha		5
+#define kVar_afAlpha			       0
+#define kVar_afT				       1
+#define kVar_avScreenSize		       2
+#define kVar_afAmpT				       3
+#define kVar_afWaveAlpha		       4
+#define kVar_afZoomAlpha		       5
+#define kVar_afInfectionFactor	       6
+#define kVar_afGradientThresholdOffset 7
+#define kVar_afGradientFallofExponent  8
+#define kVar_afInfectionMapZoom        9
+#define kVar_afVomitBlendFactor        10
 
 //-----------------------------------------------------------------------
 
 //////////////////////////////////////////////////////////////////////////
-// INSANITY
+// INFECTION
 //////////////////////////////////////////////////////////////////////////
 
 //-----------------------------------------------------------------------
 
-cLuxPostEffect_Insanity::cLuxPostEffect_Insanity(cGraphics *apGraphics, cResources *apResources) : iLuxPostEffect(apGraphics, apResources)
+cLuxPostEffect_Infection::cLuxPostEffect_Infection(cGraphics *apGraphics, cResources *apResources) : iLuxPostEffect(apGraphics, apResources)
 {
 	//////////////////////////////
 	// Create program
 	cParserVarContainer vars;
 	vars.Add("UseUv");
-	mpProgram = mpGraphics->CreateGpuProgramFromShaders("LuxInsanity","deferred_base_vtx.glsl", "posteffect_insanity_frag.glsl", &vars);
+	mpProgram = mpGraphics->CreateGpuProgramFromShaders("LuxInfection","deferred_base_vtx.glsl", "posteffect_infection_frag.glsl", &vars);
 	if(mpProgram)
 	{
 		mpProgram->GetVariableAsId("afAlpha",kVar_afAlpha);
@@ -56,18 +61,34 @@ cLuxPostEffect_Insanity::cLuxPostEffect_Insanity(cGraphics *apGraphics, cResourc
 		mpProgram->GetVariableAsId("avScreenSize",kVar_avScreenSize);
 		mpProgram->GetVariableAsId("afAmpT",kVar_afAmpT);
 		mpProgram->GetVariableAsId("afWaveAlpha",kVar_afWaveAlpha);
-		mpProgram->GetVariableAsId("afZoomAlpha",kVar_afZoomAlpha);
+		mpProgram->GetVariableAsId("afInfectionFactor",kVar_afInfectionFactor);
+		mpProgram->GetVariableAsId("afGradientThresholdOffset",kVar_afGradientThresholdOffset);
+		mpProgram->GetVariableAsId("afGradientFallofExponent",kVar_afGradientFallofExponent);
+		mpProgram->GetVariableAsId("afInfectionMapZoom",kVar_afInfectionMapZoom);
+		mpProgram->GetVariableAsId("afVomitBlendFactor",kVar_afVomitBlendFactor);
 	}
-
 
 	//////////////////////////////
 	// Textures
 	mvAmpMaps.resize(3);
 	
 	for(size_t i=0; i<mvAmpMaps.size(); ++i)
-		mvAmpMaps[i] = mpResources->GetTextureManager()->Create2D("posteffect_insanity_ampmap"+cString::ToString((int)i), false);
+		mvAmpMaps[i] = mpResources->GetTextureManager()->Create2D("posteffect_infection_ampmap"+cString::ToString((int)i), false);
 
-	mpZoomMap = mpResources->GetTextureManager()->Create2D("posteffect_insanity_zoom.jpg", false);
+	mpZoomMap = mpResources->GetTextureManager()->Create2D("posteffect_infection_zoom.jpg", false);
+	mpInfectionNormalBlendMap = mpResources->GetTextureManager()->Create2D("posteffect_infection_normal_blend.tga", false);
+	mpInfectionOverlayBlendMap = mpResources->GetTextureManager()->Create2D("posteffect_infection_overlay_blend.tga", false);
+	mpInfectionColorDodgeBlendMap = mpResources->GetTextureManager()->Create2D("posteffect_infection_colordodge_blend.tga", false);
+	mpInfectionGradientMap = mpResources->GetTextureManager()->Create2D("posteffect_infection_gradient.jpg", false);
+	//mpVomitOverlayMap = mpResources->GetTextureManager()->Create2D("posteffect_vomit_overlay_blend.tga", false);
+
+	//////////////////////////////
+	// Cfg vars
+
+	mfGradientThresholdOffset = gpBase->mpGameCfg->GetFloat("Player_Infection","GradientThresholdOffset",0);
+	mfGradientFallofExponent = gpBase->mpGameCfg->GetFloat("Player_Infection","GradientFallofExponent",0);
+	mfInfectionMapZoom = gpBase->mpGameCfg->GetFloat("Player_Infection","InfectionMapZoom",0);
+	mfInfectionGrowSpeed = gpBase->mpGameCfg->GetFloat("Player_Infection","InfectionEffectGrowSpeed",1.0f);
 
 	//////////////////////////////
 	// Init vars
@@ -75,20 +96,33 @@ cLuxPostEffect_Insanity::cLuxPostEffect_Insanity(cGraphics *apGraphics, cResourc
 	mfAnimCount =0;
 	mfWaveAlpha = 0.0f;
 	mfZoomAlpha = 0.0f;
-	mfWaveSpeed =0.0f;
+	mfWaveSpeed = 0.0f;
+	mfInfectionFactor = 0.0f;
+	mfInfectionGoal = 0.0f;
 }
 
 //-----------------------------------------------------------------------
 
-cLuxPostEffect_Insanity::~cLuxPostEffect_Insanity()
+cLuxPostEffect_Infection::~cLuxPostEffect_Infection()
 {
 
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxPostEffect_Insanity::Update(float afTimeStep)
+void cLuxPostEffect_Infection::Update(float afTimeStep)
 {
+	if ( mfInfectionFactor < mfInfectionGoal )
+	{
+		mfInfectionFactor +=afTimeStep * mfInfectionGrowSpeed;
+		if ( mfInfectionFactor > mfInfectionGoal ) mfInfectionFactor = mfInfectionGoal;
+	}
+	else if ( mfInfectionFactor > mfInfectionGoal )
+	{
+		mfInfectionFactor -= afTimeStep * mfInfectionGrowSpeed;
+		if ( mfInfectionFactor < mfInfectionGoal ) mfInfectionFactor = mfInfectionGoal;
+	}
+
 	mfT += afTimeStep * mfWaveSpeed;
 	
 	mfAnimCount += afTimeStep * 0.15f;
@@ -99,8 +133,7 @@ void cLuxPostEffect_Insanity::Update(float afTimeStep)
 
 //-----------------------------------------------------------------------
 
-
-iTexture* cLuxPostEffect_Insanity::RenderEffect(iTexture *apInputTexture, iFrameBuffer *apFinalTempBuffer)
+iTexture* cLuxPostEffect_Infection::RenderEffect(iTexture *apInputTexture, iFrameBuffer *apFinalTempBuffer)
 {
 	/////////////////////////
 	// Init render states
@@ -125,6 +158,11 @@ iTexture* cLuxPostEffect_Insanity::RenderEffect(iTexture *apInputTexture, iFrame
 	mpCurrentComposite->SetTexture(1, mvAmpMaps[lAmp0]);
 	mpCurrentComposite->SetTexture(2, mvAmpMaps[lAmp1]);
 	mpCurrentComposite->SetTexture(3, mpZoomMap);
+	mpCurrentComposite->SetTexture(4, mpInfectionNormalBlendMap);
+	mpCurrentComposite->SetTexture(5, mpInfectionOverlayBlendMap);
+	mpCurrentComposite->SetTexture(6, mpInfectionColorDodgeBlendMap);
+	mpCurrentComposite->SetTexture(7, mpInfectionGradientMap);
+//	mpCurrentComposite->SetTexture(8, mpVomitOverlayMap);
 	
 	mpCurrentComposite->SetProgram(mpProgram);
 	if(mpProgram)
@@ -135,8 +173,12 @@ iTexture* cLuxPostEffect_Insanity::RenderEffect(iTexture *apInputTexture, iFrame
 		mpProgram->SetFloat(kVar_afAmpT, fAmpT);
 		mpProgram->SetFloat(kVar_afWaveAlpha, mfWaveAlpha);
 		mpProgram->SetFloat(kVar_afZoomAlpha, mfZoomAlpha);
+		mpProgram->SetFloat(kVar_afInfectionFactor, mfInfectionFactor);
+		mpProgram->SetFloat(kVar_afGradientThresholdOffset, mfGradientThresholdOffset);
+		mpProgram->SetFloat(kVar_afGradientFallofExponent, mfGradientFallofExponent);
+		mpProgram->SetFloat(kVar_afInfectionMapZoom, mfInfectionMapZoom);
+		mpProgram->SetFloat(kVar_afVomitBlendFactor, 0);
 	}
-	
 
 	DrawQuad(0,1,apInputTexture, true);
 
@@ -161,9 +203,9 @@ cLuxPostEffectHandler::cLuxPostEffectHandler() : iLuxUpdateable("LuxPostEffectHa
 
 	///////////////////////
 	// Create post effects
-	mpInsanity = hplNew(cLuxPostEffect_Insanity, (pGraphics, pResources) );
-	AddEffect(mpInsanity, 25);
-	mpInsanity->SetActive(true);
+	mpInfection = hplNew(cLuxPostEffect_Infection, (pGraphics, pResources) );
+	AddEffect(mpInfection, 25);
+	mpInfection->SetActive(false);
 }
 
 //-----------------------------------------------------------------------
@@ -205,7 +247,7 @@ void cLuxPostEffectHandler::LoadMainConfig()
 {
 	cConfigFile *pMainCfg = gpBase->mpMainConfig;
 
-	mpInsanity->SetDisabled(pMainCfg->GetBool("Graphics", "PostEffectInsanity", true)==false);
+	mpInfection->SetDisabled(pMainCfg->GetBool("Graphics", "PostEffectInfection", true)==false);
 
 }
 
@@ -215,7 +257,7 @@ void cLuxPostEffectHandler::SaveMainConfig()
 {
 	cConfigFile *pMainCfg = gpBase->mpMainConfig;
 
-	pMainCfg->SetBool("Graphics", "PostEffectInsanity", mpInsanity->IsDisabled()==false);
+	pMainCfg->SetBool("Graphics", "PostEffectInfection", mpInfection->IsDisabled()==false);
 }
 
 //-----------------------------------------------------------------------

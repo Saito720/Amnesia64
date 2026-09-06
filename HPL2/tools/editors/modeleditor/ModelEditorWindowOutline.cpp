@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "ModelEditorWindowOutline.h"
@@ -64,7 +64,7 @@ cModelEditorWindowOutlineHelper::~cModelEditorWindowOutlineHelper()
 
 void cModelEditorWindowOutlineHelper::SetAllowedTypes(const tIntVec& avTypes)
 {
-	for(int i=0;i<(int)avTypes.size();++i)
+	for(size_t i=0;i<avTypes.size();++i)
 		mpFilter->SetTypeFilter(avTypes[i], true);
 
 	PopulateList();
@@ -99,6 +99,7 @@ void cModelEditorWindowOutlineHelper::OnInitLayout()
 
 	mpListObjects->AddCallback(eGuiMessage_SelectionChange, this, kGuiCallback(List_OnSelectionChange));
 	mpListObjects->SetAllowMultiSelection(true);
+	AddWidget(mpListObjects);
 
 	vPos.y += mpListObjects->GetSize().y+5;
 
@@ -107,6 +108,7 @@ void cModelEditorWindowOutlineHelper::OnInitLayout()
 		mvButtons[i] = mpSet->CreateWidgetButton(vPos + cVector3f(10.05f+i*45,0,0), cVector2f(40,25), _W(""), mpWindow);
 
 		mvButtons[i]->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(Button_OnPressed));
+		AddWidget(mvButtons[i]);
 	}
 	mvButtons[0]->SetText(_W("OK"));
 	mvButtons[1]->SetText(_W("Cancel"));
@@ -145,7 +147,7 @@ kGuiCallbackDeclaredFuncEnd(cModelEditorWindowOutlineHelper,Button_OnPressed);
 bool cModelEditorWindowOutlineHelper::List_OnSelectionChange(iWidget* apWidget, const cGuiMessageData& aData)
 {
 	mlstTempIDs.clear();
-	for(int i=0;i<this->mpListObjects->GetMultiSelectionNum();++i)
+	for(int i=0;i<mpListObjects->GetMultiSelectionNum();++i)
 	{
 		int lIndex = mpListObjects->GetMultiSelection(i);
 
@@ -316,7 +318,7 @@ void cModelEditorWindowOutline::ClearEditPanel()
 	}
 	
 
-	for(int i=0;i<(int)vWidgets.size();++i)
+	for(size_t i=0;i<vWidgets.size();++i)
 	{
 		mpSet->DestroyWidget(vWidgets[i]);
 	}
@@ -492,6 +494,10 @@ void cModelEditorWindowOutline::OnSetActive(bool abX)
 		UpdateHighlightedItems();
 		UpdateEditPanel();
 	}
+	else
+	{
+		ClearEditPanel();
+	}
 }
 
 //------------------------------------------------------------------------------------
@@ -504,6 +510,7 @@ void cModelEditorWindowOutline::OnInitLayout()
 	cVector3f vPos = cVector3f(15,30,0.1f);
 
 	mpCheckBoxHideShapes = mpSet->CreateWidgetCheckBox(vPos, 0, _W("Hide connected shapes"), mpWindow);
+	AddWidget(mpCheckBoxHideShapes);
 
 	mpCheckBoxHideShapes->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(InputCallback));
 
@@ -513,10 +520,12 @@ void cModelEditorWindowOutline::OnInitLayout()
 
 	mpListObjects->AddCallback(eGuiMessage_SelectionChange, this, kGuiCallback(InputCallback));
 	mpListObjects->SetAllowMultiSelection(true);
+	AddWidget(mpListObjects);
 
 	vPos = cVector3f(mpListObjects->GetLocalPosition().x+mpListObjects->GetSize().x+10,30,0.1f);
 
 	mpGroupPanel = mpSet->CreateWidgetDummy(vPos, mpWindow);
+	AddWidget(mpGroupPanel);
 
 
 	mpButtonAttachChild = NULL;

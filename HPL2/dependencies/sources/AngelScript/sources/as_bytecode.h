@@ -1,6 +1,6 @@
 /*
    AngelCode Scripting Library
-   Copyright (c) 2003-2010 Andreas Jonsson
+   Copyright (c) 2003-2012 Andreas Jonsson
 
    This software is provided 'as-is', without any express or implied 
    warranty. In no event will the authors be held liable for any 
@@ -41,6 +41,9 @@
 #define AS_BYTECODE_H
 
 #include "as_config.h"
+
+#ifndef AS_NO_COMPILER
+
 #include "as_array.h"
 
 BEGIN_AS_NAMESPACE
@@ -67,6 +70,7 @@ public:
 
 	int  Optimize();
 	void ExtractLineNumbers();
+	void ExtractObjectVariableInfo(asCScriptFunction *outFunc);
 	int  ResolveJumpAddresses();
 	int  FindLabel(int label, cByteInstruction *from, cByteInstruction **dest, int *positionDelta);
 
@@ -89,9 +93,13 @@ public:
 	void GetVarsUsed(asCArray<int> &vars);
 	bool IsVarUsed(int offset);
 	void ExchangeVar(int oldOffset, int newOffset);
+	bool IsSimpleExpression();
 
 	void Label(short label);
 	void Line(int line, int column);
+	void ObjInfo(int offset, int info);
+	void Block(bool start);
+	void VarDecl(int varDeclIdx);
 	void Call(asEBCInstr bc, int funcID, int pop);
 	void CallPtr(asEBCInstr bc, int funcPtrVar, int pop);
 	void Alloc(asEBCInstr bc, void *objID, int funcID, int pop);
@@ -119,9 +127,6 @@ public:
 	int InstrW_PTR(asEBCInstr bc, short a, void *param);
 	int InstrW_FLOAT(asEBCInstr bc, asWORD a, float b);
 	int InstrW_W(asEBCInstr bc, int w, int b);
-
-	int Pop (int numDwords);
-	int Push(int numDwords);
 
 	asCArray<int> lineNumbers;
 	int largestStackUsed;
@@ -186,5 +191,7 @@ public:
 };
 
 END_AS_NAMESPACE
+
+#endif // AS_NO_COMPILER
 
 #endif

@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "sound/SoundEntityData.h"
@@ -52,6 +52,7 @@ namespace hpl {
 		mbFadeStart = false;
 		mbFadeStop = false;
 
+		mfAIVolume = 1;
 		mfVolume = 1;
 		mfMaxDistance =0;
 		mfMinDistance=0;
@@ -59,6 +60,8 @@ namespace hpl {
 		mbStream  = false;
 		mbLoop = false;
 		mbUse3D = true;
+
+		mbKeepPlayingOutOfRange = false;
 
 		mfRandom = 1;
 		mfInterval =0;
@@ -99,17 +102,12 @@ namespace hpl {
 		int lSize = (int)mvSoundNameVecs[aType].size();
 		if(lSize==1) return mvSoundNameVecs[aType][0];
 		
-		int lStart = -1;
-		int lSizeAdd = -1;
-		if(abSkipPrevious && lSize > 2 && mlPrevious[aType] < lSize && mlPrevious[aType] > 0)
-		{
-			lStart = mlPrevious[aType];
-			lSizeAdd = lStart-1;
-		}
-		
-		int lRand = cMath::RandRectl(lStart+1, lSize + lSizeAdd);
-		if(lRand >= lSize) lRand = lRand - lSize;
-		
+        int lRand = cMath::RandRectl(0, lSize - 1);
+        if ( abSkipPrevious && lRand == mlPrevious[aType] )
+        {
+            lRand = ( lRand + 1 ) % lSize;
+        }
+
 		mlPrevious[aType] = lRand;
 
 		return mvSoundNameVecs[aType][lRand];
@@ -218,6 +216,8 @@ namespace hpl {
 		mfMaxDistance = pPropElem->GetAttributeFloat("MaxDistance",1);
 		mfMinDistance = pPropElem->GetAttributeFloat("MinDistance",1);
 
+		mfAIVolume = pPropElem->GetAttributeFloat("AIVolume", mfVolume);
+
 		mbFadeStart = pPropElem->GetAttributeBool("FadeStart",true);
 		mbFadeStop = pPropElem->GetAttributeBool("FadeStop",true);
 		
@@ -225,6 +225,8 @@ namespace hpl {
 		mfInterval = pPropElem->GetAttributeFloat("Interval",0);
 
 		mlPriority = pPropElem->GetAttributeInt("Priority",0);
+
+		mbKeepPlayingOutOfRange = pPropElem->GetAttributeBool("KeepPlayingOutOfRange",false);
 
 		hplDelete( pDoc );
 

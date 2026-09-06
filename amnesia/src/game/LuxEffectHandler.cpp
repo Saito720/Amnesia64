@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxEffectHandler.h"
@@ -40,10 +40,10 @@ cLuxEffectHandler::cLuxEffectHandler() : iLuxUpdateable("LuxEffectHandler")
 
 	mpFlash = hplNew( cLuxEffect_Flash, () );
 	mvEffects.push_back(mpFlash);
-
-	mpSanityGainFlash = hplNew( cLuxEffect_SanityGainFlash, () );
-	mvEffects.push_back(mpSanityGainFlash);
-
+	/*
+	mpInfectionHealFlash = hplNew( cLuxEffect_InfectionHealFlash, () );
+	mvEffects.push_back(mpInfectionHealFlash);
+	*/
 	mpPlayVoice = hplNew( cLuxEffect_PlayVoice, () );
 	mvEffects.push_back(mpPlayVoice);
 
@@ -56,6 +56,10 @@ cLuxEffectHandler::cLuxEffectHandler() : iLuxUpdateable("LuxEffectHandler")
 	mpSepiaColor = hplNew( cLuxEffect_SepiaColor, () );
 	mvEffects.push_back(mpSepiaColor);
 
+    mpColorGrading = hplNew( cLuxEffect_ColorGrading, () );
+    mpColorGrading->SetActive(true);
+	mvEffects.push_back(mpColorGrading);
+
 	mpRadialBlur = hplNew( cLuxEffect_RadialBlur, () );
 	mvEffects.push_back(mpRadialBlur);
 
@@ -64,6 +68,9 @@ cLuxEffectHandler::cLuxEffectHandler() : iLuxUpdateable("LuxEffectHandler")
 
 	mpPlayCommentary = hplNew( cLuxEffect_PlayCommentary, () );
 	mvEffects.push_back(mpPlayCommentary);
+
+    mpScreenImage = hplNew( cLuxEffect_ScreenImage, () );
+	mvEffects.push_back(mpScreenImage);
 }
 
 //-----------------------------------------------------------------------
@@ -74,6 +81,37 @@ cLuxEffectHandler::~cLuxEffectHandler()
 }
 
 //-----------------------------------------------------------------------
+
+float iLuxEffect::GetAmountForCurrentInfection()
+{
+	float infection = gpBase->mpPlayer->GetInfection();
+	int numberOfInfectionLevels = gpBase->mpPlayer->GetNumberOfInfectionLevels();
+	float infectionStep = 100.0f / numberOfInfectionLevels;
+	
+	if ( infection == 0.0f )
+	{
+		return 0.0f;
+	}
+	else if ( infection <= infectionStep )
+	{
+		return mfValueAtInfectionLevelOne * infection / infectionStep;
+	}
+	else if ( infection <= 2*infectionStep )
+	{
+		float factor = ( 2*infectionStep - infection ) / infectionStep;
+		return mfValueAtInfectionLevelOne * factor + mfValueAtInfectionLevelTwo * ( 1.0f - factor );
+	}
+	else if ( infection <= 3*infectionStep )
+	{
+		float factor = ( 3*infectionStep - infection ) / infectionStep;
+		return mfValueAtInfectionLevelTwo * factor + mfValueAtInfectionLevelThree * ( 1.0f - factor );
+	}
+	else
+	{
+		float factor = ( 4*infectionStep - infection ) / infectionStep;
+		return mfValueAtInfectionLevelThree * factor + mfValueAtInfectionLevelFour * ( 1.0f - factor );
+	}
+}
 
 //////////////////////////////////////////////////////////////////////////
 // PLAY COMMENTARY
@@ -197,6 +235,154 @@ void cLuxEffect_PlayCommentary::Reset()
 	msTopic = "";
 }
 
+
+//////////////////////////////////////////////////////////////////////////
+// SCREEN IMAGE
+//////////////////////////////////////////////////////////////////////////
+
+//-----------------------------------------------------------------------
+
+
+cLuxEffect_ScreenImage::cLuxEffect_ScreenImage()
+{
+	cGui * pGui = gpBase->mpEngine->GetGui();
+	mpGuiSet = pGui->CreateSet( "Effect_ScreenImage", NULL );
+	mpGuiSet->SetRendersBeforePostEffects( false );
+	mpGuiSet->SetDrawMouse( false );
+	mpGuiSet->SetDrawPriority(3);
+	gpBase->mpMapHandler->GetViewport()->AddGuiSet( mpGuiSet );
+    mpTextureGfx = NULL;
+	mbActive = false;
+
+    mfCurrentFade = 0.0f;
+
+    mfFadeInDuration = 1.0f;
+    mfShowDuration = 1.0f;
+    mfFadeOutDuration = 1.0f;
+    mfFadeTimer = 1.0f;
+}
+
+//-----------------------------------------------------------------------
+cLuxEffect_ScreenImage::~cLuxEffect_ScreenImage()
+{
+    if ( mpTextureGfx != NULL )
+    {
+        gpBase->mpEngine->GetGui()->DestroyGfx(mpTextureGfx);
+        mpTextureGfx = NULL;
+    }
+
+    if ( mpGuiSet != NULL )
+    {
+        gpBase->mpEngine->GetGui()->DestroySet(mpGuiSet);
+        mpGuiSet = NULL;
+    }
+}
+
+//-----------------------------------------------------------------------
+void cLuxEffect_ScreenImage::ShowImage(const tString & asImageName, float afX, float afY, float afScale, bool abUseRelativeCoordinates, float afDuration, float afFadeIn, float afFadeOut)
+{
+    if ( mpTextureGfx != NULL )
+    {
+        gpBase->mpEngine->GetGui()->DestroyGfx(mpTextureGfx);
+        mpTextureGfx = NULL;
+    }
+
+    mpTextureGfx = gpBase->mpEngine->GetGui()->CreateGfxTexture(asImageName,eGuiMaterial_Alpha);
+
+    // coordinates are centered around origin, if relative in terms of screen size
+
+    cVector2f screen_size = gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeFloat();
+    
+    if ( abUseRelativeCoordinates )
+    {
+        afX = afX * screen_size.x;
+        afY = afY * screen_size.y;
+    }
+
+    afX += screen_size.x / 2;
+    afY += screen_size.y / 2;
+
+    mfFadeInDuration = afFadeIn;
+    mfShowDuration = afDuration;
+    mfFadeOutDuration = afFadeOut;
+    mfFadeTimer = 0.0f;
+
+    if ( mfFadeInDuration > 0 )
+    {
+        mfCurrentFade = 1.0f;
+    }
+    else
+    {
+        mfCurrentFade = 0.0f;
+    }
+
+	mbActive = true;
+	mvPosition = cVector3f(afX, afY, gpBase->mvHudVirtualStartPos.z + 10.0f);
+	mfScale = afScale;
+
+}
+
+//-----------------------------------------------------------------------
+void cLuxEffect_ScreenImage::HideImmediately()
+{
+	mbActive = false;
+
+    if ( mpTextureGfx != NULL )
+    {
+        gpBase->mpEngine->GetGui()->DestroyGfx(mpTextureGfx);
+        mpTextureGfx = NULL;
+    }
+}
+
+//-----------------------------------------------------------------------
+void cLuxEffect_ScreenImage::HideWithFade(float afFadeOut)
+{
+    if ( mfCurrentFade > 0.0f )
+    {
+        mfFadeInDuration = 0.0f;
+        mfShowDuration = 1.0f;
+        mfFadeOutDuration = afFadeOut;
+    }
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxEffect_ScreenImage::Update(float afTimeStep)
+{
+    mfFadeTimer += afTimeStep;
+
+    if ( mfFadeTimer > ( mfFadeInDuration + mfShowDuration + mfFadeOutDuration ) )
+    {
+        mfCurrentFade = 0.0f;
+	    mbActive = false;
+    }
+    else if ( mfFadeOutDuration > 0 && mfFadeTimer > mfFadeInDuration + mfShowDuration )
+    {
+        // fading out
+        float mfFadeFactor = ( mfFadeTimer - (mfFadeInDuration + mfShowDuration) ) / mfFadeOutDuration;    // 0 when starting to fade out, 1 when faded out
+        mfCurrentFade = 1.0f - mfFadeFactor;
+    }
+    else if ( mfFadeTimer > mfFadeInDuration )
+    {
+        mfCurrentFade = 1.0f;
+    }
+    else if ( mfFadeInDuration > 0.0f )
+    {
+        // fading in
+        float mfFadeFactor = ( mfFadeTimer ) / mfFadeInDuration;    // 0 when starting to fade in, 1 when faded in
+        mfCurrentFade = mfFadeFactor;
+    }
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxEffect_ScreenImage::OnDraw(float afFrameTime)
+{
+    if ( gpBase->mpGameHudSet && mpTextureGfx )
+    {
+        mpGuiSet->DrawGfx(mpTextureGfx, mvPosition, mfScale, cColor(1.0f,mfCurrentFade));
+    }
+}
 
 //-----------------------------------------------------------------------
 
@@ -362,6 +548,18 @@ cLuxEffect_RadialBlur::cLuxEffect_RadialBlur()
 	mfSize =0;
 	mfSizeGoal =0;
 	mfBlurStartDist =0;
+
+	SetActive(true);
+
+	mfValueAtInfectionLevelOne = gpBase->mpGameCfg->GetFloat("Infection_ExtraEffects","RadialBlurLevelOne",0);
+	mfValueAtInfectionLevelTwo = gpBase->mpGameCfg->GetFloat("Infection_ExtraEffects","RadialBlurLevelTwo",0);
+	mfValueAtInfectionLevelThree = gpBase->mpGameCfg->GetFloat("Infection_ExtraEffects","RadialBlurLevelThree",0);
+	mfValueAtInfectionLevelFour = gpBase->mpGameCfg->GetFloat("Infection_ExtraEffects","RadialBlurLevelFour",0);
+
+	mfStartDistAtInfectionLevelOne = gpBase->mpGameCfg->GetFloat("Infection_ExtraEffects","RadialBlurStartDistLevelOne",0);
+	mfStartDistAtInfectionLevelTwo = gpBase->mpGameCfg->GetFloat("Infection_ExtraEffects","RadialBlurStartDistLevelTwo",0);
+	mfStartDistAtInfectionLevelThree = gpBase->mpGameCfg->GetFloat("Infection_ExtraEffects","RadialBlurStartDistLevelThree",0);
+	mfStartDistAtInfectionLevelFour = gpBase->mpGameCfg->GetFloat("Infection_ExtraEffects","RadialBlurStartDistLevelFour",0);
 }
 
 //-----------------------------------------------------------------------
@@ -379,11 +577,43 @@ void cLuxEffect_RadialBlur::SetBlurStartDist(float afDist)
 
 //-----------------------------------------------------------------------
 
+float cLuxEffect_RadialBlur::GetStartDistForCurrentInfection()
+{
+	float infection = gpBase->mpPlayer->GetInfection();
+	int numberOfInfectionLevels = gpBase->mpPlayer->GetNumberOfInfectionLevels();
+	float infectionStep = 100.0f / numberOfInfectionLevels;
+	
+	if ( infection == 0.0f )
+	{
+		return 0.0f;
+	}
+	else if ( infection <= infectionStep )
+	{
+		return mfStartDistAtInfectionLevelOne * infection / infectionStep;
+	}
+	else if ( infection <= 2*infectionStep )
+	{
+		float factor = ( 2*infectionStep - infection ) / infectionStep;
+		return mfStartDistAtInfectionLevelOne * factor + mfStartDistAtInfectionLevelTwo * ( 1.0f - factor );
+	}
+	else if ( infection <= 3*infectionStep )
+	{
+		float factor = ( 3*infectionStep - infection ) / infectionStep;
+		return mfStartDistAtInfectionLevelTwo * factor + mfStartDistAtInfectionLevelThree * ( 1.0f - factor );
+	}
+	else
+	{
+		float factor = ( 4*infectionStep - infection ) / infectionStep;
+		return mfStartDistAtInfectionLevelThree * factor + mfStartDistAtInfectionLevelFour * ( 1.0f - factor );
+	}
+}
+
+//-----------------------------------------------------------------------
+
 void cLuxEffect_RadialBlur::FadeTo(float afSize, float afSpeed)
 {
 	mfSizeGoal = afSize;
 	mfFadeSpeed = afSpeed;
-	SetActive(true);
 	gpBase->mpMapHandler->GetPostEffect_RadialBlur()->SetActive(true);
 }
 
@@ -410,12 +640,32 @@ void cLuxEffect_RadialBlur::Update(float afTimeStep)
 		}
 	}
 
+	float startDistForCurrentInfection = GetStartDistForCurrentInfection();
+
+	if ( startDistForCurrentInfection > mfBlurStartDist )
+	{
+		SetBlurStartDist(startDistForCurrentInfection);
+	}
+
+	float finalSize = mfSize;
+	float amountForCurrentInfection = GetAmountForCurrentInfection();
+
+	if ( finalSize < amountForCurrentInfection )
+	{
+		finalSize = amountForCurrentInfection;
+	}
+	
+	if ( finalSize > 0 && !gpBase->mpMapHandler->GetPostEffect_RadialBlur()->IsActive() )
+	{
+		gpBase->mpMapHandler->GetPostEffect_RadialBlur()->SetActive(true);
+	}
+
 	cPostEffectParams_RadialBlur radialBlurParams;
-	radialBlurParams.mfSize = mfSize;
+	radialBlurParams.mfSize = finalSize;
 	radialBlurParams.mfBlurStartDist = mfBlurStartDist;
 	gpBase->mpMapHandler->GetPostEffect_RadialBlur()->SetParams(&radialBlurParams);
 
-	if(mfSize <=0)
+	if(finalSize <=0)
 	{
 		gpBase->mpMapHandler->GetPostEffect_RadialBlur()->SetActive(false);
 	}
@@ -445,13 +695,18 @@ cLuxEffect_SepiaColor::cLuxEffect_SepiaColor()
 {
 	mfAmount =0;
 	mfAmountGoal =0;
+	SetActive(true);
+
+	mfValueAtInfectionLevelOne = gpBase->mpGameCfg->GetFloat("Infection_ExtraEffects","SepiaLevelOne",0);
+	mfValueAtInfectionLevelTwo = gpBase->mpGameCfg->GetFloat("Infection_ExtraEffects","SepiaLevelTwo",0);
+	mfValueAtInfectionLevelThree = gpBase->mpGameCfg->GetFloat("Infection_ExtraEffects","SepiaLevelThree",0);
+	mfValueAtInfectionLevelFour = gpBase->mpGameCfg->GetFloat("Infection_ExtraEffects","SepiaLevelFour",0);
 }
 
 void cLuxEffect_SepiaColor::FadeTo(float afAmount, float afSpeed)
 {
 	mfAmountGoal = afAmount;
 	mfFadeSpeed = afSpeed;
-	SetActive(true);
 	gpBase->mpMapHandler->GetPostEffect_Sepia()->SetActive(true);
 }
 
@@ -463,7 +718,7 @@ void cLuxEffect_SepiaColor::Update(float afTimeStep)
 		if(mfAmount <= mfAmountGoal)
 		{
 			mfAmount = 	mfAmountGoal;
-			SetActive(false);
+			//SetActive(false);
 		}
 	}
 	else
@@ -472,15 +727,28 @@ void cLuxEffect_SepiaColor::Update(float afTimeStep)
 		if(mfAmount >= mfAmountGoal)
 		{
 			mfAmount = mfAmountGoal;
-			SetActive(false);
+			//SetActive(false);
 		}
 	}
 
+	float finalAmount = mfAmount;
+	float amountForCurrentInfection = GetAmountForCurrentInfection();
+
+	if ( finalAmount < amountForCurrentInfection )
+	{
+		finalAmount = amountForCurrentInfection;
+	}
+	
+	if ( finalAmount > 0 && !gpBase->mpMapHandler->GetPostEffect_Sepia()->IsActive() )
+	{
+		gpBase->mpMapHandler->GetPostEffect_Sepia()->SetActive(true);
+	}
+
 	cPostEffectParams_ColorConvTex sepiaParams;
-	sepiaParams.mfFadeAlpha = mfAmount;
+	sepiaParams.mfFadeAlpha = finalAmount;
 	gpBase->mpMapHandler->GetPostEffect_Sepia()->SetParams(&sepiaParams);
 	
-	if(mfAmount <=0)
+	if( finalAmount <=0 )
 	{
 		gpBase->mpMapHandler->GetPostEffect_Sepia()->SetActive(false);
 	}
@@ -495,6 +763,226 @@ void cLuxEffect_SepiaColor::Reset()
 }
 
 //-----------------------------------------------------------------------
+
+//////////////////////////////////////////////////////////////////////////
+// COLOR GRADING
+//////////////////////////////////////////////////////////////////////////
+
+cLuxEffect_ColorGrading::cLuxEffect_ColorGrading()
+{
+    mbIsCrossFading = false;
+    mfCrossFadeAlpha = 0.0f;
+    mbIsFadingUp = false;
+    mfFadeSpeed = 1.0f;
+    mfGameplayFadeTime = 1.0f;
+    msFadeTargetLUT = "";
+    msGameplayLUT = "";
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxEffect_ColorGrading::InitializeLUT(tString asBaseEnvironmentLUT)
+{
+    mbIsCrossFading = false;
+    mfCrossFadeAlpha = 0.0f;
+    mbIsFadingUp = false;
+    mfFadeSpeed = 1.0f;
+    msFadeTargetLUT = asBaseEnvironmentLUT;
+    msGameplayLUT = "";
+
+    msEnvironmentLUTs.clear();
+    msEnvironmentLUTs.push_front( asBaseEnvironmentLUT );
+    msEnvironmentLUTFadeTimes.clear();
+    msEnvironmentLUTFadeTimes.push_front( 5.0f );
+
+    cPostEffectParams_ColorGrading colorGradingParams;
+	colorGradingParams.msTextureFile1 = asBaseEnvironmentLUT;
+	colorGradingParams.msTextureFile2 = "";
+    colorGradingParams.mfCrossFadeAlpha = 0.0f;
+    colorGradingParams.mbIsReinitialisation = true;
+
+
+    gpBase->mpMapHandler->GetPostEffect_ColorGrading()->SetParams( &colorGradingParams );
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxEffect_ColorGrading::EnterLUTEnvironment(tString asEnvironmentLUT, float afFadeTime)
+{
+    if ( afFadeTime < 0.5f ) afFadeTime = 0.5f;
+
+    if ( !mbIsCrossFading )
+    {
+        // not fading
+
+        if ( msGameplayLUT != "" )
+        {
+            // we have a gameplay LUT fully active. That means we just push the environment lut, and ignore the fade time. This environment will become active when the gameplay lut fades out
+            msEnvironmentLUTs.push_front( asEnvironmentLUT );
+            msEnvironmentLUTFadeTimes.push_front( afFadeTime );
+        }
+        else
+        {
+            if ( asEnvironmentLUT != *msEnvironmentLUTs.begin() )
+            {
+                // not fading, new map & no current gameplay LUT -> fade to the new map with the new fadetime
+
+                FadeFromTo( *msEnvironmentLUTs.begin(), asEnvironmentLUT, afFadeTime );
+            }
+
+            msEnvironmentLUTs.push_front( asEnvironmentLUT );
+            msEnvironmentLUTFadeTimes.push_front( afFadeTime );
+        }
+    }
+    else
+    {
+        // a crossfade is in progress. Queue ours, when fade is finished it will re-fade
+
+        msEnvironmentLUTs.push_front( asEnvironmentLUT );
+        msEnvironmentLUTFadeTimes.push_front( afFadeTime );
+    }
+}
+
+void cLuxEffect_ColorGrading::FadeFromTo( tString asFromTexture, tString asToTexture, float afFadeTime )
+{
+    if ( !mbIsFadingUp )
+    {
+        cPostEffectParams_ColorGrading colorGradingParams;
+	    colorGradingParams.msTextureFile1 = asFromTexture;
+	    colorGradingParams.msTextureFile2 = asToTexture;
+        colorGradingParams.mfCrossFadeAlpha = 0.0f;
+        colorGradingParams.mbIsReinitialisation = false;
+
+        gpBase->mpMapHandler->GetPostEffect_ColorGrading()->SetParams( &colorGradingParams );
+    }
+    else
+    {
+        cPostEffectParams_ColorGrading colorGradingParams;
+	    colorGradingParams.msTextureFile1 = asToTexture;
+	    colorGradingParams.msTextureFile2 = asFromTexture;
+        colorGradingParams.mfCrossFadeAlpha = 1.0f;
+        colorGradingParams.mbIsReinitialisation = false;
+
+        gpBase->mpMapHandler->GetPostEffect_ColorGrading()->SetParams( &colorGradingParams );
+    }
+
+    msFadeTargetLUT = asToTexture;
+    mbIsFadingUp = !mbIsFadingUp;
+    mbIsCrossFading = true;
+    mfFadeSpeed = 1.0f / afFadeTime;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxEffect_ColorGrading::LeaveLUTEnvironment(tString asEnvironmentLUT)
+{
+    tStringListIt second = msEnvironmentLUTs.begin();
+    if ( msEnvironmentLUTs.size() > 1 ) second++;
+
+    if ( mbIsCrossFading 
+       || msGameplayLUT != ""
+       || asEnvironmentLUT != *msEnvironmentLUTs.begin()
+       || ( msEnvironmentLUTs.size() > 1 && *second == asEnvironmentLUT )
+       )
+    {
+        tFloatListIt fadeTimeIt = msEnvironmentLUTFadeTimes.begin();
+
+        // just remove the first occurrence of this map
+        for(tStringListIt it = msEnvironmentLUTs.begin(); it != msEnvironmentLUTs.end(); ++it)
+        {
+            if ( *it == asEnvironmentLUT )
+            {
+                msEnvironmentLUTs.erase( it );
+                msEnvironmentLUTFadeTimes.erase( fadeTimeIt );
+                break;
+            }
+            fadeTimeIt++;
+        }
+    }
+    else
+    {
+        // this means we're the first map, the second is different and we don't have a gameplay map. Start a fade to the second environment map before removing
+    
+        FadeFromTo( asEnvironmentLUT, *second, *msEnvironmentLUTFadeTimes.begin() );
+
+        msEnvironmentLUTs.erase( msEnvironmentLUTs.begin() );
+        msEnvironmentLUTFadeTimes.erase( msEnvironmentLUTFadeTimes.begin() );
+    }
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxEffect_ColorGrading::FadeGameplayLUTTo(tString asEnvironmentLUT, float afFadeTime)
+{
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxEffect_ColorGrading::FadeOutGameplayLUT(float afFadeTime)
+{
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxEffect_ColorGrading::Update(float afTimeStep)
+{
+    bool bJustFinishedCrossFading = false;
+
+    if ( mbIsCrossFading )
+    {
+        if ( mbIsFadingUp )
+        {
+            mfCrossFadeAlpha += afTimeStep * mfFadeSpeed;
+            if ( mfCrossFadeAlpha >= 1.0f )
+            {
+                mfCrossFadeAlpha = 1.0f;
+                mbIsCrossFading = false;
+                bJustFinishedCrossFading = true;
+            }
+        }
+        else
+        {
+            mfCrossFadeAlpha -= afTimeStep * mfFadeSpeed;
+            if ( mfCrossFadeAlpha <= 0.0f )
+            {
+                mfCrossFadeAlpha = 0.0f;
+                mbIsCrossFading = false;
+                bJustFinishedCrossFading = true;
+            }
+        }
+
+        ((cPostEffect_ColorGrading*)gpBase->mpMapHandler->GetPostEffect_ColorGrading())->SetCrossFadeAlpha( mfCrossFadeAlpha );
+    }
+
+    if ( bJustFinishedCrossFading )
+    {
+        // check if the final state of the crossfade is the current state we want, if not, crossfade.
+        tString sDesiredLUT = "";
+        float fDesiredFadeTime = 1.0f;
+
+        if ( msGameplayLUT != "" )
+        {
+            sDesiredLUT = msGameplayLUT;
+            fDesiredFadeTime = mfGameplayFadeTime;
+        }
+        else
+        {
+            sDesiredLUT = *msEnvironmentLUTs.begin();
+            fDesiredFadeTime = *msEnvironmentLUTFadeTimes.begin();
+        }
+
+        if ( sDesiredLUT != msFadeTargetLUT )
+        {
+            FadeFromTo(msFadeTargetLUT,sDesiredLUT,fDesiredFadeTime);
+        }
+    }
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxEffect_ColorGrading::Reset()
+{
+}
 
 //////////////////////////////////////////////////////////////////////////
 // SCREEN SHAKE
@@ -608,13 +1096,19 @@ cLuxEffect_ImageTrail::cLuxEffect_ImageTrail()
 {
 	mfAmount =0;
 	mfAmountGoal =0;
+
+	SetActive(true);
+
+	mfValueAtInfectionLevelOne = gpBase->mpGameCfg->GetFloat("Infection_ExtraEffects","ImageTrailLevelOne",0);
+	mfValueAtInfectionLevelTwo = gpBase->mpGameCfg->GetFloat("Infection_ExtraEffects","ImageTrailLevelTwo",0);
+	mfValueAtInfectionLevelThree = gpBase->mpGameCfg->GetFloat("Infection_ExtraEffects","ImageTrailLevelThree",0);
+	mfValueAtInfectionLevelFour = gpBase->mpGameCfg->GetFloat("Infection_ExtraEffects","ImageTrailLevelFour",0);
 }
 
 void cLuxEffect_ImageTrail::FadeTo(float afAmount, float afSpeed)
 {
 	mfAmountGoal = afAmount;
 	mfFadeSpeed = afSpeed;
-	SetActive(true);
 	gpBase->mpMapHandler->GetPostEffect_ImageTrail()->SetActive(true);
 }
 
@@ -626,7 +1120,7 @@ void cLuxEffect_ImageTrail::Update(float afTimeStep)
 		if(mfAmount <= mfAmountGoal)
 		{
 			mfAmount = 	mfAmountGoal;
-			SetActive(false);
+			//SetActive(false);
 		}
 	}
 	else
@@ -635,15 +1129,28 @@ void cLuxEffect_ImageTrail::Update(float afTimeStep)
 		if(mfAmount >= mfAmountGoal)
 		{
 			mfAmount = mfAmountGoal;
-			SetActive(false);
+			//SetActive(false);
 		}
+	}
+
+	float finalAmount = mfAmount;
+	float amountForCurrentInfection = GetAmountForCurrentInfection();
+
+	if ( finalAmount < amountForCurrentInfection )
+	{
+		finalAmount = amountForCurrentInfection;
+	}
+	
+	if ( finalAmount > 0 && !gpBase->mpMapHandler->GetPostEffect_ImageTrail()->IsActive() )
+	{
+		gpBase->mpMapHandler->GetPostEffect_ImageTrail()->SetActive(true);
 	}
 	
 	cPostEffectParams_ImageTrail imageTrailParams;
-	imageTrailParams.mfAmount = mfAmount;
+	imageTrailParams.mfAmount = finalAmount;
 	gpBase->mpMapHandler->GetPostEffect_ImageTrail()->SetParams(&imageTrailParams);
 	
-	if(mfAmount <=0)
+	if(finalAmount <=0)
 	{
 		gpBase->mpMapHandler->GetPostEffect_ImageTrail()->SetActive(false);
 	}
@@ -679,19 +1186,19 @@ cLuxEffect_Fade::~cLuxEffect_Fade()
 
 //-----------------------------------------------------------------------
 
-void cLuxEffect_Fade::FadeIn(float afTime)
+void cLuxEffect_Fade::FadeIn(float afTime, float afGoalAlpha)
 {
-	mfGoalAlpha = 0;
-	if(afTime <= 0) mfAlpha = 0;
+	mfGoalAlpha = afGoalAlpha;
+	if(afTime <= 0) mfAlpha = mfGoalAlpha;
 	else			mfFadeSpeed = 1 / afTime;
 
 	SetActive(true);
 }
 
-void cLuxEffect_Fade::FadeOut(float afTime)
+void cLuxEffect_Fade::FadeOut(float afTime, float afGoalAlpha)
 {
-	mfGoalAlpha = 1;
-	if(afTime <= 0) mfAlpha = 1;
+	mfGoalAlpha = afGoalAlpha;
+	if(afTime <= 0) mfAlpha = afGoalAlpha;
 	else			mfFadeSpeed = 1 / afTime;
 
 	SetActive(true);
@@ -712,31 +1219,32 @@ void cLuxEffect_Fade::SetDirectAlpha(float afX)
 
 bool cLuxEffect_Fade::IsFading()
 {
-	if(mfGoalAlpha==0 && mfAlpha>0) return true;
-	if(mfGoalAlpha==1 && mfAlpha<1) return true;
-
-	return false;
+	return mfGoalAlpha != mfAlpha;
 }
 
 //-----------------------------------------------------------------------
 
 void cLuxEffect_Fade::Update(float afTimeStep)
 {
-	if(mfGoalAlpha==0 && mfAlpha > 0)
+	if ( mfAlpha > mfGoalAlpha )
 	{
 		mfAlpha -= afTimeStep * mfFadeSpeed;
-		if(mfAlpha <0)
+		if(mfAlpha < mfGoalAlpha)
 		{
-			mfAlpha =0;
-			SetActive(false);
+			mfAlpha = mfGoalAlpha;
+
+			if ( mfGoalAlpha == 0 )
+			{
+				SetActive(false);
+			}
 		}
 	}
-	else if(mfGoalAlpha==1 && mfAlpha < 1)
+	else if( mfAlpha < mfGoalAlpha )
 	{
 		mfAlpha += afTimeStep * mfFadeSpeed;
-		if(mfAlpha >1)
+		if(mfAlpha > mfGoalAlpha)
 		{
-			mfAlpha =1;
+			mfAlpha = mfGoalAlpha;
 		}
 	}
 }
@@ -766,8 +1274,8 @@ void cLuxEffect_Fade::Reset()
 //////////////////////////////////////////////////////////////////////////
 
 //-----------------------------------------------------------------------
-
-cLuxEffect_SanityGainFlash::cLuxEffect_SanityGainFlash()
+/*
+cLuxEffect_InfectionHealFlash::cLuxEffect_InfectionHealFlash()
 {
 	mpWhiteGfx = gpBase->mpEngine->GetGui()->CreateGfxFilledRect(cColor(1,1), eGuiMaterial_Additive);
 
@@ -778,21 +1286,21 @@ cLuxEffect_SanityGainFlash::cLuxEffect_SanityGainFlash()
 
 	Reset();
 }
-cLuxEffect_SanityGainFlash::~cLuxEffect_SanityGainFlash()
+cLuxEffect_InfectionHealFlash::~cLuxEffect_InfectionHealFlash()
 {
 
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxEffect_SanityGainFlash::Reset()
+void cLuxEffect_InfectionHealFlash::Reset()
 {
 	mfAlpha =0;
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxEffect_SanityGainFlash::Start()
+void cLuxEffect_InfectionHealFlash::Start()
 {
 	if(msSound != "")
 		gpBase->mpHelpFuncs->PlayGuiSoundData(msSound, eSoundEntryType_Gui);
@@ -810,7 +1318,7 @@ void cLuxEffect_SanityGainFlash::Start()
 
 //-----------------------------------------------------------------------
 
-void cLuxEffect_SanityGainFlash::Update(float afTimeStep)
+void cLuxEffect_InfectionHealFlash::Update(float afTimeStep)
 {
 	if(mlStep ==0)
 	{
@@ -843,18 +1351,18 @@ void cLuxEffect_SanityGainFlash::Update(float afTimeStep)
 
 //-----------------------------------------------------------------------
 
-void cLuxEffect_SanityGainFlash::OnDraw(float afFrameTime)
+void cLuxEffect_InfectionHealFlash::OnDraw(float afFrameTime)
 {
 	DrawFlash(gpBase->mpGameHudSet, afFrameTime);
 }	
 
 //-----------------------------------------------------------------------
 
-void cLuxEffect_SanityGainFlash::DrawFlash(cGuiSet *apSet ,float afTimeStep)
+void cLuxEffect_InfectionHealFlash::DrawFlash(cGuiSet *apSet ,float afTimeStep)
 {
 	apSet->DrawGfx(mpWhiteGfx,gpBase->mvHudVirtualStartPos+cVector3f(0,0,3.2f),gpBase->mvHudVirtualSize,mColor*mfAlpha);
 }
-
+*/
 //-----------------------------------------------------------------------
 
 //////////////////////////////////////////////////////////////////////////
@@ -866,7 +1374,6 @@ void cLuxEffect_SanityGainFlash::DrawFlash(cGuiSet *apSet ,float afTimeStep)
 cLuxEffect_Flash::cLuxEffect_Flash()
 {
 	mpWhiteGfx = gpBase->mpEngine->GetGui()->CreateGfxFilledRect(cColor(1,1), eGuiMaterial_Additive);
-	Reset();
 }
 cLuxEffect_Flash::~cLuxEffect_Flash()
 {
@@ -987,7 +1494,34 @@ void cLuxEffect_PlayVoice::StopVoices(float afFadeOutSpeed)
 
 void cLuxEffect_PlayVoice::AddVoice(const tString& asVoiceFile, const tString& asEffectFile,
 									const tString& asTextCat, const tString& asTextEntry, bool abUsePostion, 
-									const cVector3f& avPosition, float afMinDistance, float afMaxDistance)
+									const cVector3f& avPosition, float afMinDistance, float afMaxDistance, int alPriority, bool abRemoveInterrupted)
+{
+	AddMultiSubbedVoice(
+		asVoiceFile, asEffectFile, asTextCat,
+		asTextEntry, 0.0f,
+		"", 0.0f,
+		"", 0.0f,
+		"", 0.0f,
+		"", 0.0f,
+		"", 0.0f,
+		"", 0.0f,
+		abUsePostion, avPosition, afMinDistance, afMaxDistance, alPriority, abRemoveInterrupted );
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxEffect_PlayVoice::AddMultiSubbedVoice(
+	const tString& asVoiceFile, const tString& asEffectFile, const tString& asTextCat,
+	const tString& asTextEntry, float afTextDelay,
+	const tString& asText2Entry, float afText2Delay,
+	const tString& asText3Entry, float afText3Delay,
+	const tString& asText4Entry, float afText4Delay,
+	const tString& asText5Entry, float afText5Delay,
+	const tString& asText6Entry, float afText6Delay,
+	const tString& asText7Entry, float afText7Delay,
+	bool abUsePostion, 
+	const cVector3f& avPosition, float afMinDistance, float afMaxDistance, int alPriority, bool abRemoveInterrupted
+	)
 {
 	cLuxVoiceData voiceData;
 
@@ -995,16 +1529,134 @@ void cLuxEffect_PlayVoice::AddVoice(const tString& asVoiceFile, const tString& a
 	
     voiceData.msVoiceFile = asVoiceFile;
 	voiceData.msEffectFile = asEffectFile;
+	
 	if(asTextCat != "" && asTextEntry != "")
+	{
 		voiceData.msText = kTranslate(asTextCat, asTextEntry);
+		voiceData.mfTextDelay = afTextDelay;
+	}
 	else
+	{
 		voiceData.msText = _W("");
+		voiceData.mfTextDelay = 0.0f;
+	}
+
+	if(asTextCat != "" && asText2Entry != "")
+	{
+		voiceData.msText2 = kTranslate(asTextCat, asText2Entry);
+		voiceData.mfText2Delay = afText2Delay;
+	}
+	else
+	{
+		voiceData.msText2 = _W("");
+		voiceData.mfText2Delay = 0.0f;
+	}
+
+	if(asTextCat != "" && asText3Entry != "")
+	{
+		voiceData.msText3 = kTranslate(asTextCat, asText3Entry);
+		voiceData.mfText3Delay = afText3Delay;
+	}
+	else
+	{
+		voiceData.msText3 = _W("");
+		voiceData.mfText3Delay = 0.0f;
+	}
+
+	if(asTextCat != "" && asText4Entry != "")
+	{
+		voiceData.msText4 = kTranslate(asTextCat, asText4Entry);
+		voiceData.mfText4Delay = afText4Delay;
+	}
+	else
+	{
+		voiceData.msText4 = _W("");
+		voiceData.mfText4Delay = 0.0f;
+	}
+
+	if(asTextCat != "" && asText5Entry != "")
+	{
+		voiceData.msText5 = kTranslate(asTextCat, asText5Entry);
+		voiceData.mfText5Delay = afText5Delay;
+	}
+	else
+	{
+		voiceData.msText5 = _W("");
+		voiceData.mfText5Delay = 0.0f;
+	}
+
+	if(asTextCat != "" && asText6Entry != "")
+	{
+		voiceData.msText6 = kTranslate(asTextCat, asText6Entry);
+		voiceData.mfText6Delay = afText6Delay;
+	}
+	else
+	{
+		voiceData.msText6 = _W("");
+		voiceData.mfText6Delay = 0.0f;
+	}
+
+	if(asTextCat != "" && asText7Entry != "")
+	{
+		voiceData.msText7 = kTranslate(asTextCat, asText7Entry);
+		voiceData.mfText7Delay = afText7Delay;
+	}
+	else
+	{
+		voiceData.msText7 = _W("");
+		voiceData.mfText7Delay = 0.0f;
+	}
+
 	voiceData.mbUsePosition = abUsePostion;
 	voiceData.mvPosition = avPosition;
 	voiceData.mfMinDistance = afMinDistance;
 	voiceData.mfMaxDistance = afMaxDistance;
+	voiceData.mlPriority = alPriority;
+	voiceData.mfCurrentTime = 0;
+	voiceData.mfInterruptedAt = -1;
 
-	mlstVoices.push_back(voiceData);
+	if(mbActive && mlstVoices.empty() == false)
+	{
+		cLuxVoiceData& currentVoiceData = mlstVoices.front();
+
+		if(currentVoiceData.mlPriority <= alPriority)
+		{
+			/////////////////
+			// Replace the current voice
+			if(mpSoundHandler->IsValid(mpVoiceEntry,mlVoiceEntryID))
+			{
+				mpVoiceEntry->FadeOut(0.5f);
+				currentVoiceData.mfCurrentTime = mpVoiceEntry->GetChannel()->GetElapsedTime();
+				voiceData.mfInterruptedAt = gpBase->mpEngine->GetGameTime();
+			}
+			
+			mpVoiceEntry = NULL;
+
+			if(mpSoundHandler->IsValid(mpEffectEntry,mlEffectEntryID)) mpEffectEntry->FadeOut(0.5f);
+			mpEffectEntry = NULL;
+			
+			/////////////
+			// Remove the old one and place this first
+			if(abRemoveInterrupted)
+			{
+				mlstVoices.pop_front();
+			}
+
+			mlstVoices.push_front(voiceData);
+		}
+		else
+		{
+			/////////////
+		// Add to the back
+			mlstVoices.push_back(voiceData);
+		}
+	}
+	else
+	{
+		/////////////
+		// Add to the back
+		mlstVoices.push_back(voiceData);
+	}
 
 	mbActive = true;
 }
@@ -1053,11 +1705,27 @@ void cLuxEffect_PlayVoice::UnpauseCurrentVoices()
 
 //-----------------------------------------------------------------------
 
+static bool SortVoiceData(const cLuxVoiceData& aLhs, const cLuxVoiceData& aRhs)
+{
+	return aLhs.mlPriority > aRhs.mlPriority;
+}
 
 void cLuxEffect_PlayVoice::Update(float afTimeStep)
 {
 	//do not want to have like this, because then loading save when playing last voice + callback will not work and callback will not be called.
 	//if(mpVoiceEntry==NULL && mpEffectEntry==NULL && mlstVoices.empty()) return; 
+
+	for(size_t i=0; i<mvTextEntryQueue.size(); ++i)
+	{
+		mvTextEntryQueue[i].mfDelay -= afTimeStep;
+	}
+
+	while ( !mvTextEntryQueue.empty() && mvTextEntryQueue.front().mfDelay <= 0.0f )
+	{
+		mvCurrentTextRows.clear();
+		gpBase->mpDefaultFont->GetWordWrapRows(mfRowWidth,mvFontSize.y+2,mvFontSize, mvTextEntryQueue.front().msTextEntry, &mvCurrentTextRows);
+		mvTextEntryQueue.pop_front();
+	}
 
 	if(mfVolumeMul <1.0f)
 	{
@@ -1088,19 +1756,40 @@ void cLuxEffect_PlayVoice::Update(float afTimeStep)
 		return;
 	}
 
+	////////////
+	// Sort the priorities
+	mlstVoices.sort(SortVoiceData);
+
     cLuxVoiceData& voiceData = mlstVoices.front();
 	
+	double fStartTime = voiceData.mfCurrentTime;
+
+	if(voiceData.mfInterruptedAt != -1.0)
+	{
+		////////////////
+		// Add the elapsed time since interrupting it
+		fStartTime += gpBase->mpEngine->GetGameTime() - voiceData.mfInterruptedAt;
+	}
+
 	//////////////////////
 	//GUI sound
-	if(voiceData.mbUsePosition==false)
+	if(voiceData.mbUsePosition==false)	
 	{
 		mpVoiceEntry = mpSoundHandler->PlayGuiStream(voiceData.msVoiceFile,false, 1.0f);
-		if(mpVoiceEntry) mlVoiceEntryID = mpVoiceEntry->GetId();
-		
+		if(mpVoiceEntry)
+		{
+			mlVoiceEntryID = mpVoiceEntry->GetId();
+			mpVoiceEntry->GetSoundChannel()->SetElapsedTime(fStartTime);
+		}
+
 		if(voiceData.msEffectFile!="")
 		{
 			mpEffectEntry = mpSoundHandler->PlayGuiStream(voiceData.msEffectFile,false, 1.0f);
-			if(mpEffectEntry) mlEffectEntryID = mpEffectEntry->GetId();
+			if(mpEffectEntry) 
+			{
+				mlEffectEntryID = mpEffectEntry->GetId();
+				mpEffectEntry->GetSoundChannel()->SetElapsedTime(fStartTime);
+			}
 		}
 	}
 	//////////////////////
@@ -1109,21 +1798,91 @@ void cLuxEffect_PlayVoice::Update(float afTimeStep)
 	{
 		mpVoiceEntry = mpSoundHandler->Play(voiceData.msVoiceFile,false, 1.0f, voiceData.mvPosition,voiceData.mfMinDistance, voiceData.mfMaxDistance,
 											eSoundEntryType_Gui,false,true,0, true);
-		if(mpVoiceEntry) mlVoiceEntryID = mpVoiceEntry->GetId();
+		if(mpVoiceEntry)
+		{
+			mlVoiceEntryID = mpVoiceEntry->GetId();
+			mpVoiceEntry->GetSoundChannel()->SetElapsedTime(fStartTime);
+		}
 		
 		if(voiceData.msEffectFile!="")
 		{
 			mpEffectEntry = mpSoundHandler->Play(	voiceData.msEffectFile,false, 1.0f, voiceData.mvPosition,voiceData.mfMinDistance, voiceData.mfMaxDistance,
 													eSoundEntryType_Gui,false,true,0, true);
-			if(mpEffectEntry) mlEffectEntryID = mpEffectEntry->GetId();
+			if(mpEffectEntry) 
+			{
+				mlEffectEntryID = mpEffectEntry->GetId();
+				mpEffectEntry->GetSoundChannel()->SetElapsedTime(fStartTime);
+			}
 		}
 	}
 
 	//////////////////////
 	//Text
 	mvCurrentTextRows.clear();
+	mvTextEntryQueue.clear();
+
 	if(voiceData.msText != _W(""))
-		gpBase->mpDefaultFont->GetWordWrapRows(mfRowWidth,mvFontSize.y+2,mvFontSize, voiceData.msText, &mvCurrentTextRows);
+	{
+		if ( voiceData.mfTextDelay <= 0.0f )
+		{
+			gpBase->mpDefaultFont->GetWordWrapRows(mfRowWidth,mvFontSize.y+2,mvFontSize, voiceData.msText, &mvCurrentTextRows);
+		}
+		else
+		{
+			cTextQueueEntry entry;
+			entry.mfDelay = voiceData.mfTextDelay;
+			entry.msTextEntry = voiceData.msText;
+			mvTextEntryQueue.push_back( entry );
+		}
+	}
+
+	if(voiceData.msText2 != _W(""))
+	{
+		cTextQueueEntry entry;
+		entry.mfDelay = voiceData.mfText2Delay;
+		entry.msTextEntry = voiceData.msText2;
+		mvTextEntryQueue.push_back( entry );
+	}
+
+	if(voiceData.msText3 != _W(""))
+	{
+		cTextQueueEntry entry;
+		entry.mfDelay = voiceData.mfText3Delay;
+		entry.msTextEntry = voiceData.msText3;
+		mvTextEntryQueue.push_back( entry );
+	}
+
+	if(voiceData.msText4 != _W(""))
+	{
+		cTextQueueEntry entry;
+		entry.mfDelay = voiceData.mfText4Delay;
+		entry.msTextEntry = voiceData.msText4;
+		mvTextEntryQueue.push_back( entry );
+	}
+
+	if(voiceData.msText5 != _W(""))
+	{
+		cTextQueueEntry entry;
+		entry.mfDelay = voiceData.mfText5Delay;
+		entry.msTextEntry = voiceData.msText5;
+		mvTextEntryQueue.push_back( entry );
+	}
+
+	if(voiceData.msText6 != _W(""))
+	{
+		cTextQueueEntry entry;
+		entry.mfDelay = voiceData.mfText6Delay;
+		entry.msTextEntry = voiceData.msText6;
+		mvTextEntryQueue.push_back( entry );
+	}
+
+	if(voiceData.msText7 != _W(""))
+	{
+		cTextQueueEntry entry;
+		entry.mfDelay = voiceData.mfText7Delay;
+		entry.msTextEntry = voiceData.msText7;
+		mvTextEntryQueue.push_back( entry );
+	}
 
 	//////////////////////
 	//Pop!
@@ -1235,7 +1994,10 @@ void cLuxEffectHandler::Reset()
 	{
 		iLuxEffect *pEffect = mvEffects[i];
 		pEffect->Reset();
-		pEffect->SetActive(false);
+		if ( ! pEffect->IsAlwaysOn() )
+		{
+			pEffect->SetActive(false);
+		}
 	}
 
 	/////////////////////////
@@ -1275,7 +2037,7 @@ void cLuxEffectHandler::OnMapLeave(cLuxMap *apMap)
 	// Reset some effects on map leave
 	mpSepiaColor->FadeTo(0, 1);
 	mpRadialBlur->FadeTo(0, 1);
-	if(mpPlayCommentary->IsActive()) mpPlayCommentary->Stop();
+    if(mpPlayCommentary->IsActive()) mpPlayCommentary->Stop();
 }
 
 //-----------------------------------------------------------------------

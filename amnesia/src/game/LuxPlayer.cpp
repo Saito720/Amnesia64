@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxPlayer.h"
@@ -60,14 +60,12 @@ cLuxPlayer::cLuxPlayer() : iLuxUpdateable("LuxPlayer"), iLuxCollideCallbackConta
 	//////////////////////////////////
 	// Init data pointers
 	mpCharBody = NULL;
-	mpTerrorSound = NULL;
+
+    mbUsesDragFootsteps = false;
 
 	//////////////////////////////////
 	// Create and setup camera
 	mpCamera = gpBase->mpEngine->GetScene()->CreateCamera(eCameraMoveMode_Walk);
-
-	mbFreeCameraActive = false;
-	mfFreeCameraSpeed = 0.1f;
 
 	//TODO: More setup?
 	cVector2f vScreenSize = gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeFloat();
@@ -94,6 +92,8 @@ cLuxPlayer::cLuxPlayer() : iLuxUpdateable("LuxPlayer"), iLuxCollideCallbackConta
 
 	mfAutoKillYPos = gpBase->mpGameCfg->GetFloat("Player_General","AutoKillYPos",0);
 
+	msHeadSpinHitSound = gpBase->mpGameCfg->GetString("Player_General","HeadSpinHitSound","");
+
 	//////////////////////////////////
 	// Init body properties
 	mvBodySize = gpBase->mpGameCfg->GetVector3f("Player_Body","Size",0);
@@ -103,11 +103,22 @@ cLuxPlayer::cLuxPlayer() : iLuxUpdateable("LuxPlayer"), iLuxCollideCallbackConta
 
 	mfDefaultMass = gpBase->mpGameCfg->GetFloat("Player_Body","Mass",0);
 
+	miNumberOfInfectionLevels = gpBase->mpGameCfg->GetFloat("Player_Infection","NumberOfInfectionLevels",0);
 
+	mfInfectionLevelOneSpeedMul = gpBase->mpGameCfg->GetFloat("Player_Infection","InfectionLevelOneSpeedMultiplier",0);
+	mfInfectionLevelTwoSpeedMul = gpBase->mpGameCfg->GetFloat("Player_Infection","InfectionLevelTwoSpeedMultiplier",0);
+	mfInfectionLevelThreeSpeedMul = gpBase->mpGameCfg->GetFloat("Player_Infection","InfectionLevelThreeSpeedMultiplier",0);
+	mfInfectionLevelFourSpeedMul = gpBase->mpGameCfg->GetFloat("Player_Infection","InfectionLevelFourSpeedMultiplier",0);
+
+	mnMaxInfectionLevelAtWhichPlayerCanRun = gpBase->mpGameCfg->GetInt("Player_Infection","MaxInfectionLevelAtWhichPlayerCanRun",0);
 	//////////////////////////////////
 	// Init some other variables
 	mbUsePermaDeath = gpBase->mbPTestActivated;
-	
+
+	mbRandomEscapeFail = true;
+	mlRandomEscapeFailCount = 0;
+	mbBeingChased = false;
+
 	//////////////////////////////////
 	// Create states
 	mvStates.resize(eLuxPlayerState_LastEnum);
@@ -147,8 +158,11 @@ cLuxPlayer::cLuxPlayer() : iLuxUpdateable("LuxPlayer"), iLuxCollideCallbackConta
 	mpHelperLightLevel = hplNew( cLuxPlayerLightLevel, (this) );
 	mvHelpers.push_back(mpHelperLightLevel);
 
-	mpHelperInDarkness = hplNew( cLuxPlayerInDarkness, (this) );
-	mvHelpers.push_back(mpHelperInDarkness);
+	//mpHelperInDarkness = hplNew( cLuxPlayerInDarkness, (this) );
+	//mvHelpers.push_back(mpHelperInDarkness);
+
+    mpHelperIsMoving = hplNew( cLuxPlayerIsMoving, (this) );
+	mvHelpers.push_back(mpHelperIsMoving);
 
 	mpLean = hplNew( cLuxPlayerLean, (this) );
 	mvHelpers.push_back(mpLean);
@@ -162,8 +176,8 @@ cLuxPlayer::cLuxPlayer() : iLuxUpdateable("LuxPlayer"), iLuxCollideCallbackConta
 	mpLantern = hplNew( cLuxPlayerLantern, (this) );
 	mvHelpers.push_back(mpLantern);
 
-	mpSanity = hplNew( cLuxPlayerSanity, (this) );
-	mvHelpers.push_back(mpSanity);
+	mpInfection = hplNew( cLuxPlayerInfection, (this) );
+	mvHelpers.push_back(mpInfection);
 
 	mpLookAt = hplNew( cLuxPlayerLookAt, (this) );
 	mvHelpers.push_back(mpLookAt);
@@ -180,8 +194,17 @@ cLuxPlayer::cLuxPlayer() : iLuxUpdateable("LuxPlayer"), iLuxCollideCallbackConta
 	mpCamDirEffects = hplNew( cLuxPlayerCamDirEffects, (this));
 	mvHelpers.push_back(mpCamDirEffects);
 
-	mpInsanityCollapse = hplNew( cLuxPlayerInsanityCollapse, (this));
-	mvHelpers.push_back(mpInsanityCollapse);
+	mpInfectionCollapse = hplNew( cLuxPlayerInfectionCollapse, (this));
+	mvHelpers.push_back(mpInfectionCollapse);
+
+	mpPlayerStamina = hplNew( cLuxPlayerStamina, (this));
+	mvHelpers.push_back(mpPlayerStamina);
+
+	mpVoiceFlashback = hplNew( cLuxPlayerVoiceFlashback, (this));
+	mvHelpers.push_back(mpVoiceFlashback);
+
+	mfVomitEffectDuration = gpBase->mpGameCfg->GetInt("Player_Infection","VomitEffectDuration",1.0);
+	mfTimeSinceLastVomit = mfVomitEffectDuration + 10.0f;
 }
 
 //-----------------------------------------------------------------------
@@ -231,7 +254,6 @@ void cLuxPlayer::Reset()
 
 	mbJumpDisabled = false;
 	mbCrouchDisabled = false;
-	mbSanityDrainDisabled = false;
 
 	mbIsInWater = false;
 	msWaterStepSound = "";
@@ -252,9 +274,9 @@ void cLuxPlayer::Reset()
 
 	mfHurtMoveSpeedMul = 1.0f;
 
-	mfInsanityCollapseSpeedMul = 1.0f;
-
-	mfScriptJumpForceMul = 1.0f;
+	mfInfectionCollapseSpeedMul = 1.0f;
+	
+	mfStaminaSpeedMul = 1.0f;
 
 	mfCurrentFocusDistance = 0;
 	mpEntityInFocus = NULL;
@@ -265,8 +287,7 @@ void cLuxPlayer::Reset()
 	msCurrentPermaDeathSound = "";
 
 	mfHealth = 100;
-	mfSanity = 100;
-	mfLampOil = 100;
+	mfInfection = 0;
 	mlTinderboxes =0;
 
 	mvHeadPosAddSum =0;
@@ -277,6 +298,10 @@ void cLuxPlayer::Reset()
 
 	mfAvgSpeed =0;
 	mlstPrevSpeeds.clear();
+
+	mlstPrevMoveDirs.clear();
+	mvAvgMoveDir2D = cVector3f(0,0,1);
+	mfAddMoveDirCount=100;
 
 	msFocusText = _W("");
 	msLastFocusText = _W("");
@@ -297,6 +322,11 @@ void cLuxPlayer::Reset()
 	mfRollGoal=0;
 	mfRollSpeedMul=0;
 	mfRollMaxSpeed=0;
+
+    mbFadingPitch = false;
+    mfPitchGoal=0;
+	mfPitchSpeedMul=0;
+	mfPitchMaxSpeed=0;
 
 	mfLeanRoll=0;
 	mfLeanRollGoal=0;
@@ -330,14 +360,11 @@ void cLuxPlayer::Reset()
 	mpCamera->SetFOV(mfFOV*mfFOVMul);
 	mpCamera->SetAspect(mfAspect*mfAspectMul);
 
-	///////////////
-	// Free camera
-	mbFreeCameraActive = false;
-	mfFreeCameraSpeed = 0.1f;
-
 	////////////////////////
 	// Reset Helpers
 	RunHelperMessage(eUpdateableMessage_Reset,0);
+
+    mbUsesDragFootsteps = false;
 }
 
 //-----------------------------------------------------------------------
@@ -351,6 +378,8 @@ void cLuxPlayer::OnStart()
 
 void cLuxPlayer::Update(float afTimeStep)
 {
+	mfTimeSinceLastVomit += afTimeStep;
+
 	////////////////////////
 	// Update current move state
 	mvMoveStates[mMoveState]->Update(afTimeStep);
@@ -386,6 +415,7 @@ void cLuxPlayer::Update(float afTimeStep)
 	UpdateTerror(afTimeStep);
 	UpdateFocusText(afTimeStep);
 	UpdateAvgSpeed(afTimeStep);
+	UpdateAvgMoveDir(afTimeStep);
 }
 
 //-----------------------------------------------------------------------
@@ -472,6 +502,9 @@ void cLuxPlayer::OnMapEnter(cLuxMap *apMap)
 	mbIsInWater = false;
 	mpEntityInFocus = NULL;
 	mpBodyInFocus = NULL;
+	mlstPrevMoveDirs.clear();
+	mvAvgMoveDir2D = cVector3f(0,0,1);
+	mfAddMoveDirCount=100;
 }
 
 //-----------------------------------------------------------------------
@@ -504,6 +537,11 @@ void cLuxPlayer::OnMapLeave(cLuxMap *apMap)
 	mfFOVMul = 1.0f;
 	mfRollGoal=0;
 	mfRoll=0;
+
+    mbFadingPitch = false;
+    mfPitchGoal=0;
+	mfPitchSpeedMul=0;
+	mfPitchMaxSpeed=0;
 
 	mfLeanRoll=0;
 	mfLeanRollGoal=0;
@@ -589,15 +627,20 @@ void cLuxPlayer::GiveDamage(float afAmount, int alStrength, eLuxDamageType aType
 
 	mfHealth -= afAmount;
 
+	if(mState==eLuxPlayerState_Ladder) ChangeState(eLuxPlayerState_Normal);
+
 	mpHudEffect->AddDamageSplash(aType);
 	mpHudEffect->Flash(cColor(0.6f,0,0, 0.5f),eGuiMaterial_Alpha,0,0.25f);
 	if(abSpinHead) SpinHead(mfHeadSpinDamageSpeed);
+
+	if(abSpinHead) 
+		gpBase->mpHelpFuncs->PlayGuiSoundData(msHeadSpinHitSound, eSoundEntryType_Gui);
 
 	if(abLethal==false && mfHealth < 10)
 	{
 		mfHealth = 10;
 	}
-
+	 
 	if(mfHealth <=0)
 	{
 		mpDeath->Start();
@@ -606,58 +649,36 @@ void cLuxPlayer::GiveDamage(float afAmount, int alStrength, eLuxDamageType aType
 
 //-----------------------------------------------------------------------
 
-void cLuxPlayer::GiveSanityDamage(float afAmount)
+void cLuxPlayer::GiveInfectionDamage(float afAmount)
 {
-	gpBase->mpHintHandler->Add("SanityHit", kTranslate("Hints", "SanityHit"), 0);
+	gpBase->mpHintHandler->Add("InfectionHit", kTranslate("Hints", "InfectionHit"), 0);
 
-	LowerSanity(afAmount, true);
+	IncreaseInfection(afAmount, true);
 
-	mpSanity->StartHit();
+	mpInfection->StartHit();
 }
 
-
-void cLuxPlayer::LowerSanity(float afAmount, bool abUseEffect)
+void cLuxPlayer::IncreaseInfection(float afAmount, bool abUseEffect)
 {
 	if(mfHealth <=0) return;
 
-	mfSanity -= afAmount;
-	if(mfSanity < 0)
+	mfInfection += afAmount;
+	if(mfInfection >= 100.0f)
 	{
-		mfSanity =0;
-
-
-		mpInsanityCollapse->Start();
-
-		//////////////////
-		// HARDMODE
-		if (gpBase->mbHardMode)
-		{
-			SetHealth(0.f);
-		}
+		mfInfection = 100.0f;
+		//mpInfectionCollapse->Start();
 	}
 
 	if(abUseEffect)
-		mpSanity->SetSanityLost();
+	{
+		mpInfection->StartInfectionIncreaseEffects();
+	}
 }
 
 //-----------------------------------------------------------------------
 
 void cLuxPlayer::Move(eCharDir aDir, float afMul)
 {	
-	if (mbFreeCameraActive)
-	{
-		if (aDir == eCharDir_Forward)
-		{
-			mpCamera->MoveForward(mfFreeCameraSpeed * afMul);
-		}
-		else if (aDir == eCharDir_Right)
-		{
-			mpCamera->MoveRight(mfFreeCameraSpeed * afMul);
-		}
-
-		return;
-	}
-
 	mbPressedMove = true;
 	if(mvStates[mState]->OnMove(aDir, afMul))
 	{
@@ -672,12 +693,6 @@ void cLuxPlayer::Move(eCharDir aDir, float afMul)
 
 void cLuxPlayer::AddYaw(float afAmount)
 {
-	if (mbFreeCameraActive)
-	{
-		mpCamera->AddYaw(mpCamDirEffects->AddAndGetPitchAdd(afAmount * 2.0f));
-		return;
-	}
-
 	afAmount = afAmount * mfLookSpeedMul;
 
 	if(mvStates[mState]->OnAddYaw(afAmount))
@@ -693,12 +708,6 @@ void cLuxPlayer::AddYaw(float afAmount)
 
 void cLuxPlayer::AddPitch(float afAmount)
 {
-	if (mbFreeCameraActive)
-	{
-		mpCamera->AddPitch(mpCamDirEffects->AddAndGetPitchAdd(afAmount * 2.0f));
-		return;
-	}
-
 	afAmount = afAmount * mfLookSpeedMul;
 
 	if(mvStates[mState]->OnAddPitch(afAmount))
@@ -712,14 +721,9 @@ void cLuxPlayer::AddPitch(float afAmount)
 
 //-----------------------------------------------------------------------
 
-void cLuxPlayer::SetLean(float afMul)
+void cLuxPlayer::Lean(float afMul)
 {
-	mpLean->SetLean(afMul);
-}
-
-void cLuxPlayer::AddLean(float afAdd)
-{
-	mpLean->AddLean(afAdd);
+	mpLean->Lean(afMul);
 }
 
 //-----------------------------------------------------------------------
@@ -758,7 +762,7 @@ void cLuxPlayer::Run(bool abPressed)
 
 void cLuxPlayer::Jump(bool abPressed)
 {
-	if(abPressed && (mbJumpDisabled || mpInsanityCollapse->IsActive()) ) return;
+	if(abPressed && (mbJumpDisabled || mpInfectionCollapse->IsActive()) ) return;
 
 	mbPressingJump = abPressed;
 	if(mvStates[mState]->OnJump(abPressed))
@@ -769,7 +773,7 @@ void cLuxPlayer::Jump(bool abPressed)
 
 void cLuxPlayer::Crouch(bool abPressed)
 {
-	if(abPressed && (mbCrouchDisabled || mpInsanityCollapse->IsActive()) ) return;
+	if(abPressed && (mbCrouchDisabled || mpInfectionCollapse->IsActive()) ) return;
 
 	if(mvStates[mState]->OnCrouch(abPressed))
 	{
@@ -866,25 +870,54 @@ void cLuxPlayer::SetHealth(float afX)
 	}
 }
 
-void cLuxPlayer::SetSanity(float afX)
+void cLuxPlayer::SetInfection(float afX, bool abShowEffect)
 {
-	mfSanity = afX;
+	mfInfection = afX;
 
-	//////////////////
-	// HARDMODE
-	if (gpBase->mbHardMode)
+	if (mfInfection < 0) mfInfection = 0;
+	
+	if ( mfInfection >= 100.0f )
 	{
-		if (mfSanity <= 0)
-		{
-			SetHealth(0.f);
-		}
+		mfInfection = 100.0f;
+		//mpInfectionCollapse->Start();
 	}
 
+    if ( abShowEffect )
+    {
+        if ( afX < 0 )
+        {
+//		    gpBase->mpEffectHandler->GetInfectionHealFlash()->Start();
+        }
+        else if ( afX > 0 )
+        {
+            mpInfection->StartInfectionIncreaseEffects();
+        }
+    }
 }
 
-void cLuxPlayer::SetLampOil(float afX)
+void cLuxPlayer::SetInfectionLevel( int aiInfectionLevel )
 {
-	mfLampOil = afX;
+	SetInfection( GetInfectionForInfectionLevel( aiInfectionLevel ) );
+}
+
+int cLuxPlayer::GetInfectionLevel()
+{
+	return GetInfectionLevelForInfection( mfInfection );
+}
+
+bool cLuxPlayer::IsAtMaxInfectionLevel()
+{
+	return GetInfectionLevel() == miNumberOfInfectionLevels;
+}
+
+int cLuxPlayer::GetInfectionLevelForInfection( float afInfection )
+{
+	return afInfection < 0.001f ? 0 : 1 + (int) ( miNumberOfInfectionLevels * ( (int) ( mfInfection - 0.001f ) ) ) / 100;
+}
+
+float cLuxPlayer::GetInfectionForInfectionLevel( int aiInfectionLevel )
+{
+	return aiInfectionLevel == 0 ? 0.0f : ( aiInfectionLevel + 0.5f ) * 100.0f / (miNumberOfInfectionLevels + 1);
 }
 
 //-----------------------------------------------------------------------
@@ -902,38 +935,38 @@ void cLuxPlayer::AddHealth(float afX)
 	}
 }
 
-void cLuxPlayer::AddSanity(float afX, bool abShowEffect)
+void cLuxPlayer::AddInfection(float afX, bool abShowEffect)
 {
-	if(mfSanity >= 100 && afX>0) return;
+	if (mfInfection <= 0 && afX<0) return;
 
-	mfSanity += afX;
-	if(mfSanity > 100) mfSanity = 100;
-	if(mfSanity < 0)
+	mfInfection += afX;
+
+	if (mfInfection < 0) mfInfection = 0;
+	
+	if ( mfInfection >= 100.0f )
 	{
-		mfSanity = 0;
-		mpInsanityCollapse->Start();
-
-		//////////////////
-		// HARDMODE
-		if (gpBase->mbHardMode)
-		{
-			SetHealth(0.f);
-		}
+		mfInfection = 100.0f;
+		//mpInfectionCollapse->Start();
 	}
 
-	if(afX >0 && abShowEffect)
+	if ( afX < 0 && abShowEffect )
 	{
-		gpBase->mpEffectHandler->GetSanityGainFlash()->Start();
+		//gpBase->mpEffectHandler->GetInfectionHealFlash()->Start();
 	}
 }
 
-void cLuxPlayer::AddLampOil(float afX)
+void cLuxPlayer::VomitDamage()
 {
-	if(mfLampOil >= 100 && afX>0) return;
+	mfTimeSinceLastVomit = 0.0f;
 
-	mfLampOil += afX;
-	if(mfLampOil > 100) mfLampOil = 100;
-	if(mfLampOil < 0) mfLampOil = 0;
+	/*if ( GetInfectionLevel() < 3 )
+	{
+		SetInfectionLevel( 3 );
+	}
+	else*/ if ( GetInfectionLevel() < 4 )
+	{
+		SetInfectionLevel( 4 );
+	}
 }
 
 //-----------------------------------------------------------------------
@@ -1022,6 +1055,23 @@ void cLuxPlayer::FadeRollTo(float afX, float afSpeedMul, float afMaxSpeed)
 	mfRollMaxSpeed = afMaxSpeed;
 }
 
+void cLuxPlayer::FadePitchTo(float afX, float afSpeedMul, float afMaxSpeed)
+{
+    float fPitchLimitMin = mpCamera->GetPitchMinLimit();
+    float fPitchLimitMax = mpCamera->GetPitchMaxLimit();
+
+    if(fPitchLimitMin!=0 || fPitchLimitMax!=0)
+	{
+		if(afX > fPitchLimitMax) afX = fPitchLimitMax;
+		if(afX < fPitchLimitMin) afX = fPitchLimitMin;
+	}
+
+	mfPitchGoal = afX;
+	mfPitchSpeedMul = afSpeedMul;
+	mfPitchMaxSpeed = afMaxSpeed;
+    mbFadingPitch = true;
+}
+
 void cLuxPlayer::FadeLeanRollTo(float afX, float afSpeedMul, float afMaxSpeed)
 {
 	mfLeanRollGoal = afX;
@@ -1035,6 +1085,30 @@ void cLuxPlayer::SetRoll(float afX)
 	mfRollGoal = afX;
 
 }
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayer::StartRandomEscapeFail()
+{
+	if(mbRandomEscapeFail && cMath::RandRectf(0, 1) < 0.33f)
+	{
+		mbRandomEscapeFail = false;
+		mlRandomEscapeFailCount = 3;
+	}
+}
+
+void cLuxPlayer::EndRandomEscapeFail()
+{
+	////////////
+	// If the player did not try to press escape let it happen again
+	if(mlRandomEscapeFailCount == 3)
+	{
+		mbRandomEscapeFail = true;
+	}
+
+	mlRandomEscapeFailCount = 0;
+}
+
 
 //-----------------------------------------------------------------------
 
@@ -1064,34 +1138,6 @@ tString cLuxPlayer::FocusIconStyleToString(eLuxFocusIconStyle aX)
 
 //-----------------------------------------------------------------------
 
-//////////////////////////////////////////////////////////////////////////
-// Free cam
-//////////////////////////////////////////////////////////////////////////
-
-//-----------------------------------------------------------------------
-
-void cLuxPlayer::SetFreeCamActive(bool abX)
-{
-	mbFreeCameraActive = abX;
-
-	if (abX)
-	{
-		mpCharBody->SetCamera(NULL);
-	}
-	else
-	{
-		mpCharBody->SetCamera(mpCamera);
-	}
-}
-
-//-----------------------------------------------------------------------
-
-void cLuxPlayer::SetFreeCamSpeed(float afSpeed)
-{
-	mfFreeCameraSpeed = afSpeed;
-}
-
-//-----------------------------------------------------------------------
 
 //////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
@@ -1151,18 +1197,18 @@ void cLuxPlayer::DrawHud(float afFrameTime)
 	if(msFocusText != _W(""))
 	{
 		tWStringVec vRows;
-		mpFocusFont->GetWordWrapRows(500, 22, 22, msFocusText,&vRows);
+		mpFocusFont->GetWordWrapRows(500, 28, 28, msFocusText,&vRows);
         
 		for(size_t i=0; i<vRows.size(); ++i)
-			gpBase->mpGameHudSet->DrawFont(vRows[i],mpFocusFont,cVector3f(400, fFocusTextY+i*24,1),22,cColor(1,mfFocusTextAlpha),	eFontAlign_Center);
+			gpBase->mpGameHudSet->DrawFont(vRows[i],mpFocusFont,cVector3f(400, fFocusTextY+i*24,1),28,cColor(1,mfFocusTextAlpha),	eFontAlign_Center);
 	}
 	else if(mfFocusTextAlpha >0)
 	{
 		tWStringVec vRows;
-		mpFocusFont->GetWordWrapRows(500, 22, 22, msLastFocusText,&vRows);
+		mpFocusFont->GetWordWrapRows(500, 28, 28, msLastFocusText,&vRows);
 
 		for(size_t i=0; i<vRows.size(); ++i)
-			gpBase->mpGameHudSet->DrawFont(vRows[i],mpFocusFont,cVector3f(400, fFocusTextY+i*24,1),22,cColor(1,mfFocusTextAlpha),	eFontAlign_Center);
+			gpBase->mpGameHudSet->DrawFont(vRows[i],mpFocusFont,cVector3f(400, fFocusTextY+i*24,1),28,cColor(1,mfFocusTextAlpha),	eFontAlign_Center);
 	}
 }
 
@@ -1236,9 +1282,6 @@ void cLuxPlayer::UpdateHeadPosAdd(float afTimeStep)
 
 void cLuxPlayer::UpdateCamera(float afTimeStep)
 {
-	if (mbFreeCameraActive) return;
-
-
 	////////////////
 	// FOV
 	if(mfFOVMul != mfFOVMulGoal)
@@ -1278,6 +1321,23 @@ void cLuxPlayer::UpdateCamera(float afTimeStep)
 		if(cMath::Abs(mfRollGoal - mfRoll) < 0.004f) mfRoll = mfRollGoal;
 
 		bUpdatedRoll = true;
+	}
+
+    ////////////////
+	// Pitch
+	if(mbFadingPitch)
+	{
+		float fSpeed = (mfPitchGoal - mpCamera->GetPitch()) * mfPitchSpeedMul;
+		if(fSpeed > mfPitchMaxSpeed) fSpeed = mfPitchMaxSpeed;
+		if(fSpeed < -mfPitchMaxSpeed) fSpeed = -mfPitchMaxSpeed;
+		
+        mpCamera->SetPitch( mpCamera->GetPitch() + afTimeStep * fSpeed );
+
+		if(cMath::Abs(mfPitchGoal - mpCamera->GetPitch()) < 0.004f)
+        {
+            mpCamera->SetPitch( mfPitchGoal );
+            mbFadingPitch = false;
+        }
 	}
 
 	////////////////
@@ -1354,6 +1414,25 @@ void cLuxPlayer::UpdateTerror(float afTimeStep)
 			mlTerrorSoundID = -1;
 		}
 	}
+
+	/////////////
+	// See if there are any nearby enemies
+	bool bBeingChased = mfTerror >= 0.95f;
+
+	if(mbBeingChased == false && bBeingChased)
+	{
+		///////////
+		// 33% chance to block escape from working
+		mbBeingChased = true;
+		StartRandomEscapeFail();
+	}
+	else if(mbBeingChased == true && bBeingChased == false)
+	{
+		//////////////
+		// Remoive the block of escape
+		mbBeingChased = false;
+		EndRandomEscapeFail();
+	}
 }
 
 //-----------------------------------------------------------------------
@@ -1376,7 +1455,7 @@ void cLuxPlayer::UpdateHeadSpin(float afTimeStep)
 	{
 		return;
 	}
-	
+
 	mpCamera->AddPitch(mvHeadSpinSpeed.y * afTimeStep);
 	mpCamera->AddYaw(mvHeadSpinSpeed.x * afTimeStep);
 	mpCharBody->SetYaw(mpCamera->GetYaw());
@@ -1427,6 +1506,37 @@ void cLuxPlayer::UpdateAvgSpeed(float afTimeStep)
 
 //-----------------------------------------------------------------------
 
+void cLuxPlayer::UpdateAvgMoveDir(float afTimeStep)
+{
+	mfAddMoveDirCount+=afTimeStep;
+	if(mfAddMoveDirCount<0.25f) return;
+	mfAddMoveDirCount =0;
+
+	///////////////////////////////
+	// Add new dir
+	mlstPrevMoveDirs.push_back(mpCharBody->GetForward());
+	if(mlstPrevMoveDirs.size()>12) mlstPrevMoveDirs.pop_front();
+
+	////////////////////////////////////
+	//Calculate the average walking direction
+	tVector3fListIt firstIt = mlstPrevMoveDirs.begin();
+	
+	mvAvgMoveDir2D =0;
+	float fTotalCount=0;
+	for(; firstIt != mlstPrevMoveDirs.end(); ++firstIt)
+	{
+		cVector3f vDir = *firstIt;
+		vDir.y=0; vDir.Normalize();
+
+		mvAvgMoveDir2D += vDir;
+		fTotalCount++;
+	}
+	mvAvgMoveDir2D = mvAvgMoveDir2D / fTotalCount;
+	mvAvgMoveDir2D.Normalize();
+}
+
+//-----------------------------------------------------------------------
+
 void cLuxPlayer::CreateCharacterBody(iPhysicsWorld *apPhysicsWorld)
 {
 	mpCharBody = apPhysicsWorld->CreateCharacterBody("Player",mvBodySize);
@@ -1463,5 +1573,50 @@ void cLuxPlayer::CreateCharacterBody(iPhysicsWorld *apPhysicsWorld)
 
 //-----------------------------------------------------------------------
 
+float cLuxPlayer::GetInfectionSpeedMul()
+{
+	switch ( GetInfectionLevel() )
+	{
+	case 1:
+		{
+			return mfInfectionLevelOneSpeedMul;
+		}
+	case 2:
+		{
+			return mfInfectionLevelTwoSpeedMul;
+		}
+	case 3:
+		{
+			return mfInfectionLevelThreeSpeedMul;
+		}
+	case 4:
+		{
+			return mfInfectionLevelFourSpeedMul;
+		}
+	
+	}
+
+	return 1.0f;
+}
+
+//-----------------------------------------------------------------------
+
+bool cLuxPlayer::CanRun()
+{
+	return GetInfectionLevel() <= mnMaxInfectionLevelAtWhichPlayerCanRun;
+}
+
+//-----------------------------------------------------------------------
+
+float cLuxPlayer::GetExhaustionFactor()
+{
+	return mpPlayerStamina ?  mpPlayerStamina->GetExhaustionFactor() : 0.0f;
+}
 
 
+//-----------------------------------------------------------------------
+
+void cLuxPlayer::ReleasePlayerFromLimbo()
+{
+	GetHelperDeath()->ReleasePlayerFromLimbo();
+}

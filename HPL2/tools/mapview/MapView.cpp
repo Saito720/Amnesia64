@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "hpl.h"
@@ -668,6 +668,7 @@ public:
 		cPostEffectParams_Bloom bloomParams;
 		gpPostEffectComp->AddPostEffect(pGraphics->CreatePostEffect(&bloomParams), 20);
 
+
 		//Image trail
 		/*cPostEffectParams_ImageTrail imageTrailParams;
 		iPostEffect *pImageTrail = pGraphics->CreatePostEffect(&imageTrailParams);
@@ -740,7 +741,6 @@ public:
 		
 		gpSimpleCamera->SetMouseMode(true);
 		gpEngine->GetInput()->GetLowLevel()->LockInput(false);
-		gpEngine->GetInput()->GetLowLevel()->RelativeMouse(false);
 	}
 
 	//--------------------------------------------------------------
@@ -1865,7 +1865,6 @@ public:
 		{
 			gpSimpleCamera->SetMouseMode(!gpSimpleCamera->GetMouseMode());
 			gpEngine->GetInput()->GetLowLevel()->LockInput(!gpSimpleCamera->GetMouseMode());
-			gpEngine->GetInput()->GetLowLevel()->RelativeMouse(!gpSimpleCamera->GetMouseMode());
 		}
 
 		//////////////////////////////////////////
@@ -1985,12 +1984,6 @@ public:
 
 #include "../LuxBasePersonal.h"
 
-#ifdef __APPLE__
-namespace hpl {
-	extern tString FindGameResources();
-}
-#endif
-
 int hplMain(const tString &asCommandline)
 {
 //To allow drag and drop:
@@ -2001,16 +1994,6 @@ int hplMain(const tString &asCommandline)
 	tString sDir = cString::GetFilePath(buffer);
 	SetCurrentDirectory(sDir.c_str());
 #endif*/
-#if __APPLE__
-	tWString sEditorDir = cPlatform::GetWorkingDir();
-	sEditorDir = cString::AddSlashAtEndW(sEditorDir);
-
-	tString gameDir = FindGameResources();
-	if (gameDir.empty())
-	{
-		exit(1);
-	}
-#endif
 
 	//iResourceBase::SetLogCreateAndDelete(true);
 	//iGpuProgram::SetLogDebugInformation(true); 
@@ -2024,17 +2007,17 @@ int hplMain(const tString &asCommandline)
 
 	tWString sPersonalDir = cString::ReplaceCharToW(cPlatform::GetSystemSpecialPath(eSystemPath_Personal), _W("\\"), _W("/"));
 #ifdef USERDIR_RESOURCES
-	tWString sUserResourceDir = sPersonalDir + PERSONAL_RELATIVEROOT PERSONAL_RELATIVEGAME_PARENT PERSONAL_RESOURCES;
+    tWString sUserResourceDir = sPersonalDir + PERSONAL_RELATIVEROOT PERSONAL_RELATIVEGAME_PARENT PERSONAL_RESOURCES;
 #endif
 
-	// Create the base personal folders
-	tWStringVec vDirs;
+    // Create the base personal folders
+    tWStringVec vDirs;
+    SetupBaseDirs(vDirs, _W("HPL2")
 #ifdef USERDIR_RESOURCES
-	SetupBaseDirs(vDirs, _W("HPL2"), _W(""),true);
-#else
-	SetupBaseDirs(vDirs, _W("HPL2"));
+                  ,true
 #endif
-	CreateBaseDirs(vDirs, sPersonalDir);
+                  );
+    CreateBaseDirs(vDirs, sPersonalDir);
 
 	SetLogFile(sPersonalDir + PERSONAL_RELATIVEROOT _W("HPL2/mapview.log"));
 
@@ -2049,7 +2032,7 @@ int hplMain(const tString &asCommandline)
 	vars.mGraphics.mbFullscreen = gpConfig->GetBool("Screen","FullScreen", false);
 	gpEngine = CreateHPLEngine(eHplAPI_OpenGL, eHplSetup_All, &vars);
 	gpEngine->SetLimitFPS(false);
-	gpEngine->GetGraphics()->GetLowLevel()->SetVsyncActive(false);
+	gpEngine->GetGraphics()->GetLowLevel()->SetVsyncActive(false, false);
 	gpEngine->SetWaitIfAppOutOfFocus(true);
 
 	gsNodeCont_Name = gpConfig->GetString("NodeCont","Name", "MapViewTest");
@@ -2074,14 +2057,11 @@ int hplMain(const tString &asCommandline)
 	}
 	
 	//Add resources
+	gpEngine->GetResources()->LoadResourceDirsFile("resources.cfg"
 #ifdef USERDIR_RESOURCES
-	gpEngine->GetResources()->LoadResourceDirsFile("resources.cfg", sUserResourceDir);
-#else
-	gpEngine->GetResources()->LoadResourceDirsFile("resources.cfg");
+                                                   ,sUserResourceDir
 #endif
-#ifdef __APPLE__
-	gpEngine->GetResources()->AddResourceDir(sEditorDir + _W("viewer/"), true);
-#endif
+                                                   );
 
 	//Add updates
 	cSimpleUpdate Update;

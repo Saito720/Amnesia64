@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "EditorWindowObjectBrowser.h"
@@ -261,22 +261,27 @@ void cEditorWindowObjectBrowser::OnInitLayout()
 	///////////////////////////////////////////////////
 	// Object Selection (sets, list..)
 	mpSelectionGroup = mpSet->CreateWidgetGroup(cVector3f(5,8,0.1f), cVector2f(190,205) , _W(""), mpBGFrame);
+	AddWidget(mpSelectionGroup);
 
 	mpObjectSets = mpSet->CreateWidgetComboBox(cVector3f(10,10,0.1f), cVector2f(170,25),_W(""), mpSelectionGroup);
 	mpObjectSets->AddCallback(eGuiMessage_SelectionChange,this, kGuiCallback(ObjectSets_OnChange));
 	mpObjectSets->SetCanEdit(false);
+	AddWidget(mpObjectSets);
 
 	mpObjectList = mpSet->CreateWidgetListBox(cVector3f(10,45,0.1f), cVector2f(170,120),mpSelectionGroup);
 	mpObjectList->SetDefaultFontSize(11);
 	mpObjectList->SetBackgroundZ(0.001f);
 	mpObjectList->AddCallback(eGuiMessage_SelectionChange, this, kGuiCallback(ObjectList_OnChangeSelection));
+	AddWidget(mpObjectList);
 
 	mpButtonRefresh = mpSet->CreateWidgetButton(cVector3f(10, 170, 0.1f), cVector2f(170, 25), _W("Refresh"), mpSelectionGroup);
 	mpButtonRefresh->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(Refresh_OnPressed));
+	AddWidget(mpButtonRefresh);
 
     ///////////////////////////////////////////////
 	// Object info: BV Size, poly count, thumbnail
 	mpInfoGroup = mpSet->CreateWidgetGroup(cVector3f(5,220,0.1f), cVector2f(190,280),_W("Object info"), mpBGFrame);
+	AddWidget(mpInfoGroup);
 
 	vPos = cVector3f(5,170,0.1f);
 	vSize = cVector2f(50,25);
@@ -291,7 +296,8 @@ void cEditorWindowObjectBrowser::OnInitLayout()
 
 		vPos.y += 20;
 		
-		
+		AddWidget(mvLabelBVSize[i]);
+		AddWidget(mvLabelPolyCount[i]);
 	}
 
 	mvLabelBVSize[0]->SetText(_W("BB Size:"));
@@ -299,13 +305,16 @@ void cEditorWindowObjectBrowser::OnInitLayout()
 
 	mpLabelThumbnail = mpSet->CreateWidgetLabel(cVector3f(30,15,0.1f), cVector2f(50,25), _W("Thumbnail"), mpInfoGroup);
 	mpLabelThumbnail->SetDefaultFontSize(12.5f);
+	AddWidget(mpLabelThumbnail);
 
 	cWidgetFrame* pThumbFrame = mpSet->CreateWidgetFrame(cVector3f(30,35,0.5f),128,true,mpInfoGroup);
 	pThumbFrame->SetBackGroundColor(cColor(0.4f,1));
 	pThumbFrame->SetBackgroundZ(0);
 	pThumbFrame->SetDrawBackground(true);
+	AddWidget(pThumbFrame);
 
 	mpThumbnail = mpSet->CreateWidgetImage("",cVector3f(0,0,1.1f),128,eGuiMaterial_Diffuse, false, pThumbFrame);
+	AddWidget(mpThumbnail);
 
 	BuildObjectSetList();
 }
@@ -352,7 +361,7 @@ void cEditorWindowObjectBrowser::WriteInvalidFileListToFile(tWString& asFolder, 
 	if(alstInvalidFiles.empty())
 		return;
 
-	tString sInvalidFileList = cString::To8Char(mpEditor->GetMainLookUpDir(eDir_Home)) + mpEditor->GetInvalidFilesListFilename();
+	tString sInvalidFileList = cString::To8Char(mpEditor->GetFolderFullPath(eEditorDir_Home)) + mpEditor->GetInvalidFilesListFilename();
 	tString sFolder = cString::ReplaceCharTo(cString::To8Char(asFolder), "/", "\\");
 
 	FILE* pFile = fopen(sInvalidFileList.c_str(), "a");

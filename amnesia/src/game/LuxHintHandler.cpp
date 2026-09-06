@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxHintHandler.h"
@@ -71,13 +71,6 @@ cLuxHintHandler::cLuxHintHandler() : iLuxUpdateable("LuxHintHandler")
 	mpGamepadButtonIcon[eGamepadButton_DpadRight]     = pGui->CreateGfxTexture("gamepad_dpad_r.tga", eGuiMaterial_Alpha, eTextureType_2D, cColor(1,1), false);
 	mpGamepadButtonIcon[eGamepadButton_DpadLeft]      = pGui->CreateGfxTexture("gamepad_dpad_l.tga", eGuiMaterial_Alpha, eTextureType_2D, cColor(1,1), false);
 	mpGamepadButtonIcon[eGamepadButton_DpadDown]      = pGui->CreateGfxTexture("gamepad_dpad_d.tga", eGuiMaterial_Alpha, eTextureType_2D, cColor(1,1), false);
-
-	//////////
-	// Dpad
-	mpGamepadHatIcon[cMath::Log2ToInt(eGamepadHatState_Up)]    = pGui->CreateGfxTexture("gamepad_dpad_u.tga", eGuiMaterial_Alpha, eTextureType_2D, cColor(1,1), false);
-	mpGamepadHatIcon[cMath::Log2ToInt(eGamepadHatState_Right)] = pGui->CreateGfxTexture("gamepad_dpad_r.tga", eGuiMaterial_Alpha, eTextureType_2D, cColor(1,1), false);
-	mpGamepadHatIcon[cMath::Log2ToInt(eGamepadHatState_Left)]  = pGui->CreateGfxTexture("gamepad_dpad_l.tga", eGuiMaterial_Alpha, eTextureType_2D, cColor(1,1), false);
-	mpGamepadHatIcon[cMath::Log2ToInt(eGamepadHatState_Down)]  = pGui->CreateGfxTexture("gamepad_dpad_d.tga", eGuiMaterial_Alpha, eTextureType_2D, cColor(1,1), false);
 # else
 	//////////////
 	// Set up the buttons
@@ -470,9 +463,9 @@ tWString cLuxHintHandler::AddGamepadIconAtPosition(const tWString& asCommand, in
 {
 	////////////
 	// Convert the command from wString to tString
-	tString sCommand;
-	sCommand.resize(asCommand.size());
-	std::copy(asCommand.begin(), asCommand.end(), sCommand.begin());
+	tString sCommand = cString::To8Char(asCommand);
+	//sCommand.resize(asCommand.size());
+	//std::copy(asCommand.begin(), asCommand.end(), sCommand.begin());
 
 	////////////////
 	// Get icon from command string
@@ -496,9 +489,8 @@ tWString cLuxHintHandler::AddGamepadIconAtPosition(const tWString& asCommand, in
 				hintIcon.mpGuiIcon = mpGamepadButtonIcon[button];
 				mvHintIcons.push_back(hintIcon);
 
-				if (gpBase->msCurrentLanguage == "chinese.lang")
-					return _W("                ");
-				return _W("    ");
+				if(button == eGamepadButton_4 || button == eGamepadButton_5) return _W("       ");
+				return _W("   ");
 			}
 			else
 			{
@@ -542,7 +534,7 @@ tWString cLuxHintHandler::AddGamepadIconAtPosition(const tWString& asCommand, in
 			{
 				hintIcon.mpGuiIcon = mpGampadAxisIcon[axis * 2 + range - 1];
 				mvHintIcons.push_back(hintIcon);
-				return _W("      ");
+				return _W("  ");
 			}
 			else
 			{

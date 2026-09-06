@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "graphics/FontData.h"
@@ -209,29 +209,6 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	bool IsChineseFullwidthChar(wchar_t aChar)
-	{
-		switch (aChar)
-		{
-		case 12290: // punctuation mark
-		case 65292: // comma
-		case 65311: // question mark
-		case 65281: // exclamation mark
-			return true;
-		default:
-			return false;
-		}
-		return false;
-	}
-
-
-	struct cRowLength
-	{
-		unsigned int mlPos;
-		bool mbIncr;
-	};
-
-
 	void iFontData::GetWordWrapRows(float afLength,float afFontHeight,cVector2f avSize,
 							const tWString& asString,tWStringVec *apRowVec)
 	{
@@ -241,54 +218,34 @@ namespace hpl {
 		unsigned int first_letter=0;
 		unsigned int last_space=0;
 
-		std::list<cRowLength> rowLengthList;
-		cRowLength row;
+		tUIntList RowLengthList;
+
 		float fTextLength;
 
 		for(pos = 0; pos < asString.size();pos++)
 		{
 			//Log("char: %d\n",(char)asString[pos]);
-			if(asString[pos] == _W(' ') || asString[pos] == _W('\n') || IsChineseFullwidthChar(asString[pos]))
+			if(asString[pos] == _W(' ') || asString[pos] == _W('\n'))
 			{
 				tWString temp = asString.substr(first_letter, pos-first_letter);
 				fTextLength =  GetLength(avSize,temp.c_str());
 				
-				//Log("r:%d p:%d f:%d l:%d Temp:'%s'\n",rows,pos,first_letter,last_space, temp.c_str());
+				//Log("r:%d p:%d f:%d l:%d Temp:'%s'\n",rows,pos,first_letter,last_space,
+													//temp.c_str());
 				bool nothing = true;
-				if(fTextLength > afLength && IsChineseFullwidthChar(asString[pos]) == false)
+				if(fTextLength > afLength)
 				{
 					rows++;
-					
-					row.mbIncr = true;
-					row.mlPos = last_space;
-					rowLengthList.push_back(row);
-
+					RowLengthList.push_back(last_space);
 					first_letter=last_space+1;
 					last_space = pos;
 					nothing = false;
 				}
-				else if (fTextLength > afLength && IsChineseFullwidthChar(asString[pos]) == true)
-				{	
-					row.mbIncr = false;
-					row.mlPos = last_space + 1;
-					rowLengthList.push_back(row);
-
-					first_letter = last_space + 1;
-					last_space = pos;
-					rows++;
-					nothing = false;
-				}
-
 				if(asString[pos] == _W('\n'))
 				{
 					last_space = pos;
 					first_letter=last_space+1;
-					
-					row.mbIncr = true;
-					row.mlPos = last_space;
-					rowLengthList.push_back(row);
-
-
+					RowLengthList.push_back(last_space);
 					rows++;
 					nothing = false;
 				}
@@ -303,9 +260,7 @@ namespace hpl {
 		if(fTextLength > afLength)
 		{
 			rows++;
-			row.mlPos = last_space;
-			row.mbIncr = true;
-			rowLengthList.push_back(row);
+			RowLengthList.push_back(last_space);
 		}
 
 		if(rows==0)
@@ -317,13 +272,11 @@ namespace hpl {
 			first_letter=0;
 			unsigned int i=0;
 
-			for(std::list<cRowLength>::iterator it = rowLengthList.begin();it != rowLengthList.end();++it)
+			for(tUIntListIt it = RowLengthList.begin();it != RowLengthList.end();++it)
 			{
-				apRowVec->push_back(asString.substr(first_letter, it->mlPos -first_letter).c_str());
+				apRowVec->push_back(asString.substr(first_letter,*it-first_letter).c_str());
 				i++;
-				first_letter = it->mlPos;
-				if (it->mbIncr)
-					first_letter++;
+				first_letter = *it+1;
 			}
 			apRowVec->push_back(asString.substr(first_letter).c_str());
 

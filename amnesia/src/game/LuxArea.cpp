@@ -1,25 +1,27 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxArea.h"
 
 #include "LuxMap.h"
+#include "LuxMapHandler.h"
+#include "LuxProp.h"
 
 //////////////////////////////////////////////////////////////////////////
 // LOADER
@@ -83,6 +85,9 @@ iLuxArea::iLuxArea(const tString &asName, int alID, cLuxMap *apMap, eLuxAreaType
 	mAreaType = aAreaType;
 
 	mpBody = NULL;
+
+	mpParentBody = NULL;
+	mvRelativeOffset = 0;
 }
 
 //-----------------------------------------------------------------------
@@ -105,11 +110,13 @@ iLuxArea::~iLuxArea()
 
 void iLuxArea::OnRenderSolid(cRendererCallbackFunctions* apFunctions)
 {
-    /*if(mpBody==NULL) return;
+#if 0
+    if(mpBody==NULL) return;
 
 	cBoundingVolume* pBV = mpBody->GetBoundingVolume();
 	
-	apFunctions->GetLowLevelGfx()->DrawBoxMinMax(pBV->GetMin(), pBV->GetMax(),cColor(1,1,1,1));*/
+	apFunctions->GetLowLevelGfx()->DrawBoxMinMax(pBV->GetMin(), pBV->GetMax(),cColor(1,1,1,1));
+#endif
 }
 
 //-----------------------------------------------------------------------
@@ -142,6 +149,43 @@ iEntity3D* iLuxArea::GetAttachEntity()
 
 //-----------------------------------------------------------------------
 
+void iLuxArea::AttachToBody(const tString& asPropName, int alBodyId)
+{ 
+	iLuxEntity *apEntity = mpMap->GetEntityByName(asPropName);
+
+	if(apEntity->GetEntityType() == eLuxEntityType_Prop)
+	{
+		iLuxProp* pProp = static_cast<iLuxProp*>(apEntity);
+
+		if( pProp->GetBodyNum() > 0 )
+		{
+			iPhysicsBody* pPropBody = pProp->GetBody(alBodyId);
+
+			if(pPropBody)
+			{
+				msPropName = asPropName; 
+				mlBodyId = alBodyId;
+				mpParentBody = pPropBody;
+				mvRelativeOffset = mpBody->GetWorldPosition() - mpParentBody->GetWorldPosition();
+
+				return;
+			}
+		}
+	}
+
+	/////////////
+	// Failed
+	DetachBody();
+}
+
+void iLuxArea::DetachBody()
+{
+	msPropName = "";
+	mpParentBody = NULL;
+}
+
+//-----------------------------------------------------------------------
+
 
 //////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
@@ -159,7 +203,11 @@ void iLuxArea::OnSetActive(bool abX)
 
 void iLuxArea::OnUpdate(float afTimeStep)
 {
-	
+	// Not currently being visited by LuxArea_Liquid due to having their own OnUpdate function?
+	if(mpParentBody)
+	{
+		mpBody->StaticLinearMove(mvRelativeOffset + mpParentBody->GetWorldPosition() - mpBody->GetWorldPosition());
+	}
 }
 
 //-----------------------------------------------------------------------
@@ -173,6 +221,9 @@ void iLuxArea::OnUpdate(float afTimeStep)
 kBeginSerializeVirtual(iLuxArea_SaveData, iLuxEntity_SaveData)
 kSerializeVar(mvSize,eSerializeType_Vector3f)
 kSerializeVar(m_mtxTransform,eSerializeType_Matrixf)
+kSerializeVar(mvRelativeOffset, eSerializeType_Vector3f)
+kSerializeVar(msPropName, eSerializeType_String)
+kSerializeVar(mlBodyId, eSerializeType_Int32)
 kEndSerialize()
 
 
@@ -195,6 +246,10 @@ void iLuxArea::SaveToSaveData(iLuxEntity_SaveData* apSaveData)
 
     kCopyToVar(pData, mvSize);
 	kCopyToVar(pData, m_mtxTransform);
+
+	kCopyToVar(pData, mvRelativeOffset);
+	kCopyToVar(pData, msPropName);
+	kCopyToVar(pData, mlBodyId);
 }
 
 //-----------------------------------------------------------------------
@@ -206,6 +261,10 @@ void iLuxArea::LoadFromSaveData(iLuxEntity_SaveData* apSaveData)
 
 	kCopyFromVar(pData, mvSize);
 	kCopyFromVar(pData, m_mtxTransform);
+
+	kCopyFromVar(pData, mvRelativeOffset);
+	kCopyFromVar(pData, msPropName);
+	kCopyFromVar(pData, mlBodyId);
 
 	//////////////////////////////
 	// Create and set body
@@ -232,6 +291,13 @@ void iLuxArea::SetupSaveData(iLuxEntity_SaveData *apSaveData)
 {
 	super_class::SetupSaveData(apSaveData);
 	iLuxArea_SaveData *pData = static_cast<iLuxArea_SaveData*>(apSaveData);
+
+	if(msPropName != "")
+	{
+		cVector3f vOffset = mvRelativeOffset;
+		AttachToBody(msPropName, mlBodyId);
+		mvRelativeOffset = vOffset;
+	}
 }
 
 //-----------------------------------------------------------------------

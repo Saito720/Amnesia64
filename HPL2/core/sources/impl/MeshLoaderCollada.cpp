@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "impl/MeshLoaderCollada.h"
@@ -250,6 +250,23 @@ namespace hpl {
 					bMeshIsOKToCache = false;
 				}*/
 			}
+		}
+
+		int lOptimized = 0;
+		{
+			lOptimized = OptimizeGeometry(vColladaGeometries);
+
+			if(lOptimized > 0)
+			{
+				//Log("Optimized Mesh %s and removed %d kb vertex data\n", cString::To8Char(asFile).c_str(), (lOptimized * 72) / 1024);
+			}
+		}
+
+		//////////////////
+		// Generate new tangents
+		for(int geom=0; geom<vColladaGeometries.size(); ++geom)
+		{
+			GenerateTangents(vColladaGeometries[geom]);
 		}
 
 		////////////////////////
@@ -550,7 +567,6 @@ namespace hpl {
 				}
 			}
 
-			//Add the pairs
 			if(pCtrl && pSkeleton)
 			{
 				//Log("Adding vertex-bone pairs!\n");
@@ -573,10 +589,24 @@ namespace hpl {
 							int lBoneIdx = pSkeleton->GetBoneIndexBySid(pCtrl->mvJoints[SrcPair.mlJoint]);
                             DestPair.boneIdx = lBoneIdx;
 							DestPair.weight = pCtrl->mvWeights[SrcPair.mlWeight];
-							DestPair.vtxIdx = Extra.mlNewVtx;
 
-							//Add pair in sub mesh
-							pSubMesh->AddVertexBonePair(DestPair);
+							if(Geom.mvOptimizedVertexId.empty())
+							{
+								DestPair.vtxIdx = Extra.mlNewVtx;
+								pSubMesh->AddVertexBonePair(DestPair);
+							}
+							else
+							{
+								// Has been rearranged to a more optimal position
+								int lNewId = Geom.mvOptimizedVertexId[Extra.mlNewVtx];
+
+								if(lNewId < 0)
+								{
+									DestPair.vtxIdx = -(lNewId + 1);
+									pSubMesh->AddVertexBonePair(DestPair);
+								}
+							}
+							
 
 							//Log("Added pair: bone %d vtx %d weight: %f\n", DestPair.boneIdx,DestPair.vtxIdx,
 							//												DestPair.weight);
@@ -1150,7 +1180,7 @@ namespace hpl {
 		{
 			if(mbZToY)
 			{
-				//(*it)->m_mtxTransform = cMath::MatrixMul(m_mtxZToY, (*it)->m_mtxTransform);
+				(*it)->m_mtxTransform = cMath::MatrixMul(m_mtxZToY, (*it)->m_mtxTransform);
 			}
 
 			CreateHierarchyNodes(apMesh, pNode,*it,avColladaGeom);

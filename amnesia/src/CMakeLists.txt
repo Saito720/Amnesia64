@@ -5,7 +5,7 @@ set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR})
 
 OPTION(USERDIR_RESOURCES "Allow using local userdirectory resources" ON)
 
-set(MACOSX_BUNDLE_COPYRIGHT "Copyright © 2010-2013 Frictional Games")
+set(MACOSX_BUNDLE_COPYRIGHT "Copyright © 2013 Frictional Games")
 
 OPTION(IS_APPLE_64 "Apple build in 64 bits" OFF)
 
@@ -31,7 +31,7 @@ if(USERDIR_RESOURCES)
     )
 endif()
 
-set(VERSION "1.3.1")
+set(VERSION "1.0.3")
 
 add_subdirectory(game game)
 

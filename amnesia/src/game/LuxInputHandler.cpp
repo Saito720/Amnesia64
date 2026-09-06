@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxInputHandler.h"
@@ -75,15 +75,13 @@ static cLuxAction gvLuxActions[] =
 	cLuxAction("UIClear", eLuxAction_UIClear,		false, eLuxActionCategory_System),
 
 	cLuxAction("OpenDebug",eLuxAction_OpenDebug,	false, eLuxActionCategory_System),
-	cLuxAction("ReloadMap",eLuxAction_ReloadMap,	false, eLuxActionCategory_System),
 	cLuxAction("QuickSave",eLuxAction_QuickSave,	false, eLuxActionCategory_System),
 	cLuxAction("QuickLoad",eLuxAction_QuickLoad,	false, eLuxActionCategory_System),
-	cLuxAction("FastForward",eLuxAction_FastForward,	false, eLuxActionCategory_System),
 
-	cLuxAction("Inventory",eLuxAction_Inventory,	true, eLuxActionCategory_Misc),
-	cLuxAction("Journal",eLuxAction_Journal,		true, eLuxActionCategory_Misc),
+//	cLuxAction("Inventory",eLuxAction_Inventory,	true, eLuxActionCategory_Misc),
+    cLuxAction("Journal",eLuxAction_Journal,		true, eLuxActionCategory_Misc),
 	cLuxAction("QuestLog",eLuxAction_QuestLog,		true, eLuxActionCategory_Misc),
-	cLuxAction("RecentText", eLuxAction_RecentText, true, eLuxActionCategory_Misc),
+//	cLuxAction("RecentText", eLuxAction_RecentText, true, eLuxActionCategory_Misc),
 	cLuxAction("CrosshairToggle", eLuxAction_CrosshairToggle, true, eLuxActionCategory_Misc),
 	
 	cLuxAction("Forward",eLuxAction_Forward,	true, eLuxActionCategory_Movement),
@@ -111,6 +109,16 @@ static cLuxAction gvLuxActions[] =
 	cLuxAction("Crouch",eLuxAction_Crouch,		true, eLuxActionCategory_Movement),
 	cLuxAction("Jump",eLuxAction_Jump,			true, eLuxActionCategory_Movement),
 
+#ifdef _DEBUG
+
+	cLuxAction("InfectionLevelZero",    eLuxAction_InfectionLevelZero, true, eLuxActionCategory_Action),
+	cLuxAction("InfectionLevelOne",     eLuxAction_InfectionLevelOne, true, eLuxActionCategory_Action),
+	cLuxAction("InfectionLevelTwo",     eLuxAction_InfectionLevelTwo, true, eLuxActionCategory_Action),
+	cLuxAction("InfectionLevelThree",   eLuxAction_InfectionLevelThree, true, eLuxActionCategory_Action),
+	cLuxAction("InfectionLevelFour",	eLuxAction_InfectionLevelFour, true, eLuxActionCategory_Action),
+	cLuxAction("DumpPigInfo",	    eLuxAction_DumpPigInfo, true, eLuxActionCategory_Action),
+    
+#endif
 
 	cLuxAction()
 };
@@ -184,15 +192,13 @@ static cLuxInput gvLuxInputs[] =
 	cLuxInput("Keyboard", eKey_Return, eLuxAction_UIPrimary),
 
 	cLuxInput("Keyboard", eKey_F1, eLuxAction_OpenDebug),
-	cLuxInput("Keyboard", eKey_F2, eLuxAction_ReloadMap),
 	cLuxInput("Keyboard", eKey_F4, eLuxAction_QuickSave),
 	cLuxInput("Keyboard", eKey_F5, eLuxAction_QuickLoad),
-	cLuxInput("Keyboard", eKey_F3, eLuxAction_FastForward),
 	
-	cLuxInput("Keyboard", eKey_Tab, eLuxAction_Inventory),
-	cLuxInput("Keyboard", eKey_J, eLuxAction_Journal),
+//	cLuxInput("Keyboard", eKey_Tab, eLuxAction_Inventory),
+  	cLuxInput("Keyboard", eKey_J, eLuxAction_Journal),
 	cLuxInput("Keyboard", eKey_M, eLuxAction_QuestLog),
-	cLuxInput("Keyboard", eKey_N, eLuxAction_RecentText),
+//	cLuxInput("Keyboard", eKey_N, eLuxAction_RecentText),
 	cLuxInput("Keyboard", eKey_X, eLuxAction_CrosshairToggle),
 
 	cLuxInput("Keyboard", eKey_W, eLuxAction_Forward),
@@ -202,8 +208,6 @@ static cLuxInput gvLuxInputs[] =
 
 	cLuxInput("Keyboard", eKey_E, eLuxAction_LeanRight),
 	cLuxInput("Keyboard", eKey_Q, eLuxAction_LeanLeft),
-
-	cLuxInput("Keyboard", eKey_LeftAlt, eLuxAction_Lean),
 
 	cLuxInput("MouseButton", eMouseButton_Right, eLuxAction_Attack),
 	cLuxInput("MouseButton", eMouseButton_Left, eLuxAction_Interact),
@@ -215,6 +219,17 @@ static cLuxInput gvLuxInputs[] =
 	cLuxInput("Keyboard", eKey_LeftShift, eLuxAction_Run),
 	cLuxInput("Keyboard", eKey_LeftCtrl, eLuxAction_Crouch),
 	cLuxInput("Keyboard", eKey_Space, eLuxAction_Jump),
+
+#ifdef _DEBUG
+
+	cLuxInput("Keyboard", eKey_0, eLuxAction_InfectionLevelZero),
+	cLuxInput("Keyboard", eKey_1, eLuxAction_InfectionLevelOne),
+	cLuxInput("Keyboard", eKey_2, eLuxAction_InfectionLevelTwo),
+	cLuxInput("Keyboard", eKey_3, eLuxAction_InfectionLevelThree),
+	cLuxInput("Keyboard", eKey_4, eLuxAction_InfectionLevelFour),
+	cLuxInput("Keyboard", eKey_N, eLuxAction_DumpPigInfo),
+
+#endif
 
 	///////////////////////////////////////////////////////////////////////
 	// Gamepad layout
@@ -234,12 +249,6 @@ static cLuxInput gvLuxInputs[] =
 	// Down --> DPAD-Down
 	// Left --> DPAD-Left
 	// Right --> DPAD-Right
-	// ------------Axis-------------
-	// 0 --> (-) Left, (+) Right
-	// 1 --> (-) Forward, (+) Back
-	// 2 --> (-) Look-Down, (+) Look-Up
-	// 3 --> (-) Look-Left, (+) Look-Right
-	// 4 --> (-) LTrigger, (+) RTrigger
 
 #ifdef USE_GAMEPAD
 #if USE_SDL2
@@ -252,13 +261,10 @@ static cLuxInput gvLuxInputs[] =
 	cLuxInput("GamepadButton", eGamepadButton_B, eLuxAction_Crouch),
 	cLuxInput("GamepadButton", eGamepadButton_X, eLuxAction_Lantern),
 	cLuxInput("GamepadButton", eGamepadButton_Y, eLuxAction_Journal),
-	cLuxInput("GamepadButton", eGamepadButton_DpadRight, eLuxAction_QuestLog),
-	cLuxInput("GamepadButton", eGamepadButton_DpadLeft, eLuxAction_RecentText),
-	cLuxInput("GamepadButton", eGamepadButton_Back, eLuxAction_Inventory),
 	cLuxInput("GamepadButton", eGamepadButton_LeftShoulder, eLuxAction_Attack),
 	cLuxInput("GamepadButton", eGamepadButton_RightShoulder, eLuxAction_Interact),
 	cLuxInput("GamepadButton", eGamepadButton_Start, eLuxAction_Exit),
-	cLuxInput("GamepadButton", eGamepadButton_LeftStick, eLuxAction_CrosshairToggle),
+	cLuxInput("GamepadButton", eGamepadButton_LeftStick, eLuxAction_QuestLog),
 	cLuxInput("GamepadButton", eGamepadButton_RightStick, eLuxAction_Rotate),
 	cLuxInput("GamepadAxis.Axis LeftTrigger", eGamepadAxisRange_Positive, eLuxAction_Run),
 	cLuxInput("GamepadAxis.Axis RightTrigger", eGamepadAxisRange_Positive, eLuxAction_Lean),
@@ -275,13 +281,10 @@ static cLuxInput gvLuxInputs[] =
 	cLuxInput("GamepadButton", eGamepadButton_1, eLuxAction_Crouch),
 	cLuxInput("GamepadButton", eGamepadButton_2, eLuxAction_Lantern),
 	cLuxInput("GamepadButton", eGamepadButton_3, eLuxAction_Journal),
-	cLuxInput("GamepadHat.Hat 0", eGamepadHatState_Right, eLuxAction_QuestLog),
-	cLuxInput("GamepadHat.Hat 0", eGamepadHatState_Left, eLuxAction_RecentText),
-	cLuxInput("GamepadButton", eGamepadButton_6, eLuxAction_Inventory),
 	cLuxInput("GamepadButton", eGamepadButton_4, eLuxAction_Attack),
 	cLuxInput("GamepadButton", eGamepadButton_5, eLuxAction_Interact),
 	cLuxInput("GamepadButton", eGamepadButton_7, eLuxAction_Exit),
-	cLuxInput("GamepadButton", eGamepadButton_8, eLuxAction_CrosshairToggle),
+	cLuxInput("GamepadButton", eGamepadButton_8, eLuxAction_QuestLog),
 	cLuxInput("GamepadButton", eGamepadButton_9, eLuxAction_Rotate),
 	cLuxInput("GamepadAxis.Axis 2", eGamepadAxisRange_Positive, eLuxAction_Run),
 	cLuxInput("GamepadAxis.Axis 2", eGamepadAxisRange_Negative, eLuxAction_Lean),
@@ -328,10 +331,26 @@ cLuxInputHandler::cLuxInputHandler() : iLuxUpdateable("LuxInputHandler")
 	mlMaxSmoothMousePos = gpBase->mpGameCfg->GetInt("Input","MaxSmoothMousePos",0);
 	mfPrevSmoothMousePosMul = gpBase->mpGameCfg->GetFloat("Input","PrevSmoothMousePosMul",0);
 
+	mlMaxSluggishMousePos = gpBase->mpGameCfg->GetInt("Input","MaxSluggishMousePos",0);
+	mfPrevSluggishMousePosMul = gpBase->mpGameCfg->GetFloat("Input","PrevSluggishMousePosMul",0);
+	mfSensitivityDropAtMaxLevel = gpBase->mpGameCfg->GetFloat("Input","SensitivityDropAtMaxInfectionLevel",0);
+
+	mfEventSensitivityModifier = 1.0f;
+	mfEventSensitivityModifierGoal = 1.0f;
+	mfEventSensitivityModifierSpeed = 1.0f;
+
 #ifdef USE_GAMEPAD
 	////////////////////////////////////
 	// Set up gamepad
 	SetUpGamepad();
+#endif
+
+#ifdef _WIN32
+	mfPointerSpeed = cPlatform::GetMousePointerSpeed();
+
+	if(mfPointerSpeed == 0.0f) mfPointerSpeed = 1.0f;
+#else
+	mfPointerSpeed = 1.0f;
 #endif
 
 	////////////////////////////////////
@@ -341,7 +360,6 @@ cLuxInputHandler::cLuxInputHandler() : iLuxUpdateable("LuxInputHandler")
 	////////////////////////////////////
 	// Variable init
 	mState = eLuxInputState_Game;
-	mfMouseActiveAt = -1;
 }
 
 //-----------------------------------------------------------------------
@@ -415,7 +433,7 @@ void cLuxInputHandler::LoadUserConfig()
 #if 0 && defined(__APPLE__)
 				// Heinous Kludge to get a default Mac keyboard shortcut without relying on different config files.
 				if (pDefaultInput->mlActionId == eLuxAction_Attack) {
-					CreateSubAction(pAction, "Keyboard", eKey_LeftMeta);
+					CreateSubAction(pAction, "Keyboard", eKey_LeftAlt);
 				}
 #endif
 			}
@@ -483,6 +501,8 @@ void cLuxInputHandler::OnStart()
 
 void cLuxInputHandler::Update(float afTimeStep)
 {
+	UpdateEventSensitityModifier(afTimeStep);
+
 	///////////////////////////////////
 	// Update input for current state
 	UpdateGlobalInput();
@@ -507,6 +527,16 @@ void cLuxInputHandler::Update(float afTimeStep)
 	case eLuxInputState_DemoEnd: UpdateDemoEndInput(); break;
 	//Load Screen
 	case eLuxInputState_LoadScreen: UpdateLoadScreenInput(); break;
+	}
+
+	if(mState != eLuxInputState_Game)
+	{
+		////////////////
+		// Stop using interaction it is released when in a menu
+		if(mpInput->IsTriggerd(eLuxAction_Interact) == false)
+		{
+			mpPlayer->DoAction(eLuxPlayerAction_Interact, false);
+		}
 	}
 }
 
@@ -551,6 +581,7 @@ void cLuxInputHandler::ChangeState(eLuxInputState aState)
 
 	//Reset some stuff
 	mlstSmoothMousePos.clear();	//Every state needs new smoothing!
+	mlstSluggishMousePos.clear();
 
 	mvLastAbsMousePos = mpInput->GetMouse()->GetAbsPosition();
 }
@@ -662,6 +693,26 @@ cVector2f cLuxInputHandler::GetSmoothMousePos(const cVector2f& avRelPosMouse)
 		vPosSum += *it * fWeight;
 		fWeightSum += fWeight;
 		fWeight *= mfPrevSmoothMousePosMul;	//decrease influence of next pos.
+	}
+
+	return vPosSum / fWeightSum;
+}
+
+//-----------------------------------------------------------------------
+
+cVector2f cLuxInputHandler::GetSluggishMousePos(const cVector2f& avRelPosMouse)
+{
+	mlstSluggishMousePos.push_front(avRelPosMouse);
+	if((int)mlstSluggishMousePos.size() > mlMaxSluggishMousePos) mlstSluggishMousePos.pop_back();
+
+	float fWeight = 1.0f;
+	float fWeightSum =0;
+	cVector2f vPosSum=0;
+	for(tVector2fListIt it = mlstSluggishMousePos.begin(); it != mlstSluggishMousePos.end(); ++it)
+	{
+		vPosSum += *it * fWeight;
+		fWeightSum += fWeight;
+		fWeight *= mfPrevSluggishMousePosMul;	//increase influence of next pos.
 	}
 
 	return vPosSum / fWeightSum;
@@ -916,17 +967,6 @@ void cLuxInputHandler::UpdateGameInput()
 	{
 		gpBase->mpDebugHandler->SetDebugWindowActive(true);
 	}
-	if(mpInput->BecameTriggerd(eLuxAction_ReloadMap) && gpBase->mpConfigHandler->mbLoadDebugMenu)
-	{
-		gpBase->mpDebugHandler->QuickReloadMap();
-	}
-	if(mpInput->BecameTriggerd(eLuxAction_FastForward) && gpBase->mpConfigHandler->mbLoadDebugMenu)
-	{
-		bool bActivate = !gpBase->mpDebugHandler->GetFastForward();
-
-		gpBase->mpDebugHandler->SetFastForward(bActivate);
-	}
-
 	if(mpPlayer->IsDead()==false && gpBase->mpDebugHandler->GetAllowQuickSave() && gpBase->mbPTestActivated==false)
 	{
 		if(mpInput->BecameTriggerd(eLuxAction_QuickSave))
@@ -941,7 +981,7 @@ void cLuxInputHandler::UpdateGameInput()
 
 	////////////////////
 	//Exit
-	if(mpInput->BecameTriggerd(eLuxAction_Exit))
+	if(mpInput->BecameTriggerd(eLuxAction_Exit) && gpBase->mpPlayer->GetRandomEscapeFailCount() <= 0) // escape may fail when chased
 	{
 		gpBase->mpEngine->GetUpdater()->SetContainer("MainMenu");
 	}
@@ -969,6 +1009,38 @@ void cLuxInputHandler::UpdateGameInput()
 	}
 	
 }
+
+//-----------------------------------------------------------------------
+
+void cLuxInputHandler::FadeEventSensitityModifierTo(float afTime, float afGoalSensitivity)
+{
+	mfEventSensitivityModifierGoal = afGoalSensitivity;
+	if(afTime <= 0) mfEventSensitivityModifier = mfEventSensitivityModifierGoal;
+	else			mfEventSensitivityModifierSpeed = 1 / afTime;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxInputHandler::UpdateEventSensitityModifier(float afTimeStep)
+{
+	if ( mfEventSensitivityModifier > mfEventSensitivityModifierGoal )
+	{
+		mfEventSensitivityModifier -= afTimeStep * mfEventSensitivityModifierSpeed;
+		if(mfEventSensitivityModifier < mfEventSensitivityModifierGoal)
+		{
+			mfEventSensitivityModifier = mfEventSensitivityModifierGoal;
+		}
+	}
+	else if( mfEventSensitivityModifier < mfEventSensitivityModifierGoal )
+	{
+		mfEventSensitivityModifier += afTimeStep * mfEventSensitivityModifierSpeed;
+		if(mfEventSensitivityModifier > mfEventSensitivityModifierGoal)
+		{
+			mfEventSensitivityModifier = mfEventSensitivityModifierGoal;
+		}
+	}
+}
+
 //-----------------------------------------------------------------------
 
 void cLuxInputHandler::UpdateGamePlayerInput()
@@ -991,6 +1063,7 @@ void cLuxInputHandler::UpdateGamePlayerInput()
 
 	////////////////////
 	// High level
+	
 	if(mpPlayer->GetCurrentStateData()->AllowPlayerMenus())
 	{
 		if(mpInput->BecameTriggerd(eLuxAction_Inventory))
@@ -998,28 +1071,64 @@ void cLuxInputHandler::UpdateGamePlayerInput()
 			if(gpBase->mpInventory->GetDisabled()==false)
 				gpBase->mpEngine->GetUpdater()->SetContainer("Inventory");
 		}
-		if(mpInput->BecameTriggerd(eLuxAction_Journal))
+		if(mpInput->BecameTriggerd(eLuxAction_Journal) && gpBase->mpPlayer->GetRandomEscapeFailCount() <= 0) // escape may fail when chased)
 		{
-			if(gpBase->mpInventory->GetDisabled()==false)
+			if(gpBase->mpInventory->GetDisabled()==false && gpBase->mpJournal->GetDisabled() == false)
 				gpBase->mpEngine->GetUpdater()->SetContainer("Journal");
 		}
-		if(mpInput->BecameTriggerd(eLuxAction_QuestLog))
+		if(mpInput->BecameTriggerd(eLuxAction_QuestLog) && gpBase->mpPlayer->GetRandomEscapeFailCount() <= 0) // escape may fail when chased)
 		{
-			if(gpBase->mpInventory->GetDisabled()==false)
+			if(gpBase->mpInventory->GetDisabled()==false && gpBase->mpJournal->GetDisabled() == false)
 			{
-				gpBase->mpJournal->SetForceInstantExit(true);
+				gpBase->mpJournal->SetForceInstantExit(false);
 				gpBase->mpEngine->GetUpdater()->SetContainer("Journal");
-				gpBase->mpJournal->ChangeState(eLuxJournalState_QuestLog);
+				//gpBase->mpJournal->ChangeState(eLuxJournalState_Hints);
+				if(gpBase->mpJournal->OpenLatestHint() == false)
+				{
+					gpBase->mpJournal->ChangeState(eLuxJournalState_Hints);
+				}
 			}
 		}
 		if(mpInput->BecameTriggerd(eLuxAction_RecentText))
 		{
-			if(gpBase->mpInventory->GetDisabled()==false)
+			if(gpBase->mpInventory->GetDisabled()==false && gpBase->mpJournal->GetDisabled() == false)
 			{
 				gpBase->mpJournal->OpenLastReadText();
 			}
 		}
 	}
+
+#ifdef _DEBUG
+
+	/////////////////
+	// Infection debug
+
+	if ( mpInput->IsTriggerd(eLuxAction_InfectionLevelZero) )
+	{
+		mpPlayer->SetInfection(0.0f);
+	}
+
+	if ( mpInput->IsTriggerd(eLuxAction_InfectionLevelOne) )
+	{
+		mpPlayer->SetInfection(25.0f);
+	}
+
+	if ( mpInput->IsTriggerd(eLuxAction_InfectionLevelTwo) )
+	{
+		mpPlayer->SetInfection(50.0f);
+	}
+
+	if ( mpInput->IsTriggerd(eLuxAction_InfectionLevelThree) )
+	{
+		mpPlayer->SetInfection(75.0f);
+	}
+
+	if ( mpInput->IsTriggerd(eLuxAction_InfectionLevelFour) )
+	{
+		mpPlayer->SetInfection(100.0f);
+	}
+	
+#endif
 
 	/////////////////
 	// Movement Direction
@@ -1044,11 +1153,11 @@ void cLuxInputHandler::UpdateGamePlayerInput()
 	// Lean
 	if(mpInput->IsTriggerd(eLuxAction_LeanRight))
 	{
-		mpPlayer->SetLean(1);
+		mpPlayer->Lean(1);
 	}
 	if(mpInput->IsTriggerd(eLuxAction_LeanLeft))
 	{
-		mpPlayer->SetLean(-1);
+		mpPlayer->Lean(-1);
 	}
 
 	/////////////////
@@ -1079,9 +1188,9 @@ void cLuxInputHandler::UpdateGamePlayerInput()
 	{
 		if(gpBase->mpConfigHandler->mbLoadDebugMenu)
 		{
-			mpPlayer->GiveSanityDamage(10);
-			mpPlayer->LowerSanity(3, true);//1.0f / 60.0f);
-			mpPlayer->GiveDamage(10, 10, eLuxDamageType_BloodSplat, true, true);
+			//mpPlayer->GiveInfectionDamage(10);
+			//mpPlayer->IncreaseInfection(3, true);//1.0f / 60.0f);
+			//mpPlayer->GiveDamage(10, 10, eLuxDamageType_BloodSplat, true, true);
 		}	
 	}
 		//mpPlayer->DoAction(eLuxPlayerAction_Holster ,true);
@@ -1117,24 +1226,28 @@ void cLuxInputHandler::UpdateGamePlayerInput()
 
 	// Mouse
 	cVector2l vMouseRelPos = mpInput->GetMouse()->GetRelPosition();
-	cVector2f vMouseRelPosFloat = cVector2f((float)vMouseRelPos.x, (float)vMouseRelPos.y)*mfMouseSensitivity;
+	cVector2f vMouseRelPosFloat = cVector2f((float)vMouseRelPos.x, (float)vMouseRelPos.y)*mfMouseSensitivity*mfPointerSpeed*(mpPlayer->IsAtMaxInfectionLevel() ? mfSensitivityDropAtMaxLevel : 1.0f )*mfEventSensitivityModifier;
 	cVector2l vAbsRel = cMath::RoundToInt(vMouseRelPosFloat);
-	cVector2f vRelPos = cVector2f((float)vAbsRel.x,(float)vAbsRel.y) / (1.7f * mpGraphics->GetLowLevel()->GetScreenSizeFloat().y);
+	cVector2f vRelPos = cVector2f((float)vAbsRel.x,(float)vAbsRel.y) / (1.7f * mpGraphics->GetLowLevel()->GetScreenSizeFloat().y );
 	cVector2f vFinalPos;
-
 	//Check if position should be smoothed.
-	if(mbSmoothMouse)	vFinalPos = GetSmoothMousePos(vRelPos);
-	else				vFinalPos = vRelPos;
+
+	if ( mpPlayer->IsAtMaxInfectionLevel() )
+	{
+		vFinalPos = GetSluggishMousePos(vRelPos);
+	}
+	else
+	{
+		mlstSluggishMousePos.clear();
+		if(mbSmoothMouse)	vFinalPos = GetSmoothMousePos(vRelPos);
+		else				vFinalPos = vRelPos;
+	}
+
 
 	//Invert the Y-axis
 	if(mbInvertMouse)
 	{
 		vFinalPos.y = -vFinalPos.y;
-	}
-
-	if(mpInput->IsTriggerd(eLuxAction_Lean))
-	{
-		mpPlayer->AddLean(vRelPos.x);
 	}
 
 #ifdef USE_GAMEPAD
@@ -1170,20 +1283,25 @@ void cLuxInputHandler::UpdateGamePlayerInput()
 		cVector2f vAnalogLookAxis = cVector2f(mpPad->GetAxisValue(eGamepadAxis_4), mpPad->GetAxisValue(eGamepadAxis_3));
 #endif
 
-		
+		if(mpInput->IsTriggerd(eLuxAction_Lean))
 		{
-			if(mpInput->IsTriggerd(eLuxAction_Rotate))
+			if(cMath::Abs(vAnalogLookAxis.x) > 0.05f)
+				mpPlayer->Lean(vAnalogLookAxis.x);
+		}
+		else
+		{
+			eLuxPlayerState playerState = mpPlayer->GetCurrentState();
+			if(mpInput->IsTriggerd(eLuxAction_Rotate) && mpInput->IsTriggerd(eLuxAction_Interact) &&
+				(playerState == eLuxPlayerState_Normal || playerState == eLuxPlayerState_Ladder || playerState == eLuxPlayerState_UseItem) == false)
 			{
 				mpPlayer->Scroll(-gpBase->mpEngine->GetFrameTime() * 6.0f * vAnalogLookAxis.y);
 
 #if USE_SDL2
-				vAnalogLookAxis = cVector2f(mpPad->GetAxisValue(eGamepadAxis_LeftX), mpPad->GetAxisValue(eGamepadAxis_LeftY));
+				vAnalogLookAxis = cVector2f(mpPad->GetAxisValue(eGamepadAxis_LeftX), mpPad->GetAxisValue(eGamepadAxis_LeftY)) * 2.0f / 1.5f;
 #else
-				vAnalogLookAxis = cVector2f(mpPad->GetAxisValue(eGamepadAxis_0), mpPad->GetAxisValue(eGamepadAxis_1));
+				vAnalogLookAxis = cVector2f(mpPad->GetAxisValue(eGamepadAxis_0), mpPad->GetAxisValue(eGamepadAxis_1)) * 2.0f / 1.5f;
 #endif
-				cVector2f vE = cMath::Vector2Abs(vAnalogLookAxis);	vE.x = sqrtf(vE.x); vE.y = sqrtf(vE.y);
-				vAnalogLookAxis = vE * vAnalogLookAxis * mfGamepadLookSensitivity / 1.25f;
-
+				
 				if(vAnalogLookAxis.Length() > 0)
 				{
 					mpPlayer->GetCharacterBody()->StopMovement();
@@ -1206,18 +1324,8 @@ void cLuxInputHandler::UpdateGamePlayerInput()
 
 			vFinalPos += vGamepadPos;
 		}		
-
-		if(mpInput->IsTriggerd(eLuxAction_Lean))
-		{
-			if(cMath::Abs(vAnalogLookAxis.x) > 0.05f) mpPlayer->SetLean(vAnalogLookAxis.x);
-			else									  mpPlayer->SetLean(0);
-		}
 	}
 #endif
-	if(mpInput->IsTriggerd(eLuxAction_Lean))
-	{
-		vFinalPos = 0;
-	}
 
 	mpPlayer->AddYaw(-vFinalPos.x);
 	mpPlayer->AddPitch(-vFinalPos.y);
@@ -1278,7 +1386,6 @@ void cLuxInputHandler::UpdateInventoryInput()
 	{
 		gpBase->mpInventory->GetSet()->SetMouseMovementEnabled(true);
 		gpBase->mpInventory->GetSet()->SetDrawMouse(true);
-		gpBase->mpInventory->GetSet()->SetDrawFocus(false);
 	}
 
 	////////////////////
@@ -1371,7 +1478,7 @@ void cLuxInputHandler::UpdateJournalInput()
 			mpInput->BecameTriggerd(eLuxAction_RecentText))
 	{
 #ifdef USE_GAMEPAD
-		if(mbGamepadUIInput==false) gpBase->mpJournal->ExitPressed(true);
+		/*if(mbGamepadUIInput==false)*/ gpBase->mpJournal->ExitPressed(true);
 #else
 		gpBase->mpJournal->ExitPressed(true);
 #endif
@@ -1395,8 +1502,8 @@ void cLuxInputHandler::UpdateCreditsInput()
 	if(	mpInput->BecameTriggerd(eLuxAction_Exit) ||
 		mpInput->BecameTriggerd(eLuxAction_Jump) ||
 		mpInput->BecameTriggerd(eLuxAction_Attack) ||
-		mpInput->BecameTriggerd(eLuxAction_Interact) ||
-		mpInput->BecameTriggerd(eLuxAction_Inventory))
+		mpInput->BecameTriggerd(eLuxAction_Interact) /*||
+		mpInput->BecameTriggerd(eLuxAction_Inventory)*/)
 	{
 		gpBase->mpCredits->ExitPressed();
 	}
@@ -1423,8 +1530,8 @@ void cLuxInputHandler::UpdateLoadScreenInput()
 	if(	mpInput->BecameTriggerd(eLuxAction_Exit) ||
 		mpInput->BecameTriggerd(eLuxAction_Jump) ||
 		mpInput->BecameTriggerd(eLuxAction_Attack) ||
-		mpInput->BecameTriggerd(eLuxAction_Interact) ||
-		mpInput->BecameTriggerd(eLuxAction_Inventory))
+		mpInput->BecameTriggerd(eLuxAction_Interact) /*||
+		mpInput->BecameTriggerd(eLuxAction_Inventory)*/)
 	{
 		gpBase->mpLoadScreenHandler->ExitPressed();
 	}
@@ -1473,10 +1580,6 @@ void cLuxInputHandler::CreateActions()
 		cLuxInput *pLuxInput = &gvLuxInputs[i];
 
         cAction *pAction = mpInput->GetAction(pLuxInput->mlActionId);
-
-		int lPara = 0;
-		if(pLuxInput->mlActionId==eLuxAction_Forward)
-			lPara=1;
 
 		tStringVec vInputParts;
 		cString::GetStringVec(pLuxInput->msInputType, vInputParts, &sSep);
@@ -1647,22 +1750,16 @@ bool cLuxInputHandler::ShowMouseOnMouseInput()
 #ifdef USE_GAMEPAD
 	else if(IsGamepadPresent())
 	{
-		bool bDirPressed = mpInput->IsTriggerd(eLuxAction_UIArrowUp) || 
-						   mpInput->IsTriggerd(eLuxAction_UIArrowDown) ||
-						   mpInput->IsTriggerd(eLuxAction_UIArrowLeft) ||
-						   mpInput->IsTriggerd(eLuxAction_UIArrowRight);
-
-		if(bDirPressed || (mfMouseActiveAt + 5 < gpBase->mpEngine->GetGameTime() && mfMouseActiveAt > 0))
+		if(mfMouseActiveAt + 5 < gpBase->mpEngine->GetGameTime() && mfMouseActiveAt > 0)
 		{
 			gpBase->mpInventory->GetSet()->SetDrawMouse(false);
 			gpBase->mpInventory->GetSet()->SetMouseMovementEnabled(false);
-			gpBase->mpInventory->GetSet()->SetDrawFocus(true);
 			gpBase->mpMainMenu->GetSet()->SetMouseMovementEnabled(false);
 			gpBase->mpMainMenu->GetSet()->SetDrawMouse(false);
 			gpBase->mpJournal->GetSet()->SetMouseMovementEnabled(false);
-			gpBase->mpJournal->GetSet()->SetDrawMouse(false);
+			gpBase->mpJournal->GetSet()->SetMouseMovementEnabled(false);
 			gpBase->mpPreMenu->GetSet()->SetMouseMovementEnabled(false);
-			gpBase->mpPreMenu->GetSet()->SetDrawMouse(false);
+			gpBase->mpPreMenu->GetSet()->SetMouseMovementEnabled(false);
 
 			mvLastAbsMousePos = mpGraphics->GetLowLevel()->GetScreenSizeInt() / 2;
 			mfMouseActiveAt = -1;

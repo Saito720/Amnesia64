@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxPlayerState_DefaultBase.h"
@@ -49,6 +49,9 @@ iLuxPlayerState_DefaultBase::iLuxPlayerState_DefaultBase(cLuxPlayer *apPlayer, e
 	mvFocusCrosshairGfx[eLuxFocusCrosshair_Pick] = pGui->CreateGfxImage("hud_crosshair_over_pick.tga",eGuiMaterial_Alpha);
 	mvFocusCrosshairGfx[eLuxFocusCrosshair_LevelDoor] = pGui->CreateGfxImage("hud_crosshair_over_leveldoor.tga",eGuiMaterial_Alpha);
 	mvFocusCrosshairGfx[eLuxFocusCrosshair_Ladder] = pGui->CreateGfxImage("hud_crosshair_over_ladder.tga",eGuiMaterial_Alpha);
+	mvFocusCrosshairGfx[eLuxFocusCrosshair_VoiceOver] = pGui->CreateGfxImage("hud_crosshair_over_voice.tga",eGuiMaterial_Alpha);
+	mvFocusCrosshairGfx[eLuxFocusCrosshair_PhoneBox] = pGui->CreateGfxImage("hud_crosshair_over_phone.tga",eGuiMaterial_Alpha);
+	mvFocusCrosshairGfx[eLuxFocusCrosshair_Note] = pGui->CreateGfxImage("hud_crosshair_over_note.tga",eGuiMaterial_Alpha);
 }
 
 //-----------------------------------------------------------------------
@@ -267,9 +270,15 @@ void iLuxPlayerState_DefaultBase::AddOutlineObjects(iPhysicsBody *apBody, iLuxEn
 		return;
 	}
 
-	mbCurrentEntityHasOutline = true;
-
 	iLuxProp *pProp = static_cast<iLuxProp*>(apEntity);
+
+    if ( !pProp->GetGlowEnabled() )
+    {
+        mbCurrentEntityHasOutline = false;
+		return;
+    }
+
+    mbCurrentEntityHasOutline = true;
 	
 	/////////////////////////////
 	//Show all connected bodies
@@ -286,7 +295,7 @@ void iLuxPlayerState_DefaultBase::AddOutlineObjects(iPhysicsBody *apBody, iLuxEn
 	        
 			if(BodyIsAdded(static_cast<iPhysicsBody*>(pSubEnt->GetEntityParent()), lstAttachedBodies))
 			{
-				gpBase->mpEffectRenderer->AddOutlineObject(pSubEnt);
+				gpBase->mpEffectRenderer->AddOutlineObject(pSubEnt, pProp->GetGlowOutlineColor());
 			}
 		}
 	}
@@ -301,7 +310,7 @@ void iLuxPlayerState_DefaultBase::AddOutlineObjects(iPhysicsBody *apBody, iLuxEn
 
 			if(static_cast<iPhysicsBody*>(pSubEnt->GetEntityParent()) == apBody)
 			{
-				gpBase->mpEffectRenderer->AddOutlineObject(pSubEnt);
+				gpBase->mpEffectRenderer->AddOutlineObject(pSubEnt, pProp->GetGlowOutlineColor());
 			}
 		}
 	}

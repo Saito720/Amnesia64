@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxArea_Liquid.h"
@@ -65,6 +65,7 @@ void cLuxAreaLoader_Liquid::LoadVariables(iLuxArea *apArea, cWorld *apWorld)
 		Error("Could not load physics material '%s' for liquid area '%s'!\n",sPhysicsMaterial.c_str(), pLiquidArea->msName.c_str());
 
 	pLiquidArea->mbHasWaves = GetVarBool("HasWaves",false);
+	pLiquidArea->mnInfectionLevel = GetVarInt("InfectionLevel",0);
 	pLiquidArea->mfWaveAmp = GetVarFloat("WaveAmp",0);
 	pLiquidArea->mfWaveFreq = GetVarFloat("WaveFreq",0);
 
@@ -122,6 +123,11 @@ void cLuxArea_Liquid::OnUpdate(float afTimeStep)
 {
 	//Do not update this unless it is a proper game update (when eveything is 100% intialized)
 	if(afTimeStep < gpBase->mpEngine->GetStepSize()*0.8f) return;
+
+	if(mpParentBody)
+	{
+		mpBody->StaticLinearMove(mvRelativeOffset + mpParentBody->GetWorldPosition() - mpBody->GetWorldPosition());
+	}
 
 	///////////////////////////
 	// Get data
@@ -263,6 +269,10 @@ void cLuxArea_Liquid::DoBuoyancyOnCharBody(iCharacterBody *apCharBody, float afS
 			if(pPlayer->IsInWater()==false)
 			{
 				pPlayer->SetIsInWater(true);
+				if ( pPlayer->GetInfectionLevel() < mnInfectionLevel )
+				{
+					pPlayer->SetInfectionLevel( mnInfectionLevel );
+				}
 				pPlayer->SetWaterSpeedMul(mfPlayerSpeedMul);
 				if(mpPhysicsMaterial)
 				{
@@ -355,11 +365,14 @@ kSerializeVar(mfAngularViscosity, eSerializeType_Float32)
 kSerializeVar(msPhysicsMaterial, eSerializeType_String)
 
 kSerializeVar(mbHasWaves, eSerializeType_Bool)
+kSerializeVar(mnInfectionLevel, eSerializeType_Int32)
 kSerializeVar(mfWaveAmp, eSerializeType_Float32)
 kSerializeVar(mfWaveFreq, eSerializeType_Float32)
 
 kSerializeVar(mfPlayerSpeedMul, eSerializeType_Float32)
 kSerializeVar(mfMaxWaveDistanceSqr, eSerializeType_Float32)
+kSerializeVar(mSurfacePlane, eSerializeType_Planef)
+kSerializeVar(mvPosition, eSerializeType_Vector3f)
 
 kEndSerialize()
 
@@ -392,12 +405,16 @@ void cLuxArea_Liquid::SaveToSaveData(iLuxEntity_SaveData* apSaveData)
 	kCopyToVar(pData, mfAngularViscosity);
 
 	kCopyToVar(pData, mbHasWaves);
+	kCopyToVar(pData, mnInfectionLevel);
 	kCopyToVar(pData, mfWaveAmp);
 	kCopyToVar(pData, mfWaveFreq);
 
 	kCopyToVar(pData, mfPlayerSpeedMul);
 	kCopyToVar(pData, mfMaxWaveDistanceSqr);
 
+	kCopyToVar(pData, mSurfacePlane);
+
+	pData->mvPosition = mpBody->GetWorldPosition();
 }
 
 //-----------------------------------------------------------------------
@@ -419,11 +436,16 @@ void cLuxArea_Liquid::LoadFromSaveData(iLuxEntity_SaveData* apSaveData)
 	kCopyFromVar(pData, mfAngularViscosity);
 
 	kCopyFromVar(pData, mbHasWaves);
+	kCopyFromVar(pData, mnInfectionLevel);
 	kCopyFromVar(pData, mfWaveAmp);
 	kCopyFromVar(pData, mfWaveFreq);
 
 	kCopyFromVar(pData, mfPlayerSpeedMul);
 	kCopyFromVar(pData, mfMaxWaveDistanceSqr);
+
+	kCopyFromVar(pData, mSurfacePlane);
+
+	mpBody->SetWorldPosition(pData->mvPosition);
 }
 
 //-----------------------------------------------------------------------

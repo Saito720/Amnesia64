@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "EditorWindowLowerToolbar.h"
@@ -97,8 +97,9 @@ void iEditorWindowLowerToolbar::OnInitLayout()
 iWidget* iEditorWindowLowerToolbar::AddGridControls()
 {
 	// Grid Controls group
-	mpGridControlsGroup = mpSet->CreateWidgetGroup(0,cVector2f(200,43),_W("Grid Controls"), mpBGFrame);
+	mpGridControlsGroup = mpSet->CreateWidgetGroup(0,cVector2f(280,43),_W("Grid Controls"), mpBGFrame);
 	mpGridControlsGroup->SetDefaultFontSize(iEditorInput::GetFontSize());
+	AddWidget(mpGridControlsGroup);
 
 	// Buttons
 
@@ -107,6 +108,7 @@ iWidget* iEditorWindowLowerToolbar::AddGridControls()
 	mpBPlaneSwitch->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(InputCallback));
 	mpBPlaneSwitch->SetToolTip(_W("Cycle through grid planes"));
 	mpBPlaneSwitch->SetToolTipEnabled(true);
+	AddWidget(mpBPlaneSwitch);
 
 	////////////////////
 	// Snap controls
@@ -118,29 +120,59 @@ iWidget* iEditorWindowLowerToolbar::AddGridControls()
 	mpBSnap->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(InputCallback));
 	mpBSnap->SetToolTip(_W("Toggle grid snapping"));
 	mpBSnap->SetToolTipEnabled(true);
+	AddWidget(mpBSnap);
 
 	// Height and sep.
 	mpInpPlaneHeight = CreateInputNumber(cVector3f(65,5,0.1f), _W("Height"), "", mpGridControlsGroup, 50, 0.25f);
 	mpInpSnapSep = CreateInputNumber(cVector3f(120,5,0.1f), _W("Snap sep."), "", mpGridControlsGroup, 50, 0.25f); 
 
+
+	mpGridPresetLabel = mpSet->CreateWidgetLabel(cVector3f(179, 4, 0.1f), cVector2f(32, 20), _W("Grid presets"), mpGridControlsGroup);
+
+	mpSnapPreset1 = mpSet->CreateWidgetButton(cVector3f(175, 18, 0.1f), cVector2f(32, 20), _W("0.01"), mpGridControlsGroup);
+	mpSnapPreset1->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(InputCallback));
+	mpSnapPreset1->SetToolTip(_W("Set grid snapping to 1 cm"));
+	mpSnapPreset1->SetToolTipEnabled(true);
+	AddWidget(mpSnapPreset1);
+
+	mpSnapPreset5 = mpSet->CreateWidgetButton(cVector3f(210, 18, 0.1f), cVector2f(32, 20), _W("0.05"), mpGridControlsGroup);
+	mpSnapPreset5->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(InputCallback));
+	mpSnapPreset5->SetToolTip(_W("Set grid snapping to 5 cm"));
+	mpSnapPreset5->SetToolTipEnabled(true);
+	AddWidget(mpSnapPreset5);
+
+	mpSnapPreset25 = mpSet->CreateWidgetButton(cVector3f(245, 18, 0.1f), cVector2f(32, 20), _W("0.25"), mpGridControlsGroup);
+	mpSnapPreset25->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(InputCallback));
+	mpSnapPreset25->SetToolTip(_W("Set grid snapping to 25 cm"));
+	mpSnapPreset25->SetToolTipEnabled(true);
+	AddWidget(mpSnapPreset25);
+
+	/*
+	cWidgetButton*	mpSnapPreset1;
+	cWidgetButton*	mpSnapPreset5;
+	cWidgetButton*	mpSnapPreset25;
+	*/
 	return mpGridControlsGroup;
 }
 
 iWidget* iEditorWindowLowerToolbar::AddLightingControls()
 {
 	mpHandleLighting = mpSet->CreateWidgetDummy(0, mpBGFrame);
+	AddWidget(mpHandleLighting);
 
 	mpBGlobalAmbientLight = mpSet->CreateWidgetButton(cVector3f(0,0,0.1f), 19, _W("A"), mpHandleLighting);
 	mpBGlobalAmbientLight->SetToolTip(_W("Toggle global ambient light"));
 	mpBGlobalAmbientLight->SetToolTipEnabled(true);
 	mpBGlobalAmbientLight->SetToggleable(true);
 	mpBGlobalAmbientLight->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(InputCallback));
+	AddWidget(mpBGlobalAmbientLight);
 
 	mpBGlobalPointLight = mpSet->CreateWidgetButton(cVector3f(0,21,0.1f), 19, _W("P"), mpHandleLighting);
 	mpBGlobalPointLight->SetToolTip(_W("Toggle global point light"));
 	mpBGlobalPointLight->SetToolTipEnabled(true);
 	mpBGlobalPointLight->SetToggleable(true);
 	mpBGlobalPointLight->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(InputCallback));
+	AddWidget(mpBGlobalPointLight);
 
 	return mpHandleLighting;
 }
@@ -148,6 +180,7 @@ iWidget* iEditorWindowLowerToolbar::AddLightingControls()
 iWidget* iEditorWindowLowerToolbar::AddViewportControls()
 {
 	mpHandleViewportControls = mpSet->CreateWidgetDummy(0, mpBGFrame);
+	AddWidget(mpHandleViewportControls);
 
 	cGuiGfxElement* pImg = mpSet->GetGui()->CreateGfxImage("button_enlarge.tga", eGuiMaterial_Alpha);
 	mpBEnlargeViewport = mpSet->CreateWidgetButton(0, 40, _W(""), mpHandleViewportControls);
@@ -156,7 +189,7 @@ iWidget* iEditorWindowLowerToolbar::AddViewportControls()
 	mpBEnlargeViewport->AddCallback(eGuiMessage_ButtonPressed,this, kGuiCallback(InputCallback));
 	mpBEnlargeViewport->SetToolTip(_W("Enlarge current viewport"));
 	mpBEnlargeViewport->SetToolTipEnabled(true);
-
+	AddWidget(mpBEnlargeViewport);
 	mpSet->AddGlobalShortcut(0, eKey_Space, mpBEnlargeViewport, eGuiMessage_ButtonPressed);
 	
 	return mpHandleViewportControls;
@@ -165,14 +198,17 @@ iWidget* iEditorWindowLowerToolbar::AddViewportControls()
 iWidget* iEditorWindowLowerToolbar::AddCameraControls()
 {
 	mpHandleCamera = mpSet->CreateWidgetDummy(0, mpBGFrame);
+	AddWidget(mpHandleCamera);
 
 	mpBCameraLockToGrid = mpSet->CreateWidgetButton(0, 19, _W("LT"), mpHandleCamera);
+	AddWidget(mpBCameraLockToGrid);
 	mpBCameraLockToGrid->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(InputCallback));
 	mpBCameraLockToGrid->SetToggleable(true);
 	mpBCameraLockToGrid->SetToolTip(_W("Lock camera tracking to grid"));
 	mpBCameraLockToGrid->SetToolTipEnabled(true);
 
 	mpBCameraFocusOnSelection = mpSet->CreateWidgetButton(cVector3f(0,21,0), 19, _W("F"), mpHandleCamera);
+	AddWidget(mpBCameraFocusOnSelection);
 	mpBCameraFocusOnSelection->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(InputCallback));
 	mpBCameraFocusOnSelection->SetToolTip(_W("Focus on selection"));
 	mpBCameraFocusOnSelection->SetToolTipEnabled(true);
@@ -187,13 +223,15 @@ iWidget* iEditorWindowLowerToolbar::AddClipPlaneControls()
 
 	mpGClipPlanes = mpSet->CreateWidgetGroup(0, cVector2f(275,43), _W("Clip planes"), mpBGFrame);
 	mpGClipPlanes->SetDefaultFontSize(iEditorInput::GetFontSize());
+	AddWidget(mpGClipPlanes);
 
 	mpInpClipPlanes = CreateInputEnum(cVector3f(5,0,0.1f), _W(""), "", tWStringList(), mpGClipPlanes,50);
 	mpInpClipPlanes->SetMaxShownItems(3);
 	mpBAddClipPlane = mpSet->CreateWidgetButton(cVector3f(60, 5, 0.1f), cVector2f(15), _W("+"), mpGClipPlanes);
-
+	AddWidget(mpBAddClipPlane);
 	mpBAddClipPlane->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(InputCallback));
 	mpBRemClipPlane = mpSet->CreateWidgetButton(cVector3f(60, 21, 0.1f), cVector2f(15), _W("-"), mpGClipPlanes);
+	AddWidget(mpBRemClipPlane);
 	mpBRemClipPlane->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(InputCallback));
 
 	// Buttons
@@ -201,6 +239,7 @@ iWidget* iEditorWindowLowerToolbar::AddClipPlaneControls()
 	mpBClipNormalSwitch->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(InputCallback));
 	mpBClipNormalSwitch->SetToolTip(_W("Cycle through clip plane alignments"));
 	mpBClipNormalSwitch->SetToolTipEnabled(true);
+	AddWidget(mpBClipNormalSwitch);
 
 	mpInpClipPlaneHeight = CreateInputNumber(cVector3f(130,5,0.1f), _W("Height"), "", mpGClipPlanes, 50, 0.25f);
 	mpSet->AddGlobalShortcut(0, eKey_O, mpInpClipPlaneHeight->GetInputWidget(), eGuiMessage_TextBoxValueUp);
@@ -210,6 +249,7 @@ iWidget* iEditorWindowLowerToolbar::AddClipPlaneControls()
 	mpBClipPlaneCullSide->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(InputCallback));
 	mpBClipPlaneCullSide->SetToolTip(_W("Set culled plane side"));
 	mpBClipPlaneCullSide->SetToolTipEnabled(true);
+	AddWidget(mpBClipPlaneCullSide);
 
 	mpInpClipPlaneActive = CreateInputBool(cVector3f(215,5,0.1f), _W("Active"), "", mpGClipPlanes);
 
@@ -446,6 +486,18 @@ bool iEditorWindowLowerToolbar::InputCallback(iWidget* apWidget, const cGuiMessa
 		{
 			pAction = hplNew(cEditorActionClipPlaneSetCullingOnPositiveSide,(pWorld, lClipPlaneIdx, !pClipPlane->GetCullingOnPositiveSide()));
 		}
+	}
+	else if(apWidget==mpSnapPreset1)
+	{
+		mpInpSnapSep->SetValue(0.01f, true, true);
+	}
+	else if(apWidget==mpSnapPreset5)
+	{
+		mpInpSnapSep->SetValue(0.05f, true, true);
+	}
+	else if(apWidget==mpSnapPreset25)
+	{
+		mpInpSnapSep->SetValue(0.25f, true, true);
 	}
 	
 	mpEditor->AddAction(pAction);

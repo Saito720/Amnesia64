@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 //
@@ -336,12 +336,6 @@ SDL_GLContext sdlcontext = 0;
 
     bool setCWD = true;
 
-	// Load this up as a global to search alternate resource path
-	gsPersonalDir = cPlatform::GetSystemSpecialPath(eSystemPath_Personal);
-#ifdef USERDIR_RESOURCES
-	gsUserResourceDir = gsPersonalDir+PERSONAL_RELATIVEROOT PERSONAL_RELATIVEGAME_PARENT PERSONAL_RESOURCES;
-#endif
-
     // parse command line args
 	NSArray *args = [[NSProcessInfo processInfo] arguments];
 	for (NSInteger i=1,l=[args count]; i<l; ++i) {
@@ -349,6 +343,7 @@ SDL_GLContext sdlcontext = 0;
         if ([arg isEqualToString: @"-cwd"]) {
             setCWD = false;
         } else {
+#if 0 // No config file arg for pigs
             tWString sTemp = hpl::cString::To16Char([arg UTF8String]);
             if (sTemp == L"ptest") {
                 sTemp = L"config/ptest_main_init.cfg";
@@ -361,8 +356,15 @@ SDL_GLContext sdlcontext = 0;
                 gsCfgFile = sTemp;
             }
 #   endif
+#else // Pigs uses map name
+            if ([arg characterAtIndex:0] != '-')
+            {
+                [gsMapName release];
+                gsMapName = [[args objectAtIndex:i] copy];
+            }
         }
-    }
+	}
+#endif
 
     if (setCWD) {
         tString dataDir = cPlatform::GetDataDir();
@@ -381,6 +383,7 @@ SDL_GLContext sdlcontext = 0;
 
 	_settingsMap = [[NSDictionary alloc] initWithContentsOfFile:[[NSBundle mainBundle] pathForResource:@"Startup" ofType:@"plist"]];
 
+#if 0 // temporarily disable editor suite
 	NSString *editorFile = @"EditorSuite.plist";
     NSString *levelEditor = nil;
     OSStatus rc;
@@ -435,7 +438,13 @@ SDL_GLContext sdlcontext = 0;
 			}
 		}
 	}
+#endif
 
+	// Load this up as a global to search alternate resource path
+	gsPersonalDir = cPlatform::GetSystemSpecialPath(eSystemPath_Personal);
+#ifdef USERDIR_RESOURCES
+	gsUserResourceDir = gsPersonalDir+PERSONAL_RELATIVEROOT PERSONAL_RELATIVEGAME_PARENT PERSONAL_RESOURCES;
+#endif
 
     tWString sCfgFile = gsCfgFile;
 #ifdef USERDIR_RESOURCES
@@ -533,9 +542,9 @@ SDL_GLContext sdlcontext = 0;
 		[d addObserver:self forKeyPath:k options:0 context:[_settingsMap valueForKey:k]];
 	}
 
-	// If no config file load Medium preset
+	// If no config file load Low preset
 	if (!bConfigFileExists) {
-		[[_selected content] setValue:[NSNumber numberWithInt:1] forKey:@"Quality"];
+		[[_selected content] setValue:[NSNumber numberWithInt:0] forKey:@"Quality"];
 		[self detectButton: self];
 	}
 }
@@ -723,19 +732,19 @@ SDL_GLContext sdlcontext = 0;
 	////////////////////////////////////////////
 	//Load the language files
 	_langFile = new cLanguageFile(NULL);
-	_langFile->AddFromFile(hpl::cString::To16Char(gsBaseLanguageFolder + sBaseFileName), false);
+	_langFile->AddFromFile(gsBaseLanguageFolder + sBaseFileName, false);
 
 	////////////////////////////////////////////
 	//If not default language, add default to so only missing entries are filled in
 	if(sGameFileName != gsDefaultGameLanguage)
-		_langFile->AddFromFile(hpl::cString::To16Char(gsGameLanguageFolder + gsDefaultGameLanguage), false
+		_langFile->AddFromFile(gsGameLanguageFolder + gsDefaultGameLanguage, false
 #ifdef USERDIR_RESOURCES
 							   ,gsUserResourceDir
 #endif
 							   );
 
 	if(sBaseFileName != gsDefaultBaseLanguage)
-		_langFile->AddFromFile(hpl::cString::To16Char(gsBaseLanguageFolder + gsDefaultBaseLanguage), false
+		_langFile->AddFromFile(gsBaseLanguageFolder + gsDefaultBaseLanguage, false
 #ifdef USERDIR_RESOURCES
 							   ,gsUserResourceDir
 #endif
@@ -1082,11 +1091,17 @@ SDL_GLContext sdlcontext = 0;
 			NSLog(@"Launched Amnesia Game Via %@",exe);
 
             NSMutableArray *args = [NSMutableArray arrayWithObject:@"-cwd"];
+#if 0 // Disabling for Pigs
             if ([sender tag] == 2) {
                 [args addObject: @"ptest"];
             } else {
                 [args addObject: [NSString stringWithUTF8String:hpl::cString::To8Char(gsCfgFile).c_str()]];
             }
+#else // Pigs users map name arg
+            if (gsMapName) {
+                [args addObject: gsMapName];
+            }
+#endif
             NSLog(@"Args %@",args);
             NSTask *task = [NSTask launchedTaskWithLaunchPath:exe arguments:args];
             if (![task isRunning]) {

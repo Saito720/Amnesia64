@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef HPL_CONTAINER_H
@@ -47,9 +47,9 @@ namespace hpl {
 	{
 	friend class cSerializeClass;
 	public:
-		virtual ~iContainer() {}
 		virtual size_t Size()=0;
 		virtual void Clear()=0;
+		~iContainer() { }
 	protected:
 		
 		virtual void AddVoidPtr(void **apPtr)=0;
@@ -63,7 +63,8 @@ namespace hpl {
 	class iContainerKeyPair
 	{
 	public:
-		virtual ~iContainerKeyPair(){}
+		virtual ~iContainerKeyPair() {}
+
 		virtual size_t Size()=0;
 		
 		virtual void AddVoidPtr(void *apKey, void **apClass)=0;
@@ -84,8 +85,10 @@ namespace hpl {
 		cContainerVecIterator(std::vector<T> *apVec)
 		{
 			mpVec = apVec;
-			mIt = apVec->begin();
+			if(apVec->empty())	mIt = apVec->end();
+			else				mIt = apVec->begin();
 		}
+		~cContainerVecIterator() {}
 
 		bool HasNext()
 		{
@@ -136,7 +139,8 @@ namespace hpl {
 
 	public:
 		cContainerVec(){}
-		
+		~cContainerVec() {}
+
 		//////////////////////
 		size_t Size()
 		{
@@ -197,8 +201,11 @@ namespace hpl {
 		cContainerListIterator(std::list<T> *apVec)
 		{
 			mpVec = apVec;
-			mIt = apVec->begin();
+			if(apVec->empty())	mIt = apVec->end();
+			else				mIt = apVec->begin();
 		}
+
+		~cContainerListIterator() {}
 
 		bool HasNext()
 		{
@@ -258,7 +265,7 @@ namespace hpl {
 
 		void Clear()
 		{
-			mvVector.clear();
+            mvVector.clear();
 		}
 		//////////////////////
 

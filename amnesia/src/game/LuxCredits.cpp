@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxCredits.h"
@@ -316,6 +316,7 @@ void cLuxCredits::OnDraw(float afFrameTime)
 				//Check if header
 				if(mvTextRows[i][0] == _W('*'))	lSize=1;
 
+
 				////////////////////////
 				//Draw Font
 				if(fY >= -fRowAdd[lSize])
@@ -327,7 +328,7 @@ void cLuxCredits::OnDraw(float afFrameTime)
 
 					//Normal
 					if(lSize==0)
-						mpGuiSet->DrawFont(mvTextRows[i], mpFontNormal, cVector3f(400,fY,10), mvNormalFontSize, cColor(1,fAlpha),eFontAlign_Center);
+						mpGuiSet->DrawFont(mvTextRows[i], mpFontHeader, cVector3f(400,fY,10), mvHeaderFontSize, cColor(0.8f,fAlpha),eFontAlign_Center);
 					//Header
 					else
 						mpGuiSet->DrawFont(cString::SubW(mvTextRows[i],1), mpFontHeader, cVector3f(400,fY,10), mvHeaderFontSize, cColor(0.8f,fAlpha),eFontAlign_Center);

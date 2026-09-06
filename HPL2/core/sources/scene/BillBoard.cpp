@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "scene/BillBoard.h"
@@ -274,7 +274,7 @@ namespace hpl {
 			vUp = cMath::MatrixMul(GetWorldMatrix().GetRotation(),mvAxis);
 			vUp.Normalize();
 			
-			if(vUp == vCameraForward)
+			if(vUp == vForward)
 			{
 				vRight = cMath::Vector3Cross(vUp, vCameraForward);
 				Warning("Billboard Right vector is not correct! Contact programmer!\n");
@@ -329,6 +329,18 @@ namespace hpl {
 		if(mColor.r <= 0 && mColor.g <= 0 && mColor.b <= 0) return false;
 
 		return mbIsVisible;
+	}
+
+	bool cBillboard::IsFullyTranslucent()
+	{
+		if(mbIsHalo && mfHaloAlpha <= 0.0f || mColor.a <= 0)
+		{
+			return true;
+		}
+		else
+		{
+			return false;
+		}
 	}
 
 	//-----------------------------------------------------------------------
@@ -392,7 +404,7 @@ namespace hpl {
 	bool cBillboard::RetrieveOcculsionQuery(iRenderer *apRenderer)
 	{
 		if(mbIsHalo==false) return  true;
-
+		
 		int lSamples = apRenderer->RetrieveOcclusionObjectSamples(this, 0);
 		int lMaxSamples = apRenderer->RetrieveOcclusionObjectSamples(this, 1);
 
@@ -402,7 +414,7 @@ namespace hpl {
 		{
 			///////////////////////
 			//Calculate the alpha
-			float fAlpha = (float)lSamples / (float)lMaxSamples;
+			float fAlpha = (float)lSamples / (float)(lMaxSamples + 0.00001f);
 			
 			///////////////////////
 			//Check if inside screen
@@ -443,14 +455,16 @@ namespace hpl {
 				else				fAlpha = 0;
 
 
-				SetHaloAlpha(fAlpha);
+				SetHaloAlpha(cMath::Clamp(fAlpha, 0.0f, 1.0f));
+
+				return fAlpha > 0.0f;
 			}
 			else
 			{
 				SetHaloAlpha(0);
+
+				return false;
 			}
-			
-			return true;
 		}
 		////////////////////////////
 		// No Samples are visible

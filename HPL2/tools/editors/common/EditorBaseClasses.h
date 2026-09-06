@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef HPLEDITOR_EDITOR_BASE_CLASSES_H
@@ -29,8 +29,6 @@ using namespace hpl;
 
 class iEditorBase;
 class iEditorWindow;
-
-class cDirectoryHandler;
 
 class cEditorWindowLoaderStatus;
 class cEditorWindowViewport;
@@ -53,23 +51,25 @@ typedef std::vector<cEditorWindowViewport*> tEditorViewportVec;
 
 //-----------------------------------------------------------
 
-////////////////////////////////////////////////////////////
-// Editor lookup directory categories
-////////////////////////////////////////////////////////////
-
-enum eDir
+enum eEditorDir
 {
-	// Global lookup dirs
-	eDir_Lights,
-	eDir_Billboards,
-	eDir_Particles,
-	eDir_Sounds,
-	eDir_Decals,
+	// Personal dirs
+	eEditorDir_Home,
+	eEditorDir_Temp,
+	eEditorDir_Thumbnails,
+	eEditorDir_Maps,
 
-	eDir_LastEnum,
+	// Redist dirs
+	eEditorDir_StaticObjects,
+	eEditorDir_Entities,
+	eEditorDir_Lights,
+	eEditorDir_Billboards,
+	eEditorDir_Particles,
+	eEditorDir_Sounds,
+	eEditorDir_Decals,
+
+	eEditorDir_LastEnum,
 };
-
-//-----------------------------------------------------------
 
 enum eUserClassDefinition
 {
@@ -111,6 +111,33 @@ enum eLayoutVec2
 	eLayoutVec2_ViewportAreaSize,
 
 	eLayoutVec2_LastEnum
+};
+
+//---------------------------------------------------------------
+
+//////////////////////////////////////////////////////////////
+// iWidgetContainer
+//	Interface for management of child widgets.
+//	Will destroy all widgets added on deletion.
+class iWidgetContainer
+{
+public:
+	iWidgetContainer();
+	~iWidgetContainer();
+
+	void SetSet(cGuiSet* apSet);
+	cGuiSet* GetSet() { return mpSet; }
+
+	void AddWidget(iWidget* apWidget);
+	void RemoveWidget(iWidget* apWidget);
+
+	void DestroyWidgets(cGuiSet* apSet);
+
+	bool IsDestroyingWidgets() { return mbDestroying; }
+protected:
+	cGuiSet* mpSet;
+	tWidgetList mlstWidgets;
+	bool mbDestroying;
 };
 
 //---------------------------------------------------------------
@@ -159,7 +186,7 @@ public:
 //////////////////////////////////////////////////////////
 // iEditorBase
 // Base interface
-class iEditorBase : public iUpdateable
+class iEditorBase : public iWidgetContainer, public iUpdateable
 {
 public:
 	iEditorBase(const tWString& asFileCategoryName, const tWString& asFileCategoryString);
@@ -238,29 +265,15 @@ public:
 	virtual iEditorWindowEditModeSidebar* CreateEditModeSidebar();
 	virtual iEditorWindowEditModeSidebar* CreateSpecificEditModeSidebar();
 
-
 	///////////////////////////////////////////////
-	// Directory Management
-	virtual void SetUpDirectories();
-	virtual void OnSetUpDirectories()=0;
+	// Folders and path stuff
+	const tWString& GetWorkingDir() { return msWorkingDir; }
+	tWString GetFolderRelativeToWorkingDirW(const tWString& asDir);
+	tWString GetFilePathRelativeToWorkingDirW(const tWString& asFile);
+	tString GetFilePathRelativeToWorkingDir(const tString &asFile);
+	tWString GetFolder(eEditorDir aDir) { return cString::AddSlashAtEndW(mvFolders[aDir]); }
+	tWString GetFolderFullPath(eEditorDir aDir);
 
-	cDirectoryHandler* GetDirHandler() { return mpDirHandler; }
-	
-	const tWString& GetWorkingDir();
-	const tWString& GetHomeDir();
-	const tWString& GetTempDir();
-	const tWString& GetThumbnailDir();
-
-	const tWString& GetMainLookUpDir(int alCategory);
-	tWStringVec GetLookUpDirs(int alCategory);
-
-	tWString GetPathRelToWD(const tWString& asPath);
-	tWString GetPathRelToWD(const tString& asPath);
-
-	///////////////////////////////////////////////
-	// Action management
-	cEditorActionHandler* GetActionHandler() { return mpActionHandler; }
-	void AddAction(iEditorAction* apAction);
 
 	///////////////////////////////////////////////
 	// Layout Management
@@ -282,6 +295,11 @@ public:
 	cEditorGrid* GetGrid();
 	void SetPosOnGrid(const cVector3f& avPos);
 	cVector3f& GetPosOnGridFromMousePos(bool abSnapped=true);
+
+	///////////////////////////////////////////////
+	// Action management
+	cEditorActionHandler* GetActionHandler() { return mpActionHandler; }
+	void AddAction(iEditorAction* apAction);
 
 	///////////////////////////////////////////////
 	// Thumbnails
@@ -362,12 +380,12 @@ public:
 	 * Init the editor
 	 * \param apEngine If this is null, then the editor will will init engine by itself and use settings from the setting file. Else current settings are used. 
 	 */
-	cEngine* Init(cEngine* apEngine, const char* asName, const char* asBuildDate, bool abDestroyEngineOnExit=false);
+	cEngine* Init(cEngine* apEngine, bool abDestroyEngineOnExit=false);
 	
 
 	///////////////////////////////////
 	// HPL Engine stuff
-	cGuiSet* GetSet() { return mpSet; }
+	//cGuiSet* GetSet() { return mpSet; }
 	cGuiSkin* GetSkin() { return mpSkin; }
 	cEngine* GetEngine() { return mpEngine; }
 
@@ -379,6 +397,8 @@ public:
 
 	///////////////////////////////////
 	// Various Data
+
+
 	cWidgetMainMenu* GetMainMenu() { return mpMainMenu; }
 
 
@@ -505,7 +525,9 @@ protected:
 
 	//////////////////////////////////
 	// Folder stuff
-	cDirectoryHandler* mpDirHandler;
+	tWString msPersonalDir;
+	tWString msWorkingDir;
+	tWStringVec mvFolders;
 
 	//////////////////////////////////
 	// Config stuff
@@ -518,7 +540,6 @@ protected:
 	// Engine stuff	
 	cEngine* mpEngine;
 	iFrameBuffer* mpFrameBuffer;
-	cGuiSet* mpSet;
 	cGuiSkin* mpSkin;
 	cViewport* mpViewport;
 

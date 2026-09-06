@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef HPL_CHARACTER_BODY_H
@@ -82,12 +82,13 @@ namespace hpl {
 	public:
 		cCharacterBodyRay();
 
-		void Clear();
+		void Clear(bool abCollideVolatile);
 		bool OnIntersect(iPhysicsBody *pBody,cPhysicsRayParams *apParams);
 
 		float mfMinDist;
 		cVector3f mvNormal;
 		bool mbCollide;
+		bool mbCollideVolatile;
 	};
 
 	//------------------------------------------------
@@ -147,6 +148,9 @@ namespace hpl {
 
 		void SetCollideCharacter(bool abX);
 		bool GetCollideCharacter(){ return mbCollideCharacter;}
+		
+		void SetCollideStaticVolatile(bool abX) { mbCollideStaticVolatile = abX;}
+		bool GetCollideStaticVolatile() { return mbCollideStaticVolatile;}
 
 		void SetTestCollision(bool abX);
 		bool GetTestCollision(){return mbTestCollision;}
@@ -175,6 +179,7 @@ namespace hpl {
 		void SetPosition(const cVector3f& avPos, bool abSmooth=false);
 		const cVector3f& GetPosition();
 		const cVector3f& GetLastPosition();
+		void SetLastPosition(const cVector3f& avPos) { mvLastPosition = avPos; };    // quite hacky, but necessary. Last position is used to determine velocity. If we want to teleport a pig and maintain its velocity, we need to fix up the last position too.
 		void SetFeetPosition(const cVector3f& avPos, bool abSmooth=false);
 		cVector3f GetFeetPosition();
 
@@ -388,6 +393,7 @@ namespace hpl {
 		bool mbActive;
 
 		bool mbCollideCharacter;
+		bool mbCollideStaticVolatile;
 
 		bool mbTestCollision;
 

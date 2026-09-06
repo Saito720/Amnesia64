@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxProp_Object.h"
@@ -135,10 +135,10 @@ void cLuxPropLoader_Object::LoadInstanceVariables(iLuxProp *apProp, cResourceVar
 	pObject->mbDisableBreakable = apInstanceVars->GetVarBool("DisableBreakable",false);
 
 	pObject->mbIsInsanityVision = apInstanceVars->GetVarBool("IsInsanityVision",false);
-	pObject->mfVisionMaxSanity = apInstanceVars->GetVarFloat("VisionMaxSanity",30);
+	pObject->mfVisionMinInfection = apInstanceVars->GetVarFloat("VisionMinInfection",30);
 
 	if(pObject->mbIsInsanityVision)
-		pObject->SetInsanityVisionVisability(false);
+		pObject->SetInfectionVisionVisability(false);
 	
 	pObject->msContainedItem = apInstanceVars->GetVarString("ContainedItem","");
 	if(pObject->msContainedItem == "None") pObject->msContainedItem= "";
@@ -283,11 +283,11 @@ cLuxProp_Object::cLuxProp_Object(const tString &asName,int alID, cLuxMap *apMap)
 	mlStuckState =0;
 
 	mfFoodAttractCount =0;
-	mfInsanityVisionCount =0;
-	mbInsanityVisionActive = false;
+	mfInfectionVisionTimer =0;
+	mbInfectionVisionActive = false;
 
 	mbIsInsanityVision = false;
-	mfVisionMaxSanity = 0.0f;
+	mfVisionMinInfection = 0.0f;
 
 	mpBodyCallback = hplNew(cLuxProp_Object_BodyCallback, (this) );
 }
@@ -446,8 +446,8 @@ void cLuxProp_Object::UpdatePropSpecific(float afTimeStep)
 	UpdateFoodEnemyAttraction(afTimeStep);
 
 	////////////////////////////
-	// Insanity vision
-	UpdateInsanityVision(afTimeStep);
+	// Infection vision
+	UpdateInfectionVision(afTimeStep);
 
 	//////////////////////////
 	// Life length
@@ -781,28 +781,28 @@ void cLuxProp_Object::UpdateFoodEnemyAttraction(float afTimeStep)
 
 //-----------------------------------------------------------------------
 
-void cLuxProp_Object::UpdateInsanityVision(float afTimeStep)
+void cLuxProp_Object::UpdateInfectionVision(float afTimeStep)
 {
 	if(mbIsInsanityVision==false) return;
 	if(mpMeshEntity==NULL) return;
 	
 	//////////////////////////////////
 	//Check if the object should be disabled or enabled
-	float fSanity = gpBase->mpPlayer->GetSanity();
-	if( (fSanity <= mfVisionMaxSanity && mbInsanityVisionActive) ||
-		(fSanity > mfVisionMaxSanity && mbInsanityVisionActive==false) )
+	float fInfection = gpBase->mpPlayer->GetInfection();
+	if( (fInfection >= mfVisionMinInfection && mbInfectionVisionActive) ||
+		(fInfection < mfVisionMinInfection && mbInfectionVisionActive==false) )
 	{
 		return;
 	}
 
 	//////////////////////////////////
     //Update check count
-	if(mfInsanityVisionCount > 0)
+	if(mfInfectionVisionTimer > 0)
 	{
-		mfInsanityVisionCount -= afTimeStep;
+		mfInfectionVisionTimer -= afTimeStep;
 		return;
 	}
-	mfInsanityVisionCount = 2.0f;
+	mfInfectionVisionTimer = 2.0f;
 
 	//////////////////////////////////
 	//Init variables
@@ -836,15 +836,15 @@ void cLuxProp_Object::UpdateInsanityVision(float afTimeStep)
 	//Change visibility
 	if(bInsideFOV==false)
 	{
-		SetInsanityVisionVisability(!mbInsanityVisionActive);
+		SetInfectionVisionVisability(!mbInfectionVisionActive);
 	}
 }
 
 //-----------------------------------------------------------------------
 
-void cLuxProp_Object::SetInsanityVisionVisability(bool abX)
+void cLuxProp_Object::SetInfectionVisionVisability(bool abX)
 {
-	mbInsanityVisionActive = abX;
+	mbInfectionVisionActive = abX;
 
 	///////////////
 	//Set Bodies and mesh visble
@@ -907,8 +907,8 @@ kSerializeVar(mlStuckState, eSerializeType_Int32)
 kSerializeVar(mfFoodAttractCount, eSerializeType_Float32)
 kSerializeVar(mbDisableBreakable, eSerializeType_Bool)
 kSerializeVar(mbIsInsanityVision, eSerializeType_Bool)
-kSerializeVar(mfVisionMaxSanity, eSerializeType_Float32)
-kSerializeVar(mbInsanityVisionActive, eSerializeType_Bool)
+kSerializeVar(mfVisionMinInfection, eSerializeType_Float32)
+kSerializeVar(mbInfectionVisionActive, eSerializeType_Bool)
 kEndSerialize()
 
 //-----------------------------------------------------------------------
@@ -935,8 +935,8 @@ void cLuxProp_Object::SaveToSaveData(iLuxEntity_SaveData* apSaveData)
 	kCopyToVar(pData, mfFoodAttractCount);
 	kCopyToVar(pData, mbDisableBreakable);
 	kCopyToVar(pData, mbIsInsanityVision);
-	kCopyToVar(pData, mfVisionMaxSanity);
-	kCopyToVar(pData, mbInsanityVisionActive);
+	kCopyToVar(pData, mfVisionMinInfection);
+	kCopyToVar(pData, mbInfectionVisionActive);
 
 }
 
@@ -957,8 +957,8 @@ void cLuxProp_Object::LoadFromSaveData(iLuxEntity_SaveData* apSaveData)
 	kCopyFromVar(pData, mfFoodAttractCount);
 	kCopyFromVar(pData, mbDisableBreakable);
 	kCopyFromVar(pData, mbIsInsanityVision);
-	kCopyFromVar(pData, mfVisionMaxSanity);
-	kCopyFromVar(pData, mbInsanityVisionActive);
+	kCopyFromVar(pData, mfVisionMinInfection);
+	kCopyFromVar(pData, mbInfectionVisionActive);
 }
 
 //-----------------------------------------------------------------------

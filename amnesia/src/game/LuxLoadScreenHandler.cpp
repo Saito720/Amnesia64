@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxLoadScreenHandler.h"
@@ -70,7 +70,9 @@ cLuxLoadScreenHandler::cLuxLoadScreenHandler() : iLuxUpdateable("LuxLoadScreenHa
 	mpFontDefault = NULL;
 
 	mvLoadingFontSize = gpBase->mpMenuCfg->GetVector2f("LoadScreen","LoadingFontSize", 0);
+	mLoadingFontColor = gpBase->mpMenuCfg->GetColor("LoadScreen","LoadingFontColor", cColor(1,0,0,1));
 	mvTextFontSize = gpBase->mpMenuCfg->GetVector2f("LoadScreen","TextFontSize", 0);
+	mTextFontColor = gpBase->mpMenuCfg->GetColor("LoadScreen","TextFontColor", cColor(1,1));
 	mfLoadingY = gpBase->mpMenuCfg->GetFloat("LoadScreen","LoadingY", 0);
 	mfTextWithImageY = gpBase->mpMenuCfg->GetFloat("LoadScreen","TextWithImageY", 0);
 	mfTextAloneY = gpBase->mpMenuCfg->GetFloat("LoadScreen","TextAloneY", 0);
@@ -195,13 +197,16 @@ void cLuxLoadScreenHandler::GameScreenLoadDone(const tString& asEndSound ,float 
 		float fTimeWanted = gpBase->mpHelpFuncs->GetStringDuration(sLoadText)*mfTextDurationMul;
 		if(fTimeWanted > afLoadTime)
 		{
-			mfExtraTime = fTimeWanted - afLoadTime;
+			mfExtraTime = cMath::Max(1.0f, fTimeWanted - afLoadTime - 3.0f);
 		}
 
 		//Log("TimeTaken: %f TimeWanted: %f\n", afLoadTime,fTimeWanted);
 	}
+	else
+	{
+		mfExtraTime = 1.0f;
+	}
 
-	
 	/////////////////////////////
 	// Change State
 	gpBase->mpEngine->GetUpdater()->SetContainer("LoadScreen");
@@ -370,6 +375,7 @@ void cLuxLoadScreenHandler::UpdateGameState(float afTimeStep)
 	{
 		mfLoadingAlpha -= afTimeStep*0.33f;
 		if(mfLoadingAlpha<0)mfLoadingAlpha =0;
+		return;
 	}
 
 	////////////////////////////
@@ -433,16 +439,20 @@ void cLuxLoadScreenHandler::DrawGameScreen(cGuiSet *apSet)
 		cVector3f vTextPos(400-mfTextMaxWidth/2,fY,1);
 		for(size_t i=0; i<vTextRows.size(); ++i)
 		{
-			apSet->DrawFont(vTextRows[i], mpFontDefault, vTextPos, mvTextFontSize, cColor(1,1));
+			apSet->DrawFont(vTextRows[i], mpFontDefault, vTextPos, mvTextFontSize, mTextFontColor);
 			vTextPos.y += mvTextFontSize.y+2;
 		}
 
 		///////////////////
 		//Loading
 		tWString sLoading = kTranslate("General", "Loading");
+		tWString sContinue = kTranslate("Game", "DeathPress");
 		cVector3f vPos(400, mfLoadingY,1);
+		
+		float fLoadAlpha = cMath::Max(0.0f, mfLoadingAlpha);
 
-		apSet->DrawFont(sLoading, mpFontDefault, vPos, mvLoadingFontSize, cColor(1,0,0,mfLoadingAlpha), eFontAlign_Center);
+		apSet->DrawFont(sLoading, mpFontDefault, vPos, mvLoadingFontSize, cColor(mLoadingFontColor.r,mLoadingFontColor.g,mLoadingFontColor.b,mLoadingFontColor.a * fLoadAlpha), eFontAlign_Center);
+		//apSet->DrawFont(sContinue, mpFontDefault, vPos, mvLoadingFontSize, cColor(mLoadingFontColor.r,mLoadingFontColor.g,mLoadingFontColor.b,mLoadingFontColor.a * fContinueAlpha), eFontAlign_Center);
 	}
 	//////////////////////
 	//Draw loading only
@@ -451,7 +461,7 @@ void cLuxLoadScreenHandler::DrawGameScreen(cGuiSet *apSet)
 		tWString sLoading = kTranslate("General", "Loading");
 		cVector3f vPos(400, 300-mvLoadingFontSize.y/2,1);
 
-		apSet->DrawFont(sLoading, mpFontDefault, vPos, mvLoadingFontSize, cColor(1,1), eFontAlign_Center);
+		apSet->DrawFont(sLoading, mpFontDefault, vPos, mvLoadingFontSize, mLoadingFontColor, eFontAlign_Center);
 	}
 }
 

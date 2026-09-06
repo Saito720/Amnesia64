@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef LUX_TYPES_H
@@ -47,12 +47,23 @@ enum eLuxAxis
 	eLuxAxis_LastEnum,
 };
 
-//----------------------------------------------
 
 enum eLuxAchievement
 {
-	eLuxAchievement_Insanity = 0, // Platinum �DO NOT USE THIS!
+	eLuxAchievement_Insanity = 0, // Platinum �DO NOT USE THIS!
+	eLuxAchievement_MasterArchivist,
 
+	// pig
+	eLuxAchievement_TheTeeth,
+	eLuxAchievement_TheThroat,
+	eLuxAchievement_TheGut,
+	eLuxAchievement_TheEntrails,
+	eLuxAchievement_TheHeart,
+
+	eLuxAchievement_LastEnum,
+	
+	
+	eLuxAchievement_Insomniac,
 	// tdd
 	eLuxAchievement_Alchemist,
 	eLuxAchievement_EscapeArtist,
@@ -66,29 +77,11 @@ enum eLuxAchievement
 	eLuxAchievement_NOPE,
 	eLuxAchievement_Quitter,
 
-	///////////////////////
-	// HARDMODE
-	eLuxAchievement_Masochist,
-
-
 	// justine
 	eLuxAchievement_Egotist,
 	eLuxAchievement_Altruist,
 	eLuxAchievement_Vacillator,
-	eLuxAchievement_StillAlive,
-
-	//general
-	eLuxAchievement_MasterArchivist,
-
-	eLuxAchievement_LastEnum,
-	
-	// pig
-	eLuxAchievement_TheTeeth,
-	eLuxAchievement_TheThroat,
-	eLuxAchievement_TheGut,
-	eLuxAchievement_TheEntrails,
-	eLuxAchievement_TheHeart,
-	eLuxAchievement_Insomniac
+	eLuxAchievement_StillAlive
 };
 
 //----------------------------------------------
@@ -136,7 +129,6 @@ enum eLuxPropType
 	eLuxPropType_Critter,
 	eLuxPropType_LevelDoor,
 	eLuxPropType_Button,
-	eLuxPropType_OilBarrel,
 	eLuxPropType_EmotionStone,
 	eLuxPropType_NPC,
 	eLuxPropType_MultiSlider,
@@ -151,10 +143,11 @@ enum eLuxAreaType
 	eLuxAreaType_Ladder,
 	eLuxAreaType_Liquid,
 	eLuxAreaType_Sticky,
-	eLuxAreaType_Insanity,
+	eLuxAreaType_Infection,
 	eLuxAreaType_Examine,
 	eLuxAreaType_Sign,
 	eLuxAreaType_SlimeDamage,
+	eLuxAreaType_ColorGrading,
 
 	eLuxAreaType_LastEnum
 };
@@ -164,6 +157,8 @@ enum eLuxEnemyType
 	eLuxEnemyType_Grunt,
 	eLuxEnemyType_WaterLurker,
 	eLuxEnemyType_ManPig,
+	eLuxEnemyType_ThomasPig,
+	eLuxEnemyType_Child,
 
 	eLuxEnemyType_LastEnum
 };
@@ -201,7 +196,6 @@ enum eLuxItemType
 	eLuxItemType_Lantern,
 	eLuxItemType_Health,
 	eLuxItemType_Sanity,
-	eLuxItemType_LampOil,
 	eLuxItemType_Tinderbox,
 	eLuxItemType_HandObject,
 	
@@ -216,6 +210,8 @@ enum eLuxEnemyMessage
 	eLuxEnemyMessage_TimeOut_2,
 	eLuxEnemyMessage_TimeOut_3,
 	eLuxEnemyMessage_TimeOut_4,
+
+	eLuxEnemyMessage_StopPatrolAnimation,
 
 	eLuxEnemyMessage_AnimationOver,
 	eLuxEnemyMessage_AnimationSpecialEvent,
@@ -342,7 +338,7 @@ enum eLuxHeadPosAdd
 	eLuxHeadPosAdd_ScreenShake,
 	eLuxHeadPosAdd_Script,
 	eLuxHeadPosAdd_Hurt,
-	eLuxHeadPosAdd_InsanityCollapse,
+	eLuxHeadPosAdd_InfectionCollapse,
 
 	eLuxHeadPosAdd_LastEnum
 };
@@ -391,10 +387,8 @@ enum eLuxAction
 	eLuxAction_UIClear,
 
 	eLuxAction_OpenDebug,
-	eLuxAction_ReloadMap,
 	eLuxAction_QuickSave,
 	eLuxAction_QuickLoad,
-	eLuxAction_FastForward,
 
 	eLuxAction_Inventory,
 	eLuxAction_Journal,
@@ -424,7 +418,18 @@ enum eLuxAction
 
 	eLuxAction_ZoomIn,
 	eLuxAction_ZoomOut,
-	
+
+#ifdef _DEBUG
+
+	eLuxAction_InfectionLevelZero,
+	eLuxAction_InfectionLevelOne,
+	eLuxAction_InfectionLevelTwo,
+	eLuxAction_InfectionLevelThree,
+	eLuxAction_InfectionLevelFour,
+
+	eLuxAction_DumpPigInfo,
+
+#endif
 
 	eLuxAction_LastEnum
 };
@@ -464,6 +469,9 @@ enum eLuxFocusCrosshair
 	eLuxFocusCrosshair_Pick,
 	eLuxFocusCrosshair_LevelDoor,
 	eLuxFocusCrosshair_Ladder,
+	eLuxFocusCrosshair_VoiceOver,
+	eLuxFocusCrosshair_PhoneBox,
+	eLuxFocusCrosshair_Note,
 
     eLuxFocusCrosshair_LastEnum
 };
@@ -487,9 +495,8 @@ enum eLuxGlobalVolumeType
 	eLuxGlobalVolumeType_Flashback,
 	eLuxGlobalVolumeType_Death,
 	eLuxGlobalVolumeType_GameMenu,
-	eLuxGlobalVolumeType_InsanityCollapse,
+	eLuxGlobalVolumeType_InfectionCollapse,
 	eLuxGlobalVolumeType_Commentary,
-	eLuxGlobalVolumeType_DebugMenu,
 	
 	eLuxGlobalVolumeType_LastEnum
 };
@@ -621,6 +628,8 @@ public:
 class iLuxMessageCallback
 {
 public:
+	virtual ~iLuxMessageCallback() {}
+
 	virtual void OnPress(bool abYes)=0;
 };
 
@@ -781,6 +790,22 @@ public:
 	tString msImageFile;
 };
 
+//----------------------------------------------
+
+class cLuxHint : public iSerializable
+{
+	kSerializableClassInit(cLuxHint)
+public:
+	cLuxHint() : mbHasBeenRead(true) {}
+
+	tString msNameEntry;
+	tString msTextEntry;
+
+	tString msIconFile;
+	tString msImageFile;
+
+	bool mbHasBeenRead;
+};
 
 //----------------------------------------
 
@@ -825,17 +850,43 @@ typedef tLuxScriptVarMap::iterator tLuxScriptVarMapIt;
 
 //----------------------------------------
 
+class cTextQueueEntry : public iSerializable
+{
+	kSerializableClassInit(cTextQueueEntry)
+public:
+	tWString msTextEntry;
+	float mfDelay;
+};
+
+//---------------------------------------------------
+
 class cLuxVoiceData : public iSerializable
 {
 	kSerializableClassInit(cLuxVoiceData)
 public:
 	tWString msText;
+	float mfTextDelay;
+	tWString msText2;
+	float mfText2Delay;
+	tWString msText3;
+	float mfText3Delay;
+	tWString msText4;
+	float mfText4Delay;
+	tWString msText5;
+	float mfText5Delay;
+	tWString msText6;
+	float mfText6Delay;
+	tWString msText7;
+	float mfText7Delay;
 	tString msVoiceFile;
 	tString msEffectFile;
 	bool mbUsePosition;
 	cVector3f mvPosition;
 	float mfMinDistance;
 	float mfMaxDistance;
+	int mlPriority;
+	double mfCurrentTime;
+	double mfInterruptedAt;
 };
 
 //----------------------------------------------
@@ -852,6 +903,9 @@ public:
 	bool mbDeleteWhenColliding;
 	int mlStates;
 	bool mbColliding;
+
+    cLuxCollideCallback_SaveData() {};
+    ~cLuxCollideCallback_SaveData() {};
 };
 
 

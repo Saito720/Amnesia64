@@ -1,5 +1,5 @@
 # data file for the Fltk User Interface Designer (fluid)
-version 1.0110 
+version 1.0302 
 header_name {.h} 
 code_name {.cpp}
 decl {\#undef DestroyAll} {public global
@@ -26,16 +26,17 @@ decl {\#include "QualityChooser.h"} {public global
 decl {using namespace hpl;} {public global
 } 
 
-decl {extern tString gsGameLanguageFolder;} {global
+decl {extern tString gsGameLanguageFolder;} {private global
 } 
 
-decl {extern tString gsDefaultGameLanguage;} {global
+decl {extern tString gsDefaultGameLanguage;} {private global
 } 
 
-decl {\#include "Main.h"} {global
+decl {\#include "Main.h"} {private global
 } 
 
-decl {\#include "LauncherHelper.h"} {} 
+decl {\#include "LauncherHelper.h"} {private local
+} 
 
 class cUserInterface {open
 } {
@@ -69,19 +70,19 @@ o->hide();} open
       }
     }
     Fl_Window LauncherWindow {
-      label {Amnesia: The Dark Descent launcher} open
-      xywh {245 151 694 554} type Single box NO_BOX color 228 when 0
+      label {Amnesia: A Machine For Pigs} open
+      xywh {814 352 690 550} type Single box NO_BOX color 228 when 0
       code0 {LauncherWindow->position(((float)(Fl::w()-LauncherWindow->w()))*0.5f, ((float)(Fl::h()-LauncherWindow->h()))*0.5f);} modal visible
     } {
       Fl_Group {} {open
-        image {../../art/launcher/launcher_bg.jpg} xywh {0 0 695 555} color 7 align 16
+        image {background.jpg} xywh {0 0 695 555} color 7 align 16
       } {
-        Fl_Tabs {} {open
+        Fl_Tabs TMainTabs {open
           xywh {60 330 585 175}
         } {
           Fl_Group TabGeneral {
             label General
-            xywh {60 355 585 150}
+            xywh {60 355 585 150} hide
           } {
             Fl_Choice CBQPreset {
               label {Quality:}
@@ -135,10 +136,10 @@ Fl::delete_widget(LauncherWindow);} open
             } {}
           }
           Fl_Group TabGraphics {
-            label {Graphic Options} open
-            xywh {60 355 585 150} hide
+            label {Graphic Options} open selected
+            xywh {60 355 585 150}
           } {
-            Fl_Group GroupBasicGfxOptions {
+            Fl_Group GroupBasicGfxOptions {open
               xywh {60 355 585 150}
             } {
               Fl_Choice CBResolution {
@@ -329,7 +330,7 @@ SetWidgetVisible(GroupBasicGfxOptions, true);}
               Fl_Choice CBSSAOSamples {
                 label {SSAO Samples:}
                 callback {int lValue = (long int)CBSSAOSamples->mvalue()->user_data();
-cLauncherHelper::UpdateConfigFile(this, mpConfigFile, "Graphics", "SSAOSamples", lValue);} selected
+cLauncherHelper::UpdateConfigFile(this, mpConfigFile, "Graphics", "SSAOSamples", lValue);}
                 xywh {450 420 120 20} down_box BORDER_BOX
               } {
                 MenuItem {} {
@@ -394,22 +395,10 @@ Fl::delete_widget(LauncherWindow);}
 Fl::delete_widget(LauncherWindow);}
           xywh {350 520 115 25}
         }
-        Fl_Button BReadRemember {
-          label Remember
-          callback {cPlatform::OpenFileOnShell(_W("Remember - Short Story Collection.pdf"));}
-          xywh {5 520 95 25} labelfont 2
-        }
-        Fl_Button BLaunchPTest {
-          label Justine
-          callback {mlExitFlag = 2;
-mpConfigFile->Save();
-
-Fl::delete_widget(LauncherWindow);}
-          xywh {600 520 90 25} labelfont 2
-        }
       }
     }
-    code {BShowAdvanced->value(0);
+    code {TMainTabs->value(TabGeneral);
+BShowAdvanced->value(0);
 
 cLauncherHelper::PopulateLanguages(mvLanguageFiles, gsDefaultGameLanguage, mpConfigFile, CBLanguage);
 cLauncherHelper::PopulateResolutions(mvVModes, mpConfigFile, CBResolution, this);
@@ -456,19 +445,29 @@ mvSoundDevices = cLauncherHelper::GetAvailableSoundDevices();
 /////////////////////////////////////////////
 // If no config file was present, set 'medium' settings
 if(abConfigFileExists==false)
-	cLauncherHelper::UpdateConfigFileWithPreset(mpConfigFile, mvPresets[1]);
+	cLauncherHelper::UpdateConfigFileWithPreset(mpConfigFile, mvPresets[0]);
 
 Fl_Window* pWin = CreateWindow();
 char *argv[] = { " " };
-pWin->show(0,argv);} {}
+pWin->show(0,argv);
+
+/////////////////////////////////////////////
+// If no config file was present try to detect best settings
+if(abConfigFileExists==false)
+   cLauncherHelper::DetectSettings(this, mpConfigFile, mvPresets, mpQualityChooser, msCardString);
+
+} {}
   }
   Function {Run()} {open return_type int
   } {
     code {return Fl::run();} {}
   }
-  decl {int& mlExitFlag;} {}
-  decl {cConfigFile* mpConfigFile;} {}
-  decl {tVideoModeVec mvVModes;} {}
+  decl {int& mlExitFlag;} {private local
+  }
+  decl {cConfigFile* mpConfigFile;} {private local
+  }
+  decl {tVideoModeVec mvVModes;} {private local
+  }
   Function {SetWidgetEnabled(Fl_Widget* apW, bool abX)} {} {
     code {if(abX)
 	apW->show();
@@ -481,10 +480,14 @@ else
 else
 	apW->deactivate();} {}
   }
-  decl {cQualityChooser* mpQualityChooser;} {}
-  decl {std::vector<cConfigFile*> mvPresets;} {}
-  decl {tString msCardString;} {}
-  decl {cEngine* mpEngine;} {}
+  decl {cQualityChooser* mpQualityChooser;} {private local
+  }
+  decl {std::vector<cConfigFile*> mvPresets;} {private local
+  }
+  decl {tString msCardString;} {private local
+  }
+  decl {cEngine* mpEngine;} {private local
+  }
   Function {CheckEqualsPreset()} {} {
     code {int lValue = cLauncherHelper::GetEqualPresetIndex(mpConfigFile, mvPresets);
 if(lValue==-1)
@@ -492,10 +495,16 @@ if(lValue==-1)
 	
 CBQPreset->value(lValue);} {}
   }
-  decl {bool mbSettingPreset;} {}
-  decl {std::list<tString> mlstLabels;} {}
-  decl {tString msTestString;} {}
-  decl {tSoundDeviceVec mvSoundDevices;} {}
-  decl {iSoundDeviceIdentifier* mpCurSndDev;} {}
-  decl {tStringVec mvLanguageFiles;} {}
+  decl {bool mbSettingPreset;} {private local
+  }
+  decl {std::list<tString> mlstLabels;} {private local
+  }
+  decl {tString msTestString;} {private local
+  }
+  decl {tSoundDeviceVec mvSoundDevices;} {private local
+  }
+  decl {iSoundDeviceIdentifier* mpCurSndDev;} {private local
+  }
+  decl {tStringVec mvLanguageFiles;} {private local
+  }
 } 

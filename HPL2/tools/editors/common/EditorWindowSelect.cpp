@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "EditorWindowSelect.h"
@@ -249,12 +249,15 @@ void cEditorWindowSelect::OnInitLayout()
 
 	mpObjectTypeGroup = mpSet->CreateWidgetGroup(cVector3f(5,8,0.1f), cVector2f(160,80), _W("Select Object Type"), mpBGFrame);
 	mpObjectTypeGroup->SetDefaultFontSize(cVector2f(11.5f));
+	AddWidget(mpObjectTypeGroup);
 
 	mpCBSelectAll = mpSet->CreateWidgetCheckBox(cVector3f(10,10,0.1f),0,_W("All"), mpObjectTypeGroup);
+	AddWidget(mpCBSelectAll);
 	mpCBSelectAll->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(FilterButtonPressed));
 	mpCBSelectAll->SetDefaultFontSize(cVector2f(10));
 
 	mpCBSelectMultipleTypes = mpSet->CreateWidgetCheckBox(cVector3f(40,10,0.1f),0,_W("MultiSelect"), mpObjectTypeGroup);
+	AddWidget(mpCBSelectMultipleTypes);
 	mpCBSelectMultipleTypes->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(FilterButtonPressed));
 	mpCBSelectMultipleTypes->SetDefaultFontSize(cVector2f(10));
 
@@ -266,6 +269,7 @@ void cEditorWindowSelect::OnInitLayout()
 	{
 		cGuiGfxElement* pGfx = mpSet->GetGui()->CreateGfxImage("editmode_select_"+cString::ToLowerCase(sButtonText[i])+".tga", eGuiMaterial_Alpha);
 		cWidgetButton* pButton = mpSet->CreateWidgetButton(vPos, cVector2f(25),_W(""), mpBGFrame);
+		AddWidget(pButton);
 
 		pButton->SetToolTipEnabled(true);
 		pButton->SetToolTip(cString::To16Char(sButtonText[i]));

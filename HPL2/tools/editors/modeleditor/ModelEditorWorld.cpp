@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "ModelEditorWorld.h"
@@ -67,8 +67,8 @@ void cAnimationEventWrapper::Save(cXmlElement* apElement)
 
 bool cAnimationEventWrapper::IsValid()
 {
-	if(msType=="") return false;
-	if(msValue=="" && msType!="Step") return false;
+	if(msType=="" || msValue=="")
+		return false;
 
 	return true;
 }
@@ -303,19 +303,15 @@ void cModelEditorWorld::LoadWorldData(cXmlElement* apWorldDataElement)
 		tString sType = pXmlVariables->GetAttributeString("EntityType");
 		tString sSubType = pXmlVariables->GetAttributeString("EntitySubType");
 
-		bool bValid = false;
-		cEditorUserClassType* pBaseType = pDef->GetType(sType);
-		if (pBaseType)
-		{
-			bValid = true;
-			cEditorUserClassSubType* pType = pBaseType->GetSubType(sSubType);
-			SetType(pType);
+		cEditorUserClassType* pType = pDef->GetType(sType);
+		cEditorUserClassSubType* pSubType = NULL;
+		if(pType)
+			pSubType = pDef->GetType(sType)->GetSubType(sSubType);
 
-			if(mpClass) mpClass->Load(pXmlVariables);
-			else		bValid = false;
-		}
-
-		if (!bValid)
+		SetType(pSubType);
+		if(mpClass)
+			mpClass->Load(pXmlVariables);
+		else
 		{
 			tString sMessage = "Model has invalid type : " + sType + " - " + sSubType;
 			Error("%s\n", sMessage.c_str());
@@ -344,11 +340,11 @@ bool cModelEditorWorld::CustomCategorySaver(cXmlElement* apWorldObjectsElement)
 {
 	cXmlElement* pMeshElem = apWorldObjectsElement->GetFirstElement("Mesh");
 	pMeshElem->SetAttributeString("Filename", 
-		cString::To8Char(mpEditor->GetPathRelToWD(cString::To16Char(mpTypeSubMesh->GetMeshFilename()))));
+		mpEditor->GetFilePathRelativeToWorkingDir(mpTypeSubMesh->GetMeshFilename()));
 	
 	cXmlElement* pAnimElem = apWorldObjectsElement->GetFirstElement("Animations");
 	{
-		for(int i=0;i<(int)mvAnimations.size();++i)
+		for(size_t i=0;i<mvAnimations.size();++i)
 		{
 			cAnimationWrapper& pAnim = mvAnimations[i];
 			cXmlElement* pXmlAnim = pAnimElem->CreateChildElement("Animation");

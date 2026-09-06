@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "EditorWindowEntityEditBoxBody.h"
@@ -107,7 +107,7 @@ void cEditorWindowEntityEditBoxBody::AddPropertySetBody(cWidgetTab* apParentTab)
 	float fAddFar = 25;
 
 	mpLabelMaterial = mpSet->CreateWidgetLabel(vPos, 0, _W("Body Material"), apParentTab);
-
+	AddWidget(mpLabelMaterial);
 	vPos.y += fAddNear;
 	mpComboBoxMaterial = mpSet->CreateWidgetComboBox(vPos, vSize, _W(""), apParentTab);
 	cSurfaceDataIterator it = mpEditor->GetEngine()->GetPhysics()->GetSurfaceDataIterator();
@@ -119,52 +119,52 @@ void cEditorWindowEntityEditBoxBody::AddPropertySetBody(cWidgetTab* apParentTab)
 	}
 
 	mpComboBoxMaterial->AddCallback(eGuiMessage_SelectionChange, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpComboBoxMaterial);
 
 	vPos.y += fAddFar;
 
 	mpLabelMass = mpSet->CreateWidgetLabel(vPos, 0, _W("Mass"), apParentTab);
-
+	AddWidget(mpLabelMass);
 	vPos.y += fAddNear;
 	mpInputMass = mpSet->CreateWidgetTextBox(vPos, cVector2f(120,25), _W(""), apParentTab, eWidgetTextBoxInputType_Numeric, 0.5f);
 	mpInputMass->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpInputMass);
 	
 	vPos.y += fAddFar;
     
 	mpLabelAngularDamping = mpSet->CreateWidgetLabel(vPos, 0, _W("Angular Damping"), apParentTab);
-
+	AddWidget(mpLabelAngularDamping);
 	vPos.y +=fAddNear;
 	mpInputAngularDamping = mpSet->CreateWidgetTextBox(vPos, vSize, _W(""), apParentTab, eWidgetTextBoxInputType_Numeric, 0.5f);
 	mpInputAngularDamping->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpInputAngularDamping);
 	
 	vPos.y += fAddFar;
 
 	mpLabelLinearDamping = mpSet->CreateWidgetLabel(vPos, 0, _W("Linear Damping"), apParentTab);
-
+	AddWidget(mpLabelLinearDamping);
 	vPos.y +=fAddNear;
 	mpInputLinearDamping = mpSet->CreateWidgetTextBox(vPos, vSize, _W(""), apParentTab, eWidgetTextBoxInputType_Numeric, 0.5f);
 	mpInputLinearDamping->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpInputLinearDamping);
 
 	vPos.y += fAddFar;
 
 	mpLabelMaxAngularSpeed = mpSet->CreateWidgetLabel(vPos, 0, _W("Max Angular Speed"), apParentTab);
-
+	AddWidget(mpLabelMaxAngularSpeed);
 	vPos.y +=fAddNear;
 	mpInputMaxAngularSpeed = mpSet->CreateWidgetTextBox(vPos, vSize, _W(""), apParentTab, eWidgetTextBoxInputType_Numeric, 0.5f);
 	mpInputMaxAngularSpeed->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpInputMaxAngularSpeed);
 
 	vPos.y += fAddFar;
 
 	mpLabelMaxLinearSpeed = mpSet->CreateWidgetLabel(vPos, 0, _W("Max Linear Speed"), apParentTab);
-
+	AddWidget(mpLabelMaxLinearSpeed);
 	vPos.y +=fAddNear;
 	mpInputMaxLinearSpeed = mpSet->CreateWidgetTextBox(vPos, vSize, _W(""), apParentTab, eWidgetTextBoxInputType_Numeric, 0.5f);
 	mpInputMaxLinearSpeed->AddCallback(eGuiMessage_TextBoxEnter, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpInputMaxLinearSpeed);
 
 	vPos.y += fAddFar;
 
@@ -175,43 +175,43 @@ void cEditorWindowEntityEditBoxBody::AddPropertySetBody(cWidgetTab* apParentTab)
 
 	mpCheckBoxBlocksSound = mpSet->CreateWidgetCheckBox(vPos, 0, _W("Blocks sound"), apParentTab);
 	mpCheckBoxBlocksSound->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpCheckBoxBlocksSound);
 
 	vPos.y += fAddNear;
 
 	mpCheckBoxContinuousCollision = mpSet->CreateWidgetCheckBox(vPos, 0, _W("Continuous collision"), apParentTab);
 	mpCheckBoxContinuousCollision->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpCheckBoxContinuousCollision);
 
 	vPos.y += fAddNear;
 
 	mpCheckBoxCanAttachCharacter = mpSet->CreateWidgetCheckBox(vPos, 0, _W("Can attach character"), apParentTab);
 	mpCheckBoxCanAttachCharacter->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpCheckBoxCanAttachCharacter);
 
 	vPos.y += fAddNear;
 
 	mpCheckBoxPushedByCharacterGravity = mpSet->CreateWidgetCheckBox(vPos, 0, _W("Pushed by character gravity"), apParentTab);
 	mpCheckBoxPushedByCharacterGravity->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpCheckBoxPushedByCharacterGravity);
 
 	vPos.y += fAddNear;
 
 	mpCheckBoxCollideCharacter = mpSet->CreateWidgetCheckBox(vPos, 0, _W("Collide character"), apParentTab);
 	mpCheckBoxCollideCharacter->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpCheckBoxCollideCharacter);
 
 	vPos.y += fAddNear;
 
 	mpCheckBoxCollideNonCharacter = mpSet->CreateWidgetCheckBox(vPos, 0, _W("Collide non character"), apParentTab);
 	mpCheckBoxCollideNonCharacter->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpCheckBoxCollideNonCharacter);
 
 	vPos.y += fAddNear;
 
 	mpCheckBoxVolatile = mpSet->CreateWidgetCheckBox(vPos, 0, _W("Volatile"), apParentTab);
 	mpCheckBoxVolatile->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(InputCallback));
-
+	AddWidget(mpCheckBoxVolatile);
 
 	vPos.y += fAddNear;
 	mpInpUseSurfaceEffects = CreateInputBool(vPos, _W("Use surface effects"), "", apParentTab);

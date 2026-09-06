@@ -312,6 +312,9 @@
     <ClInclude Include="include\graphics\PostEffect_ColorConvTex.h">
       <Filter>Graphics\PostEffectTypes</Filter>
     </ClInclude>
+    <ClInclude Include="include\graphics\PostEffect_ColorGrading.h">
+      <Filter>Graphics\PostEffectTypes</Filter>
+    </ClInclude>
     <ClInclude Include="include\graphics\PostEffect_ImageTrail.h">
       <Filter>Graphics\PostEffectTypes</Filter>
     </ClInclude>
@@ -567,7 +570,10 @@
     <ClInclude Include="include\impl\scripthelper.h">
       <Filter>Impl\System</Filter>
     </ClInclude>
-    <ClInclude Include="include\impl\scriptstring.h">
+    <ClInclude Include="include\impl\scriptstdstring.h">
+      <Filter>Impl\System</Filter>
+    </ClInclude>
+    <ClInclude Include="include\impl\scriptarray.h">
       <Filter>Impl\System</Filter>
     </ClInclude>
     <ClInclude Include="include\impl\SqScript.h">
@@ -1254,6 +1260,9 @@
     <ClCompile Include="sources\graphics\PostEffect_ColorConvTex.cpp">
       <Filter>Graphics\PostEffectTypes</Filter>
     </ClCompile>
+    <ClCompile Include="sources\graphics\PostEffect_ColorGrading.cpp">
+      <Filter>Graphics\PostEffectTypes</Filter>
+    </ClCompile>
     <ClCompile Include="sources\graphics\PostEffect_ImageTrail.cpp">
       <Filter>Graphics\PostEffectTypes</Filter>
     </ClCompile>
@@ -1497,10 +1506,13 @@
     <ClCompile Include="sources\impl\scripthelper.cpp">
       <Filter>Impl\System</Filter>
     </ClCompile>
-    <ClCompile Include="sources\impl\scriptstring.cpp">
+    <ClCompile Include="sources\impl\scriptstdstring.cpp">
       <Filter>Impl\System</Filter>
     </ClCompile>
-    <ClCompile Include="sources\impl\scriptstring_utils.cpp">
+    <ClCompile Include="sources\impl\scriptarray.cpp">
+      <Filter>Impl\System</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\impl\scriptstdstring_utils.cpp">
       <Filter>Impl\System</Filter>
     </ClCompile>
     <ClCompile Include="sources\impl\SqScript.cpp">
@@ -1937,6 +1949,14 @@
     </ClCompile>
     <ClCompile Include="sources\impl\GamepadSDL2.cpp">
       <Filter>Impl\Input</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\dependencies\sources\ufbx\ufbx.h">
+      <Filter>Impl</Filter>
+    </ClInclude>
+    <ClCompile Include="..\dependencies\sources\ufbx\ufbx.c">
+      <Filter>Impl</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

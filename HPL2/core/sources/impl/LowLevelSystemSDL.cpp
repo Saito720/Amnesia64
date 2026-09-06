@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 //#include <vld.h>
@@ -47,7 +47,8 @@
 #include "SDL/SDL.h"
 #endif
 
-#include "impl/scriptstring.h"
+#include "impl/scriptstdstring.h"
+#include "impl/scriptarray.h"
 
 #include "system/String.h"
 
@@ -203,7 +204,7 @@ namespace hpl {
 	
 	//-----------------------------------------------------------------------
 
-	static tLogMessageCallbackFunc gpLogMessageCallbackFunc=NULL;
+	static tLogOutputOverrideFunction gpOutputOverrideFunc=NULL;
 
 	//-----------------------------------------------------------------------
 	
@@ -226,17 +227,20 @@ namespace hpl {
 
 		tString sMess = "FATAL ERROR: ";
 		sMess += text;
-		gLogWriter.Write(sMess);
 
-		if(gpLogMessageCallbackFunc) gpLogMessageCallbackFunc(eLogOutputType_FatalError, sMess.c_str());
-
-#if defined(__APPLE__) || defined(__linux__)
+		if(gpOutputOverrideFunc)
+			gpOutputOverrideFunc(sMess.c_str(), eLogOutputType_FatalError);
+		else
+		{
+				gLogWriter.Write(sMess);
+	#if defined(__APPLE__) || defined(__linux__)
 #if !SDL_VERSION_ATLEAST(2, 0, 0)
-		SDL_WM_GrabInput(SDL_GRAB_OFF);
+			SDL_WM_GrabInput(SDL_GRAB_OFF);
 #endif
-		SDL_Quit();
-#endif
-		cPlatform::CreateMessageBox(eMsgBoxType_Error, _W("FATAL ERROR"), _W("%ls"), cString::To16Char(sMess).c_str());
+			SDL_Quit();
+	#endif
+			cPlatform::CreateMessageBox(eMsgBoxType_Error, _W("FATAL ERROR"), _W("%ls"), cString::To16Char(sMess).c_str());
+		}
 
 		exit(1);
 	}
@@ -255,9 +259,10 @@ namespace hpl {
 
 		tString sMess = "ERROR: ";
 		sMess += text;
-		gLogWriter.Write(sMess);
-
-		if(gpLogMessageCallbackFunc) gpLogMessageCallbackFunc(eLogOutputType_Error, sMess.c_str());
+		if(gpOutputOverrideFunc)
+			gpOutputOverrideFunc(sMess.c_str(), eLogOutputType_Error);
+		else
+			gLogWriter.Write(sMess);
 	}
 
 	//-----------------------------------------------------------------------
@@ -275,9 +280,10 @@ namespace hpl {
 
 		tString sMess = "WARNING: ";
 		sMess += text;
-		gLogWriter.Write(sMess);
-
-		if(gpLogMessageCallbackFunc) gpLogMessageCallbackFunc(eLogOutputType_Warning, sMess.c_str());
+		if(gpOutputOverrideFunc)
+			gpOutputOverrideFunc(sMess.c_str(), eLogOutputType_Warning);
+		else
+			gLogWriter.Write(sMess);
 	}
 
 	//-----------------------------------------------------------------------
@@ -295,9 +301,10 @@ namespace hpl {
 
 		tString sMess = "";
 		sMess += text;
-		gLogWriter.Write(sMess);
-
-		if(gpLogMessageCallbackFunc) gpLogMessageCallbackFunc(eLogOutputType_Normal, sMess.c_str());
+		if(gpOutputOverrideFunc)
+			gpOutputOverrideFunc(sMess.c_str(), eLogOutputType_Normal);
+		else
+			gLogWriter.Write(sMess);
 	}
 
 	//-----------------------------------------------------------------------
@@ -341,14 +348,17 @@ namespace hpl {
 
 		tString sMess = "";
 		sMess += text;
-		gUpdateLogWriter.Write(sMess);
+		if(gpOutputOverrideFunc)
+			gpOutputOverrideFunc(sMess.c_str(), eLogOutputType_Update);
+		else
+			gUpdateLogWriter.Write(sMess);
 	}
 
 	//-----------------------------------------------------------------------
 
-	extern void SetLogMessageCallback(tLogMessageCallbackFunc apFunc)
+	extern void SetLogOutputOverrideFunction(tLogOutputOverrideFunction apFunc)
 	{
-		gpLogMessageCallbackFunc = apFunc;
+		gpOutputOverrideFunc = apFunc;
 	}
 
 	//-----------------------------------------------------------------------
@@ -419,7 +429,8 @@ namespace hpl {
 		mpScriptOutput = hplNew( cScriptOutput, () );
 		mpScriptEngine->SetMessageCallback(asMETHOD(cScriptOutput,AddMessage), mpScriptOutput, asCALL_THISCALL);
 
-		RegisterScriptString(mpScriptEngine);
+		RegisterStdString(mpScriptEngine);
+		RegisterScriptArray(mpScriptEngine, true);
 	
 		mlHandleCount = 0;
 

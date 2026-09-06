@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef LUX_PLAYER_HELPERS_H
@@ -30,12 +30,89 @@ class cLuxPlayer;
 
 //----------------------------------------------
 
-class cLuxPlayerInsanityCollapse : public iLuxPlayerHelper
+class cLuxPlayerStamina : public iLuxPlayerHelper
+{
+public:
+	cLuxPlayerStamina(cLuxPlayer *apPlayer);
+	~cLuxPlayerStamina();
+
+	void Update(float afTimeStep);
+
+	float GetExhaustionFactor();
+
+private:
+
+	float
+        mfTimeSinceLastSound,
+		mfStaminaTimer,
+        mfSprintSlowdownStartTime,
+		mfSprintExhaustionTime,
+		mfExhaustionSpeedMultiplier,
+		mfSprintRecoverySpeed;
+};
+
+//----------------------------------------------
+
+class cLuxPlayerVoiceFlashback : public iLuxPlayerHelper
 {
 friend class cLuxPlayer_SaveData;
 public:
-	cLuxPlayerInsanityCollapse(cLuxPlayer *apPlayer);
-	~cLuxPlayerInsanityCollapse();
+	cLuxPlayerVoiceFlashback(cLuxPlayer *apPlayer);
+	~cLuxPlayerVoiceFlashback();
+
+	void Update(float afTimeStep);
+	
+    bool AllowsJump() { return !( mbIsPlaying && ( mbObstructMovement ) ); }
+
+    void StopPlaying();
+    void Start(
+		const tString & asVoiceFile,
+		const tString & asTextEntry1, float afDelay1,
+		const tString & asTextEntry2, float afDelay2,
+		const tString & asTextEntry3, float afDelay3,
+		const tString & asTextEntry4, float afDelay4,
+		const tString & asTextEntry5, float afDelay5,
+		const tString & asTextEntry6, float afDelay6,
+		const tString & asTextEntry7, float afDelay7,
+		bool abUseEffects, bool abObstructMovement );
+    void StartEffects();
+    void StopEffects();
+    void StopMovementObstruction();
+    void StartMovementObstruction();
+    void SetStopSound( const tString& asStopSound ) { m_sStopSound = asStopSound; }
+    bool GetIsPlaying() { return mbIsPlaying; }
+
+    void SetMoveSpeedMultiplier( float afMoveSpeedMultiplier ) { mfMoveSpeedMultiplier = afMoveSpeedMultiplier; }
+    void SetMouseSensitivityModifier( float afMouseSensitivityModifier ) { mfMouseSensitivityModifier = afMouseSensitivityModifier; }
+	
+private:
+
+    bool
+    	mbIsDelaying,
+    	mbIsPlaying,
+        mbUseEffects,
+        mbObstructMovement;
+    float
+		mfEffectFadeInTime,
+		mfEffectFadeOutTime,
+		mfSepiaAmount,
+		mfLightFadeAmount,
+		mfImageTrailAmount,
+		mfBlurStartDistance,
+		mfBlurAmount,
+		mfFovMultiplier,
+		mfMoveSpeedMultiplier,
+		mfMouseSensitivityModifier;
+    tString
+        m_sStopSound;
+};
+
+class cLuxPlayerInfectionCollapse : public iLuxPlayerHelper
+{
+friend class cLuxPlayer_SaveData;
+public:
+	cLuxPlayerInfectionCollapse(cLuxPlayer *apPlayer);
+	~cLuxPlayerInfectionCollapse();
 
 	void Reset();
 
@@ -57,7 +134,7 @@ private:
 
 	float mfHeightAddGoal;
 	
-	float mfAwakenSanity;
+	float mfAwakenInfection;
     
 	float mfSleepTime;
 
@@ -76,7 +153,7 @@ private:
 	float mfHeightAdd;
 	float mfRoll;
 
-	float mfT;
+	float mfTimer;
 	float mfRandomCount;
 
 	cSoundEntry *mpLoopSound;
@@ -102,7 +179,7 @@ private:
 	void SetSwayActive(bool abX);
 	void UpdateSway(float afTimeStep);
 
-	float mfStartSwayMaxSanity;
+	float mfStartSwayMinInfection;
 
 	bool mbSwayActive;
 
@@ -298,59 +375,68 @@ private:
 
 //----------------------------------------------
 
-class cLuxPlayerSanity : public iLuxPlayerHelper
+class cLuxPlayerInfection : public iLuxPlayerHelper
 {
 friend class cLuxPlayer_SaveData;
 public:
-	cLuxPlayerSanity(cLuxPlayer *apPlayer);
-	~cLuxPlayerSanity();
+	cLuxPlayerInfection(cLuxPlayer *apPlayer);
+	~cLuxPlayerInfection();
 
 	void Reset();
 
 	void StartHit();
-	void SetSanityLost();
+	void StartInfectionIncreaseEffects();
 
 	void Update(float afTimeStep);
 
 	void OnDraw(float afFrameTime);
 
-	float GetAtLowSanityCount(){ return mfAtLowSanityCount;}
+	float GetTimeAtHighInfection(){ return mfTimeAtHighInfection;}
+
+    void SetFauxMode( bool abIsFauxMode ) { mbIsFauxMode = abIsFauxMode; }
 
 private:
 	float GetCurrentSizeMul();
 
-	void UpdateInsaneEffects(float afTimeStep);
+	void UpdateInfectionEffects(float afTimeStep);
 	void UpdateCheckEnemySeen(float afTimeStep);
 	void UpdateHit(float afTimeStep);
 	
-	void UpdateInsanityVisuals(float afTimeStep);
+	void UpdateInfectionVisuals(float afTimeStep);
 	void UpdateEnemySeenEffect(float afTimeStep);
-	void UpdateLosingSanity(float afTimeStep);
-	void UpdateLowSanity(float afTimeStep);
+	void UpdateInfectionIncreaseSounds(float afTimeStep);
+	void UpdateHighInfection(float afTimeStep);
 	
+	void UpdateStingersAndLoops(float afTimeStep);
+	
+	int mnPreviousSoundInfectionLevel;
+	cSoundEntry *mpCurrentInfectionLoopSound;
+	int mlCurrentInfectionLoopSoundID;
+
 	float mfHitAlpha;
 	bool mbHitActive;
-	float mfSanityLostCount;
+    bool mbIsFauxMode;
+	float mfInfectionIncreaseSoundEffectsTimer;
 
-	float mfAtLowSanityCount;
+	float mfTimeAtHighInfection;
 
 	bool mbHitIsUpdated;
-	bool mbSanityLostIsUpdated;
+	bool mbInfectionIncreaseSoundEffectsAreUpdated;
 
 	float mfPantCount;
 
-	float mfCheckEnemySeenCount;
+	float mfTimeUntilNextEnemySeenCheck;
 
-	bool mbSanityEffectUpdated;
+	bool mbInfectionVisualEffectUpdated;
 
-	float mfT;
-	float mfInsaneWaveAlpha;
+	float mfTimer;
+	float mfInfectionWaveAlpha;
 
-	float mfSanityDrainCount;
-	float mfSanityDrainVolume;
-	float mfSanityHeartbeatCount;
+	float mfInfectionIncreaseSoundTimer;
+	float mfInfectionIncreaseVolume;
+	float mfInfectionIncreaseHeartbeatTimer;
 
-	float mfSeenEnemyCount;
+	float mfEnemySeenTimer;
 	bool mbEnemyIsSeen;
 
 	float mfShowHintTimer;
@@ -362,21 +448,20 @@ private:
 	float mfHitZoomInFOVMul;
 	float mfHitZoomInAspectMul;
 
-	float mfSanityRegainSpeed;
-	float mfSanityRegainLimit;
-	float mfSanityVeryLowLimit;
-	float mfSanityEffectsStart;
+	float mfInfectionDecreaseSpeed;
+	int miInfectionDecreaseLimitLevel;
+	float mfInfectionVeryHighLimit;
+	float mfInfectionEffectsStart;
 
-	float mfSanityWaveAlphaMul;
-	float mfSanityWaveSpeedMul;
+	float mfInfectionWaveAlphaMul;
+	float mfInfectionWaveSpeedMul;
 
-	float mfSanityLowLimit;
-	float mfSanityLowLimitMaxTime;
-	float mfSanityLowNewSanityAmount;
+	float mfHighInfectionLimitForDeathTimer;
+	float mfTimeUntilDeathAtHighInfection;
 
-	float mfCheckNearEnemyInterval;
-	float mfNearEnemyDecrease;
-	float mfNearCritterDecrease;
+	float mfCheckEnemyNearOrSeenInterval;
+	float mfNearEnemyIncrease;
+	float mfNearCritterIncrease;
 };
 
 //----------------------------------------------
@@ -413,16 +498,12 @@ private:
 	cVector3f mvLocalOffset;
 	tString msTurnOnSound;
 	tString msTurnOffSound;
-	tString msOutOfOilSound;
 	tString msDisabledSound;
-	float mfLowerOilSpeed;
-	float mfFadeLightOilAmount;
 	
 	bool mbDisabled;
 	bool mbActive;
 	float mfAlpha;
 	cLightPoint *mpLight;
-	
 };
 
 //----------------------------------------------
@@ -442,8 +523,6 @@ public:
 	void Start();
 
 	void Update(float afTimeStep);
-	void PostUpdate(float afTimeStep);
-
 
 	void OnDraw(float afFrameTime);
 
@@ -456,17 +535,23 @@ public:
 	bool ShowHint(){ return mbShowHint;}
 	void SetShowHint(bool abX){ mbShowHint=abX;}
 
+	void ReleasePlayerFromLimbo() { mbHoldsPlayerInLimbo = false; }
+
 	void SetHint(const tString& asCat, const tString& asEntry);
 	const tString& GetHintCat(){ return msHintCat; }
 	const tString& GetHintEntry(){ return msHintEntry; }
 
+	void SetKeepPlayerInLimbo( bool abKeepPlayerInLimbo ) { mbKeepPlayerInLimbo = abKeepPlayerInLimbo; }
 
 
 private:
 	void ResetGame();
 
-	bool mbToMainMenu;
 	bool mbActive;
+
+	bool mbKeepPlayerInLimbo;
+	bool mbHoldsPlayerInLimbo;
+	bool mbHasRunCheckPointCallbackScript;
 
 	bool mbShowHint;
 
@@ -494,7 +579,7 @@ private:
 	float mfHeightAdd;
 	float mfRoll;
 
-	float mfT;
+	float mfTimer;
 
 	float mfMinHeightAdd;
 
@@ -533,15 +618,13 @@ public:
 
 	void Update(float afTimeStep);
 
-	void SetLean(float afMul);
-	void AddLean(float afAdd);
+	void Lean(float afMul);
 
 	void Reset();
 private:
 	iCollideShape *mpHeadShape;
 
 	float mfDir;
-	float mfDirAdd;
 	float mfMovement;
 	float mfRotation;
 
@@ -616,7 +699,6 @@ private:
 	bool mbFlashActive;
 };
 
-
 //----------------------------------------------
 
 class cLuxPlayerLightLevel : public iLuxPlayerHelper
@@ -644,9 +726,41 @@ private:
 
 //----------------------------------------------
 
+class cLuxPlayerIsMoving : public iLuxPlayerHelper
+{
+public:	
+	cLuxPlayerIsMoving(cLuxPlayer *apPlayer);
+	~cLuxPlayerIsMoving();
+
+	void OnStart();
+	void Update(float afTimeStep);
+	void Reset();
+
+    bool PlayerIsMovingFast();
+    bool PlayerIsMovingSlowly();
+
+    //bool PlayerIsMovingMouseFast();
+
+private:
+
+    float
+        mfFastMovementThreshold,
+        mfSlowMovementThreshold,
+        mfImmediatePlayerSpeed,
+        mfAveragePlayerSpeed;
+};
+
+//----------------------------------------------
+
+class cLuxPlayerStrobeHelper : public iLuxPlayerHelper
+{
+
+};
+
+//----------------------------------------------
+/*
 class cLuxPlayerInDarkness : public iLuxPlayerHelper
 {
-friend class cLuxPlayer_SaveData;
 public:	
 	cLuxPlayerInDarkness(cLuxPlayer *apPlayer);
 	~cLuxPlayerInDarkness();
@@ -664,8 +778,6 @@ public:
 	cLightPoint* GetAmbientLight(){ return mpAmbientLight;}
 
 	bool InDarkness();
-
-	void SetActive(bool abX);
 
 private:
 	cSoundHandler *mpSoundHandler;
@@ -685,9 +797,6 @@ private:
 	float mfLoopSoundFadeInSpeed;
 	float mfLoopSoundFadeOutSpeed;
 
-	float mfSanityLossPerSecond;
-	float mfSanityLossMul;
-
 	bool mbInDarkness;
 	float mfShowHintTimer;
 
@@ -696,10 +805,8 @@ private:
 
 	cLightPoint *mpAmbientLight;
 	bool mbAmbientLightIsOn;
-
-	bool mbActive;
 };
-
+*/
 //----------------------------------------------
 
 

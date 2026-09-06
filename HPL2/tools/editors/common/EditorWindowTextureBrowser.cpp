@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "EditorWindowTextureBrowser.h"
@@ -135,10 +135,11 @@ void cEditorObjectIndexEntryTexture::BuildThumbnail()
 	cResources* pRes = pEditor->GetEngine()->GetResources();
 	////////////////////////////////////////////////////////////////
 	// Create thumbnail if it doesn't exist or the object was updated
-	tWString sFilename = cString::ReplaceCharToW(cString::To16Char(GetFileName()), _W("/"), _W("_"));
-	//tString sFilename = GetTextureFile();
+	//tWString sFilename = cString::ReplaceCharToW(cString::To16Char(GetFileName()), _W("/"), _W("_"));
+	tString sFilename = GetTextureFile();
 	tWString sFilenameFullPath = cString::To16Char(GetTextureFileFullPath());
 	tWString sThumbnailFilename = pTmbBuilder->GetThumbnailNameFromFileW(sFilenameFullPath);
+	//mpIndex->GetEditor()->GetFolderFullPath(eEditorDir_Thumbnails) + sFilename +;
 
 	if(bIsUpdated || cPlatform::FileExists(sThumbnailFilename)==false)
 	{
@@ -579,20 +580,24 @@ void cEditorWindowTextureBrowser::OnInitLayout()
 	
 	mpComboBoxCurrentDirectory = mpSet->CreateWidgetComboBox(cVector3f(5,30,10), cVector2f(200,25), _W(""), mpWindow);
 	mpComboBoxCurrentDirectory->AddCallback(eGuiMessage_SelectionChange, this, kGuiCallback(CurrentDirectory_OnSelectionChange));
+	AddWidget(mpComboBoxCurrentDirectory);
 
 	mpListDirectories = mpSet->CreateWidgetListBox(cVector3f(10,60,10),cVector2f(150,425), mpWindow);
 	mpListDirectories->AddCallback(eGuiMessage_SelectionDoubleClick, this, kGuiCallback(DirectoryList_OnSelectionDblClick));
+	AddWidget(mpListDirectories);
 
 	mpFrameTextures = mpSet->CreateWidgetFrame(cVector3f(175,60,1),cVector2f(600,425), true, mpWindow, false, true);
 	mpFrameTextures->SetBackgroundZ(0);
 	mpFrameTextures->SetBackGroundColor(cColor(0.4f,1));
 	mpFrameTextures->SetDrawBackground(true);
 	mpFrameTextures->AddCallback(eGuiMessage_MouseUp,this,kGuiCallback(Frame_OnClick));
+	AddWidget(mpFrameTextures);
 
 	for(int i=0;i<2;++i)
 	{
 		mvButtons[i] = mpSet->CreateWidgetButton(0,cVector2f(70,25), _W(""), mpWindow);
 		mvButtons[i]->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(Button_OnPressed));
+		AddWidget(mvButtons[i]);
 	}
 	mvButtons[0]->SetPosition(cVector3f(650,490,10));
 	mvButtons[0]->SetText(_W("OK"));
@@ -600,6 +605,7 @@ void cEditorWindowTextureBrowser::OnInitLayout()
 	mvButtons[1]->SetText(_W("Cancel"));
 
 	mpLabelTextureFilename = mpSet->CreateWidgetTextBox(cVector3f(175,490,0.1f), cVector2f(375,25), _W(""), mpWindow);
+	AddWidget(mpLabelTextureFilename);
 }
 
 //----------------------------------------------------------------------------------------
@@ -642,9 +648,9 @@ void cEditorWindowTextureBrowser::PopulateTextureList()
 
 	iEditorObjectIndex* pIndex = CreateIndex(GetCurrentFullPath());
 
-	//tWString sIndexFilename = mpEditor->GetTempDir() + sCurrentDir + _W(".tls");
-	tWString sThumbnailsDir = mpEditor->GetThumbnailDir();
-	iXmlDocument *pDoc = mpEditor->GetEngine()->GetResources()->GetLowLevel()->CreateXmlDocument();
+	//tWString sIndexFilename = mpEditor->GetFolderFullPath(eEditorDir_Temp) + sCurrentDir + _W(".tls");
+	//tWString sThumbnailsDir = mpEditor->GetFolderFullPath(eEditorDir_Thumbnails);
+	//iXmlDocument *pDoc = mpEditor->GetEngine()->GetResources()->GetLowLevel()->CreateXmlDocument();
 
 	//////////////////////////////////////////
 	// Clear current icons and selection

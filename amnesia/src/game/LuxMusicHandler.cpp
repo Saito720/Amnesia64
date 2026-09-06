@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxMusicHandler.h"
@@ -23,7 +23,7 @@
 #include "LuxMapHandler.h"
 #include "LuxPlayer.h"
 #include "LuxEnemy.h"
-
+#include "LuxDebugHandler.h"
 
 //////////////////////////////////////////////////////////////////////////
 // MUSIC
@@ -57,7 +57,6 @@ cLuxMusicHandler::cLuxMusicHandler() : iLuxUpdateable("LuxMusicHandler")
 	mfVolumeMul = gpBase->mpGameCfg->GetFloat("Sound","InGameMusicVolume",1.0f);
 
 	mvGameMusic.resize(mlMaxPrio+1);
-
 }
 
 //-----------------------------------------------------------------------
@@ -88,25 +87,29 @@ void cLuxMusicHandler::Reset()
 		mvGameMusic[i].Reset();
 	}
 
-	mlCurrentMaxPrio = -1;
-
 	for(int i=0; i<eLuxEnemyMusic_LastEnum; ++i)
 	{
 		m_setEnemies[i].clear();
+		
+		if(mbEnemyPlaying[i]) Stop(5.0f, 9 + i, true);
 
 		mbEnemyPlaying[i] = false;
 		mfEnemyPlayCount[i] = 0;
 		mfEnemyStopCount[i] = 0;
 	}
 
-	gpBase->mpEngine->GetSound()->GetMusicHandler()->ResetResumeData();
 
+	if(mbEnemyClosePlaying) Stop(5.0f, 5, true);
 	mbEnemyClosePlaying = false;
 	mfEnemyCloseCount =0;
 	mfEnemyGoneCount =0;
 
 	mfUpdateDangerCount = 0;
 	mfUpdateAttackCount = 0;
+
+	gpBase->mpEngine->GetSound()->GetMusicHandler()->ResetResumeData();
+
+	mlCurrentMaxPrio = -1;
 }
 
 //-----------------------------------------------------------------------
@@ -166,12 +169,12 @@ void cLuxMusicHandler::Play(const tString &asFile, bool abLoop,float afVolume, f
 
 //-----------------------------------------------------------------------
 
-void cLuxMusicHandler::Stop(float afFadeTime, int alPrio)
+void cLuxMusicHandler::Stop(float afFadeTime, int alPrio, bool abForceStop)
 {
 	if(alPrio> mlMaxPrio) alPrio = mlMaxPrio;
 
 	//Check if there is any song playing at this prio
-	if(mvGameMusic[alPrio].msFile != "")
+	if(mvGameMusic[alPrio].msFile != "" || abForceStop)
 	{
 		mvGameMusic[alPrio].msFile = "";
 
@@ -217,7 +220,7 @@ void cLuxMusicHandler::OnMapEnter(cLuxMap *apMap)
 	for(int i=0; i<eLuxEnemyMusic_LastEnum; ++i)
 	{
 		m_setEnemies[i].clear();
-		Stop(2.0f, 8+i);
+		Stop(2.0f, 9+i);
 	}
 
 	//Update(2.0f);
@@ -228,7 +231,7 @@ void cLuxMusicHandler::OnMapLeave(cLuxMap *apMap)
 	for(int i=0; i<eLuxEnemyMusic_LastEnum; ++i)
 	{
 		m_setEnemies[i].clear();
-		Stop(2.0f, 8+i);
+		Stop(2.0f, 9+i);
 	}
 
 
@@ -245,10 +248,6 @@ void cLuxMusicHandler::OnMapLeave(cLuxMap *apMap)
 
 void cLuxMusicHandler::UpdateDangerMusic(float afTimeStep)
 {
-	////////////////////////////
-	// HARDMODE early out
-	if (gpBase->mbHardMode == true) return;
-
 	for(int i=0; i<eLuxEnemyMusic_LastEnum; ++i)
 	{
 		if(mbEnemyPlaying[i]) return;
@@ -287,6 +286,7 @@ void cLuxMusicHandler::UpdateDangerMusic(float afTimeStep)
 			if(mfEnemyCloseCount > 2.0f)
 			{
 				Play(sMusic,true,1.0f, 6.0f, 5, true, true);
+				mvGameMusic[5].msFile = ""; //hack to make sure it doesnt loop automatically when all enemies are disabled
 				mbEnemyClosePlaying = true;
 			}
 		}
@@ -374,10 +374,11 @@ void cLuxMusicHandler::UpdateEnemyMusic(float afTimeStep, eLuxEnemyMusic aType)
 				for(int i=0; i<aType; ++i)
 				{
 					mbEnemyPlaying[i] = false;
-					Stop(2.0f, 8+aType);
+					Stop(2.0f, 9+aType);
 				}
 
-				Play(sMusic, true, 1.0f, 1.5f, 8+aType, true, true);
+				Play(sMusic, true, 1.0f, 1.5f, 9+aType, true, true);
+				mvGameMusic[9+aType].msFile = ""; //hack to make sure the music does not start playing automatically again
 				mbEnemyPlaying[aType] = true;
 				//Log("Play!");
 				mfEnemyPlayCount[aType] =0;
@@ -394,7 +395,7 @@ void cLuxMusicHandler::UpdateEnemyMusic(float afTimeStep, eLuxEnemyMusic aType)
 		if(mfEnemyStopCount[aType] > 1.2f)
 		{
 			mbEnemyPlaying[aType] = false;
-			Stop(5.0f, 8+aType);
+			Stop(5.0f, 9+aType, true);
 			//Log("Stop!");
 			mfEnemyStopCount[aType] =0;
 		}

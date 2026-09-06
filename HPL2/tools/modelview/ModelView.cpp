@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "hpl.h"
@@ -32,6 +32,7 @@ tString gsModelFile = "";
 
 bool gbDrawPhysicsDebug = false;
 bool gbDrawAxes = false;
+bool gbDrawNormals = false;
 bool gbDrawGrid = false;
 bool gbDrawBoundingBox = false;
 bool gbDrawSkeleton = false;
@@ -42,6 +43,7 @@ int glOnLoadAnimationState = 1;
 
 bool gbRotateModel = false;
 bool gbAmbientLight = true;
+bool gbKeyLightOnCamera = false;
 bool gbPhysicsActive = true;
 bool gbShowInvalidVertices = false;
 
@@ -240,6 +242,50 @@ public:
 						apFunctions->GetLowLevelGfx()->DrawSphere(vPos,fRadius, cColor(0,1,0));
 				}
   			}	
+		}
+
+		if(gpEntity && gbDrawNormals)
+		{
+			for(int i=0; i<gpEntity->GetSubMeshEntityNum(); ++i)
+			{
+				cSubMeshEntity *pSubEnt = gpEntity->GetSubMeshEntity(i);
+				cSubMesh *pSubMesh = pSubEnt->GetSubMesh();
+				iVertexBuffer *pVtxBuff = pSubMesh->GetVertexBuffer();
+
+				float *pPosArray = pVtxBuff->GetFloatArray(eVertexBufferElement_Position);
+				float *pNrmArray = pVtxBuff->GetFloatArray(eVertexBufferElement_Normal);
+				float *pTanArray = pVtxBuff->GetFloatArray(eVertexBufferElement_Texture1Tangent);
+
+				for(size_t i=0; i<pVtxBuff->GetVertexNum(); i++ )
+				{
+					float *pPos = &pPosArray[i * pVtxBuff->GetElementNum(eVertexBufferElement_Position)];
+					cVector3f vPos(pPos[0],pPos[1],pPos[2]);
+
+					float *pNrm = &pNrmArray[i * pVtxBuff->GetElementNum(eVertexBufferElement_Normal)];
+					cVector3f vNrm(pNrm[0],pNrm[1],pNrm[2]);
+
+					float *pTan = &pTanArray[i * pVtxBuff->GetElementNum(eVertexBufferElement_Texture1Tangent)];
+					cVector3f vTan(pTan[0],pTan[1],pTan[2]);
+
+					if ( vNrm.Length() - 1.0f < 0.00001f && vNrm.Length() - 1.0f > -0.00001f )
+					{
+						apFunctions->GetLowLevelGfx()->DrawLine(vPos,vPos + vNrm* 0.1f, cColor(0,1,0));
+					}
+					else
+					{
+						apFunctions->GetLowLevelGfx()->DrawSphere(vPos,0.01f, cColor(1,0,0));
+					}
+
+					if ( vTan.Length() - 1.0f < 0.00001f && vTan.Length() - 1.0f > -0.00001f )
+					{
+						apFunctions->GetLowLevelGfx()->DrawLine(vPos,vPos + vTan* 0.1f, cColor(0,0,1));
+					}
+					else
+					{
+						apFunctions->GetLowLevelGfx()->DrawSphere(vPos,0.01f, cColor(1,0,0));
+					}
+				}
+			}
 		}
 
 		if(gbDrawBoundingBox)
@@ -527,7 +573,6 @@ public:
 	void SetupView()
 	{
 		gpEngine->GetInput()->GetLowLevel()->LockInput(false);
-		gpEngine->GetInput()->GetLowLevel()->RelativeMouse(false);
 
 		cRenderSettings *pSettings = gpSimpleCamera->GetViewport()->GetRenderSettings();
 		gpSimpleCamera->GetViewport()->AddRendererCallback(&renderCallback);
@@ -594,6 +639,8 @@ public:
 		case eMaterialTexture_Height:	vExt.push_back(_W("height"));
 										break;
 		case eMaterialTexture_Illumination:		vExt.push_back(_W("illum"));
+												break;
+        case eMaterialTexture_IlluminationModulate:		vExt.push_back(_W("illum_mod"));
 												break;
 		case eMaterialTexture_Specular:	vExt.push_back(_W("spec"));
 										break;
@@ -800,6 +847,8 @@ public:
 			else
 			{
 				Log(" Create default material!\n");
+				if ( sMatName == "" ) sMatName = "default";
+
 				CreateDefaultMaterial(pMesh, sMatName);
 
 				tString sMeshPath = cString::GetFilePath(cString::To8Char(pMesh->GetFullPath()));
@@ -1361,6 +1410,10 @@ public:
 			pCheckBox = pSet->CreateWidgetCheckBox(vGroupPos,vCheckSize,_W("Draw floor"),pGroup);
 			pCheckBox->SetChecked(gpFloor->IsVisible());
 			pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDrawFloor));
+
+			pCheckBox = pSet->CreateWidgetCheckBox(vGroupPos + vAddPos,vCheckSize,_W("Draw normals"),pGroup);
+			pCheckBox->SetChecked(gbDrawNormals);
+			pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDrawNormals));
 			
 			vGroupPos.y += 22;
 
@@ -1421,6 +1474,7 @@ public:
 				_W("Alpha"),
 				_W("Height"),
 				_W("Illumination"),
+				_W("IlluminationModulate"),
 				_W("CubeMap"),
 				_W("Refraction"),
 				_W("DissolveAlpha"),
@@ -1546,6 +1600,13 @@ public:
 			//Group
 			vGroupPos = cVector3f(5,10,0.1f);
 			pGroup = pSet->CreateWidgetGroup(vPos,100,_W("Lights"),pRootFrame);
+
+
+			//Key light on Camera
+			pCheckBox = pSet->CreateWidgetCheckBox(vGroupPos,vSize,_W("Keylight on Camera"),pGroup);
+			pCheckBox->SetChecked(gbKeyLightOnCamera);
+			pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeKeyLightOnCamera));
+			vGroupPos.y += 20;
 
 			//Ambient
 			pCheckBox = pSet->CreateWidgetCheckBox(vGroupPos,vSize,_W("Ambient lighting"),pGroup);
@@ -1699,7 +1760,14 @@ public:
 		gbDrawAxes = aData.mlVal == 1;
 		return true;
 	}
-	kGuiCallbackFuncEnd(cSimpleUpdate,ChangeDrawAxes)  
+	kGuiCallbackFuncEnd(cSimpleUpdate,ChangeDrawAxes)
+
+	bool ChangeDrawNormals(iWidget* apWidget,const cGuiMessageData& aData)
+	{
+		gbDrawNormals = aData.mlVal == 1;
+		return true;
+	}
+	kGuiCallbackFuncEnd(cSimpleUpdate,ChangeDrawNormals)
 
 	bool ChangeDrawFloor(iWidget* apWidget,const cGuiMessageData& aData)
 	{
@@ -1723,6 +1791,22 @@ public:
 		return true;
 	}
 	kGuiCallbackFuncEnd(cSimpleUpdate,ChangeBackgroundColor)
+
+	bool ChangeKeyLightOnCamera(iWidget* apWidget,const cGuiMessageData& aData)
+	{
+		gbKeyLightOnCamera  = (aData.mlVal == 1);
+
+		if(gbKeyLightOnCamera==false)
+		{
+			cVector3f vPos = cVector3f(3,4,6);
+			cVector3f vRot = cMath::GetAngleFromPoints3D(vPos,0);
+			gvLights[0]->SetMatrix(cMath::MatrixRotate(cVector3f(vRot.x,vRot.y,0),eEulerRotationOrder_XYZ));
+			gvLights[0]->SetPosition(vPos);
+		}
+
+		return true;
+	}
+	kGuiCallbackFuncEnd(cSimpleUpdate,ChangeKeyLightOnCamera)
 
 	bool ChangeAmbientLight(iWidget* apWidget,const cGuiMessageData& aData)
 	{
@@ -1916,7 +2000,6 @@ public:
 		cGuiPopUpFilePicker* pPicker = pSet->CreatePopUpLoadFilePicker(mvPickedFiles,false,msCurrentFilePath,false, this, kGuiCallback(LoadAnimationFromFilePicker));
 		int lCat = pPicker->AddCategory(_W("Animation"),_W("*.dae"));
 		pPicker->AddFilter(lCat,_W("*.dae_anim"));
-		//pPicker->AddFilter(lCat,_W("*.fbx"));
 
 		
 		return true;
@@ -2152,6 +2235,15 @@ public:
 			}
 			
 		}
+		if(gbKeyLightOnCamera)
+		{
+			cCamera *pCam = gpSimpleCamera->GetCamera();
+
+			cVector3f vPos = pCam->GetPosition();
+			cVector3f vRot = cMath::GetAngleFromPoints3D(vPos,0);
+			gvLights[0]->SetMatrix(cMath::MatrixRotate(cVector3f(vRot.x,vRot.y,0),eEulerRotationOrder_XYZ));
+			gvLights[0]->SetPosition(vPos - cMath::Vector3Normalize(vPos) * 0.05f);
+		}
 
 		//////////////////////////////////////////
 		// Body picking
@@ -2258,12 +2350,6 @@ public:
 
 #include "../LuxBasePersonal.h"
 
-#ifdef __APPLE__
-namespace hpl {
-	extern tString FindGameResources();
-}
-#endif
-
 int hplMain(const tString &asCommandline)
 {
 //To allow drag and drop:
@@ -2279,16 +2365,6 @@ int hplMain(const tString &asCommandline)
 		SetCurrentDirectory(sDir.c_str());
 	}
 #endif
-#if __APPLE__
-	tWString sEditorDir = cPlatform::GetWorkingDir();
-	sEditorDir = cString::AddSlashAtEndW(sEditorDir);
-	
-	tString gameDir = FindGameResources();
-	if (gameDir.empty())
-	{
-		exit(1);
-	}
-#endif
 
 	//iResourceBase::SetLogCreateAndDelete(true);
 	//iGpuProgram::SetLogDebugInformation(true); 
@@ -2302,17 +2378,17 @@ int hplMain(const tString &asCommandline)
 	//iLowLevelGraphics::SetForceShaderModel3And4Off(true);
 	tWString sPersonalDir = cString::ReplaceCharToW(cPlatform::GetSystemSpecialPath(eSystemPath_Personal), _W("\\"), _W("/"));
 #ifdef USERDIR_RESOURCES
-	tWString sUserResourceDir = sPersonalDir + PERSONAL_RELATIVEROOT PERSONAL_RELATIVEGAME_PARENT PERSONAL_RESOURCES;
+    tWString sUserResourceDir = sPersonalDir + PERSONAL_RELATIVEROOT PERSONAL_RELATIVEGAME_PARENT PERSONAL_RESOURCES;
 #endif
 
-	// Create the base personal folders
-	tWStringVec vDirs;
+    // Create the base personal folders
+    tWStringVec vDirs;
+    SetupBaseDirs(vDirs, _W("HPL2")
 #ifdef USERDIR_RESOURCES
-	SetupBaseDirs(vDirs, _W("HPL2"), _W(""), true);
-#else
-	SetupBaseDirs(vDirs, _W("HPL2"));
+                  ,true
 #endif
-	CreateBaseDirs(vDirs, sPersonalDir);
+                  );
+    CreateBaseDirs(vDirs, sPersonalDir);
 
 	SetLogFile(sPersonalDir + PERSONAL_RELATIVEROOT _W("HPL2/modelview.log"));
 
@@ -2325,7 +2401,7 @@ int hplMain(const tString &asCommandline)
 	//vars.mGraphics.mvWindowPosition = cVector2l(0,0);
 	gpEngine = CreateHPLEngine(eHplAPI_OpenGL, eHplSetup_All, &vars);
 	gpEngine->SetLimitFPS(false);
-	gpEngine->GetGraphics()->GetLowLevel()->SetVsyncActive(false);
+	gpEngine->GetGraphics()->GetLowLevel()->SetVsyncActive(false, false);
 	gpEngine->SetWaitIfAppOutOfFocus(true);
 	
 
@@ -2341,14 +2417,11 @@ int hplMain(const tString &asCommandline)
 	}
 	
 	//Add resources
+	gpEngine->GetResources()->LoadResourceDirsFile("resources.cfg"
 #ifdef USERDIR_RESOURCES
-	gpEngine->GetResources()->LoadResourceDirsFile("resources.cfg", sUserResourceDir);
-#else
-	gpEngine->GetResources()->LoadResourceDirsFile("resources.cfg");
+                                                   ,sUserResourceDir
 #endif
-#ifdef __APPLE__
-	gpEngine->GetResources()->AddResourceDir(sEditorDir + _W("viewer/"), true);
-#endif
+                                                   );
 	
 	//Add updates
 	cSimpleUpdate Update;

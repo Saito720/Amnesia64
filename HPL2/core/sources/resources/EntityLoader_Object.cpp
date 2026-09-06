@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "resources/EntityLoader_Object.h"
@@ -370,6 +370,7 @@ namespace hpl {
 			//Set entity properties
 			//TODO...
 			mpEntity->SetRenderFlagBit(eRenderableFlag_ShadowCaster,true); //<- Temp
+			if(apInstanceVars) mpEntity->SetIsOccluder(apInstanceVars->GetVarBool("IsOccluder", false));
 		}
 
 		////////////////////////////////////////	
@@ -702,18 +703,13 @@ namespace hpl {
 			}
 
 			////////////////////////
-			//If no bones got attached to bodies, then add the entire entity to be attached. (Luis: this comment does not make much sense given the code below, not sure what the point is)
+			//If no bones got attached to bodies, then add the entire entity to be attached.
 			if(mpMesh->GetSkeleton())
 			{
-				if(mapBoneStates.size() != mpEntity->GetBoneStateNum())
+				if(mapBoneStates.size() == mpEntity->GetBoneStateNum())
 				{
-					Error("Loading entity %s: Skeletons in mesh file (%ls) and .ent file (%ls) differ! Probably caused by .ent not being up to date with mesh\n", 
-						asName.c_str(), 
-						mpMesh->GetFullPath().c_str(), 
-						static_cast<iXmlDocument*>(apRootElem)->GetPath().c_str());
-				}
-				else
 					lstTempEntities.push_back(mpEntity);
+				}
 			}
 
 			////////////////////////
@@ -747,6 +743,7 @@ namespace hpl {
 				}
 			}
 
+
 			if(mbNodeAnimation)
 			{
 				/////////////
@@ -755,7 +752,7 @@ namespace hpl {
 			}
 		}
 
-
+		
 		////////////////////////////////////////	
 		// Set matrix on entity if there are no bodies.
 		if(mvBodies.size()<=0)
@@ -1018,6 +1015,8 @@ namespace hpl {
 
 		apBody->SetBlocksSound(apElem->GetAttributeBool("BlocksSound",false));
 		apBody->SetCollideCharacter(apElem->GetAttributeBool("CollideCharacter",true));
+		apBody->SetBlocksPathfinding(apElem->GetAttributeBool("BlocksPathfinding",false));
+
 		apBody->SetCollide(apElem->GetAttributeBool("CollideNonCharacter",true));
 
 		apBody->SetGravity(apElem->GetAttributeBool("HasGravity",true));

@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef HPL_RENDERER_DEFERRED_H
@@ -117,6 +117,7 @@ namespace hpl {
 		iTexture *mpShadowTexture;
 		bool mbCastShadows;
 		eShadowMapResolution mShadowResolution;
+		int mlShadowCasterNum;
 	};
 
 	//---------------------------------------------
@@ -139,9 +140,14 @@ namespace hpl {
 		iDepthStencilBuffer* GetDepthStencilBuffer(){ return mpDepthStencil[0];}
 
 		iFrameBuffer *GetAccumBuffer(){ return mpAccumBuffer;}
+		//iFrameBuffer *GetAccumLightBuffer(){ return mpAccumLightBuffer;}
 
 		iTexture* GetRefractionTexture(){ return mpRefractionTexture;}
 		iTexture* GetReflectionTexture(){ return mpReflectionTexture;}
+		
+		cDeferredLight* GetDeferredLight(int alID);
+		int GetDeferredLightNum();
+		float GetLightComplexity(cDeferredLight* apLightData);
 
 		//Static properties. Must be set before renderer data load.
 		static void SetGBufferType(eDeferredGBuffer aType){ mGBufferType = aType; }
@@ -175,13 +181,30 @@ namespace hpl {
 		
 		static void SetEdgeSmoothLoaded(bool abX){ mbEdgeSmoothLoaded = abX;}
 		static bool GetEdgeSmoothLoaded(){ return mbEdgeSmoothLoaded;}
+		
+		static void SetDebugRenderLightComplexity(bool abX){ mbDebugRenderLightComplexity = abX;}
+		static bool GetDebugRenderLightComplexity(){ return mbDebugRenderLightComplexity;}
+
+		static void SetDebugRenderOverdraw(bool abX){ mbDebugRenderOverdraw = abX;}
+		static bool GetDebugRenderOverdraw(){ return mbDebugRenderOverdraw;}
+
+		static void SetDebugPrevFrameOcclusion(bool abX){ mbDebugPrevFrameOcclusion = abX;}
+		static bool GetDebugPrevFrameOcclusion(){ return mbDebugPrevFrameOcclusion;}
 
 		static void SetOcclusionTestLargeLights(bool abX){ mbOcclusionTestLargeLights = abX;}
 		static bool GetOcclusionTestLargeLights(){ return mbOcclusionTestLargeLights;}
 
 		static void SetDebugRenderFrameBuffers(bool abX){ mbDebugRenderFrameBuffers = abX;}
 		static bool GetDebugRenderFrameBuffers(){ return mbDebugRenderFrameBuffers;}
-	
+
+        /*static void SetDebugRenderLightBuffer(bool abX){ mbDebugRenderLightBuffer = abX;}
+		static bool GetDebugRenderLightBuffer(){ return mbDebugRenderLightBuffer;}
+
+        static void SetModulateFog(bool abX){ mbModulateFog = abX;}
+		static bool GetModulateFog(){ return mbModulateFog;}
+
+        static void EnableFog(bool abX){ mbFogEnabled = abX;}*/
+
 	private:
 		void CopyToFrameBuffer();
 		void SetupRenderList();
@@ -192,6 +215,7 @@ namespace hpl {
 		void SetupRenderVariables();
 
 		void RenderZ();
+		void RenderZDissolve();
 		void RenderDynamicZTemp();
 		void RenderGbuffer();
 		void RenderSSAO();
@@ -219,12 +243,16 @@ namespace hpl {
 		void RenderTranslucent();
 		
 		void SetAccumulationBuffer();
+		//void SetAccumulationLightBuffer();
 		void SetGBuffer(eGBufferComponents aComponents);
 		iTexture* GetBufferTexture(int alIdx);
 		
 		
 		void RenderGbufferContent();
+        //void RenderLightBufferContent();
 		void RenderReflectionContent();
+		void RenderLightComplexity();
+		void RenderOverdraw();
 
 		////////////////
 		//Draw helpers
@@ -273,10 +301,12 @@ namespace hpl {
 		iFrameBuffer *mpGBuffer[2][eGBufferComponents_LastEnum]; //[2] = reflection or not
 		
 		iFrameBuffer *mpAccumBuffer;
+		//iFrameBuffer *mpAccumLightBuffer;
 		iFrameBuffer *mpReflectionBuffer;
 		
 		iTexture *mpGBufferTexture[2][4];	//[2] = reflection or not
 		iTexture *mpAccumBufferTexture;
+		//iTexture *mpLightBufferTexture;
 		iTexture *mpRefractionTexture;
 		iTexture *mpReflectionTexture;
 		iDepthStencilBuffer* mpDepthStencil[2];	//[2] = reflection or not
@@ -309,15 +339,19 @@ namespace hpl {
 		iGpuProgram *mpSSAORenderProgram;
 		iGpuProgram *mpEdgeSmooth_UnpackDepthProgram;
 		iGpuProgram *mpEdgeSmooth_RenderProgram;
+		
+		iGpuProgram *mpOverdrawProgram;
+		iGpuProgram *mpHeatMapProgram;
 
 		std::vector<cDeferredLight*> mvTempDeferredLights;
 		std::vector<cDeferredLight*> mvSortedLights[eDeferredLightList_LastEnum];
 
 		iGpuProgram *mpSkyBoxProgram; 
 		iGpuProgram *mpLightStencilProgram;
-		iGpuProgram *mpLightBoxProgram[2];//1=SSAO used, 0=no SSAO
+		iGpuProgram *mpLightBoxProgram[3];//1=SSAO used, 0=no SSAO, 2 = light debug
 
 		cProgramComboManager* mpFogProgramManager;
+        //cProgramComboManager* mpModulatedFogProgram;
 		
 		cMatrixf m_mtxTempLight;
 		
@@ -340,7 +374,15 @@ namespace hpl {
 		static bool mbEnableParallax;
 
 		static bool mbDebugRenderFrameBuffers;
+		//static bool mbDebugRenderLightBuffer;
+        
+		//static bool mbModulateFog;
+        //static bool mbFogEnabled;
+
 		static bool mbOcclusionTestLargeLights;
+		static bool mbDebugPrevFrameOcclusion;
+		static bool mbDebugRenderLightComplexity;
+		static bool mbDebugRenderOverdraw;
 
 	};
 

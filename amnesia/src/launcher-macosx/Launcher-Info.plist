@@ -33,7 +33,7 @@
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>GamePath</key>
-	<string>./Amnesia.app/Contents/MacOS/Amnesia</string>
+	<string>./AmnesiaAMFP.app/Contents/MacOS/AmnesiaAMFP</string>
 	<key>StartFolder</key>
 	<string>PARENT</string>
 </dict>

@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "graphics/Renderer.h"
@@ -73,6 +73,7 @@ namespace hpl {
 	bool iRenderer::mbParallaxEnabled=true;
 	int iRenderer::mlReflectionSizeDiv = 2;
 	bool iRenderer::mbRefractionEnabled=true;
+	int iRenderer::mlDrawCalls=1;
 
 	//-----------------------------------------------------------------------
 
@@ -1094,7 +1095,7 @@ namespace hpl {
 		////////////////////////////
 		//Check if object is translucent or has no material
 		// If so, do not render it.
-		if( pMaterial==NULL || pMaterial->GetType()->IsTranslucent())
+		if( pMaterial==NULL || pMaterial->GetType()->IsTranslucent() || apObject->IsOccluder() == false)
 		{
 			return false;
 		}
@@ -2340,7 +2341,6 @@ namespace hpl {
 		cVector3f vBoxSpaceDir = cMath::MatrixMul3x3(a_mtxInvBoxModelMatrix, avRayDir);
 
 		bool bFoundIntersection=false;
-		afExitDist = 0;
 
 		///////////////////////////////////
 		// Iterate the sides of the cube

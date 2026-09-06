@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "impl/LowLevelInputSDL.h"
@@ -40,6 +40,7 @@
 #if defined _WIN32 && !SDL_VERSION_ATLEAST(2,0,0)
 #include <Windows.h>
 #include <Dbt.h>
+#include "impl/GamepadXInput.h"
 #endif
 
 namespace hpl {
@@ -56,12 +57,12 @@ namespace hpl {
 		LockInput(true);
 		RelativeMouse(false);
 #if SDL_VERSION_ATLEAST(2, 0, 0)
-        SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER);
+		SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER);
 #else
-//		mlConnectedDevices = 0;
-//		mlCheckDeviceChange = 0;
-//		mbDirtyGamepads = true;
-//
+		mlConnectedDevices = 0;
+		mlCheckDeviceChange = 0;
+		mbDirtyGamepads = true;
+
 		SDL_EventState(SDL_SYSWMEVENT, SDL_ENABLE);
 #endif
 	}
@@ -155,8 +156,51 @@ namespace hpl {
 	//-----------------------------------------------------------------------
 
 	void cLowLevelInputSDL::EndInputUpdate()
-	{
-		
+	{ 
+#if USE_XINPUT
+		int lChange = cGamepadXInput::GetDeviceChange();
+
+		if(lChange != 0)
+		{
+			if(lChange < 0)
+			{
+				cEngine::SetDeviceWasRemoved();
+			}
+			else if(lChange > 0)
+			{
+				cEngine::SetDeviceWasPlugged();
+			}
+
+			mbDirtyGamepads = false;
+		}
+#elif !SDL_VERSION_ATLEAST(2,0,0)
+		////////////
+		// Check every x frames
+		if(mlCheckDeviceChange++ % 120 == 0)
+		{
+			/////////////
+			// Check if any new device has been pluggin in
+			DropGamepadSupport();
+			InitGamepadSupport();
+
+			/////////////
+			// Check if the total number of devices has changed since last update
+			if(mlConnectedDevices < GetPluggedGamepadNum())
+			{
+				cEngine::SetDeviceWasPlugged();
+			}
+			else if(mlConnectedDevices > GetPluggedGamepadNum())
+			{
+				cEngine::SetDeviceWasRemoved();
+			}
+			else
+			{
+				mbDirtyGamepads = true;
+			}
+
+			mlConnectedDevices = GetPluggedGamepadNum();
+		}
+#endif
 	}
 
 	//-----------------------------------------------------------------------
@@ -202,7 +246,18 @@ namespace hpl {
 
 	iGamepad* cLowLevelInputSDL::CreateGamepad(int alIndex)
 	{
-#if USE_SDL2
+#if USE_XINPUT
+		if(cGamepadXInput::IsConnected(alIndex))
+		{
+			///////////////
+			// This is a xbox gamepad, use XInput
+			return hplNew( cGamepadXInput, (alIndex));
+		}
+		else
+		{
+			return NULL;
+		}
+#elif USE_SDL2
 		return hplNew( cGamepadSDL2, (this, alIndex) );
 #else
 		return hplNew( cGamepadSDL, (this, alIndex) );

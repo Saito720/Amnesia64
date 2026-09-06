@@ -117,7 +117,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>winmm.lib;setupapi.lib;Imm32.lib;Version.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dbghelp.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -155,7 +155,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>winmm.lib;setupapi.lib;Imm32.lib;Version.lib;Avrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dbghelp.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;Avrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -164,15 +164,12 @@
     <ClCompile Include="LuxConfigHandler.cpp" />
     <ClCompile Include="LuxEnemy_ManPig.cpp" />
     <ClCompile Include="LuxHelpFuncs.cpp" />
-    <ClCompile Include="LuxMainMenu_StartGame.cpp" />
     <ClCompile Include="LuxTypes.cpp" />
     <ClCompile Include="Main.cpp" />
     <ClCompile Include="StdAfx.cpp" />
-    <ClCompile Include="LuxKeyEntry.cpp" />
     <ClCompile Include="LuxArea.cpp" />
     <ClCompile Include="LuxArea_Examine.cpp" />
     <ClCompile Include="LuxArea_Flashback.cpp" />
-    <ClCompile Include="LuxArea_Insanity.cpp" />
     <ClCompile Include="LuxArea_Ladder.cpp" />
     <ClCompile Include="LuxArea_Liquid.cpp" />
     <ClCompile Include="LuxArea_Rope.cpp" />
@@ -205,7 +202,6 @@
     <ClCompile Include="LuxProp_MultiSlider.cpp" />
     <ClCompile Include="LuxProp_NPC.cpp" />
     <ClCompile Include="LuxProp_Object.cpp" />
-    <ClCompile Include="LuxProp_OilBarrel.cpp" />
     <ClCompile Include="LuxProp_Photocell.cpp" />
     <ClCompile Include="LuxProp_SwingDoor.cpp" />
     <ClCompile Include="LuxProp_Wheel.cpp" />
@@ -219,7 +215,6 @@
     <ClCompile Include="LuxGlobalDataHandler.cpp" />
     <ClCompile Include="LuxHintHandler.cpp" />
     <ClCompile Include="LuxInputHandler.cpp" />
-    <ClCompile Include="LuxInsanityHandler.cpp" />
     <ClCompile Include="LuxInventory.cpp" />
     <ClCompile Include="LuxJournal.cpp" />
     <ClCompile Include="LuxLoadScreenHandler.cpp" />
@@ -266,6 +261,14 @@
     <ClCompile Include="LuxPlayerState_Ladder.cpp" />
     <ClCompile Include="LuxPlayerState_Normal.cpp" />
     <ClCompile Include="LuxPlayerState_UseItem.cpp" />
+    <ClCompile Include="LuxAnimatedProp.cpp" />
+    <ClCompile Include="LuxArea_ColorGrading.cpp" />
+    <ClCompile Include="LuxArea_Infection.cpp" />
+    <ClCompile Include="LuxEnemy_Child.cpp" />
+    <ClCompile Include="LuxInfectionHandler.cpp" />
+    <ClCompile Include="LuxProp_PhoneBox.cpp" />
+    <ClCompile Include="LuxProp_VoiceFlashbackTrigger.cpp" />
+    <ClCompile Include="PostEffect_Cells.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="LuxAchievementHandler.h" />
@@ -275,14 +278,11 @@
     <ClInclude Include="LuxEnemy_ManPig.h" />
     <ClInclude Include="LuxHelpFuncs.h" />
     <ClInclude Include="LuxIdleBehavior_ManPig.h" />
-    <ClInclude Include="LuxMainMenu_StartGame.h" />
     <ClInclude Include="LuxTypes.h" />
     <ClInclude Include="StdAfx.h" />
-    <ClInclude Include="LuxKeyEntry.h" />
     <ClInclude Include="LuxArea.h" />
     <ClInclude Include="LuxArea_Examine.h" />
     <ClInclude Include="LuxArea_Flashback.h" />
-    <ClInclude Include="LuxArea_Insanity.h" />
     <ClInclude Include="LuxArea_Ladder.h" />
     <ClInclude Include="LuxArea_Liquid.h" />
     <ClInclude Include="LuxArea_Rope.h" />
@@ -377,9 +377,17 @@
     <ClInclude Include="LuxPlayerState_UseItem.h" />
     <ClInclude Include="LuxSavedGame.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="LuxAnimatedProp.h" />
+    <ClInclude Include="LuxArea_ColorGrading.h" />
+    <ClInclude Include="LuxArea_Infection.h" />
+    <ClInclude Include="LuxEnemy_Child.h" />
+    <ClInclude Include="LuxInfectionHandler.h" />
+    <ClInclude Include="LuxProp_PhoneBox.h" />
+    <ClInclude Include="LuxProp_VoiceFlashbackTrigger.h" />
+    <ClInclude Include="PostEffect_Cells.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Lux.ico" />
+    <None Include="aamfp.ico" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Lux.rc" />

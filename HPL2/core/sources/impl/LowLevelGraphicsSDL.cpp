@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifdef _WIN32
@@ -87,7 +87,7 @@ namespace hpl {
 
 	cLowLevelGraphicsSDL::cLowLevelGraphicsSDL()
 	{
-		mlBatchArraySize = 20000;
+		mlBatchArraySize = 32768;
 		mlVertexCount = 0;
 		mlIndexCount =0;
 		mlMultisampling =0;
@@ -298,7 +298,7 @@ namespace hpl {
 			SDL_SysWMinfo pInfo;
 			SDL_VERSION(&pInfo.version);
 			SDL_GetWMInfo(&pInfo);
-
+            
 			RECT r;
 			GetWindowRect(pInfo.window, &r);
 			
@@ -1063,7 +1063,7 @@ namespace hpl {
 	{
 		;
 
-		glFinish();
+	//	glFinish();
 		//dont use this any more, SwapBuffers() takes care of it
 	}
 
@@ -2050,6 +2050,11 @@ namespace hpl {
 	{
 		;
 
+		if(mlVertexCount/mlBatchStride >= mlBatchArraySize)
+		{
+			return;
+		}
+
 		//Coord
 		mpVertexArray[mlVertexCount + 0] =	apVtx->pos.x;
 		mpVertexArray[mlVertexCount + 1] =	apVtx->pos.y;
@@ -2069,11 +2074,6 @@ namespace hpl {
 		mpVertexArray[mlVertexCount + 12] =	apVtx->norm.z;
 
 		mlVertexCount = mlVertexCount + mlBatchStride;
-
-		if(mlVertexCount/mlBatchStride >= mlBatchArraySize)
-		{
-			//Make the array larger.
-		}
 	}
 
 	//-----------------------------------------------------------------------
@@ -2081,6 +2081,10 @@ namespace hpl {
 	void cLowLevelGraphicsSDL::AddVertexToBatch(const cVertex *apVtx, const cVector3f* avTransform)
 	{
 		;
+		if(mlVertexCount/mlBatchStride >= mlBatchArraySize)
+		{
+			return;
+		}
 
 		//Coord
 		mpVertexArray[mlVertexCount + 0] =	apVtx->pos.x+avTransform->x;
@@ -2111,11 +2115,6 @@ namespace hpl {
 		mpVertexArray[mlVertexCount + 12] =	apVtx->norm.z;
 
 		mlVertexCount = mlVertexCount + mlBatchStride;
-
-		if(mlVertexCount/mlBatchStride >= mlBatchArraySize)
-		{
-			//Make the array larger.
-		}
 	}
 
 	//-----------------------------------------------------------------------
@@ -2132,6 +2131,11 @@ namespace hpl {
 		const cColor* apCol,const float& mfW, const float& mfH)
 	{
 		;
+
+		if(mlVertexCount/mlBatchStride >= mlBatchArraySize)
+		{
+			return;
+		}
 
 		//Coord
 		mpVertexArray[mlVertexCount + 0] =	avTransform->x + mfW;
@@ -2151,11 +2155,6 @@ namespace hpl {
 
 
 		mlVertexCount = mlVertexCount + mlBatchStride;
-
-		if(mlVertexCount/mlBatchStride >= mlBatchArraySize)
-		{
-			//Make the array larger.
-		}
 	}
 
 	//-----------------------------------------------------------------------
@@ -2164,6 +2163,11 @@ namespace hpl {
 		const cVector3f& avTex)
 	{
 		;
+
+		if(mlVertexCount/mlBatchStride >= mlBatchArraySize)
+		{
+			return;
+		}
 
 		//Coord
 		mpVertexArray[mlVertexCount + 0] =	avPos.x;
@@ -2191,14 +2195,15 @@ namespace hpl {
 	void cLowLevelGraphicsSDL::AddIndexToBatch(int alIndex)
 	{
 		;
+		if(mlIndexCount>=mlBatchArraySize)
+		{
+			return;
+		}
 
 		mpIndexArray[mlIndexCount] = alIndex;
 		mlIndexCount++;
 
-		if(mlIndexCount>=mlBatchArraySize)
-		{
-			//Make the array larger.
-		}
+		
 	}
 
 	//-----------------------------------------------------------------------
@@ -2208,6 +2213,11 @@ namespace hpl {
 		;
 
 		unsigned int lCount = mlTexCoordArrayCount[alUnit];
+
+		if(lCount >= mlBatchArraySize * 3)
+		{
+			return;
+		}
 
 		mpTexCoordArray[alUnit][lCount+0] = apCoord->x;
 		mpTexCoordArray[alUnit][lCount+1] = apCoord->y;

@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef HPL_AI_NODE_CONTAINER_H
@@ -45,7 +45,6 @@ namespace hpl {
 	{
 	public:
 		float mfDistance;
-		float mfSqrDistance;
 		cAINode *mpNode;
 	};
 
@@ -54,9 +53,10 @@ namespace hpl {
 
 	//--------------------------------
 
-	class cAINode
+	class cAINode// : public iScriptableBaseClass
 	{
-		friend class cAINodeContainer;
+	//kScriptBaseClassInit_PureResource(cAINode);
+	friend class cAINodeContainer;
 	public:
 		cAINode();
 		~cAINode();
@@ -70,17 +70,19 @@ namespace hpl {
 		
 		const tString& GetName(){ return msName;}
 		int GetID(){ return mlID; }
-		
+
+		int GetListID() { return mlListID; }
 	private:
 		tString msName;
 		int mlID;
+		int mlListID;
 		cVector3f mvPosition;
 		void *mpUserData;
 
 		tAINodeEdgeVec mvEdges;
 	};
 
-	typedef std::vector<cAINode*> tAINodeVec;
+	typedef std::vector<cAINode> tAINodeVec;
 	typedef tAINodeVec::iterator tAINodeVecIt;
 
 	typedef std::list<cAINode*> tAINodeList;
@@ -156,8 +158,9 @@ namespace hpl {
 
 	//--------------------------------
 		
-	class cAINodeContainer
+	class cAINodeContainer //: public iScriptableBaseClass
 	{
+	//kScriptBaseClassInit_PureResource(cAINodeContainer);
 	friend class cAINodeIterator;
 	public:
 		cAINodeContainer(	const tString& asName,const tString &asNodeName,
@@ -187,12 +190,15 @@ namespace hpl {
 		 * Get the number of nodes.
 		 */
 		int GetNodeNum() const;
+		int GetListNum() { return mlListNum; }
 
 		/**
 		 * Get a node.
 		 * \param alIdx index of node.
 		 */
-		inline cAINode* GetNode(int alIdx){return mvNodes[alIdx];}
+		inline cAINode* GetNode(int alIdx){return &mvNodes[alIdx];}
+
+		inline int GetUniqueID(cAINode* apNode) { return int(apNode - &mvNodes.front()); };
 
 		/**
 		 * Gets a node based on the name.
@@ -211,6 +217,12 @@ namespace hpl {
 		 * Build a grid map for nodes. (Used internally mostly)
 		 */
 		void BuildNodeGridMap();
+
+		/**
+		 * Connect the nodes to a list id to easially determine if two seperate nodes are connected
+		 */
+		void SetupListID();
+		void SetupListIDIterative(cAINode* apNode, int alID);
 
 		/**
 		 * Returns a node iterator. Note that the radius is not checked, some nodes may lie outside.
@@ -302,6 +314,8 @@ namespace hpl {
 		int mlMinNodeEnds;
 		float mfMaxEndDistance;
 		float mfMaxHeight;
+
+		int mlListNum;
 	};
 
 };

@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxEntity.h"
@@ -36,7 +36,9 @@ iLuxEntity::iLuxEntity(const tString &asName, int alID, cLuxMap *apMap, eLuxEnti
 	mEntityType = aEntityType;
 	mlID = alID;
 	mbActive = true;
+	mbStartsActive = true;
 	mbFullGameSave = false;
+
 
 	msCallbackFunc = "";
 	msConnectionStateChangeCallback = "";
@@ -151,6 +153,15 @@ void iLuxEntity::SetActive(bool abX)
 
 //-----------------------------------------------------------------------
 
+void iLuxEntity::SetStartsActive(bool abX)
+{
+	if(mbStartsActive == abX) return;
+
+	mbStartsActive = abX;
+}
+
+//-----------------------------------------------------------------------
+
 void iLuxEntity::AddCollideCallbackParent(iLuxCollideCallbackContainer* apCallback)
 {
 	mlstCollideCallbackParents.push_back(apCallback);
@@ -212,7 +223,7 @@ void iLuxEntity::UpdatePlayerLookAt(float afTimeStep)
 		mfLookAtCount-=afTimeStep;
 		return;
 	}
-	mfLookAtCount = 0.3f;
+	mfLookAtCount = 0.15f;
 
 	//////////////////////////////////////
 	// Iterate bodies and check frustum and then line of sight
@@ -385,6 +396,8 @@ bool iLuxEntity::CollidesWithPlayer()
 	collideData.SetMaxSize(1);
 
 	iPhysicsBody *pPlayerBody = gpBase->mpPlayer->GetCharacterBody()->GetCurrentBody();
+	const cVector3f vPlayerCenter = cMath::MatrixMul(pPlayerBody->GetLocalMatrix(),
+		pPlayerBody->GetShape()->GetOffset().GetTranslation());
 
 	for(int i=0; i<GetBodyNum(); ++i)
 	{
@@ -395,7 +408,19 @@ bool iLuxEntity::CollidesWithPlayer()
 			continue;
 		}
 		
-		if(pPhysicsWorld->CheckShapeCollision(pBody->GetShape(), pBody->GetLocalMatrix(), pPlayerBody->GetShape(), pPlayerBody->GetLocalMatrix(), collideData,1, false))
+		// Containing the player's shape center guarantees overlap. Avoid asking
+		// Newton for deep-penetration contacts inside large trigger boxes.
+		iCollideShape *pShape = pBody->GetShape();
+		if(pShape->GetType() == eCollideShapeType_Box)
+		{
+			const cMatrixf mtxBox = cMath::MatrixMul(pBody->GetLocalMatrix(), pShape->GetOffset());
+			const cVector3f vLocalPlayerCenter = cMath::MatrixMul(cMath::MatrixInverse(mtxBox), vPlayerCenter);
+			const cVector3f vHalfSize = pShape->GetSize() * 0.5f;
+			if(cMath::CheckPointInAABBIntersection(vLocalPlayerCenter, vHalfSize * -1.0f, vHalfSize))
+				return true;
+		}
+
+		if(pPhysicsWorld->CheckShapeCollision(pShape, pBody->GetLocalMatrix(), pPlayerBody->GetShape(), pPlayerBody->GetLocalMatrix(), collideData,1, false))
 		{
 			return true;
 		}
@@ -450,12 +475,17 @@ kBeginSerializeBaseVirtual(iLuxEntity_SaveData)
 kSerializeVar(msName,eSerializeType_String)
 kSerializeVar(mbFullGameSave,eSerializeType_Bool)
 kSerializeVar(mbActive,eSerializeType_Bool)
+kSerializeVar(mbStartsActive,eSerializeType_Bool)
 kSerializeVar(mlEntityType,eSerializeType_Int32)
 kSerializeVar(mlID,eSerializeType_Int32)
 
 kSerializeVar(mfMaxFocusDistance, eSerializeType_Float32)
 
 kSerializeVar(mbInteractionDisabled, eSerializeType_Bool)
+
+kSerializeVar(mbIsCriticalEntity, eSerializeType_Bool)
+kSerializeVar(msCriticalRootName, eSerializeType_String)
+kSerializeVar(mfCriticalEntityRadius, eSerializeType_Float32)
 
 kSerializeVar(msCallbackFunc, eSerializeType_String)
 kSerializeVar(msConnectionStateChangeCallback, eSerializeType_String)
@@ -481,6 +511,7 @@ void iLuxEntity::SaveToSaveData(iLuxEntity_SaveData* apSaveData)
 	kCopyToVar(apSaveData, msName);
 	kCopyToVar(apSaveData, mbFullGameSave);
 	kCopyToVar(apSaveData, mbActive);
+	kCopyToVar(apSaveData, mbStartsActive);
 	kCopyToVar(apSaveData, mlID);
 	kCopyToVar(apSaveData, mbInteractionDisabled);
 
@@ -519,6 +550,7 @@ void iLuxEntity::LoadFromSaveData(iLuxEntity_SaveData* apSaveData)
 	kCopyFromVar(apSaveData, msName);
 	kCopyFromVar(apSaveData, mbFullGameSave);
 	SetActive(apSaveData->mbActive);
+	SetStartsActive(apSaveData->mbStartsActive);
 	kCopyFromVar(apSaveData, mlID);
 	kCopyFromVar(apSaveData, mbInteractionDisabled);
 

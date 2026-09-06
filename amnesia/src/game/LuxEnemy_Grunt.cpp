@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxEnemy_Grunt.h"
@@ -183,15 +183,10 @@ bool cLuxEnemy_Grunt::StateEventImplement(int alState, eLuxEnemyStateEvent aEven
 			
 			if(gpBase->mpGlobalDataHandler->GetEnemyActivateSoundAllowed())
 			{
-				////////////////////////
-				// HARDMODE
-
-				//if (gpBase->mbHardMode == false)
-				{
-					gpBase->mpGlobalDataHandler->SetEnemyActivateSoundMade();
-					PlaySound(msEnabledSound);
-				}
+				gpBase->mpGlobalDataHandler->SetEnemyActivateSoundMade();
+				PlaySound(msEnabledSound);
 			}
+			
 
 			if(mvPatrolNodes.empty())
 				ChangeState(eLuxEnemyState_Wait);
@@ -232,6 +227,10 @@ bool cLuxEnemy_Grunt::StateEventImplement(int alState, eLuxEnemyStateEvent aEven
 			SendMessage(eLuxEnemyMessage_TimeOut_2, cMath::RandRectf(mfIdleExtraTimeMin, mfIdleExtraTimeMax), true);
 
 			SetMoveSpeed(eLuxEnemyMoveSpeed_Walk);
+			mpPathfinder->Stop();
+
+		kLuxOnLeave
+			mpMover->SetOverideMoveState(false);
 		
 		kLuxOnMessage(eLuxEnemyMessage_TimeOut)
 			
@@ -763,7 +762,7 @@ bool cLuxEnemy_Grunt::StateEventImplement(int alState, eLuxEnemyStateEvent aEven
 			
 		
 		kLuxOnMessage(eLuxEnemyMessage_AnimationSpecialEvent)
-			Attack(mNormalAttackSize, mBreakDoorAttackDamage);
+			Attack(mNormalAttackSize, mBreakDoorAttackDamage, 1.0f);
 			
 
 		////////////////////////
@@ -790,7 +789,7 @@ bool cLuxEnemy_Grunt::StateEventImplement(int alState, eLuxEnemyStateEvent aEven
 				ChangeState(mPreviousState);
 
 		kLuxOnMessage(eLuxEnemyMessage_AnimationSpecialEvent)
-			Attack(mNormalAttackSize, mNormalAttackDamage);
+			Attack(mNormalAttackSize, mNormalAttackDamage, 1.0f);
 		
 		////////////////////////
 		// Overload global
@@ -822,7 +821,7 @@ bool cLuxEnemy_Grunt::StateEventImplement(int alState, eLuxEnemyStateEvent aEven
 
 		kLuxOnMessage(eLuxEnemyMessage_AnimationSpecialEvent)
 			mlTempVal = 1;
-			Attack(mNormalAttackSize, mNormalAttackDamage);
+			Attack(mNormalAttackSize, mNormalAttackDamage, 1.0f);
 		
 		kLuxOnMessage(eLuxEnemyMessage_AnimationOver)
 			ChangeState(mPreviousState);
@@ -1049,11 +1048,6 @@ void cLuxEnemy_Grunt::LoadFromSaveData(iLuxEntity_SaveData* apSaveData)
 	//////////////////
 	//Set variables
 	
-	////////////////////////
-	// Handle changed enums
-	if (mCurrentState >= eLuxEnemyState_PigEnumStart) mCurrentState = eLuxEnemyState_LastEnum;
-	if (mNextState >= eLuxEnemyState_PigEnumStart) mNextState = eLuxEnemyState_LastEnum;
-	if (mPreviousState >= eLuxEnemyState_PigEnumStart) mPreviousState = eLuxEnemyState_LastEnum;
 }
 
 //-----------------------------------------------------------------------

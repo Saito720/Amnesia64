@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "ai/AINodeContainer.h"
@@ -42,6 +42,7 @@ namespace hpl {
 	
 	cAINode::cAINode()
 	{
+		mlListID = -1;
 	}
 
 	//-----------------------------------------------------------------------
@@ -58,7 +59,6 @@ namespace hpl {
 		
 		Edge.mpNode = pNode;
 		Edge.mfDistance = cMath::Vector3Dist(mvPosition, pNode->mvPosition);
-		Edge.mfSqrDistance = cMath::Vector3DistSqr(mvPosition, pNode->mvPosition);
 		
 		mvEdges.push_back(Edge);
 	}
@@ -255,6 +255,7 @@ namespace hpl {
 		mfMaxHeight = 0.1f;
 
 		mlNodesPerGrid = 6;
+		mlListNum = 0;
 
 		mbNodeIsAtCenter = true;
 	}
@@ -264,8 +265,7 @@ namespace hpl {
 	cAINodeContainer::~cAINodeContainer()
 	{
 		hplDelete(mpRayCallback);
-
-		STLDeleteAll(mvNodes);
+		mvNodes.clear();
 	}	
 
 	//-----------------------------------------------------------------------
@@ -285,15 +285,19 @@ namespace hpl {
 	
 	void cAINodeContainer::AddNode(const tString &asName, int alID, const cVector3f &avPosition, void *apUserData)
 	{
-		cAINode *pNode = hplNew( cAINode, () );
-		pNode->msName = asName;
-		pNode->mlID = alID;
-		pNode->mvPosition = avPosition;
-		pNode->mpUserData = apUserData;
+		// Only add if there are reserved
+		if(mvNodes.size() < mvNodes.capacity())
+		{
+			cAINode pNode = cAINode();
+			pNode.msName = asName;
+			pNode.mlID = alID;
+			pNode.mvPosition = avPosition;
+			pNode.mpUserData = apUserData;
 
-		mvNodes.push_back(pNode);
-		m_mapNodesByName.insert(tAINodeNameMap::value_type(asName,pNode));
-		m_mapNodesByID.insert(tAINodeIDMap::value_type(alID,pNode));
+			mvNodes.push_back(pNode);
+			m_mapNodesByName.insert(tAINodeNameMap::value_type(asName,&mvNodes.back()));
+			m_mapNodesByID.insert(tAINodeIDMap::value_type(alID,&mvNodes.back()));
+		}
 	}
 
 	//-----------------------------------------------------------------------
@@ -345,33 +349,8 @@ namespace hpl {
 		tAINodeVecIt CurrentNodeIt = mvNodes.begin();
 		for(; CurrentNodeIt != mvNodes.end(); ++CurrentNodeIt)
 		{
-			cAINode *pNode = *CurrentNodeIt;
-			
-			////////////////////////////////////////
-			//Add the ends that are connected to the node.
-			/*Log("Node %s checks: ",pNode->GetName().c_str());
-			tAINodeVecIt EndNodeIt = mvNodes.begin();
-			for(; EndNodeIt != mvNodes.end(); ++EndNodeIt)
-			{
-				cAINode *pEndNode = *EndNodeIt;
+			cAINode *pNode = &*CurrentNodeIt;
 
-				if(pEndNode == pNode) continue;				
-				float fDist = cMath::Vector3Dist(pNode->mvPosition, pEndNode->mvPosition);
-				if(fDist > mfMaxEndDistance*2) continue;
-				Log("'%s'(%f) ",pEndNode->GetName().c_str(),fDist);
-
-				float fHeight = fabs(pNode->mvPosition.y - pEndNode->mvPosition.y);
-
-				if(	fHeight <= mfMaxHeight &&
-				FreePath(pNode->mvPosition, pEndNode->mvPosition,-1,eAIFreePathFlag_SkipDynamic))
-				{
-				pNode->AddEdge(pEndNode);	
-				Log("Added!");
-				}
-				Log(", ");
-			}
-			Log("\n");*/
-			//Log("Node %s checks: ",pNode->GetName().c_str());
 			cAINodeIterator nodeIt = GetNodeIterator(pNode->mvPosition,mfMaxEndDistance*1.5f);
 			while(nodeIt.HasNext())
 			{
@@ -380,7 +359,6 @@ namespace hpl {
                 if(pEndNode == pNode) continue;				
 				float fDist = cMath::Vector3Dist(pNode->mvPosition, pEndNode->mvPosition);
 				if(fDist > mfMaxEndDistance*2) continue;
-				//Log("'%s'(%f) ",pEndNode->GetName().c_str(),fDist);
                 				
 				float fHeight = fabs(pNode->mvPosition.y - pEndNode->mvPosition.y);
 				
@@ -389,18 +367,14 @@ namespace hpl {
 					FreePath(pNode->mvPosition, pEndNode->mvPosition,-1,flag))
 				{
 					pNode->AddEdge(pEndNode);	
-					//Log("Added!");
 				}
-				//Log(", ");
 			}
-			//Log("\n");
 
 			
 			///////////////////////////////////////
 			//Sort nodes and remove unwanted ones.
 			std::sort(pNode->mvEdges.begin(), pNode->mvEdges.end(), cSortEndNodes());
 
-			//Resize if to too large
 			if(mlMaxNodeEnds > 0 && (int)pNode->mvEdges.size() > mlMaxNodeEnds) 
 			{
 				pNode->mvEdges.resize(mlMaxNodeEnds);
@@ -415,9 +389,9 @@ namespace hpl {
 					break;
 				}
 			}
-
-			//Log("  Final edge count: %d\n",pNode->mvEdges.size());
 		}	
+
+		SetupListID();
 	}
 
 	//-----------------------------------------------------------------------
@@ -430,12 +404,12 @@ namespace hpl {
 
 		////////////////////////////////////
 		// Calculate min and max
-		cVector2f vMin(mvNodes[0]->GetPosition().x,mvNodes[0]->GetPosition().z);
-		cVector2f vMax(mvNodes[0]->GetPosition().x,mvNodes[0]->GetPosition().z);
+		cVector2f vMin(mvNodes[0].GetPosition().x,mvNodes[0].GetPosition().z);
+		cVector2f vMax(mvNodes[0].GetPosition().x,mvNodes[0].GetPosition().z);
 
 		for(size_t i=1; i< mvNodes.size(); ++i)
 		{
-			cAINode *pNode = mvNodes[i];
+			cAINode *pNode = &mvNodes[i];
 
 			if(vMin.x > pNode->GetPosition().x) vMin.x = pNode->GetPosition().x;
 			if(vMin.y > pNode->GetPosition().z) vMin.y = pNode->GetPosition().z;
@@ -471,7 +445,7 @@ namespace hpl {
 		// Add nodes to grid
 		for(size_t i=0; i< mvNodes.size(); ++i)
 		{
-			cAINode *pNode = mvNodes[i];
+			cAINode *pNode = &mvNodes[i];
 
 			cVector2f vLocalPos(pNode->GetPosition().x, pNode->GetPosition().z);
 			vLocalPos -= mvMinGridPos;
@@ -494,6 +468,51 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
+	void cAINodeContainer::SetupListID()
+	{
+		bool bLog=false;
+
+		if(bLog)Log("Nodes: %d\n",mvNodes.size());
+
+		////////////////////////////////////
+		// Reset variables
+		for(size_t i=0; i< mvNodes.size(); ++i)
+		{
+			mvNodes[i].mlListID = -1;
+		}
+
+		//////////////
+		// Search for unintialized node and create list from it and all nodes connected to it in any way
+		mlListNum = 0;
+
+		for(size_t i=0; i< mvNodes.size(); ++i)
+		{
+			if(mvNodes[i].mlListID == -1)
+			{
+				SetupListIDIterative(&mvNodes[i], mlListNum++);
+			}
+		}
+	}
+
+	void cAINodeContainer::SetupListIDIterative(cAINode* apNode, int alID)
+	{
+		/////////////
+		// Set id
+		apNode->mlListID = alID;
+
+		/////////////
+		// Set id of all children that have not been set yet
+		for(size_t i = 0; i < apNode->mvEdges.size(); ++i)
+		{
+			if(apNode->mvEdges[i].mpNode->mlListID == -1)
+			{
+				SetupListIDIterative(apNode->mvEdges[i].mpNode, alID);
+			}
+		}
+	}
+
+	//-----------------------------------------------------------------------
+
 	cAINodeIterator cAINodeContainer::GetNodeIterator(const cVector3f &avPosition, float afRadius)
 	{
 		return cAINodeIterator(this,avPosition, afRadius);
@@ -505,7 +524,11 @@ namespace hpl {
 										cVector2f(1,0),
 										cVector2f(-1,0),
 										cVector2f(0,1),
-										cVector2f(0,-1)
+										cVector2f(0,-1),
+										cVector2f(0.5,0.5),
+										cVector2f(0.5,-0.5),
+										cVector2f(-0.5,0.5),
+										cVector2f(-0.5,-0.5)
 	};	
 	
 	bool cAINodeContainer::FreePath(const cVector3f &avStart, const cVector3f &avEnd, int alRayNum, 
@@ -515,8 +538,8 @@ namespace hpl {
 		if(pPhysicsWorld==NULL) return true;
 
 		
-		if(alRayNum<0 || alRayNum>5) alRayNum =5;
-		
+		if(alRayNum<0 || alRayNum>9) alRayNum =5;
+
 		/////////////////////////////
 		//Calculate the right vector
 		const cVector3f vForward = cMath::Vector3Normalize(avEnd - avStart);
@@ -528,7 +551,7 @@ namespace hpl {
 		const cVector3f vEndCenter  = mbNodeIsAtCenter ? avEnd : avEnd + cVector3f(0,mvSize.y/2,0);
 		
 		//Get the half with and height. Make them a little smaller so that player can slide over funk on floor.
-		const float fHalfWidth = mvSize.x * 0.4f;
+		const float fHalfWidth = mvSize.x * 0.55f;
 		const float fHalfHeight = mvSize.y * 0.4f;
 		
 		//Setup ray callback
@@ -559,14 +582,16 @@ namespace hpl {
 		TiXmlDocument* pXmlDoc = hplNew( TiXmlDocument,() );
 		
 		TiXmlElement *pRootElem = static_cast<TiXmlElement*>(pXmlDoc->InsertEndChild(TiXmlElement("AINodes")));
+		pRootElem->SetAttribute("ListNum", cString::ToString(mlListNum).c_str());
 
 		for(size_t i=0; i< mvNodes.size(); ++i)
 		{
-			cAINode * pNode = mvNodes[i];
+			cAINode * pNode = &mvNodes[i];
 			TiXmlElement *pNodeElem = static_cast<TiXmlElement*>(pRootElem->InsertEndChild(TiXmlElement("Node")));
 
 			pNodeElem->SetAttribute("Name", pNode->GetName().c_str());
 			pNodeElem->SetAttribute("ID", cString::ToString(pNode->GetID()).c_str());
+			pNodeElem->SetAttribute("ListID", cString::ToString(pNode->GetListID()).c_str());
 
 			for(int edge =0; edge < pNode->GetEdgeNum(); ++edge)
 			{
@@ -582,7 +607,7 @@ namespace hpl {
 		FILE *pFile = cPlatform::OpenFile(asFile, _W("w+"));
 		if(pFile==NULL || pXmlDoc->SaveFile(pFile)==false)
 		{
-			Error("Couldn't save XML file %s\n",asFile.c_str());
+			Error("Couldn't save XML file '%s'\n",cString::To8Char(asFile).c_str());
 			hplDelete(pXmlDoc);
 			return;
 		}
@@ -610,25 +635,39 @@ namespace hpl {
 		fclose(pFile);
 
 		TiXmlElement *pRootElem = pXmlDoc->RootElement();
+		mlListNum = cString::ToInt(pRootElem->Attribute("ListNum"), 1);
 
 		TiXmlElement *pNodeElem = pRootElem->FirstChildElement("Node");
 		for(; pNodeElem != NULL; pNodeElem = pNodeElem->NextSiblingElement("Node"))
 		{
 			tString sName = cString::ToString(pNodeElem->Attribute("Name"),"");
-			int alID = cString::ToInt(pNodeElem->Attribute("ID"),-1);
+			int lID = cString::ToInt(pNodeElem->Attribute("ID"),-1);
+			int lListID = cString::ToInt(pNodeElem->Attribute("ListID"), 0);
 
-			cAINode *pNode = GetNodeFromID(alID);
+
+			cAINode *pNode = GetNodeFromID(lID);
+			if(pNode==NULL)
+			{
+				Error("Could not find node with id %d in node container cache '%s'\n", lID, cString::To8Char(asFile).c_str());
+				continue;
+			}
+
+			pNode->mlListID = lListID;
             
 			TiXmlElement *pEdgeElem = pNodeElem->FirstChildElement("Edge");
 			for(; pEdgeElem != NULL; pEdgeElem = pEdgeElem->NextSiblingElement("Edge"))
 			{
 				tString sNodeName = cString::ToString(pEdgeElem->Attribute("Node"),"");			
 				cAINode *pEdgeNode = GetNodeFromName(sNodeName);
+				if(pEdgeNode == NULL)
+				{
+					Error("Could not find edge node in node %d with name '%s' in node container cache '%s'\n", lID, sNodeName.c_str(), cString::To8Char(asFile).c_str());
+					continue;
+				}
 
 				cAINodeEdge Edge;
 				Edge.mpNode = pEdgeNode;
 				Edge.mfDistance = cString::ToFloat(pEdgeElem->Attribute("Distance"),0);
-				Edge.mfSqrDistance = Edge.mfDistance*Edge.mfDistance;
 
 				pNode->mvEdges.push_back(Edge);
 			}

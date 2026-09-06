@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "graphics/MaterialType_BasicSolid.h"
@@ -55,7 +55,7 @@ namespace hpl {
 	#define kVar_afDissolveAmount				4
 	#define kVar_avFrenselBiasPow				5
 	#define kVar_a_mtxInvViewRotation			6
-
+    #define kVar_afTimer						7
 
 	//------------------------------
 	//Diffuse Features and data
@@ -74,7 +74,7 @@ namespace hpl {
 	{
 		cProgramComboFeature("UseNormalMapping", kPC_VertexBit | kPC_FragmentBit),
 		cProgramComboFeature("UseSpecular", kPC_FragmentBit),		
-		cProgramComboFeature("UseParallax", kPC_VertexBit | kPC_FragmentBit, eFeature_Diffuse_NormalMaps),							
+		cProgramComboFeature("UseParallax", kPC_VertexBit | kPC_FragmentBit, eFeature_Diffuse_Parallax),							
 		cProgramComboFeature("UseUvAnimation", kPC_VertexBit),							
 		cProgramComboFeature("UseSkeleton",	kPC_VertexBit),	
 		cProgramComboFeature("UseEnvMap", kPC_VertexBit | kPC_FragmentBit),
@@ -267,6 +267,7 @@ namespace hpl {
 		AddUsedTexture(eMaterialTexture_Specular);
 		AddUsedTexture(eMaterialTexture_Height);
 		AddUsedTexture(eMaterialTexture_Illumination);
+		AddUsedTexture(eMaterialTexture_IlluminationModulate);
 		AddUsedTexture(eMaterialTexture_DissolveAlpha);
 		AddUsedTexture(eMaterialTexture_CubeMap);
 		AddUsedTexture(eMaterialTexture_CubeMapAlpha);
@@ -330,6 +331,9 @@ namespace hpl {
 		mpProgramManager->SetupGenerateProgramData(	eMaterialRenderMode_Illumination,"Illum","deferred_base_vtx.glsl", "deferred_illumination_frag.glsl", 
 													vIllumFeatureVec,kIllumFeatureNum, defaultVars);
 
+        mpProgramManager->SetupGenerateProgramData(	eMaterialRenderMode_IlluminationModulate,"IllumMod","deferred_base_vtx.glsl", "deferred_illumination_mod_frag.glsl", 
+													vIllumFeatureVec,kIllumFeatureNum, defaultVars);
+
 		
 		////////////////////////////////
 		//Set up variable ids
@@ -341,6 +345,10 @@ namespace hpl {
 
 		mpProgramManager->AddGenerateProgramVariableId("a_mtxUV",kVar_a_mtxUV,eMaterialRenderMode_Illumination);
 		mpProgramManager->AddGenerateProgramVariableId("afColorMul",kVar_afColorMul,eMaterialRenderMode_Illumination);
+
+        mpProgramManager->AddGenerateProgramVariableId("a_mtxUV",kVar_a_mtxUV,eMaterialRenderMode_IlluminationModulate);
+		mpProgramManager->AddGenerateProgramVariableId("afColorMul",kVar_afColorMul,eMaterialRenderMode_IlluminationModulate);
+		mpProgramManager->AddGenerateProgramVariableId("afTimer",kVar_afTimer,eMaterialRenderMode_IlluminationModulate);
 	}
 
 	//--------------------------------------------------------------------------
@@ -371,6 +379,7 @@ namespace hpl {
 			apMaterial->SetHasSpecificSettings(eMaterialRenderMode_Z,true);
 			apMaterial->SetHasSpecificSettings(eMaterialRenderMode_Diffuse,true);
 			apMaterial->SetHasSpecificSettings(eMaterialRenderMode_Illumination,true);
+			apMaterial->SetHasSpecificSettings(eMaterialRenderMode_IlluminationModulate,true);
 		}
 
 		//////////////////////////////////
@@ -385,6 +394,13 @@ namespace hpl {
 		if(apMaterial->GetTexture(eMaterialTexture_Illumination))
 		{
 			apMaterial->SetHasObjectSpecificsSettings(eMaterialRenderMode_Illumination,true);
+		}
+
+        //////////////////////////////////
+		//Illuminations specifics
+		if(apMaterial->GetTexture(eMaterialTexture_IlluminationModulate))
+		{
+			apMaterial->SetHasObjectSpecificsSettings(eMaterialRenderMode_IlluminationModulate,true);
 		}
 	}
 
@@ -428,6 +444,16 @@ namespace hpl {
 			case 3: return apMaterial->GetTexture(eMaterialTexture_Height);
 			case 4: return apMaterial->GetTexture(eMaterialTexture_CubeMap);
 			case 5: return apMaterial->GetTexture(eMaterialTexture_CubeMapAlpha);
+			}
+		}
+        ////////////////////////////
+		//Illumination with modulation
+		else if(aRenderMode == eMaterialRenderMode_IlluminationModulate)
+		{
+			switch(alUnit)
+			{
+			case 0: return apMaterial->GetTexture(eMaterialTexture_Illumination);
+			case 1: return apMaterial->GetTexture(eMaterialTexture_IlluminationModulate);
 			}
 		}
 		////////////////////////////
@@ -498,9 +524,10 @@ namespace hpl {
 
 			return mpProgramManager->GenerateProgram(aRenderMode,lFlags);
 		}
-		////////////////////////////
+        ////////////////////////////
 		//Illumination
-		else if(aRenderMode == eMaterialRenderMode_Illumination)
+		else if(aRenderMode == eMaterialRenderMode_Illumination
+            || aRenderMode == eMaterialRenderMode_IlluminationModulate )
 		{
 			tFlag lFlags =0;
 			if(apMaterial->HasUvAnimation())	lFlags |= eFeature_Illum_UvAnimation;
@@ -534,7 +561,8 @@ namespace hpl {
 		if(	aRenderMode == eMaterialRenderMode_Diffuse || 
 			aRenderMode == eMaterialRenderMode_Z || 
 			aRenderMode == eMaterialRenderMode_Z_Dissolve || 
-			aRenderMode == eMaterialRenderMode_Illumination)
+			aRenderMode == eMaterialRenderMode_Illumination || 
+			aRenderMode == eMaterialRenderMode_IlluminationModulate)
 		{
 			/////////////////////////
 			//UV Animation
@@ -581,9 +609,14 @@ namespace hpl {
 		}
 		////////////////////////////
 		//Illumination
-		else if(aRenderMode == eMaterialRenderMode_Illumination)
+		else if(aRenderMode == eMaterialRenderMode_Illumination || aRenderMode == eMaterialRenderMode_IlluminationModulate)
 		{
-			bool bRet = apProgram->SetFloat(kVar_afColorMul, apObject->GetIlluminationAmount());
+			bool bRet = apProgram->SetFloat(kVar_afColorMul, apObject->GetIlluminationAmount() * apObject->GetIlluminationAmount());
+
+            if ( aRenderMode == eMaterialRenderMode_IlluminationModulate )
+            {
+                bRet = bRet && apProgram->SetFloat(kVar_afTimer, apObject->GetShaderTimer());
+            }
 		}
 	}
 

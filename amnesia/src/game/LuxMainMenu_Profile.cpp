@@ -1,20 +1,20 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #include "LuxMainMenu_Profile.h"
@@ -24,7 +24,6 @@
 #include "LuxInputHandler.h"
 
 #include <algorithm>
-
 
 //////////////////////////////////////////////////////////////////////////
 // CONSTRUCTORS
@@ -131,8 +130,6 @@ void cLuxMainMenu_Profile::CreateMainGui()
 	mpListProfiles->AddCallback(eGuiMessage_SelectionChange,this, kGuiCallback(SelectedProfileChange));
 	mpListProfiles->AddCallback(eGuiMessage_SelectionDoubleClick,this, kGuiCallback(DoubleClickSelection));
 	mpListProfiles->AddCallback(eGuiMessage_CheckChange,this,kGuiCallback(ProfileSelectionClickChange));
-	mpListProfiles->AddCallback(eGuiMessage_GetUINavFocus, this, kGuiCallback(LockProfileList));
-	mpListProfiles->AddCallback(eGuiMessage_UIButtonPress, this, kGuiCallback(UIPressList));
 	mpListProfiles->SetDefaultFontSize(mvListFontSize);
 	vPos.y += mpListProfiles->GetSize().y + fBorderSize;
 
@@ -285,7 +282,7 @@ void cLuxMainMenu_Profile::AddProfilesInListBox()
 
 	tWStringList lstFolders;
 
-	cPlatform::FindFoldersInDir(lstFolders,gpBase->msBaseSavePath,false,false);
+ 	cPlatform::FindFoldersInDir(lstFolders,gpBase->msBaseSavePath,false,false);
 
 	//Add the profile combos to list
 	tWStringListIt it = lstFolders.begin();
@@ -349,18 +346,6 @@ bool cLuxMainMenu_Profile::WindowCloses(iWidget* apWidget, const cGuiMessageData
 	return true;
 }
 kGuiCallbackDeclaredFuncEnd(cLuxMainMenu_Profile, WindowCloses);
-//-----------------------------------------------------------------------
-
-bool cLuxMainMenu_Profile::UIPressList(iWidget* apWidget, const cGuiMessageData& aData)
-{
-	switch(aData.mlVal)
-	{
-	case eUIButton_Secondary: return WindowCloses(apWidget, aData);
-	}
-
-	return false;
-}
-kGuiCallbackDeclaredFuncEnd(cLuxMainMenu_Profile, UIPressList);
 
 bool cLuxMainMenu_Profile::WindowUIPress(iWidget* apWidget, const cGuiMessageData& aData)
 {
@@ -386,7 +371,7 @@ bool cLuxMainMenu_Profile::ClickedExitPopup(iWidget* apWidget, const cGuiMessage
 	}
 	else
 	{
-		mpListProfiles->SetIsLocked(true);
+		//Nothing...
 	}
 
 	return true;
@@ -471,7 +456,7 @@ bool cLuxMainMenu_Profile::PressDeleteProfile(iWidget* apWidget, const cGuiMessa
 
 	if(mpListProfiles->GetSelectedItem()<0)
 	{
-		pPopUp = mpGuiSet->CreatePopUpMessageBox(_W(""),kTranslate("MainMenu","No profile to be deleted!"), kTranslate("MainMenu", "OK"),_W(""),NULL,NULL);
+		pPopUp = mpGuiSet->CreatePopUpMessageBox(_W(""),kTranslate("MainMenu","No profile to be deleted!"),_W("OK"),_W(""),NULL,NULL);
 		pPopUp->GetGuiSet()->SetDrawFocus(mpGuiSet->GetDrawFocus());
 		return true;
 	}
@@ -518,7 +503,7 @@ bool cLuxMainMenu_Profile::PressDeleteProfilePopupClose(iWidget* apWidget, const
 
 	if(cPlatform::RemoveFolder(gpBase->msBaseSavePath+sFolder, true,true)==false)
 	{
-		cGuiPopUpMessageBox* pPopUp =  mpGuiSet->CreatePopUpMessageBox(_W(""),kTranslate("MainMenu","Could not remove profile"), kTranslate("MainMenu", "OK"),_W(""),NULL,NULL);
+		cGuiPopUpMessageBox* pPopUp =  mpGuiSet->CreatePopUpMessageBox(_W(""),kTranslate("MainMenu","Could not remove profile"),_W("OK"),_W(""),NULL,NULL);
 		pPopUp->GetGuiSet()->SetDrawFocus(mpGuiSet->GetDrawFocus());
 		return true;
 	}
@@ -538,30 +523,19 @@ bool cLuxMainMenu_Profile::PressEnterNameCreate(iWidget* apWidget, const cGuiMes
 	/////////////////////////
 	// Check if the name already exists
 	tWString sProfileName = mpTextEnterName->GetText();
-
 	
-	while(sProfileName.size() && sProfileName[0] == ' ') sProfileName = sProfileName.substr(1);
-	while(sProfileName.size() && sProfileName[sProfileName.size()-1] == ' ') sProfileName = sProfileName.substr(0, sProfileName.size()-1);
-	
-	if(sProfileName.empty())
-	{
-		cGuiPopUpMessageBox* pPopUp = mpGuiSet->CreatePopUpMessageBox(_W(""),kTranslate("MainMenu","The profile name already exists"), kTranslate("MainMenu","OK"),_W(""),NULL,NULL);
-		pPopUp->GetGuiSet()->SetDrawFocus(mpGuiSet->GetDrawFocus());
-		return true;
-	}
-
 	if(gpBase->CreateProfile(sProfileName)==false)
 	{
-		cGuiPopUpMessageBox* pPopUp = mpGuiSet->CreatePopUpMessageBox(_W(""),kTranslate("MainMenu","The profile name already exists"), kTranslate("MainMenu", "OK"),_W(""),NULL,NULL);
+		cGuiPopUpMessageBox* pPopUp = mpGuiSet->CreatePopUpMessageBox(_W(""),kTranslate("MainMenu","The profile name already exists"),_W("OK"),_W(""),NULL,NULL);
 		pPopUp->GetGuiSet()->SetDrawFocus(mpGuiSet->GetDrawFocus());
 		return true;
 	}
-
+	
 	/////////////////////////
 	// Close window and update list.
 	mpWindowEnterName->SetVisible(false);
 	mpWindowEnterName->SetEnabled(false);
-
+	 
 	mpGuiSet->PopAttentionWidget();
 	mpGuiSet->PopDefaultFocusNavWidget();
 	mpGuiSet->PopFocusedWidget();
@@ -622,13 +596,3 @@ bool cLuxMainMenu_Profile::ProfileSelectionClickChange(iWidget* apWidget, const 
 kGuiCallbackDeclaredFuncEnd(cLuxMainMenu_Profile, ProfileSelectionClickChange);
 
 //-----------------------------------------------------------------------
-
-bool cLuxMainMenu_Profile::LockProfileList(iWidget* apWidget, const cGuiMessageData& aData)
-{
-	mpListProfiles->SetIsLocked(true);
-
-	return true;
-}
-kGuiCallbackDeclaredFuncEnd(cLuxMainMenu_Profile, LockProfileList);
-
-//----------------------------------------------------------------------

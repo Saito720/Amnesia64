@@ -235,6 +235,7 @@
     <ClCompile Include="LuxMsuMrScanEpochDialog.cpp" />
     <ClCompile Include="LuxMsuMrScanProduct.cpp" />
     <ClCompile Include="LuxMsuMrSimulation.cpp" />
+    <ClCompile Include="LuxMsuMrTumble.cpp" />
     <ClCompile Include="LuxSatelliteHandler.cpp">
       <AdditionalIncludeDirectories>..\..\..\HPL2\dependencies\sources;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
@@ -352,6 +353,7 @@
     <ClInclude Include="LuxMsuMrScanEpochDialog.h" />
     <ClInclude Include="LuxMsuMrScanProduct.h" />
     <ClInclude Include="LuxMsuMrSimulation.h" />
+    <ClInclude Include="LuxMsuMrTumble.h" />
     <ClInclude Include="LuxSatelliteHandler.h" />
     <ClInclude Include="LuxSatelliteTypes.h" />
     <ClInclude Include="LuxMapHelper.h" />

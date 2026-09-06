@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -26,6 +27,7 @@
 #include "LuxMsuMrGeometry.h"
 #include "LuxMsuMrScanProduct.h"
 #include "LuxMsuMrSimulation.h"
+#include "LuxMsuMrTumble.h"
 
 #include "SGP4/SGP4.h"
 
@@ -179,6 +181,92 @@ namespace
 	static bool IsFinite(const cVector3d& avValue)
 	{
 		return std::isfinite(avValue.x) && std::isfinite(avValue.y) && std::isfinite(avValue.z);
+	}
+
+	static double GetMsuMrElapsedSeconds(std::uint64_t alCircularPositionIndex)
+	{
+		return static_cast<double>(alCircularPositionIndex) /
+			cLuxMsuMrSimulation::kCircularPositionsPerSecond;
+	}
+
+	static std::uint64_t GenerateMsuMrTumbleSeed(const tString& asSatelliteKey)
+	{
+		std::uint64_t lSeed = static_cast<std::uint64_t>(
+			std::chrono::system_clock::now().time_since_epoch().count());
+		lSeed ^= static_cast<std::uint64_t>(
+			std::chrono::steady_clock::now().time_since_epoch().count()) +
+			UINT64_C(0x9E3779B97F4A7C15);
+		for(size_t i = 0; i < asSatelliteKey.size(); ++i)
+		{
+			lSeed ^= static_cast<unsigned char>(asSatelliteKey[i]);
+			lSeed *= UINT64_C(1099511628211);
+		}
+		// One SplitMix64 finalizer prevents nearby start timestamps from
+		// producing visibly related parameter sets.
+		lSeed = (lSeed ^ (lSeed >> 30)) * UINT64_C(0xBF58476D1CE4E5B9);
+		lSeed = (lSeed ^ (lSeed >> 27)) * UINT64_C(0x94D049BB133111EB);
+		lSeed ^= lSeed >> 31;
+		return lSeed;
+	}
+
+	static bool CalculateMsuMrGroundSampleForFrame(
+		const cLuxSatellitePose& aPose,
+		const cLuxMsuMrInstrumentFrame& aFrame,
+		std::uint32_t alEarthSampleIndex,
+		cLuxMsuMrGroundSample& aGroundSample,
+		bool& abGroundHit)
+	{
+		if(alEarthSampleIndex >= cLuxMsuMrSimulation::kEarthViewSamplesPerLine)
+			return false;
+		const double fCentreSampleIndex =
+			(cLuxMsuMrSimulation::kEarthViewSamplesPerLine - 1) * 0.5;
+		const double fLookAngleDegrees =
+			(static_cast<double>(alEarthSampleIndex) - fCentreSampleIndex) *
+			cLuxMsuMrGeometry::GetOpticalPositionPitchDegrees();
+		const double fLookAngleRadians = fLookAngleDegrees * kDegreesToRadians;
+		const cVector3d vDirection = Normalize(cVector3d(
+			aFrame.mvNadir.x * std::cos(fLookAngleRadians) +
+				aFrame.mvCrossTrack.x * std::sin(fLookAngleRadians),
+			aFrame.mvNadir.y * std::cos(fLookAngleRadians) +
+				aFrame.mvCrossTrack.y * std::sin(fLookAngleRadians),
+			aFrame.mvNadir.z * std::cos(fLookAngleRadians) +
+				aFrame.mvCrossTrack.z * std::sin(fLookAngleRadians)));
+		if(Dot(vDirection, vDirection) == 0.0)
+			return false;
+		abGroundHit = cLuxMsuMrGeometry::CalculateGroundIntersection(
+			aPose.mvPositionMetres, vDirection, aGroundSample);
+		if(abGroundHit == false)
+		{
+			aGroundSample = cLuxMsuMrGroundSample();
+			aGroundSample.mvRayDirection = vDirection;
+			aGroundSample.mfSlantRangeMetres =
+				std::numeric_limits<double>::quiet_NaN();
+			aGroundSample.mfLatitudeDegrees =
+				std::numeric_limits<double>::quiet_NaN();
+			aGroundSample.mfLongitudeDegrees =
+				std::numeric_limits<double>::quiet_NaN();
+		}
+		aGroundSample.mlEarthSampleIndex = alEarthSampleIndex;
+		aGroundSample.mfLookAngleDegrees = fLookAngleDegrees;
+		return true;
+	}
+
+	static bool CalculateMsuMrTumbledGroundSample(
+		const cLuxMsuMrTumbleProfile& aProfile,
+		const cLuxSatellitePose& aPose, double afElapsedSeconds,
+		std::uint32_t alEarthSampleIndex,
+		cLuxMsuMrGroundSample& aGroundSample,
+		bool& abGroundHit,
+		cLuxMsuMrInstrumentFrame *apFrame = NULL)
+	{
+		cLuxMsuMrInstrumentFrame frame;
+		if(aProfile.CalculateInstrumentFrame(afElapsedSeconds, frame) == false ||
+			CalculateMsuMrGroundSampleForFrame(aPose, frame,
+				alEarthSampleIndex, aGroundSample, abGroundHit) == false)
+			return false;
+		if(apFrame)
+			*apFrame = frame;
+		return true;
 	}
 
 	static bool CalculateMsuMrGroundSolarElevationDegrees(
@@ -1077,6 +1165,7 @@ public:
 
 	cLuxMap *mpMap;
 	tString msTargetKey;
+	cLuxMsuMrTumbleProfile mTumbleProfile;
 	std::vector<cLuxSatelliteScanSunState> mvSuns;
 	cLuxMsuMrSensorSampleState mvSensorStrips[kMsuMrStripCount];
 	iFrameBuffer *mpSensorBatchFrameBuffer;
@@ -1145,6 +1234,7 @@ static void ResetMsuMrPendingSensorLine(
 static bool AimMsuMrSensorSample(cLuxMsuMrSensorSampleState& aSample,
 	const cLuxMsuMrEarthSampleEvent& aEvent,
 	const cLuxSatellitePose& aPose,
+	const cLuxMsuMrInstrumentFrame& aInstrumentFrame,
 	const cLuxMsuMrGroundSample& aGroundSample)
 {
 	if(aSample.mpView == NULL || aSample.mpViewportCallback == NULL)
@@ -1155,9 +1245,9 @@ static bool AimMsuMrSensorSample(cLuxMsuMrSensorSampleState& aSample,
 		static_cast<float>(aGroundSample.mvRayDirection.y),
 		static_cast<float>(aGroundSample.mvRayDirection.z));
 	cVector3f vUp(
-		static_cast<float>(aPose.mvAlongTrack.x),
-		static_cast<float>(aPose.mvAlongTrack.y),
-		static_cast<float>(aPose.mvAlongTrack.z));
+		static_cast<float>(aInstrumentFrame.mvAlongTrack.x),
+		static_cast<float>(aInstrumentFrame.mvAlongTrack.y),
+		static_cast<float>(aInstrumentFrame.mvAlongTrack.z));
 	vForward.Normalize();
 	cVector3f vRight = cMath::Vector3Cross(vForward, vUp);
 	vRight.Normalize();
@@ -1461,6 +1551,14 @@ bool cLuxSatelliteHandler::BeginScanPresentation(cLuxMap *apMap, const tString& 
 	mpScanPresentationState = hplNew(cLuxSatelliteScanPresentationState, ());
 	mpScanPresentationState->mpMap = apMap;
 	mpScanPresentationState->msTargetKey = asTargetKey;
+	if(mpMsuMrSimulation->HasSatellitePose() == false ||
+		mpScanPresentationState->mTumbleProfile.Generate(
+			GenerateMsuMrTumbleSeed(asTargetKey),
+			mpMsuMrSimulation->GetSatellitePose()) == false)
+	{
+		EndScanPresentation(false);
+		return false;
+	}
 
 	// Each strip retains a private render target. Ninety-eight 16x1 views and
 	// one 4x1 tail are packed into this full-width atlas for one readback;
@@ -1635,6 +1733,30 @@ bool cLuxSatelliteHandler::BeginScanPresentation(cLuxMap *apMap, const tString& 
 			cLuxMsuMrSimulation::kCircularPositionsPerSecond,
 		(kMsuMrTailStripSampleCount - 1) * 500.0 /
 			cLuxMsuMrSimulation::kCircularPositionsPerSecond);
+	const cLuxMsuMrTumbleProfile& tumbleProfile =
+		mpScanPresentationState->mTumbleProfile;
+	const double fTumbleRate =
+		std::fabs(tumbleProfile.GetSpinRateDegreesPerSecond());
+	const double fEarthSweepSeconds =
+		(cLuxMsuMrSimulation::kEarthViewSamplesPerLine - 1) /
+		static_cast<double>(cLuxMsuMrSimulation::kCircularPositionsPerSecond);
+	const double fLinePeriodSeconds =
+		cLuxMsuMrSimulation::kCircularPositionsPerLine /
+		static_cast<double>(cLuxMsuMrSimulation::kCircularPositionsPerSecond);
+	Log("MSU-MR tumble profile assigned: seed=%llu, "
+		"model=torqueFreeScanStartNadirAxis, spinRate=%+.4f deg/s, "
+		"spinPeriod=%.2f s, initialPhase=%+.2f deg, "
+		"EarthSweepMotion=%.3f deg/%.3f ms, lineStep=%.3f deg/%.3f ms; "
+		"the scan-start nadir axis is fixed inertially, "
+		"and attitude is sampled from the instrument clock.\n",
+		static_cast<unsigned long long>(tumbleProfile.GetSeed()),
+		tumbleProfile.GetSpinRateDegreesPerSecond(),
+		tumbleProfile.GetSpinPeriodSeconds(),
+		tumbleProfile.GetInitialPhaseDegrees(),
+		fTumbleRate * fEarthSweepSeconds,
+		fEarthSweepSeconds * 1000.0,
+		fTumbleRate * fLinePeriodSeconds,
+		fLinePeriodSeconds * 1000.0);
 	Log("MSU-MR product mapping: HRPT acquires all 99 views; LRPT width 1568 "
 		"omits the final 4x1 view containing rightmost HRPT samples 1568..1571.\n");
 	Log("MSU-MR scan product initialized: lineBuffer=%ux1 RGBA, "
@@ -1694,7 +1816,24 @@ void cLuxSatelliteHandler::UpdateScanPresentation()
 		const bool bIsTarget = it->first == mpScanPresentationState->msTargetKey;
 		SetOrbitScanVisibility(pOrbit, bIsTarget);
 		if(bIsTarget && mpMsuMrSimulation->HasSatellitePose())
-			ApplyOrbitPose(pOrbit, mpMsuMrSimulation->GetSatellitePose());
+		{
+			const cLuxSatellitePose& nominalPose =
+				mpMsuMrSimulation->GetSatellitePose();
+			cLuxMsuMrInstrumentFrame instrumentFrame;
+			if(mpScanPresentationState->mTumbleProfile.CalculateInstrumentFrame(
+				mpMsuMrSimulation->GetElapsedSeconds(),
+				instrumentFrame))
+			{
+				cLuxSatellitePose displayPose = nominalPose;
+				displayPose.mvCrossTrack = instrumentFrame.mvCrossTrack;
+				displayPose.mvAlongTrack = instrumentFrame.mvAlongTrack;
+				displayPose.mvRadialOut = cVector3d(
+					-instrumentFrame.mvNadir.x,
+					-instrumentFrame.mvNadir.y,
+					-instrumentFrame.mvNadir.z);
+				ApplyOrbitPose(pOrbit, displayPose);
+			}
+		}
 	}
 }
 
@@ -1781,8 +1920,12 @@ void cLuxSatelliteHandler::EndScanPresentation(bool abResyncLiveOrbits)
 
 void cLuxSatelliteHandler::LogMsuMrSampleDiagnostics(cLuxSatelliteOrbit *apOrbit)
 {
-	if(mpMsuMrSimulation == NULL || apOrbit == NULL)
+	if(mpMsuMrSimulation == NULL || apOrbit == NULL ||
+		mpScanPresentationState == NULL ||
+		mpScanPresentationState->mTumbleProfile.IsInitialized() == false)
 		return;
+	const cLuxMsuMrTumbleProfile& tumbleProfile =
+		mpScanPresentationState->mTumbleProfile;
 
 	const tLuxMsuMrEarthSampleEventVec& vEvents =
 		mpMsuMrSimulation->GetLastEarthSampleEvents();
@@ -1812,9 +1955,15 @@ void cLuxSatelliteHandler::LogMsuMrSampleDiagnostics(cLuxSatelliteOrbit *apOrbit
 		vRepresentativeEvents[kMsuMrRepresentativeSampleCount];
 	cLuxSatellitePose vRepresentativePoses[kMsuMrRepresentativeSampleCount];
 	cLuxMsuMrGroundSample vGroundSamples[kMsuMrRepresentativeSampleCount];
-	double
-		vRepresentativeSolarElevationDegrees[kMsuMrRepresentativeSampleCount] = {};
+	bool vRepresentativeGroundHits[kMsuMrRepresentativeSampleCount] = {};
+	double vRepresentativeSolarElevationDegrees[kMsuMrRepresentativeSampleCount];
+	for(int i = 0; i < kMsuMrRepresentativeSampleCount; ++i)
+	{
+		vRepresentativeSolarElevationDegrees[i] =
+			std::numeric_limits<double>::quiet_NaN();
+	}
 	bool bIlluminationDiagnosticsValid = true;
+	unsigned int lRepresentativeGroundHitCount = 0;
 	for(int i = 0; i < kMsuMrRepresentativeSampleCount; ++i)
 	{
 		if(mpMsuMrSimulation->GetEarthSampleEvent(lastEvent.mlLineIndex,
@@ -1823,15 +1972,22 @@ void cLuxSatelliteHandler::LogMsuMrSampleDiagnostics(cLuxSatelliteOrbit *apOrbit
 			GetOrbitPose(apOrbit, vRepresentativeEvents[i].mfJulianDayUtc,
 				vRepresentativeEvents[i].mfJulianFractionUtc,
 				vRepresentativePoses[i]) == false ||
-			cLuxMsuMrGeometry::CalculateGroundSample(vRepresentativePoses[i],
-				kMsuMrRepresentativeSampleIndices[i], vGroundSamples[i]) == false)
+			CalculateMsuMrTumbledGroundSample(tumbleProfile,
+				vRepresentativePoses[i],
+				GetMsuMrElapsedSeconds(
+					vRepresentativeEvents[i].mlCircularPositionIndex),
+				kMsuMrRepresentativeSampleIndices[i],
+				vGroundSamples[i], vRepresentativeGroundHits[i]) == false)
 		{
 			Warning("Could not calculate MSU-MR WGS-84 geometry for line %llu, HRPT sample %u.\n",
 				static_cast<unsigned long long>(lastEvent.mlLineIndex),
 				kMsuMrRepresentativeSampleIndices[i]);
 			return;
 		}
-		if(CalculateMsuMrGroundSolarElevationDegrees(vGroundSamples[i],
+		if(vRepresentativeGroundHits[i])
+			++lRepresentativeGroundHitCount;
+		if(vRepresentativeGroundHits[i] &&
+			CalculateMsuMrGroundSolarElevationDegrees(vGroundSamples[i],
 			vRepresentativeEvents[i].mfJulianDayUtc,
 			vRepresentativeEvents[i].mfJulianFractionUtc,
 			vRepresentativeSolarElevationDegrees[i]) == false)
@@ -1846,26 +2002,29 @@ void cLuxSatelliteHandler::LogMsuMrSampleDiagnostics(cLuxSatelliteOrbit *apOrbit
 
 	double fSwathMetres = 0.0;
 	double fCentreSampleSpacingMetres = 0.0;
-	if(cLuxMsuMrGeometry::CalculateGeodesicDistanceMetres(
+	const bool bHasSwathDistance = vRepresentativeGroundHits[0] &&
+		vRepresentativeGroundHits[5] &&
+		cLuxMsuMrGeometry::CalculateGeodesicDistanceMetres(
 		vGroundSamples[0].mfLatitudeDegrees, vGroundSamples[0].mfLongitudeDegrees,
 		vGroundSamples[5].mfLatitudeDegrees, vGroundSamples[5].mfLongitudeDegrees,
-		fSwathMetres) == false ||
+		fSwathMetres);
+	const bool bHasCentreSpacing = vRepresentativeGroundHits[2] &&
+		vRepresentativeGroundHits[3] &&
 		cLuxMsuMrGeometry::CalculateGeodesicDistanceMetres(
 		vGroundSamples[2].mfLatitudeDegrees, vGroundSamples[2].mfLongitudeDegrees,
 		vGroundSamples[3].mfLatitudeDegrees, vGroundSamples[3].mfLongitudeDegrees,
-		fCentreSampleSpacingMetres) == false)
-	{
-		Warning("Could not calculate MSU-MR WGS-84 ground distances for line %llu.\n",
-			static_cast<unsigned long long>(lastEvent.mlLineIndex));
-		return;
-	}
+		fCentreSampleSpacingMetres);
+	if(bHasSwathDistance == false)
+		fSwathMetres = std::numeric_limits<double>::quiet_NaN();
+	if(bHasCentreSpacing == false)
+		fCentreSampleSpacingMetres = std::numeric_limits<double>::quiet_NaN();
 
 	Log("MSU-MR WGS84 line %llu face=%u: "
 		"s0[a=%.8f lat=%.7f lon=%.7f range=%.3fkm], "
 		"s785[a=%.8f lat=%.7f lon=%.7f range=%.3fkm], "
 		"s786[a=%.8f lat=%.7f lon=%.7f range=%.3fkm], "
 		"s1571[a=%.8f lat=%.7f lon=%.7f range=%.3fkm], "
-		"edgeDistance=%.3fkm, centreSpacing=%.3fkm.\n",
+		"edgeDistance=%.3fkm, centreSpacing=%.3fkm, earthHits=%u/%u.\n",
 		static_cast<unsigned long long>(lastEvent.mlLineIndex),
 		lastEvent.mlMirrorFaceIndex,
 		vGroundSamples[0].mfLookAngleDegrees,
@@ -1884,7 +2043,8 @@ void cLuxSatelliteHandler::LogMsuMrSampleDiagnostics(cLuxSatelliteOrbit *apOrbit
 		vGroundSamples[5].mfLatitudeDegrees,
 		vGroundSamples[5].mfLongitudeDegrees,
 		vGroundSamples[5].mfSlantRangeMetres / 1000.0,
-		fSwathMetres / 1000.0, fCentreSampleSpacingMetres / 1000.0);
+		fSwathMetres / 1000.0, fCentreSampleSpacingMetres / 1000.0,
+		lRepresentativeGroundHitCount, kMsuMrRepresentativeSampleCount);
 
 	// Prepare 98 full strips and the four-sample HRPT tail at their temporal and
 	// angular midpoints. Endpoint checks bound the projection and motion
@@ -1963,27 +2123,44 @@ void cLuxSatelliteHandler::LogMsuMrSampleDiagnostics(cLuxSatelliteOrbit *apOrbit
 				cLuxMsuMrGeometry::GetOpticalPositionPitchDegrees();
 			const double fStripLookAngleRadians =
 				fStripLookAngleDegrees * kDegreesToRadians;
-			const cVector3d vStripForward = Normalize(cVector3d(
-				-stripPose.mvRadialOut.x * std::cos(fStripLookAngleRadians) +
-					stripPose.mvCrossTrack.x * std::sin(fStripLookAngleRadians),
-				-stripPose.mvRadialOut.y * std::cos(fStripLookAngleRadians) +
-					stripPose.mvCrossTrack.y * std::sin(fStripLookAngleRadians),
-				-stripPose.mvRadialOut.z * std::cos(fStripLookAngleRadians) +
-					stripPose.mvCrossTrack.z * std::sin(fStripLookAngleRadians)));
-			cLuxMsuMrGroundSample stripCentreGround;
-			if(cLuxMsuMrGeometry::CalculateGroundIntersection(
-				stripPose.mvPositionMetres, vStripForward,
-				stripCentreGround) == false)
+			const double fStripElapsedSeconds =
+				(static_cast<double>(lowerCentreEvent.mlCircularPositionIndex) +
+				 0.5) /
+				cLuxMsuMrSimulation::kCircularPositionsPerSecond;
+			cLuxMsuMrInstrumentFrame stripInstrumentFrame;
+			if(tumbleProfile.CalculateInstrumentFrame(
+				fStripElapsedSeconds, stripInstrumentFrame) == false)
 			{
 				bPreparationSucceeded = false;
 				lFailedStrip = stripIndex;
 				break;
 			}
+			const cVector3d vStripForward = Normalize(cVector3d(
+				stripInstrumentFrame.mvNadir.x * std::cos(fStripLookAngleRadians) +
+					stripInstrumentFrame.mvCrossTrack.x * std::sin(fStripLookAngleRadians),
+				stripInstrumentFrame.mvNadir.y * std::cos(fStripLookAngleRadians) +
+					stripInstrumentFrame.mvCrossTrack.y * std::sin(fStripLookAngleRadians),
+				stripInstrumentFrame.mvNadir.z * std::cos(fStripLookAngleRadians) +
+					stripInstrumentFrame.mvCrossTrack.z * std::sin(fStripLookAngleRadians)));
+			cLuxMsuMrGroundSample stripCentreGround;
+			const bool bStripCentreGroundHit =
+				cLuxMsuMrGeometry::CalculateGroundIntersection(
+				stripPose.mvPositionMetres, vStripForward,
+				stripCentreGround);
+			if(bStripCentreGroundHit == false)
+			{
+				// Space is a valid detector result during tumble. Preserve the ray
+				// so the view renders black rather than discarding the whole line.
+				stripCentreGround = cLuxMsuMrGroundSample();
+				stripCentreGround.mvRayDirection = vStripForward;
+				stripCentreGround.mfSlantRangeMetres =
+					std::numeric_limits<double>::quiet_NaN();
+			}
 			stripCentreGround.mlEarthSampleIndex = lFirstSample;
 			stripCentreGround.mfLookAngleDegrees = fStripLookAngleDegrees;
 
 			const cVector3d vStripRight = Normalize(Cross(
-				vStripForward, stripPose.mvAlongTrack));
+				vStripForward, stripInstrumentFrame.mvAlongTrack));
 			for(int endpoint = 0; endpoint < 2; ++endpoint)
 			{
 				const int lSampleOffset = endpoint == 0 ?
@@ -1994,6 +2171,8 @@ void cLuxSatelliteHandler::LogMsuMrSampleDiagnostics(cLuxSatelliteOrbit *apOrbit
 				cLuxMsuMrGroundSample exactGround;
 				cLuxMsuMrGroundSample idealMidpointGround;
 				cLuxMsuMrGroundSample projectedStripGround;
+				bool bExactGroundHit = false;
+				bool bIdealMidpointGroundHit = false;
 				const int lStripPixel =
 					lStripSampleCount - 1 - lSampleOffset;
 				const double fHorizontalTangent =
@@ -2003,29 +2182,27 @@ void cLuxSatelliteHandler::LogMsuMrSampleDiagnostics(cLuxSatelliteOrbit *apOrbit
 					vStripForward.x + vStripRight.x * fHorizontalTangent,
 					vStripForward.y + vStripRight.y * fHorizontalTangent,
 					vStripForward.z + vStripRight.z * fHorizontalTangent));
-				double fGroundDisplacementMetres = 0.0;
 				if(mpMsuMrSimulation->GetEarthSampleEvent(
 						lastEvent.mlLineIndex, lSampleIndex, exactEvent) == false ||
 					GetOrbitPose(apOrbit, exactEvent.mfJulianDayUtc,
 						exactEvent.mfJulianFractionUtc, exactPose) == false ||
-					cLuxMsuMrGeometry::CalculateGroundSample(exactPose,
-						lSampleIndex, exactGround) == false ||
-					cLuxMsuMrGeometry::CalculateGroundSample(stripPose,
-						lSampleIndex, idealMidpointGround) == false ||
-					cLuxMsuMrGeometry::CalculateGroundIntersection(
-						stripPose.mvPositionMetres, vStripRay,
-						projectedStripGround) == false ||
-					cLuxMsuMrGeometry::CalculateGeodesicDistanceMetres(
-						projectedStripGround.mfLatitudeDegrees,
-						projectedStripGround.mfLongitudeDegrees,
-						exactGround.mfLatitudeDegrees,
-						exactGround.mfLongitudeDegrees,
-						fGroundDisplacementMetres) == false)
+					CalculateMsuMrTumbledGroundSample(tumbleProfile,
+						exactPose,
+						GetMsuMrElapsedSeconds(
+							exactEvent.mlCircularPositionIndex),
+						lSampleIndex, exactGround, bExactGroundHit) == false ||
+					CalculateMsuMrGroundSampleForFrame(stripPose,
+						stripInstrumentFrame, lSampleIndex,
+						idealMidpointGround, bIdealMidpointGroundHit) == false)
 				{
 					bPreparationSucceeded = false;
 					lFailedStrip = stripIndex;
 					break;
 				}
+				const bool bProjectedStripGroundHit =
+					cLuxMsuMrGeometry::CalculateGroundIntersection(
+						stripPose.mvPositionMetres, vStripRay,
+						projectedStripGround);
 
 				const cVector3d vRayCross = Cross(
 					vStripRay, idealMidpointGround.mvRayDirection);
@@ -2041,14 +2218,30 @@ void cLuxSatelliteHandler::LogMsuMrSampleDiagnostics(cLuxSatelliteOrbit *apOrbit
 				fMaxProjectionRayErrorArcseconds = std::max(
 					fMaxProjectionRayErrorArcseconds,
 					fProjectionRayErrorArcseconds);
-				fMaxGroundDisplacementMetres = std::max(
-					fMaxGroundDisplacementMetres,
-					fGroundDisplacementMetres);
+				if(bExactGroundHit && bProjectedStripGroundHit)
+				{
+					double fGroundDisplacementMetres = 0.0;
+					if(cLuxMsuMrGeometry::CalculateGeodesicDistanceMetres(
+						projectedStripGround.mfLatitudeDegrees,
+						projectedStripGround.mfLongitudeDegrees,
+						exactGround.mfLatitudeDegrees,
+						exactGround.mfLongitudeDegrees,
+						fGroundDisplacementMetres) == false)
+					{
+						bPreparationSucceeded = false;
+						lFailedStrip = stripIndex;
+						break;
+					}
+					fMaxGroundDisplacementMetres = std::max(
+						fMaxGroundDisplacementMetres,
+						fGroundDisplacementMetres);
+				}
 				fMaxTimeOffsetMilliseconds = std::max(
 					fMaxTimeOffsetMilliseconds,
 					fTimeOffsetMilliseconds);
 				double fSolarElevationDegrees = 0.0;
-				if(CalculateMsuMrGroundSolarElevationDegrees(exactGround,
+				if(bExactGroundHit &&
+					CalculateMsuMrGroundSolarElevationDegrees(exactGround,
 					exactEvent.mfJulianDayUtc,
 					exactEvent.mfJulianFractionUtc,
 					fSolarElevationDegrees))
@@ -2063,7 +2256,7 @@ void cLuxSatelliteHandler::LogMsuMrSampleDiagnostics(cLuxSatelliteOrbit *apOrbit
 					if(fSolarElevationDegrees >= 0.0)
 						++lDaylightEndpointCount;
 				}
-				else
+				else if(bExactGroundHit)
 				{
 					bIlluminationDiagnosticsValid = false;
 				}
@@ -2074,7 +2267,7 @@ void cLuxSatelliteHandler::LogMsuMrSampleDiagnostics(cLuxSatelliteOrbit *apOrbit
 			cLuxMsuMrSensorSampleState& strip =
 				mpScanPresentationState->mvSensorStrips[stripIndex];
 			if(AimMsuMrSensorSample(strip, stripEvent, stripPose,
-				stripCentreGround) == false)
+				stripInstrumentFrame, stripCentreGround) == false)
 			{
 				bPreparationSucceeded = false;
 				lFailedStrip = stripIndex;
@@ -2106,7 +2299,7 @@ void cLuxSatelliteHandler::LogMsuMrSampleDiagnostics(cLuxSatelliteOrbit *apOrbit
 			fMaxTimeOffsetMilliseconds;
 		mpScanPresentationState->mbIlluminationDiagnosticsValid =
 			bIlluminationDiagnosticsValid &&
-			lIlluminationEndpointCount == kMsuMrStripCount * 2;
+			lIlluminationEndpointCount > 0;
 		mpScanPresentationState->mbPointSunEarthOccluded =
 			bPointSunEarthOccluded;
 		mpScanPresentationState->mfGroundSolarElevationMinDegrees =

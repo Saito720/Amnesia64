@@ -350,6 +350,10 @@ namespace hpl {
 		if(pVars->mbAffectedByLightLevel)
 		{
 			cVector3f vCenterPos = apObject->GetBoundingVolume()->GetWorldCenter();
+			const cMatrixf& mtxWorld = apObject->GetWorldMatrix();
+			const cMatrixf& mtxRender = apObject->GetRenderWorldMatrix();
+			if(cMath::Abs(cMath::Vector3Dot(cMath::Vector3Cross(mtxWorld.GetRight(),mtxWorld.GetUp()),mtxWorld.GetForward())) > 0.000001f)
+				vCenterPos = cMath::MatrixMul(mtxRender,cMath::MatrixMul(cMath::MatrixInverse(mtxWorld),vCenterPos));
             cRenderList *pRenderList = apRenderer->GetCurrentRenderList();
 
 			float fLightAmount = 0.0f;
@@ -369,7 +373,7 @@ namespace hpl {
 					}
 					else
 					{
-						float fDist = cMath::Vector3Dist(pLight->GetWorldPosition(), vCenterPos);
+						float fDist = cMath::Vector3Dist(pLight->GetRenderWorldPosition(), vCenterPos);
 
 						fLightAmount += GetMaxColorValue(pLight->GetDiffuseColor()) * cMath::Max(1.0f - (fDist / pLight->GetRadius()), 0.0f);
 					}

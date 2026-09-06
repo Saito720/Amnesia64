@@ -341,9 +341,11 @@ namespace hpl {
 		mfMaxContactForcePerMassUnit = 250.0f;
 
 		mpCamera = NULL;
+		mbResetCameraInterpolation = true;
 		mvCameraPosAdd = cVector3f(0,0,0);
 
 		mpEntity = NULL;
+		mbResetEntityInterpolation = true;
 		m_mtxEntityOffset = cMatrixf::Identity;
 		m_mtxEntityPostOffset = cMatrixf::Identity;
 
@@ -599,7 +601,7 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	void iCharacterBody::SetPosition(const cVector3f& avPos, bool abSmooth)
+	void iCharacterBody::SetPosition(const cVector3f& avPos, bool abSmooth, bool abResetInterpolation)
 	{
 		//mvForce =0;
 		//mvVelocity =0;
@@ -612,6 +614,15 @@ namespace hpl {
 			mlstCameraPos.clear();
 			mlstEntityPos.clear();
 			mlstEntityYPositions.clear();
+			if(abResetInterpolation)
+			{
+				if(mpCamera) mpCamera->ResetInterpolation();
+				if(mpEntity) mpEntity->ResetRenderInterpolation();
+				// The attached transforms are updated later, possibly in the next tick.
+				// Reset again after that update so a teleport cannot seed a stale pose.
+				mbResetCameraInterpolation = true;
+				mbResetEntityInterpolation = true;
+			}
 		}
 	}
 	const cVector3f& iCharacterBody::GetPosition()
@@ -625,9 +636,9 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 	
-	void iCharacterBody::SetFeetPosition(const cVector3f& avPos, bool abSmooth)
+	void iCharacterBody::SetFeetPosition(const cVector3f& avPos, bool abSmooth, bool abResetInterpolation)
 	{
-		SetPosition(avPos + cVector3f(0,mvSize.y/2,0),abSmooth);
+		SetPosition(avPos + cVector3f(0,mvSize.y/2,0),abSmooth,abResetInterpolation);
 	}
 
 	cVector3f iCharacterBody::GetFeetPosition()
@@ -1030,6 +1041,11 @@ namespace hpl {
 
 	void iCharacterBody::SetCamera(cCamera *apCam)
 	{
+		if(mpCamera != apCam)
+		{
+			if(apCam) apCam->ResetInterpolation();
+			mbResetCameraInterpolation = true;
+		}
 		mpCamera = apCam;
 	}
 	
@@ -1116,6 +1132,11 @@ namespace hpl {
 
 	void iCharacterBody::SetEntity(iEntity3D *apEntity)
 	{
+		if(mpEntity != apEntity)
+		{
+			if(apEntity) apEntity->ResetRenderInterpolation();
+			mbResetEntityInterpolation = true;
+		}
 		mpEntity = apEntity;
 	}
 	iEntity3D* iCharacterBody::GetEntity()
@@ -2053,6 +2074,11 @@ namespace hpl {
 
 		//No need to smooth this yaw.
 		mpCamera->SetYaw(mfYaw);
+		if(mbResetCameraInterpolation)
+		{
+			mpCamera->ResetInterpolation();
+			mbResetCameraInterpolation = false;
+		}
 	}
 
 	//-----------------------------------------------------------------------
@@ -2128,6 +2154,11 @@ namespace hpl {
 			mtxEntity = cMath::MatrixMul(mtxEntity,m_mtxEntityOffset);
 			
 			mpEntity->SetMatrix(mtxEntity);
+		}
+		if(mbResetEntityInterpolation)
+		{
+			mpEntity->ResetRenderInterpolation();
+			mbResetEntityInterpolation = false;
 		}
 	}
 

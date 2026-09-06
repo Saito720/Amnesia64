@@ -77,7 +77,7 @@ namespace hpl {
 
 	cMatrixf* cFogArea::GetModelMatrix(cFrustum* apFrustum)
 	{
-		m_mtxModelOutput = cMath::MatrixMul(GetWorldMatrix(), cMath::MatrixScale(mvSize));
+		m_mtxModelOutput = cMath::MatrixMul(GetRenderWorldMatrix(), cMath::MatrixScale(mvSize));
 
 		return &m_mtxModelOutput;
 	}

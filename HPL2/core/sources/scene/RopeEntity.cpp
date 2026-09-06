@@ -169,6 +169,8 @@ namespace hpl {
 				cVerletParticle *pPart = it.Next();
 				
 				cMath::ExpandAABB(vMin,vMax, pPart->GetPosition(), pPart->GetPosition());
+				cMath::ExpandAABB(vMin,vMax, pPart->GetRenderPosition(0), pPart->GetRenderPosition(0));
+				cMath::ExpandAABB(vMin,vMax, pPart->GetSmoothPosition(), pPart->GetSmoothPosition());
 			}
 			
 			mBoundingVolume.SetLocalMinMax(vMin-cVector3f(mfRadius),vMax+cVector3f(mfRadius));
@@ -212,6 +214,8 @@ namespace hpl {
 
 	bool cRopeEntity::UpdateGraphicsForViewport(cFrustum *apFrustum,float afFrameTime)
 	{
+		const float fAlpha = iEntity3D::IsRenderInterpolationActive() ?
+			iEntity3D::GetRenderInterpolationAlpha() : 1.0f;
 		float *pPosArray = mpVtxBuffer->GetFloatArray(eVertexBufferElement_Position);
 		float *pUvArray = mpVtxBuffer->GetFloatArray(eVertexBufferElement_Texture0);
 		float *pNrmArray = mpVtxBuffer->GetFloatArray(eVertexBufferElement_Normal);
@@ -240,15 +244,16 @@ namespace hpl {
 			cVerletParticle *pPart = it.Next();
 
 			if(lCount == 1){
-				vPrevPos = pPart->GetPosition();
+				vPrevPos = pPart->GetRenderPosition(fAlpha);
 				continue; 
 			}
 
 			/////////////////////////
 			//Calculate properties
-			cVector3f vPos = pPart->GetSmoothPosition();
+			cVector3f vPos = pPart->GetRenderPosition(fAlpha);
 			cVector3f vDelta = vPos - vPrevPos;
 			float fLength = vDelta.Length();
+			if(fLength < kEpsilonf) fLength = kEpsilonf;
 			cVector3f vUp = vDelta / fLength;
 			cVector3f vRight = cMath::Vector3Normalize(cMath::Vector3Cross(vUp, apFrustum->GetForward()));
 			cVector3f vFwd = cMath::Vector3Cross(vRight, vUp);

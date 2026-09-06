@@ -411,7 +411,7 @@ namespace hpl {
 
 		mpUpdater->BroadcastMessageToAll(eUpdateableMessage_OnStart);
 		
-		mpLogicTimer->Reset();
+		ResetLogicTimer();
 
 		//Loop the game... fix the var...
 		unsigned long lTempTime = cPlatform::GetApplicationTime();
@@ -423,7 +423,6 @@ namespace hpl {
 		mpFrameTimer->Start();
 		
 		bool bIsUpdated = true;
-		bool bBufferSwap = false;
 		bool bSwappedOnce = false;
 		
 		//cMemoryManager::SetLogCreation(true);
@@ -448,8 +447,9 @@ namespace hpl {
 			{
 				//////////////////////////
 				//Update logic.
-				while(mpLogicTimer->WantUpdate() && !GetGameIsDone())
+				while(!GetGameIsDone() && !GetPaused() && mpLogicTimer->WantUpdate())
 				{
+					mpScene->CaptureInterpolationState();
 					/////////////////////////////////////////////
 					// Run Update callback in updater
 					mpUpdater->RunMessage(eUpdateableMessage_PreUpdate, GetStepSize());
@@ -488,6 +488,7 @@ namespace hpl {
 				}
 				mpLogicTimer->EndUpdateLoop();
 			}
+			if(GetGameIsDone()) break;
 
 			//if(GetGameIsDone()) Log("1\n");
 
@@ -499,27 +500,6 @@ namespace hpl {
 			}
 
 			//if(GetGameIsDone()) Log("2\n");
-
-			////////////////////////////////////////////////
-			//Swap buffers and call callback, do this after update, so hardware can work during update
-			if(bBufferSwap)
-			{
-				bBufferSwap = false;
-				START_TIMING(WaitAndFinishRendering)
-				//mpGraphics->GetLowLevel()->WaitAndFinishRendering();
-				STOP_TIMING(WaitAndFinishRendering)
-
-				START_TIMING(SwapBuffers)
-				mpGraphics->GetLowLevel()->SwapBuffers();
-				STOP_TIMING(SwapBuffers)
-				
-				//Log("Swap done: %d\n", cPlatform::GetApplicationTime());
-				mpUpdater->RunMessage(eUpdateableMessage_OnPostBufferSwap);
-				bSwappedOnce =true;
-				if(mbRenderOnce) continue;
-			}
-
-			//if(GetGameIsDone()) Log("3\n");
 
 			////////////////////////////////////
 			// Render frame
@@ -536,7 +516,9 @@ namespace hpl {
 				
 				//Render this frame
 				START_TIMING(RenderAll)
-				mpScene->Render(mfFrameTime, tSceneRenderFlag_All);
+				const float fInterpolation = mbLimitFPS || GetPaused() ? 1.0f :
+					mpLogicTimer->GetInterpolationAmount();
+				mpScene->Render(mfFrameTime, tSceneRenderFlag_All, fInterpolation);
 				STOP_TIMING(RenderAll)
 
 				START_TIMING(PostRender)
@@ -546,13 +528,20 @@ namespace hpl {
 				START_TIMING(FlushRender)
 				mpGraphics->GetLowLevel()->FlushRendering();
 				STOP_TIMING(FlushRender)
+
+				// Present this frame now. Any VSync wait is then included in the next
+				// outer-loop clock sample, before simulation and interpolation are chosen.
+				START_TIMING(SwapBuffers)
+				mpGraphics->GetLowLevel()->SwapBuffers();
+				STOP_TIMING(SwapBuffers)
+				mpUpdater->RunMessage(eUpdateableMessage_OnPostBufferSwap);
+				bSwappedOnce = true;
 				
 				//Update fps counter.
 				mpFPSCounter->AddFrame();
 	           	
 				fNumOfTimes++;
 				bIsUpdated = false;
-				bBufferSwap = true;
 			}
 
 			//if(GetGameIsDone()) Log("4\n");
@@ -600,11 +589,13 @@ namespace hpl {
 	void cEngine::ResetLogicTimer()
 	{
 		mpLogicTimer->Reset();
+		mpScene->ResetInterpolationState();
 	}
 
 	void cEngine::SetUpdatesPerSec(int alUpdatesPerSec)
 	{
 		mpLogicTimer->SetUpdatesPerSec(alUpdatesPerSec);
+		mpScene->ResetInterpolationState();
 	}
 
 	int cEngine::GetUpdatesPerSec()
@@ -752,7 +743,7 @@ namespace hpl {
 		if(mbPaused != abPaused)
 		{
 			mbPaused = abPaused;
-			if(mbPaused==false) mpLogicTimer->Reset();
+			ResetLogicTimer();
 		}
 
 		mpMutex->Unlock();
@@ -827,11 +818,14 @@ namespace hpl {
 	void cEngine::CheckIfAppInFocusElseWait()
 	{
 		iLowLevelGraphics *pllGfx = mpGraphics->GetLowLevel();
-		while(	pllGfx->GetWindowInputFocus()==false)
+		bool bWaited = false;
+		while(pllGfx->GetWindowInputFocus()==false && !GetGameIsDone())
 		{
+			bWaited = true;
 			cPlatform::Sleep(100);
 			mpInput->Update(1.0f/10.0f);
 		}
+		if(bWaited) ResetLogicTimer();
 	}
 
 	//-----------------------------------------------------------------------

@@ -85,6 +85,8 @@ namespace hpl {
 
 		mlInvWorldMatrixTransformCount = -1;
 		mlBoneMatricesTransformCount = -1;
+		mlBoneMatricesRenderFrame = -1;
+		mlSkeletonBoundsRenderFrame = -1;
 
 		mbBoneMatricesNeedUpdate = true;
 
@@ -1168,15 +1170,17 @@ namespace hpl {
 
 	void cMeshEntity::UpdateGraphicsForFrame(float afFrameTime)
 	{
+		const int lRenderFrame = IsRenderInterpolationActive() ? GetRenderInterpolationFrame() : -1;
 		//////////////////////////////////////////
 		//Check so update is needed
-		if(	mbBoneMatricesNeedUpdate == false &&
-			mlBoneMatricesTransformCount == GetTransformUpdateCount())
+		if(	mbBoneMatricesNeedUpdate == false && mlBoneMatricesRenderFrame == lRenderFrame &&
+			mlBoneMatricesTransformCount == GetRenderTransformUpdateCount())
 		{
 			return;
 		}
 
-		mlBoneMatricesTransformCount = GetTransformUpdateCount();
+		mlBoneMatricesTransformCount = GetRenderTransformUpdateCount();
+		mlBoneMatricesRenderFrame = lRenderFrame;
 		mbBoneMatricesNeedUpdate = false;
 
 		///////////////////////////////////
@@ -1184,10 +1188,10 @@ namespace hpl {
 		cSkeleton *pSkeleton = mpMesh->GetSkeleton();
 		if(pSkeleton)
 		{
-			if(mlInvWorldMatrixTransformCount != GetTransformUpdateCount())
+			if(mlInvWorldMatrixTransformCount != GetRenderTransformUpdateCount())
 			{
-				mlInvWorldMatrixTransformCount = GetTransformUpdateCount();
-				m_mtxInvWorldMatrix = cMath::MatrixInverse(GetWorldMatrix());
+				mlInvWorldMatrixTransformCount = GetRenderTransformUpdateCount();
+				m_mtxInvWorldMatrix = cMath::MatrixInverse(GetRenderWorldMatrix());
 			}
 			
 			for(int i=0; i< pSkeleton->GetBoneNum(); i++)
@@ -1197,7 +1201,7 @@ namespace hpl {
                 
 				//Transform the movement of the bone into the
 				//Bind pose's local space.
-				cMatrixf mtxLocal = cMath::MatrixMul(m_mtxInvWorldMatrix,pState->GetWorldMatrix());
+				cMatrixf mtxLocal = cMath::MatrixMul(m_mtxInvWorldMatrix,pState->GetRenderWorldMatrix());
 				
 				mvBoneMatrices[i] = cMath::MatrixMul(mtxLocal,pBone->GetInvWorldTransform());
 			}
@@ -1269,6 +1273,24 @@ namespace hpl {
 	}
 
 	//-----------------------------------------------------------------------
+
+	cBoundingVolume* cMeshEntity::GetRenderBoundingVolume()
+	{
+		if(IsStatic() || !IsRenderInterpolationActive()) return GetBoundingVolume();
+		cBoundingVolume* pBounds = iEntity3D::GetRenderBoundingVolume();
+		if(mvBoneStates.empty()) return pBounds;
+		if(mlSkeletonBoundsRenderFrame == GetRenderInterpolationFrame()) return &mRenderSkeletonBoundingVolume;
+		cVector3f vMin = pBounds->GetMin(), vMax = pBounds->GetMax();
+		for(size_t i=0; i<mvBoneStates.size(); ++i)
+		{
+			cVector3f vPosition = mvBoneStates[i]->GetRenderWorldPosition();
+			cVector3f vRadius(mpMesh->GetBoneBoundingRadius((int)i));
+			cMath::ExpandAABB(vMin,vMax,vPosition-vRadius,vPosition+vRadius);
+		}
+		mRenderSkeletonBoundingVolume.SetLocalMinMax(vMin,vMax);
+		mlSkeletonBoundsRenderFrame = GetRenderInterpolationFrame();
+		return &mRenderSkeletonBoundingVolume;
+	}
 
 	void cMeshEntity::SetStatic(bool abX)
 	{

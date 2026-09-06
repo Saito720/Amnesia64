@@ -118,6 +118,10 @@ namespace hpl {
 	
 	void iPhysicsRope::UpdateBeforeSimulate(float afTimeStep)
 	{
+		// Do not reuse Verlet's previous position: it is part of the integrator.
+		for(tVerletParticleListIt it = mlstParticles.begin(); it != mlstParticles.end(); ++it)
+			(*it)->CaptureRenderState();
+
 		mbHasUpdated = true;
 		
 		PreUpdate(afTimeStep);

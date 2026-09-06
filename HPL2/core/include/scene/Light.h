@@ -115,7 +115,7 @@ namespace hpl {
 
 		cBoundingVolume* GetBoundingVolume();
 
-		int GetMatrixUpdateCount(){ return GetTransformUpdateCount();}
+		int GetMatrixUpdateCount(){ return GetRenderTransformUpdateCount();}
 
 		cMatrixf* GetModelMatrix(cFrustum* apFrustum);
 

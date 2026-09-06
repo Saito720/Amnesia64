@@ -23,6 +23,8 @@
 #include "math/Frustum.h"
 #include "system/LowLevelSystem.h"
 
+#include "scene/RenderableContainer.h"
+
 namespace hpl {
 
 	//////////////////////////////////////////////////////////////////////////
@@ -144,14 +146,26 @@ namespace hpl {
 	
 	bool iRenderable::CollidesWithBV(cBoundingVolume *apBV)
 	{
-		return cMath::CheckBVIntersection(*GetBoundingVolume(), *apBV);
+		return cMath::CheckBVIntersection(*GetRenderBoundingVolume(), *apBV);
 	}
 	
 	//-----------------------------------------------------------------------
 
 	bool iRenderable::CollidesWithFrustum(cFrustum *apFrustum)
 	{
-		return apFrustum->CollideBoundingVolume(GetBoundingVolume()) != eCollision_Outside; 
+		return apFrustum->CollideBoundingVolume(GetRenderBoundingVolume()) != eCollision_Outside;
+	}
+
+	cBoundingVolume* iRenderable::GetRenderBoundingVolume()
+	{
+		return IsStatic() ? GetBoundingVolume() : iEntity3D::GetRenderBoundingVolume();
+	}
+
+	void iRenderable::OnRenderInterpolation()
+	{
+		// Only invalidate rendering spatial data: entity callbacks also drive
+		// physics and must never be invoked for an interpolated pose.
+		if(!IsStatic() && mpRenderContainerNode) mpRenderContainerNode->PushUpNeedAABBUpdate();
 	}
 	
 	//-----------------------------------------------------------------------

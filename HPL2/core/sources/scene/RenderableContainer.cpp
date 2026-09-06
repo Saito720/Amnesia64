@@ -157,8 +157,8 @@ namespace hpl {
 		{
 			iRenderable *pObject = *it;
 
-			const cVector3f &vMin = pObject->GetBoundingVolume()->GetMin();
-			const cVector3f &vMax = pObject->GetBoundingVolume()->GetMax();
+			const cVector3f &vMin = pObject->GetRenderBoundingVolume()->GetMin();
+			const cVector3f &vMax = pObject->GetRenderBoundingVolume()->GetMax();
 
 			if(vNodeMin.x > vMin.x) vNodeMin.x = vMin.x;
 			if(vNodeMin.y > vMin.y) vNodeMin.y = vMin.y;

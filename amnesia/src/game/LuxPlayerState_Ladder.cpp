@@ -170,7 +170,7 @@ void cLuxPlayerState_Ladder::Update(float afTimeStep)
 		mfTimeCount -= afTimeStep;
 
 		mvCharPosition += mvPosAdd*afTimeStep;
-		pCharBody->SetPosition(mvCharPosition);
+		pCharBody->SetPosition(mvCharPosition, false, false);
 		mvCharPosition = pCharBody->GetPosition();
 
 		pCam->AddPitch(mvRotAdd.x *afTimeStep);
@@ -256,7 +256,7 @@ void cLuxPlayerState_Ladder::Update(float afTimeStep)
 		
 		/////////////////////////////////
 		//Update character body
-		pCharBody->SetPosition(mvCharPosition);
+		pCharBody->SetPosition(mvCharPosition, false, false);
 
 
 		/////////////////////////////////

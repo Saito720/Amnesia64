@@ -104,7 +104,28 @@ namespace hpl {
 	class cParticle
 	{
 	public:
-		cParticle(){}
+		cParticle() : mbRenderStateValid(false) {}
+
+		// Presentation history is independent of the motion/collision history.
+		void CaptureRenderState()
+		{
+			mvPreviousRenderPos = mvPos;
+			mvPreviousRenderLastPos = mvLastPos;
+			mvPreviousRenderSize = mvSize;
+			mPreviousRenderColor = mColor;
+			mfPreviousRenderSpin = mfSpin;
+			mbRenderStateValid = true;
+		}
+
+		cVector3f GetRenderPosition(float afAlpha) const
+		{ return mbRenderStateValid ? mvPreviousRenderPos*(1-afAlpha) + mvPos*afAlpha : mvPos; }
+		cVector3f GetRenderLastPosition(float afAlpha) const
+		{ return mbRenderStateValid ? mvPreviousRenderLastPos*(1-afAlpha) + mvLastPos*afAlpha : mvLastPos; }
+		cVector2f GetRenderSize(float afAlpha) const
+		{ return mbRenderStateValid ? mvPreviousRenderSize*(1-afAlpha) + mvSize*afAlpha : mvSize; }
+		cColor GetRenderColor(float afAlpha) const
+		{ return mbRenderStateValid ? mPreviousRenderColor*(1-afAlpha) + mColor*afAlpha : mColor; }
+		float GetRenderSpin(float afAlpha) const;
 
 		cVector3f mvPos;
 		cVector3f mvLastPos;
@@ -151,6 +172,14 @@ namespace hpl {
 		int mlHighFreqPoints;
 		std::vector<cVector3f> mvBeamPoints;
 
+	private:
+		bool mbRenderStateValid;
+		cVector3f mvPreviousRenderPos;
+		cVector3f mvPreviousRenderLastPos;
+		cVector2f mvPreviousRenderSize;
+		cColor mPreviousRenderColor;
+		float mfPreviousRenderSpin;
+
 		// ---
 
 	};
@@ -174,6 +203,7 @@ namespace hpl {
 		virtual ~iParticleEmitter();
 
 		void UpdateLogic(float afTimeStep);
+		void ResetRenderState();
 
 		void Render(){}
 

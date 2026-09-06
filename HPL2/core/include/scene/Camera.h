@@ -100,6 +100,12 @@ namespace hpl {
 
 		cFrustum* GetFrustum();
 
+		// Capture the simulation camera before a fixed update. Render interpolation
+		// never changes the camera pose used by gameplay, sound or attached objects.
+		void BeginInterpolationStep();
+		void ResetInterpolation();
+		cFrustum* GetRenderFrustum(float afAlpha);
+
 		eCameraRotateMode GetRotateMode(){return mRotateMode;}
 		
 		eCameraMoveMode GetMoveMode(){return mMoveMode;}
@@ -238,6 +244,18 @@ namespace hpl {
 		cNode3D mNode;
 
 		cFrustum mFrustum;
+
+		// Previous simulation state, distinct from the previous rendered view used
+		// by temporal post effects. The render frustum has its own matrix storage.
+		cVector3f mvPreviousUpdatePosition;
+		cMatrixf m_mtxPreviousUpdateRotation;
+		float mfPreviousUpdateFOV;
+		float mfPreviousUpdateAspect;
+		float mfPreviousUpdateFarClipPlane;
+		float mfPreviousUpdateNearClipPlane;
+		cVector2f mvPreviousUpdateViewSize;
+		bool mbHasPreviousUpdate;
+		cFrustum mRenderFrustum;
 
 		bool mbInfFarPlane;
 

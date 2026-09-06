@@ -67,6 +67,9 @@ namespace hpl {
 
 		cVector3f GetWorldPosition();
 		cMatrixf& GetWorldMatrix();
+		cMatrixf& GetRenderWorldMatrix();
+		cVector3f GetRenderWorldPosition();
+		void ResetRenderInterpolation();
 
 		void SetPosition(const cVector3f& avPos);
 		void SetMatrix(const cMatrixf& a_mtxTransform, bool abSetChildrenUpdated=true);
@@ -110,6 +113,18 @@ namespace hpl {
 
 		void UpdateEntityChildren();
 	private:
+		static void CaptureInterpolationState();
+		static void ResetInterpolationState();
+		void RegisterRenderInterpolation();
+		void CaptureRenderInterpolation();
+		bool mbInterpolationRegistered;
+		tNode3DListIt mInterpolationIterator;
+		cMatrixf m_mtxPreviousLocalTransform;
+		cMatrixf m_mtxRenderWorldTransform;
+		cNode3D* mpPreviousParent;
+		iEntity3D* mpPreviousEntityParent;
+		int mlRenderMatrixFrame;
+
 		tString msName;
 		bool mbActive;
 		

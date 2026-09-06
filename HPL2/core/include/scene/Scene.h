@@ -80,7 +80,11 @@ namespace hpl {
 		/**
 		 * Called by cEngine
 		 */
-		void Render(float afFrameTime, tFlag alFlags);
+		void Render(float afFrameTime, tFlag alFlags, float afInterpolation = 1.0f);
+
+		// Snapshot before the complete fixed update, including game callbacks.
+		void CaptureInterpolationState();
+		void ResetInterpolationState();
 
 		void PostUpdate(float afTimeStep);
 		

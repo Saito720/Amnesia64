@@ -402,7 +402,7 @@ void cLuxMoveState_Normal::SetCrouch(bool abActive)
 			gpBase->mpHelpFuncs->PlayGuiSoundData(msStandSound, eSoundEntryType_World);
 
 			mbCrouching = false;
-			pCharBody->SetPosition(pCharBody->GetPosition()+vPosTestAdd[lCurrentFitTest]); //Make sure to move the player to the fitting positon!
+			pCharBody->SetPosition(pCharBody->GetPosition()+vPosTestAdd[lCurrentFitTest], false, false); //Make sure to move the player to the fitting positon!
 			pCharBody->SetActiveSize(0);
 			mpPlayer->MoveHeadPosAdd(eLuxHeadPosAdd_Main, 0, 1.6f, 0.05f);
 		}
@@ -795,7 +795,7 @@ bool cLuxMoveState_Normal::UpdateLedgeCheck(float afTimeStep)
 	mpPlayer->SetHeadPosAdd(eLuxHeadPosAdd_ClimbLedge, vDiff);
 	
 	//Set the new position
-	pCharBody->SetFeetPosition(vFeetPos);
+	pCharBody->SetFeetPosition(vFeetPos, false, false);
 	
 	//Change the move state
 	mpPlayer->ChangeMoveState(eLuxMoveState_ClimbLedge);

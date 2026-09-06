@@ -69,7 +69,7 @@ namespace hpl {
 
 	cMatrixf* cDummyRenderable::GetModelMatrix(cFrustum* apFrustum)
 	{
-		m_mtxModelOutput = GetWorldMatrix();
+		m_mtxModelOutput = GetRenderWorldMatrix();
 
 		return &m_mtxModelOutput;
 	}

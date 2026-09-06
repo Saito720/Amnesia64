@@ -344,21 +344,21 @@ namespace hpl {
 	bool iLight::CheckObjectIntersection(iRenderable *apObject)
 	{
 		//Log("------ Checking %s with light %s -----\n",apObject->GetName().c_str(), GetName().c_str());
-		//Log(" BV: min: %s max: %s\n",	apObject->GetBoundingVolume()->GetMin().ToString().c_str(),
-		//								apObject->GetBoundingVolume()->GetMax().ToString().c_str());
+		//Log(" BV: min: %s max: %s\n",	apObject->GetRenderBoundingVolume()->GetMin().ToString().c_str(),
+		//								apObject->GetRenderBoundingVolume()->GetMax().ToString().c_str());
 		
 		//////////////////////////////////////////////////////////////
 		// If the lights cast shadows, cull objects that are in shadow
 		if(mbCastShadows)
 		{
-			return CollidesWithBV(apObject->GetBoundingVolume());
+			return CollidesWithBV(apObject->GetRenderBoundingVolume());
 		}
 		/////////////////////////////////////////////////
 		//Light is not in shadow, do not do any culling
 		else
 		{
 			//Log("No shadow, using BV\n");
-			return CollidesWithBV(apObject->GetBoundingVolume());
+			return CollidesWithBV(apObject->GetRenderBoundingVolume());
 		}
 
 				
@@ -408,7 +408,7 @@ namespace hpl {
 
 	cMatrixf* iLight::GetModelMatrix(cFrustum* apFrustum)
 	{
-		return &GetWorldMatrix();
+		return &GetRenderWorldMatrix();
 	}
 	
 	//-----------------------------------------------------------------------
@@ -450,7 +450,7 @@ namespace hpl {
 
 	void iLight::AddShadowCaster(iRenderable *apObject)
 	{
-		m_mapShadowCasterCache.insert(tShadowCasterCacheMap::value_type(apObject, apObject->GetTransformUpdateCount()));
+		m_mapShadowCasterCache.insert(tShadowCasterCacheMap::value_type(apObject, apObject->GetMatrixUpdateCount()));
 	}
 	
 	bool iLight::ShadowCasterIsValid(iRenderable *apObject)
@@ -458,7 +458,7 @@ namespace hpl {
 		tShadowCasterCacheMapIt it = m_mapShadowCasterCache.find(apObject);
 		if(it == m_mapShadowCasterCache.end()) return false;
 
-		return it->second == apObject->GetTransformUpdateCount();
+		return it->second == apObject->GetMatrixUpdateCount();
 	}
 	
 	bool iLight::ShadowCastersAreUnchanged(const tRenderableVec &avObjects)

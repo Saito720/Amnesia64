@@ -20,10 +20,23 @@
 #include "scene/Entity3D.h"
 #include "scene/Node3D.h"
 #include "math/Math.h"
+#include "math/TransformInterpolation.h"
+#include <climits>
 
 #include "system/LowLevelSystem.h"
 
 namespace hpl {
+
+	// Only objects requested by the renderer join this list. Resource nodes and
+	// the many immutable static submeshes need no per-tick snapshots.
+	static tEntity3DList& GetInterpolatedEntities()
+	{
+		static tEntity3DList entities;
+		return entities;
+	}
+	static bool gbRenderInterpolation = false;
+	static float gfRenderInterpolationAlpha = 1.0f;
+	static int glRenderInterpolationFrame = 0;
 
 	//////////////////////////////////////////////////////////////////////////
 	// CONSTRUCTORS
@@ -55,10 +68,16 @@ namespace hpl {
 
 		mbIsSaved = true;
 		mlUniqueID = -1;
+		mbInterpolationRegistered = false;
+		mlRenderMatrixFrame = mlRenderBoundsFrame = -1;
+		mlRenderMatrixCount = -2;
+		mlRenderMatrixSimulationCount = -1;
+		m_mtxRenderWorldTransform = cMatrixf::Identity;
 	}
 
 	iEntity3D::~iEntity3D()
 	{
+		if(mbInterpolationRegistered) GetInterpolatedEntities().erase(mInterpolationIterator);
 		if(mpParentNode)
 			mpParentNode->RemoveEntity(this);
 		else if(mpParent) 
@@ -114,6 +133,116 @@ namespace hpl {
 		
 		return m_mtxWorldTransform;
 	}
+
+	void iEntity3D::RegisterRenderInterpolation()
+	{
+		if(mbInterpolationRegistered) return;
+		mbInterpolationRegistered = true;
+		GetInterpolatedEntities().push_front(this);
+		mInterpolationIterator = GetInterpolatedEntities().begin();
+		CaptureRenderInterpolation();
+	}
+
+	void iEntity3D::CaptureRenderInterpolation()
+	{
+		m_mtxPreviousLocalTransform = m_mtxLocalTransform;
+		mpPreviousParentNode = mpParentNode;
+		mpPreviousParent = mpParent;
+		cBoundingVolume* pBounds = GetBoundingVolume();
+		mvPreviousBoundsMin = pBounds->GetMin();
+		mvPreviousBoundsMax = pBounds->GetMax();
+		mlRenderMatrixFrame = mlRenderBoundsFrame = -1;
+	}
+
+	void iEntity3D::CaptureInterpolationState()
+	{
+		for(tEntity3DListIt it=GetInterpolatedEntities().begin(); it!=GetInterpolatedEntities().end(); ++it)
+			(*it)->CaptureRenderInterpolation();
+		cNode3D::CaptureInterpolationState();
+	}
+
+	void iEntity3D::ResetInterpolationState()
+	{
+		EndRenderInterpolation();
+		CaptureInterpolationState();
+	}
+
+	void iEntity3D::BeginRenderInterpolation(float afAlpha)
+	{
+		gfRenderInterpolationAlpha = cMath::Clamp(afAlpha,0.0f,1.0f);
+		glRenderInterpolationFrame = glRenderInterpolationFrame >= INT_MAX-2 ? 0 : glRenderInterpolationFrame+1;
+		gbRenderInterpolation = true;
+		for(tEntity3DListIt it=GetInterpolatedEntities().begin(); it!=GetInterpolatedEntities().end(); ++it)
+			(*it)->OnRenderInterpolation();
+	}
+
+	void iEntity3D::EndRenderInterpolation() { gbRenderInterpolation = false; }
+	bool iEntity3D::IsRenderInterpolationActive() { return gbRenderInterpolation; }
+	float iEntity3D::GetRenderInterpolationAlpha() { return gbRenderInterpolation ? gfRenderInterpolationAlpha : 1.0f; }
+	int iEntity3D::GetRenderInterpolationFrame() { return glRenderInterpolationFrame; }
+
+	void iEntity3D::ResetRenderInterpolation()
+	{
+		if(mbInterpolationRegistered) CaptureRenderInterpolation();
+		for(tEntity3DListIt it=mlstChildren.begin(); it!=mlstChildren.end(); ++it) (*it)->ResetRenderInterpolation();
+		for(tNode3DListIt it=mlstNodeChildren.begin(); it!=mlstNodeChildren.end(); ++it) (*it)->ResetRenderInterpolation();
+	}
+
+	cMatrixf& iEntity3D::GetRenderWorldMatrix()
+	{
+		if(!gbRenderInterpolation) return GetWorldMatrix();
+		RegisterRenderInterpolation();
+		if(mlRenderMatrixFrame == glRenderInterpolationFrame) return m_mtxRenderWorldTransform;
+		cMatrixf mtxLocal = (mpPreviousParentNode == mpParentNode && mpPreviousParent == mpParent) ?
+			InterpolateTransform(m_mtxPreviousLocalTransform,m_mtxLocalTransform,gfRenderInterpolationAlpha) : m_mtxLocalTransform;
+		cMatrixf mtxWorld = mtxLocal;
+		if(mpParentNode) mtxWorld = cMath::MatrixMul(mpParentNode->GetRenderWorldMatrix(),mtxLocal);
+		else if(mpParent) mtxWorld = cMath::MatrixMul(mpParent->GetRenderWorldMatrix(),mtxLocal);
+		if(mtxWorld != m_mtxRenderWorldTransform || mlRenderMatrixSimulationCount != mlCount)
+			mlRenderMatrixCount = mlRenderMatrixCount <= INT_MIN+1 ? -2 : mlRenderMatrixCount-1;
+		m_mtxRenderWorldTransform = mtxWorld;
+		mlRenderMatrixSimulationCount = mlCount;
+		mlRenderMatrixFrame = glRenderInterpolationFrame;
+		return m_mtxRenderWorldTransform;
+	}
+
+	cVector3f iEntity3D::GetRenderWorldPosition() { return GetRenderWorldMatrix().GetTranslation(); }
+
+	int iEntity3D::GetRenderTransformUpdateCount()
+	{
+		if(!gbRenderInterpolation) return GetTransformUpdateCount();
+		GetRenderWorldMatrix();
+		return mlRenderMatrixCount;
+	}
+
+	cBoundingVolume* iEntity3D::GetRenderBoundingVolume()
+	{
+		cBoundingVolume* pBounds = GetBoundingVolume();
+		if(!gbRenderInterpolation) return pBounds;
+		RegisterRenderInterpolation();
+		if(mlRenderBoundsFrame == glRenderInterpolationFrame) return &mRenderBoundingVolume;
+		cVector3f vMin = pBounds->GetMin(), vMax = pBounds->GetMax();
+		cMath::ExpandAABB(vMin,vMax,mvPreviousBoundsMin,mvPreviousBoundsMax);
+		// Include the rendered pose as well as both fixed endpoints. In particular,
+		// an elongated rotating object can leave the union of its endpoint AABBs.
+		const cMatrixf& mtxWorld = GetWorldMatrix();
+		const cMatrixf& mtxRender = GetRenderWorldMatrix();
+		if(!(mtxWorld == mtxRender) && cMath::Abs(cMath::Vector3Dot(cMath::Vector3Cross(mtxWorld.GetRight(),mtxWorld.GetUp()),mtxWorld.GetForward())) > 0.000001f)
+		{
+			cMatrixf delta = cMath::MatrixMul(mtxRender,cMath::MatrixInverse(mtxWorld));
+			for(int i=0; i<8; ++i)
+			{
+				cVector3f corner(i&1 ? pBounds->GetMax().x : pBounds->GetMin().x,
+					i&2 ? pBounds->GetMax().y : pBounds->GetMin().y,
+					i&4 ? pBounds->GetMax().z : pBounds->GetMin().z);
+				corner = cMath::MatrixMul(delta,corner);
+				cMath::ExpandAABB(vMin,vMax,corner,corner);
+			}
+		}
+		mRenderBoundingVolume.SetLocalMinMax(vMin,vMax);
+		mlRenderBoundsFrame = glRenderInterpolationFrame;
+		return &mRenderBoundingVolume;
+	}
 	
 	//-----------------------------------------------------------------------
 
@@ -168,6 +297,7 @@ namespace hpl {
 	
 	void iEntity3D::SetTransformUpdated(bool abUpdateCallbacks)
 	{
+		mlRenderMatrixFrame = mlRenderBoundsFrame = -1;
 		mbTransformUpdated = true;
 		mlCount++;
 

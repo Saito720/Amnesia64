@@ -436,7 +436,7 @@ void cLuxEffectRenderer::RenderOutline(cRendererCallbackFunctions* apFunctions)
 
 		cMatrixf mtxScale = cMath::MatrixMul(cMath::MatrixScale(vScale), cMath::MatrixTranslate(pBV->GetLocalCenter()*-1));
 		mtxScale.SetTranslation(mtxScale.GetTranslation() + pBV->GetLocalCenter());
-		m_mtxTemp = cMath::MatrixMul(pObject->GetWorldMatrix(), mtxScale);
+		m_mtxTemp = cMath::MatrixMul(pObject->GetRenderWorldMatrix(), mtxScale);
 
 		apFunctions->SetVertexBuffer(pObject->GetVertexBuffer());
 		apFunctions->SetMatrix(NULL);

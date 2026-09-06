@@ -165,6 +165,7 @@ namespace hpl {
 		inline bool IsActive()  const { return mbActive;}
 
 		void Update(float afTimeStep);
+		void ResetParticleAndRopeInterpolation();
 
 		void PreUpdate(float afTotalTime, float afTimeStep);
 

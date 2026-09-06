@@ -172,10 +172,12 @@ namespace hpl {
 
 		cVector3f GetVelocity(float afFrameTime);
 
-		void SetPosition(const cVector3f& avPos, bool abSmooth=false);
+		// Unsmoothed teleports discard presentation history. Continuous scripted
+		// movement can retain interpolation without changing legacy camera smoothing.
+		void SetPosition(const cVector3f& avPos, bool abSmooth=false, bool abResetInterpolation=true);
 		const cVector3f& GetPosition();
 		const cVector3f& GetLastPosition();
-		void SetFeetPosition(const cVector3f& avPos, bool abSmooth=false);
+		void SetFeetPosition(const cVector3f& avPos, bool abSmooth=false, bool abResetInterpolation=true);
 		cVector3f GetFeetPosition();
 
 		void SetYaw(float afX);
@@ -456,11 +458,13 @@ namespace hpl {
 		float mfMaxContactForcePerMassUnit;
 
 		cCamera *mpCamera;
+		bool mbResetCameraInterpolation;
 		cVector3f mvCameraPosAdd;
 		int mlCameraSmoothPosNum;
 		tVector3fList mlstCameraPos;
 
 		iEntity3D *mpEntity;
+		bool mbResetEntityInterpolation;
 		cMatrixf m_mtxEntityOffset;
 		cMatrixf m_mtxEntityPostOffset;
 		int mlEntitySmoothPosNum;

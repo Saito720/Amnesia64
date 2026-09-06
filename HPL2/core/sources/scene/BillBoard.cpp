@@ -242,21 +242,21 @@ namespace hpl {
 
 	cMatrixf* cBillboard::GetModelMatrix(cFrustum *apFrustum)
 	{
-		if(apFrustum==NULL)return &GetWorldMatrix();
+		if(apFrustum==NULL)return &GetRenderWorldMatrix();
 
 		//////////////////////
 		// Fixed Axis
 		if(mType == eBillboardType_FixedAxis)
 		{
-			return &GetWorldMatrix();
+			return &GetRenderWorldMatrix();
 		}
 
 		//////////////////////
 		// Set up for all rotating billboards
-		m_mtxTempTransform = GetWorldMatrix();
+		m_mtxTempTransform = GetRenderWorldMatrix();
 		cVector3f vForward, vRight, vUp;
 
-		cVector3f vCameraForward = apFrustum->GetOrigin() - GetWorldPosition();
+		cVector3f vCameraForward = apFrustum->GetOrigin() - GetRenderWorldPosition();
 		vCameraForward.Normalize();
 
 		//////////////////////
@@ -271,7 +271,7 @@ namespace hpl {
 		// Axis
 		else if(mType == eBillboardType_Axis)
 		{
-			vUp = cMath::MatrixMul(GetWorldMatrix().GetRotation(),mvAxis);
+			vUp = cMath::MatrixMul(GetRenderWorldMatrix().GetRotation(),mvAxis);
 			vUp.Normalize();
 			
 			if(vUp == vCameraForward)
@@ -318,7 +318,7 @@ namespace hpl {
 
 	int cBillboard::GetMatrixUpdateCount()
 	{
-		return GetTransformUpdateCount();
+		return GetRenderTransformUpdateCount();
 	}
 
 	//-----------------------------------------------------------------------
@@ -379,7 +379,7 @@ namespace hpl {
 		if(mbIsHalo==false) return;
 
 		m_mtxHaloOcclusionMatrix = cMath::MatrixScale(mvHaloSourceSize);
-		m_mtxHaloOcclusionMatrix = cMath::MatrixMul(GetWorldMatrix(), m_mtxHaloOcclusionMatrix);
+		m_mtxHaloOcclusionMatrix = cMath::MatrixMul(GetRenderWorldMatrix(), m_mtxHaloOcclusionMatrix);
 
 		iVertexBuffer *pShapeVtx = apRenderer->GetShapeBoxVertexBuffer();
 
@@ -416,10 +416,10 @@ namespace hpl {
 			}
 
 			//Update bv transform
-			if(mlHaloBVMatrixCount != GetTransformUpdateCount())
+			if(mlHaloBVMatrixCount != GetRenderTransformUpdateCount())
 			{
-				mpHaloSourceBV->SetTransform(GetWorldMatrix());
-				mlHaloBVMatrixCount = GetTransformUpdateCount();
+				mpHaloSourceBV->SetTransform(GetRenderWorldMatrix());
+				mlHaloBVMatrixCount = GetRenderTransformUpdateCount();
 			}
 
 

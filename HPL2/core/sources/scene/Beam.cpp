@@ -67,6 +67,7 @@ namespace hpl {
 		mpMaterial = NULL;
 
 		mlLastRenderCount = -1;
+		mlStartTransformCount = mlEndTransformCount = -1;
 		
 
 		mpVtxBuffer = mpLowLevelGraphics->CreateVertexBuffer(
@@ -228,19 +229,34 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
+	cBoundingVolume* cBeam::GetRenderBoundingVolume()
+	{
+		if(!IsRenderInterpolationActive()) return GetBoundingVolume();
+		cBoundingVolume* pBounds = iRenderable::GetRenderBoundingVolume();
+		cVector3f vMin = pBounds->GetMin(), vMax = pBounds->GetMax();
+		cVector3f vRadius(mvSize.x);
+		cVector3f vStart = GetRenderWorldPosition(), vEnd = mpEnd->GetRenderWorldPosition();
+		cMath::ExpandAABB(vMin,vMax,vStart-vRadius,vStart+vRadius);
+		cMath::ExpandAABB(vMin,vMax,vEnd-vRadius,vEnd+vRadius);
+		mRenderBeamBoundingVolume.SetLocalMinMax(vMin,vMax);
+		return &mRenderBeamBoundingVolume;
+	}
+
 	void cBeam::UpdateGraphicsForFrame(float afFrameTime)
 	{
-		if(	mlStartTransformCount == GetTransformUpdateCount() &&
-			mlEndTransformCount == GetTransformUpdateCount())
+		if(	mlStartTransformCount == GetRenderTransformUpdateCount() &&
+			mlEndTransformCount == mpEnd->GetRenderTransformUpdateCount())
 		{
 			return;
 		}
 
 		////////////////////////////////
 		//Get Axis
-		mvAxis = mpEnd->GetWorldPosition() - GetWorldPosition();
+		mlStartTransformCount = GetRenderTransformUpdateCount();
+		mlEndTransformCount = mpEnd->GetRenderTransformUpdateCount();
+		mvAxis = mpEnd->GetRenderWorldPosition() - GetRenderWorldPosition();
         
-		mvMidPosition =GetWorldPosition() + mvAxis*0.5f;
+		mvMidPosition =GetRenderWorldPosition() + mvAxis*0.5f;
 		float fDist = mvAxis.Length();
 
 		mvAxis.Normalize();
@@ -302,15 +318,15 @@ namespace hpl {
 
 	cMatrixf* cBeam::GetModelMatrix(cFrustum *apFrustum)
 	{
-		if(apFrustum==NULL)return &GetWorldMatrix();
+		if(apFrustum==NULL)return &GetRenderWorldMatrix();
 
-		m_mtxTempTransform = GetWorldMatrix();
+		m_mtxTempTransform = GetRenderWorldMatrix();
 		cVector3f vForward, vRight, vUp;
 
-		cVector3f vCameraForward = apFrustum->GetOrigin() - GetWorldPosition();
+		cVector3f vCameraForward = apFrustum->GetOrigin() - GetRenderWorldPosition();
 		vCameraForward.Normalize();
 
-		vUp = mvAxis;//cMath::MatrixMul(GetWorldMatrix().GetRotation(),mvAxis);
+		vUp = mvAxis;//cMath::MatrixMul(GetRenderWorldMatrix().GetRotation(),mvAxis);
 		//vUp.Normalize();
 			
 		if(vUp == vForward)
@@ -348,7 +364,7 @@ namespace hpl {
 
 	int cBeam::GetMatrixUpdateCount()
 	{
-		return GetTransformUpdateCount();
+		return GetRenderTransformUpdateCount();
 	}
 
 	//-----------------------------------------------------------------------

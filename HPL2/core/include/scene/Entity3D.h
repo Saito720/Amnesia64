@@ -74,6 +74,21 @@ namespace hpl {
 		cVector3f GetWorldPosition();
 		cMatrixf& GetWorldMatrix();
 
+		// Rendering reads a separate pose; gameplay and physics always read the
+		// authoritative transforms above. Capture immediately before a fixed tick.
+		static void CaptureInterpolationState();
+		static void ResetInterpolationState();
+		static void BeginRenderInterpolation(float afAlpha);
+		static void EndRenderInterpolation();
+		static bool IsRenderInterpolationActive();
+		static float GetRenderInterpolationAlpha();
+		static int GetRenderInterpolationFrame();
+		cMatrixf& GetRenderWorldMatrix();
+		cVector3f GetRenderWorldPosition();
+		int GetRenderTransformUpdateCount();
+		virtual cBoundingVolume* GetRenderBoundingVolume();
+		void ResetRenderInterpolation();
+
 		void SetPosition(const cVector3f& avPos);
 		void SetMatrix(const cMatrixf& a_mtxTransform);
 
@@ -120,6 +135,7 @@ namespace hpl {
 
 	protected:
 		virtual void OnTransformUpdated(){}
+		virtual void OnRenderInterpolation(){}
 		
 		cNode3D* mpParentNode;
 
@@ -152,6 +168,18 @@ namespace hpl {
 		int mlIteratorCount;
 	private:
 		void UpdateWorldTransform();
+		void RegisterRenderInterpolation();
+		void CaptureRenderInterpolation();
+		bool mbInterpolationRegistered;
+		tEntity3DListIt mInterpolationIterator;
+		cMatrixf m_mtxPreviousLocalTransform;
+		cMatrixf m_mtxRenderWorldTransform;
+		cVector3f mvPreviousBoundsMin, mvPreviousBoundsMax;
+		cBoundingVolume mRenderBoundingVolume;
+		cNode3D* mpPreviousParentNode;
+		iEntity3D* mpPreviousParent;
+		int mlRenderMatrixFrame, mlRenderMatrixCount, mlRenderMatrixSimulationCount;
+		int mlRenderBoundsFrame;
 	};
 
 };

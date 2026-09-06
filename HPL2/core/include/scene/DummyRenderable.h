@@ -54,7 +54,7 @@ namespace hpl {
 
 		eRenderableType GetRenderType(){ return eRenderableType_Dummy;}
 
-		int GetMatrixUpdateCount(){ return GetTransformUpdateCount();}
+		int GetMatrixUpdateCount(){ return GetRenderTransformUpdateCount();}
 		cMatrixf* GetModelMatrix(cFrustum* apFrustum);
 		
 	private:

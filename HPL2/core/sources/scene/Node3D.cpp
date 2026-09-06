@@ -21,8 +21,15 @@
 #include "scene/Entity3D.h"
 #include "system/LowLevelSystem.h"
 #include "math/Math.h"
+#include "math/TransformInterpolation.h"
 
 namespace hpl {
+
+	static tNode3DList& GetInterpolatedNodes()
+	{
+		static tNode3DList nodes;
+		return nodes;
+	}
 
 	//////////////////////////////////////////////////////////////////////////
 	// CONSTRUCTORS
@@ -59,12 +66,15 @@ namespace hpl {
 		mvTranslation = cVector3f(0,0,0);
 
 		mlCustomFlags =0;
+		mbInterpolationRegistered = false;
+		mlRenderMatrixFrame = -1;
 	}
 
 	//-----------------------------------------------------------------------
 
 	cNode3D::~cNode3D()
 	{
+		if(mbInterpolationRegistered) GetInterpolatedNodes().erase(mInterpolationIterator);
 		if(mpEntityParent)
 		{
 			mpEntityParent->RemoveNodeChild(this);
@@ -217,6 +227,55 @@ namespace hpl {
 		return m_mtxWorldTransform;
 	}
 
+	void cNode3D::RegisterRenderInterpolation()
+	{
+		if(mbInterpolationRegistered) return;
+		mbInterpolationRegistered = true;
+		GetInterpolatedNodes().push_front(this);
+		mInterpolationIterator = GetInterpolatedNodes().begin();
+		CaptureRenderInterpolation();
+	}
+
+	void cNode3D::CaptureRenderInterpolation()
+	{
+		m_mtxPreviousLocalTransform = m_mtxLocalTransform;
+		mpPreviousParent = mpParent;
+		mpPreviousEntityParent = mpEntityParent;
+		mlRenderMatrixFrame = -1;
+	}
+
+	void cNode3D::CaptureInterpolationState()
+	{
+		for(tNode3DListIt it=GetInterpolatedNodes().begin(); it!=GetInterpolatedNodes().end(); ++it)
+			(*it)->CaptureRenderInterpolation();
+	}
+
+	void cNode3D::ResetInterpolationState() { CaptureInterpolationState(); }
+
+	void cNode3D::ResetRenderInterpolation()
+	{
+		if(mbInterpolationRegistered) CaptureRenderInterpolation();
+		for(tNode3DListIt it=mlstNode.begin(); it!=mlstNode.end(); ++it) (*it)->ResetRenderInterpolation();
+		for(tEntity3DListIt it=mlstEntity.begin(); it!=mlstEntity.end(); ++it) (*it)->ResetRenderInterpolation();
+	}
+
+	cMatrixf& cNode3D::GetRenderWorldMatrix()
+	{
+		if(!iEntity3D::IsRenderInterpolationActive()) return GetWorldMatrix();
+		RegisterRenderInterpolation();
+		int lFrame = iEntity3D::GetRenderInterpolationFrame();
+		if(mlRenderMatrixFrame == lFrame) return m_mtxRenderWorldTransform;
+		cMatrixf mtxLocal = (mpPreviousParent == mpParent && mpPreviousEntityParent == mpEntityParent) ?
+			InterpolateTransform(m_mtxPreviousLocalTransform,m_mtxLocalTransform,iEntity3D::GetRenderInterpolationAlpha()) : m_mtxLocalTransform;
+		m_mtxRenderWorldTransform = mtxLocal;
+		if(mpParent) m_mtxRenderWorldTransform = cMath::MatrixMul(mpParent->GetRenderWorldMatrix(),mtxLocal);
+		else if(mpEntityParent) m_mtxRenderWorldTransform = cMath::MatrixMul(mpEntityParent->GetRenderWorldMatrix(),mtxLocal);
+		mlRenderMatrixFrame = lFrame;
+		return m_mtxRenderWorldTransform;
+	}
+
+	cVector3f cNode3D::GetRenderWorldPosition() { return GetRenderWorldMatrix().GetTranslation(); }
+
 	//-----------------------------------------------------------------------
 
 
@@ -231,6 +290,7 @@ namespace hpl {
 
 	void cNode3D::SetMatrix(const cMatrixf& a_mtxTransform, bool abSetChildrenUpdated)
 	{
+		mlRenderMatrixFrame = -1;
 		m_mtxLocalTransform = a_mtxTransform;
 
 		if(abSetChildrenUpdated)
@@ -420,6 +480,7 @@ namespace hpl {
 	
 	void cNode3D::SetWorldTransformUpdated()
 	{
+		mlRenderMatrixFrame = -1;
 		//if(msName == "WeaponJoint") LogUpdate("  setworldtransform updated!\n");
 
 		mbTransformUpdated = true;

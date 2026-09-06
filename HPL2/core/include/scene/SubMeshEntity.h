@@ -77,6 +77,7 @@ namespace hpl {
 		iVertexBuffer* GetVertexBuffer();
 
 		cBoundingVolume* GetBoundingVolume();
+		cBoundingVolume* GetRenderBoundingVolume();
 
 		cMatrixf* GetModelMatrix(cFrustum *apFrustum);
 

@@ -58,8 +58,8 @@ namespace hpl {
 
 	static bool TestAndExpandNodeAABB(iRenderable *apObject, cVector3f& avNodeMin,cVector3f& avNodeMax)
 	{
-		const cVector3f &vMin = apObject->GetBoundingVolume()->GetMin();
-		const cVector3f &vMax = apObject->GetBoundingVolume()->GetMax();
+		const cVector3f &vMin = apObject->GetRenderBoundingVolume()->GetMin();
+		const cVector3f &vMax = apObject->GetRenderBoundingVolume()->GetMax();
 
 		//////////////////////////////////
 		//Check if object is inside
@@ -76,8 +76,8 @@ namespace hpl {
 
 	static bool CheckObjectIsAtEdgeOfAABB(iRenderable *apObject, const cVector3f& avNodeMin, const cVector3f& avNodeMax)
 	{
-		const cVector3f &vMin = apObject->GetBoundingVolume()->GetMin();
-		const cVector3f &vMax = apObject->GetBoundingVolume()->GetMax();
+		const cVector3f &vMin = apObject->GetRenderBoundingVolume()->GetMin();
+		const cVector3f &vMax = apObject->GetRenderBoundingVolume()->GetMax();
 
 		//if(	vMin.x == avNodeMin.x || vMin.y == avNodeMin.y || vMin.z == avNodeMin.z ||
 		//	vMax.x == avNodeMax.x || vMax.y == avNodeMax.y || vMax.z == avNodeMax.z)
@@ -114,15 +114,15 @@ namespace hpl {
 
 	static bool SortFunc_X(iRenderable* apObjectA, iRenderable *apObjectB)
 	{
-		return apObjectA->GetBoundingVolume()->GetWorldCenter().x < apObjectB->GetBoundingVolume()->GetWorldCenter().x;
+		return apObjectA->GetRenderBoundingVolume()->GetWorldCenter().x < apObjectB->GetRenderBoundingVolume()->GetWorldCenter().x;
 	}
 	static bool SortFunc_Y(iRenderable* apObjectA, iRenderable *apObjectB)
 	{
-		return apObjectA->GetBoundingVolume()->GetWorldCenter().y < apObjectB->GetBoundingVolume()->GetWorldCenter().y;
+		return apObjectA->GetRenderBoundingVolume()->GetWorldCenter().y < apObjectB->GetRenderBoundingVolume()->GetWorldCenter().y;
 	}
 	static bool SortFunc_Z(iRenderable* apObjectA, iRenderable *apObjectB)
 	{
-		return apObjectA->GetBoundingVolume()->GetWorldCenter().z < apObjectB->GetBoundingVolume()->GetWorldCenter().z;
+		return apObjectA->GetRenderBoundingVolume()->GetWorldCenter().z < apObjectB->GetRenderBoundingVolume()->GetWorldCenter().z;
 	}
 
 	typedef bool (*tSortFunc)(iRenderable*,iRenderable*); 
@@ -367,7 +367,7 @@ namespace hpl {
 				{
 					iRenderable *pObject = *it;
 
-					vPosSum += 	pObject->GetBoundingVolume()->GetPosition();
+					vPosSum += 	pObject->GetRenderBoundingVolume()->GetPosition();
 					fWeightSum += 1;
 				}
 			}
@@ -402,7 +402,7 @@ namespace hpl {
 				{
 					iRenderable *pObject = *it;
 
-					fPosSum += 	GetAxisFromVec(pObject->GetBoundingVolume()->GetPosition(), mlSplitAxis);
+					fPosSum += 	GetAxisFromVec(pObject->GetRenderBoundingVolume()->GetPosition(), mlSplitAxis);
 					fWeightSum += 1;
 				}
 			}
@@ -545,7 +545,7 @@ namespace hpl {
 							
 							pChildNode->mlstObjects.push_back(pObject);
 
-							pChildNode->mvMeanPosition += pObject->GetBoundingVolume()->GetWorldCenter();
+							pChildNode->mvMeanPosition += pObject->GetRenderBoundingVolume()->GetWorldCenter();
 
 							//Set new node to object
 							pObject->SetRenderContainerNode(pChildNode);
@@ -693,7 +693,7 @@ namespace hpl {
 			{
 				iRenderable *pObj = *it;
 				tString sParent = pObj->GetEntityParent() ? pObj->GetEntityParent()->GetName() : "NULL";
-				Log(" '%s'id: %d  parent: '%s' size: %s\n", pObj->GetName().c_str(),pObj->GetUniqueID(),sParent.c_str(), pObj->GetBoundingVolume()->GetSize().ToString().c_str());
+				Log(" '%s'id: %d  parent: '%s' size: %s\n", pObj->GetName().c_str(),pObj->GetUniqueID(),sParent.c_str(), pObj->GetRenderBoundingVolume()->GetSize().ToString().c_str());
 			}
 		}
 
@@ -1008,7 +1008,7 @@ namespace hpl {
 	void cRenderableContainer_DynBoxTree::AddObjectToNodeIterative(cRCNode_DynBoxTree *apNode, iRenderable *apObject)
 	{
 		if(gbLog || HasDebug(apObject) ){
-			cBoundingVolume *pBV = apObject->GetBoundingVolume();
+			cBoundingVolume *pBV = apObject->GetRenderBoundingVolume();
 			Log(" Testing node %d. Inside: %d Intersect: %d (%s)-(%s) vs (%s)-(%s)\n",	apNode,
 																			cMath::CheckAABBInside(pBV->GetMin(),pBV->GetMax(), apNode->mvMin, apNode->mvMax)?1:0,
 																			cMath::CheckAABBIntersection(pBV->GetMin(),pBV->GetMax(), apNode->mvMin, apNode->mvMax)?1:0,
@@ -1063,8 +1063,8 @@ namespace hpl {
 	 */
 	int cRenderableContainer_DynBoxTree::GetSplitGroup(iRenderable *apObject, float afSplitPlane, int alAxis, const cVector3f &avNodeSize)
 	{
-		float fMinVal =   GetAxisFromVec(apObject->GetBoundingVolume()->GetMin(),alAxis);
-		float fMaxVal =   GetAxisFromVec(apObject->GetBoundingVolume()->GetMax(),alAxis);
+		float fMinVal =   GetAxisFromVec(apObject->GetRenderBoundingVolume()->GetMin(),alAxis);
+		float fMaxVal =   GetAxisFromVec(apObject->GetRenderBoundingVolume()->GetMax(),alAxis);
 
 		//////////////////////////
 		//Above cut plane
@@ -1130,7 +1130,7 @@ namespace hpl {
 
 		////////////////////////////////////////////
 		//Get bounding volume and see if still contained in node
-		cBoundingVolume *pBV = apObject->GetBoundingVolume();
+		cBoundingVolume *pBV = apObject->GetRenderBoundingVolume();
 
 		if(cMath::CheckAABBInside(pBV->GetMin(), pBV->GetMax(), pNode->GetMin(), pNode->GetMax()))
 		{
@@ -1172,7 +1172,7 @@ namespace hpl {
 
 			/////////////////////////////////////
 			//If the object is not inside new node need to recalc AABB
-			cBoundingVolume *pObjBV = apObject->GetBoundingVolume();
+			cBoundingVolume *pObjBV = apObject->GetRenderBoundingVolume();
 			//if(CheckObjectIsAtEdgeOfAABB(apObject,pNewNode->mvMin,pNewNode->mvMax)) //<- Old bad code! Just have for future reference!
 			if(cMath::CheckAABBInside(pObjBV->GetMin(), pObjBV->GetMax(), pNewNode->mvMin,pNewNode->mvMax)==false)
 			{

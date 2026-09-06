@@ -19,8 +19,8 @@
 
 #include "system/LogicTimer.h"
 
-#include "system/LowLevelSystem.h"
-#include "system/Platform.h"
+#include <chrono>
+#include <cmath>
 
 namespace hpl {
 
@@ -30,14 +30,15 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	cLogicTimer::cLogicTimer(int alUpdatesPerSec, iLowLevelSystem *apLowLevelSystem)
+	cLogicTimer::cLogicTimer(int alUpdatesPerSec, iLowLevelSystem *apLowLevelSystem, double (*apClock)())
 	{
-		mlMaxUpdates = alUpdatesPerSec/10;
+		mlMaxUpdates = alUpdatesPerSec/10 > 0 ? alUpdatesPerSec/10 : 1;
 		mlUpdateCount =0;
 		
 		mpLowLevelSystem = apLowLevelSystem;
 
 		mfSpeedMul = 1.0f;
+		mpClock = apClock ? apClock : &cLogicTimer::GetMonotonicTime;
 
 		SetUpdatesPerSec(alUpdatesPerSec);
 	}
@@ -57,39 +58,52 @@ namespace hpl {
 	//-----------------------------------------------------------------------
 	void cLogicTimer::Reset()
 	{
-		mlLocalTime = (double)cPlatform::GetApplicationTime();
+		mfLastTime = mpClock();
+		mlLocalTime = mfLastTime;
+		mfAccumulator = 0.0;
+		mlUpdateCount = 0;
+		mbInUpdateLoop = false;
 	}
 
 	//-----------------------------------------------------------------------
 
 	bool cLogicTimer::WantUpdate()
 	{
-		++mlUpdateCount;
-		if(mlUpdateCount > mlMaxUpdates) return false;
-
-		if(mlLocalTime< (double)cPlatform::GetApplicationTime())
+		// Sample once per outer loop: simulation cost cannot create an unbounded
+		// stream of catch-up steps, and every rendered frame has one stable alpha.
+		if(!mbInUpdateLoop)
 		{
-			Update();
-			return true;
+			AccumulateTime();
+			mbInUpdateLoop = true;
 		}
-		return false;
+		if(mlUpdateCount >= mlMaxUpdates || mfSpeedMul == 0.0 ||
+			mfAccumulator + 1e-9 < mlLocalTimeAdd) return false;
+
+		mfAccumulator -= mlLocalTimeAdd;
+		if(mfAccumulator < 0.0) mfAccumulator = 0.0;
+		mlLocalTime += mlLocalTimeAdd / mfSpeedMul;
+		++mlUpdateCount;
+		return true;
 	}
 	
 	//-----------------------------------------------------------------------
 
 	void cLogicTimer::EndUpdateLoop()
 	{
-		if(mlUpdateCount > mlMaxUpdates){
-			Reset();
-		}
+		// Drop whole overdue steps after a stall, retaining the substep remainder.
+		// The next frame must not restart interpolation from zero on every overload.
+		if(mlUpdateCount >= mlMaxUpdates && mfAccumulator >= mlLocalTimeAdd)
+			mfAccumulator = std::fmod(mfAccumulator, mlLocalTimeAdd);
 
 		mlUpdateCount=0;
+		mbInUpdateLoop = false;
 	}
 
 	//-----------------------------------------------------------------------
 
 	void cLogicTimer::SetUpdatesPerSec(int alUpdatesPerSec)
 	{
+		if(alUpdatesPerSec < 1) alUpdatesPerSec = 1;
 		mlLocalTimeAdd = 1000.0/((double)alUpdatesPerSec);
 		Reset();
 	}
@@ -98,14 +112,14 @@ namespace hpl {
 
 	void cLogicTimer::SetMaxUpdates(int alMax)
 	{
-		mlMaxUpdates = alMax;
+		mlMaxUpdates = alMax > 0 ? alMax : 1;
 	}
 
 	//-----------------------------------------------------------------------
 
 	int cLogicTimer::GetUpdatesPerSec()
 	{
-		return (int)(1000.0 / ((double)mlLocalTimeAdd));
+		return (int)(1000.0 / mlLocalTimeAdd + 0.5);
 	}
 	
 	//-----------------------------------------------------------------------
@@ -123,9 +137,32 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	void cLogicTimer::Update()
+	float cLogicTimer::GetInterpolationAmount() const
 	{
-		mlLocalTime += mlLocalTimeAdd/mfSpeedMul;
+		double fAlpha = mfAccumulator / mlLocalTimeAdd;
+		return (float)(fAlpha < 0.0 ? 0.0 : (fAlpha > 1.0 ? 1.0 : fAlpha));
+	}
+
+	void cLogicTimer::SetSpeedMul(float afX)
+	{
+		// Time already elapsed belongs to the old speed. A zero multiplier freezes
+		// simulation without a division by zero; the fixed step itself never changes.
+		AccumulateTime();
+		mfSpeedMul = std::isfinite(afX) && afX > 0.0f ? afX : 0.0;
+	}
+
+	void cLogicTimer::AccumulateTime()
+	{
+		double fNow = mpClock();
+		double fElapsed = fNow - mfLastTime;
+		if(fElapsed > 0.0) mfAccumulator += fElapsed * mfSpeedMul;
+		mfLastTime = fNow;
+	}
+
+	double cLogicTimer::GetMonotonicTime()
+	{
+		return std::chrono::duration<double, std::milli>(
+			std::chrono::steady_clock::now().time_since_epoch()).count();
 	}
 
 	//-----------------------------------------------------------------------

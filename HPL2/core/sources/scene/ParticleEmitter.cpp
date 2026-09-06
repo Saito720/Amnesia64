@@ -41,6 +41,12 @@
 
 namespace hpl {
 
+	float cParticle::GetRenderSpin(float afAlpha) const
+	{
+		if(!mbRenderStateValid || afAlpha >= 1.0f) return mfSpin;
+		return mfPreviousRenderSpin + cMath::GetAngleDistanceRad(mfPreviousRenderSpin, mfSpin)*afAlpha;
+	}
+
 	//////////////////////////////////////////////////////////////////////////
 	// DATA LOADER
 	//////////////////////////////////////////////////////////////////////////
@@ -226,9 +232,16 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	//Seems like this fucntion is never called any more...
+	void iParticleEmitter::ResetRenderState()
+	{
+		for(unsigned int i=0; i<mlNumOfParticles; ++i)
+			mvParticles[i]->CaptureRenderState();
+	}
+
 	void iParticleEmitter::UpdateLogic(float afTimeStep)
 	{
+		// Disabled and sleeping emitters must settle their final interval too.
+		ResetRenderState();
 		if(IsActive()==false) return;
 
 		//////////////////////////////
@@ -307,6 +320,8 @@ namespace hpl {
 
 	bool iParticleEmitter::UpdateGraphicsForViewport(cFrustum *apFrustum,float afFrameTime)
 	{
+		const float fAlpha = iEntity3D::IsRenderInterpolationActive() ?
+			iEntity3D::GetRenderInterpolationAlpha() : 1.0f;
 		//if(mbUpdateGfx == false) return;
 
 		//////////////////////////
@@ -445,14 +460,14 @@ namespace hpl {
 					cParticle *pParticle = mvParticles[i];
 
 					//This is not the fastest thing possible...
-					cVector3f vParticlePos = pParticle->mvPos;	
+					cVector3f vParticlePos = pParticle->GetRenderPosition(fAlpha);
 
 					if(mCoordSystem == eParticleEmitterCoordSystem_Local){
-						vParticlePos = cMath::MatrixMul(mpParentSystem->GetWorldMatrix(), vParticlePos);
+						vParticlePos = cMath::MatrixMul(mpParentSystem->GetRenderWorldMatrix(), vParticlePos);
 					}
 
 					cVector3f vPos = cMath::MatrixMul(apFrustum->GetViewMatrix(), vParticlePos);
-					cColor finalColor = pParticle->mColor * colorMul;
+					cColor finalColor = pParticle->GetRenderColor(fAlpha) * colorMul;
 
 					SetPos(&pPosArray[i*lVtxQuadSize + 0*lVtxStride], vPos + vAdd[0]);
 					SetCol(&pColArray[i*16 + 0*4], finalColor);
@@ -492,11 +507,11 @@ namespace hpl {
 					cParticle *pParticle = mvParticles[i];
 
 					//This is not the fastest thing possible
-					cVector3f vParticlePos = pParticle->mvPos;
+					cVector3f vParticlePos = pParticle->GetRenderPosition(fAlpha);
 
 
 					if(mCoordSystem == eParticleEmitterCoordSystem_Local){
-						vParticlePos = cMath::MatrixMul(mpParentSystem->GetWorldMatrix(), vParticlePos);
+						vParticlePos = cMath::MatrixMul(mpParentSystem->GetRenderWorldMatrix(), vParticlePos);
 					}
 
 					cVector3f vPos = cMath::MatrixMul(apFrustum->GetViewMatrix(), vParticlePos);
@@ -504,12 +519,12 @@ namespace hpl {
 
 					// NEW
 
-					cVector3f vParticleSize = pParticle->mvSize;
-					cColor finalColor = pParticle->mColor * colorMul;
+					cVector3f vParticleSize = pParticle->GetRenderSize(fAlpha);
+					cColor finalColor = pParticle->GetRenderColor(fAlpha) * colorMul;
 
 					if ( mbUsePartSpin )
 					{
-						cMatrixf mtxRotationMatrix = cMath::MatrixRotateZ(pParticle->mfSpin);
+						cMatrixf mtxRotationMatrix = cMath::MatrixRotateZ(pParticle->GetRenderSpin(fAlpha));
 
 
 						SetPos(&pPosArray[i*lVtxQuadSize + 0*lVtxStride], vPos + cMath::MatrixMul(mtxRotationMatrix, vAdd[0]*vParticleSize));
@@ -557,12 +572,12 @@ namespace hpl {
 
 					//This is not the fastest thing possible...
 
-					cVector3f vParticlePos1 = pParticle->mvPos;
-					cVector3f vParticlePos2 = pParticle->mvLastPos;
+					cVector3f vParticlePos1 = pParticle->GetRenderPosition(fAlpha);
+					cVector3f vParticlePos2 = pParticle->GetRenderLastPosition(fAlpha);
 
 					if(mCoordSystem == eParticleEmitterCoordSystem_Local){
-						vParticlePos1 = cMath::MatrixMul(mpParentSystem->GetWorldMatrix(), vParticlePos1);
-						vParticlePos2 = cMath::MatrixMul(mpParentSystem->GetWorldMatrix(), vParticlePos2);
+						vParticlePos1 = cMath::MatrixMul(mpParentSystem->GetRenderWorldMatrix(), vParticlePos1);
+						vParticlePos2 = cMath::MatrixMul(mpParentSystem->GetRenderWorldMatrix(), vParticlePos2);
 					}
 
 					cVector3f vPos1 = cMath::MatrixMul(apFrustum->GetViewMatrix(), vParticlePos1);
@@ -584,12 +599,13 @@ namespace hpl {
 						vDirX.Normalize();
 					}
 
-					vDirX = vDirX * mvDrawSize.x * pParticle->mvSize.x;
-					vDirY = vDirY * mvDrawSize.y * pParticle->mvSize.y;
+					const cVector2f vSize = pParticle->GetRenderSize(fAlpha);
+					vDirX = vDirX * mvDrawSize.x * vSize.x;
+					vDirY = vDirY * mvDrawSize.y * vSize.y;
 
 					if(apFrustum->GetInvertsCullMode()) vDirY = vDirY*-1;
 
-					cColor finalColor = pParticle->mColor * colorMul;
+					cColor finalColor = pParticle->GetRenderColor(fAlpha) * colorMul;
 					
 					SetPos(&pPosArray[i*lVtxQuadSize + 0*lVtxStride], vPos2 + vDirY*-1 + vDirX);
 					SetCol(&pColArray[i*16 + 0*4], finalColor);
@@ -608,13 +624,9 @@ namespace hpl {
 			// AXIS
 			else if(mDrawType == eParticleEmitterType_Axis)
 			{
-				if(mlAxisDrawUpdateCount != GetMatrixUpdateCount())
-				{
-					mlAxisDrawUpdateCount = GetMatrixUpdateCount();
-					cMatrixf mtxInv = cMath::MatrixInverse(GetWorldMatrix());
-					mvRight = mtxInv.GetRight();
-					mvForward = mtxInv.GetForward();
-				}
+				const cMatrixf mtxInv = cMath::MatrixInverse(GetRenderWorldMatrix());
+				const cVector3f vRight = mtxInv.GetRight();
+				const cVector3f vForward = mtxInv.GetForward();
 
 				cVector3f vAdd[4];
 				/*= 
@@ -633,22 +645,22 @@ namespace hpl {
 					cParticle *pParticle = mvParticles[i];
 
 					//This is not the fastest thing possible
-					cVector3f vParticlePos = pParticle->mvPos;
+					cVector3f vParticlePos = pParticle->GetRenderPosition(fAlpha);
 
 
 					if(mCoordSystem == eParticleEmitterCoordSystem_Local){
-						vParticlePos = cMath::MatrixMul(mpParentSystem->GetWorldMatrix(), vParticlePos);
+						vParticlePos = cMath::MatrixMul(mpParentSystem->GetRenderWorldMatrix(), vParticlePos);
 					}
 
 					cVector3f vPos = vParticlePos;//cMath::MatrixMul(apCamera->GetViewMatrix(), vParticlePos);
-					cVector2f &vSize = pParticle->mvSize;
+					cVector2f vSize = pParticle->GetRenderSize(fAlpha);
 
-					vAdd[0] = mvRight	* vSize.x	 +	mvForward * vSize.y;
-					vAdd[1] = mvRight * -vSize.x	 +	mvForward * vSize.y;
-					vAdd[2] = mvRight * -vSize.x	 +	mvForward * -vSize.y;
-					vAdd[3] = mvRight	* vSize.x	 +	mvForward * -vSize.y;
+					vAdd[0] = vRight	* vSize.x	 +	vForward * vSize.y;
+					vAdd[1] = vRight * -vSize.x	 +	vForward * vSize.y;
+					vAdd[2] = vRight * -vSize.x	 +	vForward * -vSize.y;
+					vAdd[3] = vRight	* vSize.x	 +	vForward * -vSize.y;
 
-					cColor finalColor = pParticle->mColor * colorMul;
+					cColor finalColor = pParticle->GetRenderColor(fAlpha) * colorMul;
 
 					SetPos(&pPosArray[i*lVtxQuadSize + 0*lVtxStride], vPos + vAdd[0]);
 					SetCol(&pColArray[i*16 + 0*4], finalColor);
@@ -723,6 +735,14 @@ namespace hpl {
 					//Z
 					if(pParticle->mvPos.z < vMin.z)		 vMin.z = pParticle->mvPos.z;
 					else if(pParticle->mvPos.z > vMax.z) vMax.z = pParticle->mvPos.z;
+
+					// Culling must contain the whole interval, including a line's tail.
+					cMath::ExpandAABB(vMin, vMax, pParticle->GetRenderPosition(0), pParticle->GetRenderPosition(0));
+					if(mDrawType == eParticleEmitterType_Line)
+					{
+						cMath::ExpandAABB(vMin, vMax, pParticle->GetRenderLastPosition(0), pParticle->GetRenderLastPosition(0));
+						cMath::ExpandAABB(vMin, vMax, pParticle->mvLastPos, pParticle->mvLastPos);
+					}
 				}
 			}
 			else

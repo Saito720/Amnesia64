@@ -22,6 +22,7 @@
 #include "scene/Viewport.h"
 #include "scene/Camera.h"
 #include "scene/World.h"
+#include "scene/Entity3D.h"
 
 #include "system/LowLevelSystem.h"
 #include "system/String.h"
@@ -177,8 +178,33 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	void cScene::Render(float afFrameTime, tFlag alFlags)
+	void cScene::CaptureInterpolationState()
 	{
+		iEntity3D::CaptureInterpolationState();
+		for(tWorldListIt it = mlstWorlds.begin(); it != mlstWorlds.end(); ++it)
+			if(!(*it)->IsActive()) (*it)->ResetParticleAndRopeInterpolation();
+		for(tCameraListIt it = mlstCameras.begin(); it != mlstCameras.end(); ++it)
+			(*it)->BeginInterpolationStep();
+	}
+
+	void cScene::ResetInterpolationState()
+	{
+		iEntity3D::ResetInterpolationState();
+		for(tWorldListIt it = mlstWorlds.begin(); it != mlstWorlds.end(); ++it)
+			(*it)->ResetParticleAndRopeInterpolation();
+		for(tCameraListIt it = mlstCameras.begin(); it != mlstCameras.end(); ++it)
+			(*it)->ResetInterpolation();
+	}
+
+	void cScene::Render(float afFrameTime, tFlag alFlags, float afInterpolation)
+	{
+		// Only renderer-facing getters use the blended pose. Simulation transforms
+		// and all physics callbacks remain untouched, including viewport callbacks.
+		struct cInterpolationScope
+		{
+			cInterpolationScope(float afAlpha) { iEntity3D::BeginRenderInterpolation(afAlpha); }
+			~cInterpolationScope() { iEntity3D::EndRenderInterpolation(); }
+		} interpolationScope(afInterpolation);
 		//Increase the frame count (do this at top, so render count is valid until this Render is called again!)
 		iRenderer::IncRenderFrameCount();
 
@@ -197,7 +223,7 @@ namespace hpl {
 			bool bPostEffects = false;
 			iRenderer *pRenderer = pViewPort->GetRenderer();
 			cCamera *pCamera = pViewPort->GetCamera();
-			cFrustum *pFrustum = pCamera ? pCamera->GetFrustum() : NULL;
+			cFrustum *pFrustum = pCamera ? pCamera->GetRenderFrustum(afInterpolation) : NULL;
 
 			//////////////////////////////////////////////
 			//Render world and call callbacks
@@ -290,6 +316,7 @@ namespace hpl {
 
 	void cScene::Reset()
 	{
+		ResetInterpolationState();
 	}
 
 	//-----------------------------------------------------------------------

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <Keyword>MakeFileProj</Keyword>
+    <ProjectGuid>{d902fb6c-e99b-4f06-970b-f30c0a021b1d}</ProjectGuid>
+    <RootNamespace>OpenALSoft</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Makefile</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Makefile</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Makefile</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Makefile</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <CMakeExecutable Condition="'$(CMakeExecutable)'=='' and Exists('$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe')">$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe</CMakeExecutable>
+    <CMakeExecutable Condition="'$(CMakeExecutable)'==''">cmake.exe</CMakeExecutable>
+    <RepositoryRoot>$(ProjectDir)..\..\..\..\</RepositoryRoot>
+    <OpenALBuildDir>$(RepositoryRoot)bld\openal-soft\$(PlatformToolset)\$(Platform)</OpenALBuildDir>
+    <OpenALVisualStudioInstance>$([System.IO.Path]::GetFullPath('$(VSInstallDir).'))</OpenALVisualStudioInstance>
+    <OpenALConfigureCommand>&quot;$(CMakeExecutable)&quot; -S &quot;$(ProjectDir).&quot; -B &quot;$(OpenALBuildDir)&quot; -G &quot;Visual Studio 18 2026&quot; -A &quot;$(Platform)&quot; -T &quot;$(PlatformToolset)&quot; &quot;-DCMAKE_GENERATOR_INSTANCE=$(OpenALVisualStudioInstance)&quot; -DLIBTYPE=STATIC -DALSOFT_UTILS=OFF -DALSOFT_EXAMPLES=OFF -DALSOFT_TESTS=OFF -DALSOFT_INSTALL=OFF -DALSOFT_INSTALL_CONFIG=OFF -DALSOFT_INSTALL_HRTF_DATA=OFF -DALSOFT_INSTALL_AMBDEC_PRESETS=OFF -DALSOFT_INSTALL_EXAMPLES=OFF -DALSOFT_INSTALL_UTILS=OFF -DALSOFT_UPDATE_BUILD_VERSION=OFF -DALSOFT_BACKEND_WASAPI=ON -DALSOFT_REQUIRE_WASAPI=ON -DALSOFT_BACKEND_DSOUND=OFF -DALSOFT_BACKEND_WINMM=OFF -DALSOFT_BACKEND_WAVE=OFF -DALSOFT_BACKEND_PIPEWIRE=OFF -DALSOFT_BACKEND_PULSEAUDIO=OFF -DALSOFT_BACKEND_JACK=OFF -DALSOFT_BACKEND_PORTAUDIO=OFF -DALSOFT_BACKEND_COREAUDIO=OFF -DALSOFT_BACKEND_OBOE=OFF -DALSOFT_BACKEND_OPENSL=OFF -DALSOFT_BACKEND_SDL2=OFF -DALSOFT_BACKEND_SDL3=OFF -DALSOFT_EAX=ON -DALSOFT_EMBED_HRTF_DATA=ON -DALSOFT_ENABLE_MODULES=OFF &quot;-DCMAKE_CXX_FLAGS=/DWIN32 /D_WINDOWS /EHsc /wd4875 /wd4267&quot;</OpenALConfigureCommand>
+    <OutDir Condition="'$(Platform)'=='Win32'">$(RepositoryRoot)$(Configuration)\</OutDir>
+    <OutDir Condition="'$(Platform)'=='x64'">$(RepositoryRoot)x64\$(Configuration)\</OutDir>
+    <IntDir>$(RepositoryRoot)bld\openal-soft-vs\$(Platform)\$(Configuration)\</IntDir>
+    <NMakeOutput>$(OutDir)OpenAL32.lib</NMakeOutput>
+    <NMakeBuildCommandLine>$(OpenALConfigureCommand) &amp;&amp; &quot;$(CMakeExecutable)&quot; --build &quot;$(OpenALBuildDir)&quot; --config $(Configuration) --target OpenAL --parallel &amp;&amp; &quot;$(CMakeExecutable)&quot; -E copy_if_different &quot;$(OpenALBuildDir)\$(Configuration)\OpenAL32.lib&quot; &quot;$(NMakeOutput)&quot;</NMakeBuildCommandLine>
+    <NMakeReBuildCommandLine>$(OpenALConfigureCommand) &amp;&amp; &quot;$(CMakeExecutable)&quot; --build &quot;$(OpenALBuildDir)&quot; --config $(Configuration) --target OpenAL --clean-first --parallel &amp;&amp; &quot;$(CMakeExecutable)&quot; -E copy_if_different &quot;$(OpenALBuildDir)\$(Configuration)\OpenAL32.lib&quot; &quot;$(NMakeOutput)&quot;</NMakeReBuildCommandLine>
+    <NMakeCleanCommandLine>if exist &quot;$(OpenALBuildDir)\CMakeCache.txt&quot; (
+  &quot;$(CMakeExecutable)&quot; --build &quot;$(OpenALBuildDir)&quot; --config $(Configuration) --target clean
+  if errorlevel 1 exit /b 1
+)
+&quot;$(CMakeExecutable)&quot; -E rm -f &quot;$(NMakeOutput)&quot;</NMakeCleanCommandLine>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClInclude Include="include\AL\al.h" />
+    <ClInclude Include="include\AL\alc.h" />
+    <ClInclude Include="include\AL\alext.h" />
+    <ClInclude Include="include\AL\efx.h" />
+    <ClInclude Include="include\AL\efx-presets.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

@@ -60,6 +60,8 @@ cLuxPlayer::cLuxPlayer() : iLuxUpdateable("LuxPlayer"), iLuxCollideCallbackConta
 	//////////////////////////////////
 	// Init data pointers
 	mpCharBody = NULL;
+	mbFreeCameraActive = false;
+	mfFreeCameraSpeed = 0.1f;
 
     mbUsesDragFootsteps = false;
 
@@ -354,6 +356,8 @@ void cLuxPlayer::Reset()
 
 	////////////////////////
 	//Reset camera
+	SetFreeCamActive(false);
+	mfFreeCameraSpeed = 0.1f;
 	mpCamera->SetRoll(0.0f);
 	mpCamera->SetPitch(0.0f);
 	mpCamera->SetYaw(0.0f);
@@ -568,6 +572,8 @@ void cLuxPlayer::CreateWorldEntities(cLuxMap *apMap)
 
 void cLuxPlayer::DestroyWorldEntities(cLuxMap *apMap)
 {
+	SetFreeCamActive(false);
+
 	////////////////////////////////
 	//Destroy character body
 	if(mpCharBody)
@@ -679,6 +685,15 @@ void cLuxPlayer::IncreaseInfection(float afAmount, bool abUseEffect)
 
 void cLuxPlayer::Move(eCharDir aDir, float afMul)
 {	
+	if(mbFreeCameraActive)
+	{
+		if(aDir == eCharDir_Forward)
+			mpCamera->MoveForward(mfFreeCameraSpeed * afMul);
+		else if(aDir == eCharDir_Right)
+			mpCamera->MoveRight(mfFreeCameraSpeed * afMul);
+		return;
+	}
+
 	mbPressedMove = true;
 	if(mvStates[mState]->OnMove(aDir, afMul))
 	{
@@ -693,6 +708,12 @@ void cLuxPlayer::Move(eCharDir aDir, float afMul)
 
 void cLuxPlayer::AddYaw(float afAmount)
 {
+	if(mbFreeCameraActive)
+	{
+		mpCamera->AddYaw(mpCamDirEffects->AddAndGetYawAdd(afAmount * 2.0f));
+		return;
+	}
+
 	afAmount = afAmount * mfLookSpeedMul;
 
 	if(mvStates[mState]->OnAddYaw(afAmount))
@@ -708,6 +729,12 @@ void cLuxPlayer::AddYaw(float afAmount)
 
 void cLuxPlayer::AddPitch(float afAmount)
 {
+	if(mbFreeCameraActive)
+	{
+		mpCamera->AddPitch(mpCamDirEffects->AddAndGetPitchAdd(afAmount * 2.0f));
+		return;
+	}
+
 	afAmount = afAmount * mfLookSpeedMul;
 
 	if(mvStates[mState]->OnAddPitch(afAmount))
@@ -1138,6 +1165,37 @@ tString cLuxPlayer::FocusIconStyleToString(eLuxFocusIconStyle aX)
 
 //-----------------------------------------------------------------------
 
+//////////////////////////////////////////////////////////////////////////
+// Free cam
+//////////////////////////////////////////////////////////////////////////
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayer::SetFreeCamActive(bool abX)
+{
+	mbFreeCameraActive = abX;
+	mpCamera->SetMoveMode(abX ? eCameraMoveMode_Fly : eCameraMoveMode_Walk);
+
+	if(mpCharBody == NULL) return;
+
+	if (abX)
+	{
+		mpCharBody->SetCamera(NULL);
+	}
+	else
+	{
+		mpCharBody->SetCamera(mpCamera);
+	}
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayer::SetFreeCamSpeed(float afSpeed)
+{
+	mfFreeCameraSpeed = cMath::Max(afSpeed, 0.001f);
+}
+
+//-----------------------------------------------------------------------
 
 //////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
@@ -1282,6 +1340,8 @@ void cLuxPlayer::UpdateHeadPosAdd(float afTimeStep)
 
 void cLuxPlayer::UpdateCamera(float afTimeStep)
 {
+	if(mbFreeCameraActive) return;
+
 	////////////////
 	// FOV
 	if(mfFOVMul != mfFOVMulGoal)
@@ -1556,7 +1616,7 @@ void cLuxPlayer::CreateCharacterBody(iPhysicsWorld *apPhysicsWorld)
 	mpCharBody->SetMaxStepSizeInAir(	gpBase->mpGameCfg->GetFloat("Player_Body","MaxStepSizeInAir",0) );
 	mpCharBody->SetStepClimbSpeed(		gpBase->mpGameCfg->GetFloat("Player_Body","StepClimbSpeed",0) );
 	
-	mpCharBody->SetCamera(mpCamera);
+	SetFreeCamActive(false);
 	mpCharBody->SetCameraPosAdd(mvCameraPosAdd);
 	mpCharBody->SetCameraSmoothPosNum(	gpBase->mpGameCfg->GetInt("Player_Body","CameraSmoothPosNum",0) );
 

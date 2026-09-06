@@ -92,6 +92,7 @@ private:
 	void UpdateInspectionMeshEntity(float afTimeStep);
 
 	void CreateGuiWindow();
+	void UpdateFreeCamControls();
 	void CreateScriptOutputWindow();
 	void CreateScriptOutputWindowText(const tWString& asOutput);
 	void UpdateMessages(float afTimeStep);
@@ -165,6 +166,8 @@ private:
 
 	cWidgetComboBox *mpCBInsanityEvents;
 	cWidgetComboBox *mpCBPlayerStarts;
+	cWidgetCheckBox *mpCBFlyCamera;
+	cWidgetSlider *mpSliderFlyCameraSpeed;
 
 	cWidgetWindow *mpDebugWindow;
 

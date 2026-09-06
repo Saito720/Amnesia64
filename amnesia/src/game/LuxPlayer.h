@@ -285,6 +285,12 @@ public:
 	static eLuxFocusIconStyle StringToFocusIconStyle(const tString& asX);
 	static tString FocusIconStyleToString(eLuxFocusIconStyle aX);
 	
+	////////////////////
+	// Free cam
+	void SetFreeCamActive(bool abX);
+	bool IsFreeCamActive() const { return mbFreeCameraActive; }
+	void SetFreeCamSpeed(float afSpeed);
+	float GetFreeCamSpeed() const { return mfFreeCameraSpeed; }
 	
 	////////////////////
 	// Helpers
@@ -502,6 +508,12 @@ private:
 	std::vector<iLuxPlayerHelper*> mvHelpers;
 	std::vector<iLuxMoveState*> mvMoveStates;
 	std::vector<iLuxPlayerState*> mvStates;
+
+
+	//////////////////////
+	// Free camera
+	bool mbFreeCameraActive;
+	float mfFreeCameraSpeed;
 };
 
 //----------------------------------------------

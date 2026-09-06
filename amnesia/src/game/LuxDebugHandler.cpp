@@ -68,6 +68,8 @@ cLuxDebugHandler::cLuxDebugHandler() : iLuxUpdateable("LuxDebugHandler")
 	mpInspectMeshEntity = NULL;
 
 	mpCBPlayerStarts = NULL;
+	mpCBFlyCamera = NULL;
+	mpSliderFlyCameraSpeed = NULL;
 
 	msCurrentFilePath = _W("");
 
@@ -192,6 +194,7 @@ void cLuxDebugHandler::Reset()
 {
 	mbFirstUpdateOnMap = false;
 	mpInspectMeshEntity = NULL;
+	UpdateFreeCamControls();
 }
 
 bool Sort_Complexity(const tLightComplexity &aA, const tLightComplexity &aB)
@@ -309,6 +312,8 @@ void cLuxDebugHandler::Update(float afTimeStep)
 
 void cLuxDebugHandler::OnMapEnter(cLuxMap *apMap)
 {
+	UpdateFreeCamControls();
+
 	mbFirstUpdateOnMap = true;
 	mlTempCount =0;
 	mpInspectMeshEntity = NULL;
@@ -333,6 +338,7 @@ void cLuxDebugHandler::OnMapEnter(cLuxMap *apMap)
 void cLuxDebugHandler::OnMapLeave(cLuxMap *apMap)
 {
 	mpInspectMeshEntity = NULL;
+	UpdateFreeCamControls();
 
 	if(mpCBPlayerStarts)
 	{
@@ -351,6 +357,8 @@ void cLuxDebugHandler::SetDebugWindowActive(bool abActive)
 	// Active
 	if(abActive)
 	{
+		UpdateFreeCamControls();
+
 		Log("-------- Debug window open!\n");
 		mpGui->SetFocus(mpGuiSet);
 		mpGuiSet->SetActive(true);
@@ -1029,7 +1037,7 @@ void cLuxDebugHandler::CreateGuiWindow()
 
 	///////////////////////////
 	//Window
-	cVector2f vSize = cVector2f(250, 740);
+	cVector2f vSize = cVector2f(250, 840);
 	vGroupSize.x = vSize.x - 20;
 	cVector3f vPos = cVector3f(mpGuiSet->GetVirtualSize().x - vSize.x - 10, 10, 0);
 	mpDebugWindow = mpGuiSet->CreateWidgetWindow(0,vPos,vSize,_W("Debug Toolbar") );
@@ -1303,6 +1311,20 @@ void cLuxDebugHandler::CreateGuiWindow()
 		if(gpBase->mpInsanityHandler->GetEventNum()>0) mpCBInsanityEvents->SetSelectedItem(0);
 		vGroupPos.y += 22;*/
 
+		//Enable fly camera
+		mpCBFlyCamera = mpGuiSet->CreateWidgetCheckBox(vGroupPos, vSize, _W("Fly camera"), pGroup);
+		mpCBFlyCamera->SetChecked(gpBase->mpPlayer->IsFreeCamActive(), false);
+		mpCBFlyCamera->SetUserValue(13);
+		mpCBFlyCamera->AddCallback(eGuiMessage_CheckChange, this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;
+
+		//Set fly camera speed
+		mpSliderFlyCameraSpeed = mpGuiSet->CreateWidgetSlider(eWidgetSliderOrientation_Horizontal, vGroupPos, vSize, 100, pGroup, "Fly camera speed");
+		mpSliderFlyCameraSpeed->SetValue((int)(gpBase->mpPlayer->GetFreeCamSpeed() * 100.0f + 0.5f), false);
+		mpSliderFlyCameraSpeed->SetUserValue(14);
+		mpSliderFlyCameraSpeed->AddCallback(eGuiMessage_SliderMove, this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;
+
 
 		//Group end
 		vGroupSize.y = vGroupPos.y + 15;
@@ -1313,6 +1335,16 @@ void cLuxDebugHandler::CreateGuiWindow()
 	//////////////////////////
 	// Script output window
 	CreateScriptOutputWindow();
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxDebugHandler::UpdateFreeCamControls()
+{
+	if(mpCBFlyCamera)
+		mpCBFlyCamera->SetChecked(gpBase->mpPlayer->IsFreeCamActive(), false);
+	if(mpSliderFlyCameraSpeed)
+		mpSliderFlyCameraSpeed->SetValue((int)(gpBase->mpPlayer->GetFreeCamSpeed() * 100.0f + 0.5f), false);
 }
 
 //-----------------------------------------------------------------------
@@ -1713,6 +1745,8 @@ bool cLuxDebugHandler::ChangeDebugText(iWidget* apWidget, const cGuiMessageData&
 	else if(lNum == 9)	 gpBase->mpConfigHandler->mbFastPhysicsLoad = bActive;
 	else if(lNum == 10)	 mbDisableFlashBacks = bActive;
 	else if(lNum == 11)  mbDrawPhysics = bActive;
+	else if(lNum == 13)  gpBase->mpPlayer->SetFreeCamActive(bActive);
+	else if(lNum == 14)  gpBase->mpPlayer->SetFreeCamSpeed((float)aData.mlVal / 100.0f);
 	else if(lNum == 15) 
     {
         mbShowGbufferContent = bActive;

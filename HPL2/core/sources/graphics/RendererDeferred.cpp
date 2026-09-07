@@ -319,7 +319,7 @@ namespace hpl {
 
 		////////////////////////////////////
 		//Create Refraction texture
-		mpRefractionTexture = mpGraphics->GetTempFrameBuffer(mvScreenSize,ePixelFormat_RGBA,0)->GetColorBuffer(0)->ToTexture();
+		mpRefractionTexture = mpGraphics->GetScreenTempFrameBuffer(1,ePixelFormat_RGBA,0)->GetColorBuffer(0)->ToTexture();
 		mpRefractionTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
 
 		////////////////////////////////////
@@ -614,7 +614,7 @@ namespace hpl {
 
 			// Textures
 			mpEdgeSmooth_LinearDepthTexture = CreateRenderTexture("EdgeSmoothLinearDepth", mvScreenSize,ePixelFormat_RGB16);
-			mpEdgeSmooth_TempAccum = mpGraphics->GetTempFrameBuffer(mvScreenSize,ePixelFormat_RGBA,0)->GetColorBuffer(0)->ToTexture();
+			mpEdgeSmooth_TempAccum = mpGraphics->GetScreenTempFrameBuffer(1,ePixelFormat_RGBA,0)->GetColorBuffer(0)->ToTexture();
 
 			//Frame buffers
 			mpEdgeSmooth_LinearDepthBuffer = mpGraphics->CreateFrameBuffer("EdgeSmoothLinearDepth");
@@ -764,6 +764,76 @@ namespace hpl {
 		mpGraphics->DestroyGpuProgram(mpSkyBoxProgram);
 
 		mpProgramManager->DestroyShadersAndPrograms();
+	}
+
+	//-----------------------------------------------------------------------
+
+	bool cRendererDeferred::ResizeScreenBuffers()
+	{
+		iRenderer::ResizeScreenBuffers();
+		cVector2l vReflectionSize = mvScreenSize / mlReflectionSizeDiv;
+		if(vReflectionSize.x < 1) vReflectionSize.x = 1;
+		if(vReflectionSize.y < 1) vReflectionSize.y = 1;
+
+		// Keep textures and framebuffers alive so effects that borrow them remain valid.
+		for(int type=0; type<2; ++type)
+		{
+			const cVector2l vSize = type == 0 ? mvScreenSize : vReflectionSize;
+			for(int i=0; i<mlNumOfGBufferTextures; ++i)
+				if(!mpGraphics->ResizeRenderTexture(mpGBufferTexture[type][i], vSize)) return false;
+
+			iDepthStencilBuffer* pDepth = mpGraphics->CreateDepthStencilBuffer(vSize, 24, 8, false);
+			if(pDepth == NULL) return false;
+			mpGBuffer[type][eGBufferComponents_Full]->SetDepthStencilBuffer(pDepth);
+			mpGBuffer[type][eGBufferComponents_Depth]->SetDepthStencilBuffer(pDepth);
+			mpGBuffer[type][eGBufferComponents_ColorAndDepth]->SetDepthStencilBuffer(pDepth);
+			if(type == 0) mpAccumBuffer->SetDepthStencilBuffer(pDepth);
+			else mpReflectionBuffer->SetDepthStencilBuffer(pDepth);
+
+			mpGraphics->DestoroyDepthStencilBuffer(mpDepthStencil[type]);
+			mpDepthStencil[type] = pDepth;
+
+			for(int i=0; i<eGBufferComponents_LastEnum; ++i)
+			{
+				mpGBuffer[type][i]->SetSize(vSize);
+				if(!mpGBuffer[type][i]->CompileAndValidate()) return false;
+			}
+		}
+
+		if(!mpGraphics->ResizeRenderTexture(mpAccumBufferTexture, mvScreenSize)) return false;
+		if(!mpGraphics->ResizeRenderTexture(mpReflectionTexture, vReflectionSize)) return false;
+		mpAccumBuffer->SetSize(mvScreenSize);
+		mpReflectionBuffer->SetSize(vReflectionSize);
+		if(!mpAccumBuffer->CompileAndValidate() || !mpReflectionBuffer->CompileAndValidate()) return false;
+
+		if(mbSSAOLoaded)
+		{
+			cVector2l vSize = mvScreenSize / mlSSAOBufferSizeDiv;
+			if(vSize.x < 1) vSize.x = 1;
+			if(vSize.y < 1) vSize.y = 1;
+			if(!mpGraphics->ResizeRenderTexture(mpLinearDepthTexture, vSize) ||
+				!mpGraphics->ResizeRenderTexture(mpSSAOTexture, vSize) ||
+				!mpGraphics->ResizeRenderTexture(mpSSAOBlurTexture, vSize)) return false;
+			mpLinearDepthBuffer->SetSize(vSize);
+			mpSSAOBuffer->SetSize(vSize);
+			mpSSAOBlurBuffer->SetSize(vSize);
+			if(!mpLinearDepthBuffer->CompileAndValidate() || !mpSSAOBuffer->CompileAndValidate() ||
+				!mpSSAOBlurBuffer->CompileAndValidate()) return false;
+		}
+
+		if(mbEdgeSmoothLoaded)
+		{
+			if(!mpGraphics->ResizeRenderTexture(mpEdgeSmooth_LinearDepthTexture, mvScreenSize)) return false;
+			mpEdgeSmooth_LinearDepthBuffer->SetSize(mvScreenSize);
+			if(!mpEdgeSmooth_LinearDepthBuffer->CompileAndValidate()) return false;
+		}
+
+		hplDelete(mpFullscreenLightQuad);
+		mpFullscreenLightQuad = CreateQuadVertexBuffer(eVertexBufferType_Software,0,1,0,mvScreenSizeFloat,true);
+		mfLastFrustumFOV = -1;
+		mfLastFrustumFarPlane = -1;
+		mbReflectionTextureCleared = false;
+		return mpFullscreenLightQuad != NULL;
 	}
 
 	//-----------------------------------------------------------------------

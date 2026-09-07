@@ -2,6 +2,7 @@
 64-bit Windows port of Amnesia: The Dark Descent
 
 ## Key changes:
+- Windowed mode supports resizing and maximizing, with the game rendering at the current window resolution. Resizing never changes the configured launch resolution; `0,0` uses the monitor's desktop resolution and respects the fullscreen setting.
 - Can be compiled in both 32-bit and 64-bit modes using Visual Studio 2026 with the v145 build tools.
 - Single solution file for all projects (main game, HPL2, dependencies and editors). No need to compile the engine separately.
 - Produces self-contained .exe files without dependency on 3rd party dlls (this prevents cluttering user's game folder with 64-bit dlls).
@@ -24,3 +25,5 @@ Executables and libraries are written to `x64/Debug` or `x64/Release` for x64,
 and `Debug` or `Release` for x86.
 
 See [OpenAL Soft build and update details](HPL2/dependencies/sources/OPENAL_SOFT.md).
+
+See [window resizing verification](HPL2/tests/WindowResize/README.md) for the native rendering tests and game verification steps.

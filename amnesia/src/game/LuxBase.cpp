@@ -129,27 +129,20 @@ eLuxAxis StringToAxis(const tString &asAxis)
 
 void LuxCalcGuiSetOffset(const cVector2f &avVirtualSizeIn, const cVector2f& avScreenSize, cVector2f& avOutSize, cVector2f & avOutOffset)
 {
-	
-	float fWantedRatio = avVirtualSizeIn.x / avVirtualSizeIn.y;
-	float fScreenRatio = avScreenSize.x / avScreenSize.y;
-	//float fAddY = avVirtualSizeIn.y * (fScreenRatio-fWantedRatio);
+	avOutSize = avVirtualSizeIn;
+	avOutOffset = 0;
+	if(avScreenSize.x <= 0 || avScreenSize.y <= 0 ||
+		avVirtualSizeIn.x <= 0 || avVirtualSizeIn.y <= 0) return;
 
-	if(fScreenRatio >= (4.0f / 3.0f)-0.001f)
+	// Preserve the original GUI scaling so resizing does not change the artwork
+	// and font proportions compared with launching at the same resolution.
+	const float fWantedRatio = avVirtualSizeIn.x / avVirtualSizeIn.y;
+	const float fScreenRatio = avScreenSize.x / avScreenSize.y;
+	if(fScreenRatio >= (4.0f / 3.0f) - 0.001f)
 	{
-		float fAddX = avVirtualSizeIn.x * (fScreenRatio-fWantedRatio); //The "left overs" on both sides
-	//avOutSize.y = avVirtualSizeIn.y + fAddY;
-
-		avOutSize.x = avVirtualSizeIn.x + fAddX;
-		avOutSize.y = avVirtualSizeIn.y;
-
-		avOutOffset.x = fAddX*0.5f;
-		avOutOffset.y =0;
-	}
-	else
-	{
-		avOutOffset =0;
-		avOutSize.x = avVirtualSizeIn.x;
-		avOutSize.y = avVirtualSizeIn.y;
+		const float fAddX = avVirtualSizeIn.x * (fScreenRatio - fWantedRatio);
+		avOutSize.x += fAddX;
+		avOutOffset.x = fAddX * 0.5f;
 	}
 }
 

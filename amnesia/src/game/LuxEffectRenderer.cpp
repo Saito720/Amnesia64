@@ -54,7 +54,7 @@ cLuxEffectRenderer::cLuxEffectRenderer() : iLuxUpdateable("LuxEffectRenderer")
 
 	/////////////////////////////
 	//Create Outline color buffer
-	mpOutlineColorTexture = pGraphics->GetTempFrameBuffer(vScreenSize,ePixelFormat_RGBA,0)->GetColorBuffer(0)->ToTexture();
+	mpOutlineColorTexture = pGraphics->GetScreenTempFrameBuffer(1,ePixelFormat_RGBA,0)->GetColorBuffer(0)->ToTexture();
 
 	mpFrameBufferColor = pGraphics->CreateFrameBuffer("OutlineColor");
 	mpFrameBufferColor->SetDepthStencilBuffer(pRendererDeferred->GetDepthStencilBuffer());
@@ -114,7 +114,7 @@ cLuxEffectRenderer::cLuxEffectRenderer() : iLuxUpdateable("LuxEffectRenderer")
 		if(mpBlurProgram[i])
 			mpBlurProgram[i]->GetVariableAsId("afBlurSize",kVar_afBlurSize);
 
-		mpBlurBuffer[i] = pGraphics->GetTempFrameBuffer(vScreenSize/mlBlurSizeDiv,ePixelFormat_RGBA,i);
+		mpBlurBuffer[i] = pGraphics->GetScreenTempFrameBuffer(mlBlurSizeDiv,ePixelFormat_RGBA,i);
 		if(mpBlurBuffer[i])
 			mpBlurTexture[i] = mpBlurBuffer[i]->GetColorBuffer(0)->ToTexture();
 	}
@@ -515,3 +515,25 @@ void cLuxEffectRenderer::RenderOutlineBlur(cRendererCallbackFunctions* apFunctio
 
 
 
+
+//-----------------------------------------------------------------------
+
+void cLuxEffectRenderer::OnScreenResize()
+{
+	cGraphics *pGraphics = gpBase->mpEngine->GetGraphics();
+	const cVector2l vScreenSize = pGraphics->GetLowLevel()->GetScreenSizeInt();
+	cRendererDeferred *pRenderer = static_cast<cRendererDeferred*>(pGraphics->GetRenderer(eRenderer_Main));
+
+	mpDeferredAccumBuffer = pRenderer->GetAccumBuffer();
+	mpOutlineColorTexture = pGraphics->GetScreenTempFrameBuffer(1, ePixelFormat_RGBA, 0)->GetColorBuffer(0)->ToTexture();
+	mpFrameBufferColor->SetDepthStencilBuffer(pRenderer->GetDepthStencilBuffer());
+	mpFrameBufferColor->SetTexture2D(0, mpOutlineColorTexture);
+	mpFrameBufferColor->SetSize(vScreenSize);
+	mpFrameBufferColor->CompileAndValidate();
+
+	for(int i=0; i<2; ++i)
+	{
+		mpBlurBuffer[i] = pGraphics->GetScreenTempFrameBuffer(mlBlurSizeDiv, ePixelFormat_RGBA, i);
+		mpBlurTexture[i] = mpBlurBuffer[i]->GetColorBuffer(0)->ToTexture();
+	}
+}

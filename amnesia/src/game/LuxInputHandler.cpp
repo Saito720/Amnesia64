@@ -322,6 +322,8 @@ cLuxInputHandler::cLuxInputHandler() : iLuxUpdateable("LuxInputHandler")
 	// Get needed engine modules
 	mpInput = gpBase->mpEngine->GetInput();
 	mpGraphics = gpBase->mpEngine->GetGraphics();
+	// Resizing the window must not change the mouse's turn rate.
+	mfMouseReferenceHeight = mpGraphics->GetLowLevel()->GetScreenSizeFloat().y;
 
 	////////////////////////////////////
 	// Game settings init
@@ -1119,7 +1121,7 @@ void cLuxInputHandler::UpdateGamePlayerInput()
 	cVector2l vMouseRelPos = mpInput->GetMouse()->GetRelPosition();
 	cVector2f vMouseRelPosFloat = cVector2f((float)vMouseRelPos.x, (float)vMouseRelPos.y)*mfMouseSensitivity;
 	cVector2l vAbsRel = cMath::RoundToInt(vMouseRelPosFloat);
-	cVector2f vRelPos = cVector2f((float)vAbsRel.x,(float)vAbsRel.y) / (1.7f * mpGraphics->GetLowLevel()->GetScreenSizeFloat().y);
+	cVector2f vRelPos = cVector2f((float)vAbsRel.x,(float)vAbsRel.y) / (1.7f * mfMouseReferenceHeight);
 	cVector2f vFinalPos;
 
 	//Check if position should be smoothed.

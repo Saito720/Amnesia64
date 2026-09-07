@@ -54,6 +54,8 @@ namespace hpl {
 														const cVector2l& avGlobalScissorRectPos, const cVector2l& avGlobalScissorRectSize)
 	{
 		mpCurrentFrustum = apFrustum;
+		mvScreenSize = mpLowLevelGraphics->GetScreenSizeInt();
+		mvScreenSizeFloat = mpLowLevelGraphics->GetScreenSizeFloat();
 		mpCurrentRenderTarget = apRenderTarget;
 		mbLog = abLog;
 

@@ -254,6 +254,73 @@ namespace hpl {
 	}
 
 	//-----------------------------------------------------------------------
+
+	void cGraphics::OnScreenResize()
+	{
+		// Resizing happens between frames, with no render target or sampled texture bound.
+		mpLowLevelGraphics->SetCurrentFrameBuffer(NULL, 0, -1);
+		for(int i=0; i<kMaxTextureUnits; ++i) mpLowLevelGraphics->SetTexture(i, NULL);
+
+		const cVector2l vScreenSize = mpLowLevelGraphics->GetScreenSizeInt();
+		for(size_t i=0; i<mvTempFrameBuffers.size(); ++i)
+		{
+			cTempFrameBuffer& tempBuffer = mvTempFrameBuffers[i];
+			if(tempBuffer.mlScreenSizeDiv == 0) continue;
+			cVector2l vSize = vScreenSize / tempBuffer.mlScreenSizeDiv;
+			if(vSize.x < 1) vSize.x = 1;
+			if(vSize.y < 1) vSize.y = 1;
+			iFrameBuffer* pBuffer = tempBuffer.mpFrameBuffer;
+			if(!ResizeRenderTexture(pBuffer->GetColorBuffer(0)->ToTexture(), vSize))
+			{
+				FatalError("Could not resize temporary render texture to %dx%d!\n", vSize.x, vSize.y);
+				return;
+			}
+			pBuffer->SetSize(vSize);
+			tempBuffer.mvSize = vSize;
+			if(!pBuffer->CompileAndValidate())
+			{
+				FatalError("Could not validate temporary framebuffer after resizing!\n");
+				return;
+			}
+		}
+
+		for(size_t i=0; i<mvRenderers.size(); ++i)
+		{
+			if(mvRenderers[i] && !mvRenderers[i]->ResizeScreenBuffers())
+			{
+				FatalError("Could not resize renderer buffers to %dx%d!\n", vScreenSize.x, vScreenSize.y);
+				return;
+			}
+		}
+		for(tPostEffectListIt it=mlstPostEffects.begin(); it!=mlstPostEffects.end(); ++it)
+		{
+			if(!(*it)->ResizeScreenBuffers())
+			{
+				FatalError("Could not resize post effect buffers to %dx%d!\n", vScreenSize.x, vScreenSize.y);
+				return;
+			}
+		}
+		for(tPostEffectCompositeListIt it=mlstPostEffectComposites.begin(); it!=mlstPostEffectComposites.end(); ++it)
+			(*it)->SetupRenderFunctions(mpLowLevelGraphics);
+
+		for(int i=0; i<kMaxTextureUnits; ++i) mpLowLevelGraphics->SetTexture(i, NULL);
+		mpLowLevelGraphics->SetActiveTextureUnit(0);
+		mpLowLevelGraphics->SetCurrentFrameBuffer(NULL, 0, -1);
+	}
+
+	//-----------------------------------------------------------------------
+
+	bool cGraphics::ResizeRenderTexture(iTexture* apTexture, const cVector2l& avSize)
+	{
+		if(apTexture == NULL || avSize.x < 1 || avSize.y < 1) return false;
+		if(apTexture->GetSizeInt2D() == avSize) return true;
+		mpLowLevelGraphics->SetTexture(0, apTexture);
+		const bool bResult = apTexture->CreateFromRawData(cVector3l(avSize.x, avSize.y, 1), apTexture->GetPixelFormat(), NULL);
+		mpLowLevelGraphics->SetTexture(0, NULL);
+		return bResult;
+	}
+
+	//-----------------------------------------------------------------------
 	
 	iFrameBuffer* cGraphics::CreateFrameBuffer(const tString& asName)
 	{
@@ -283,12 +350,36 @@ namespace hpl {
 		for(size_t i=0; i<mvTempFrameBuffers.size(); ++i)
 		{
 			cTempFrameBuffer &tempBuffer = mvTempFrameBuffers[i];
-			if(	tempBuffer.mvSize == avSize && tempBuffer.mPixelFormat == aPixelFormat && 
+			if(	tempBuffer.mlScreenSizeDiv == 0 && tempBuffer.mvSize == avSize && tempBuffer.mPixelFormat == aPixelFormat &&
 				tempBuffer.mlIndex == alIndex)
 			{
 				return tempBuffer.mpFrameBuffer;
 			}
 		}
+		return CreateTempFrameBuffer(avSize, aPixelFormat, alIndex, 0);
+	}
+
+	//-----------------------------------------------------------------------
+
+	iFrameBuffer* cGraphics::GetScreenTempFrameBuffer(int alSizeDiv, ePixelFormat aPixelFormat, int alIndex)
+	{
+		if(alSizeDiv < 1) alSizeDiv = 1;
+		for(size_t i=0; i<mvTempFrameBuffers.size(); ++i)
+		{
+			cTempFrameBuffer& tempBuffer = mvTempFrameBuffers[i];
+			if(tempBuffer.mlScreenSizeDiv == alSizeDiv && tempBuffer.mPixelFormat == aPixelFormat && tempBuffer.mlIndex == alIndex)
+				return tempBuffer.mpFrameBuffer;
+		}
+		cVector2l vSize = mpLowLevelGraphics->GetScreenSizeInt() / alSizeDiv;
+		if(vSize.x < 1) vSize.x = 1;
+		if(vSize.y < 1) vSize.y = 1;
+		return CreateTempFrameBuffer(vSize, aPixelFormat, alIndex, alSizeDiv);
+	}
+
+	//-----------------------------------------------------------------------
+
+	iFrameBuffer* cGraphics::CreateTempFrameBuffer(const cVector2l& avSize, ePixelFormat aPixelFormat, int alIndex, int alScreenSizeDiv)
+	{
 
 		/////////////////////////
 		// Create new buffer
@@ -296,6 +387,7 @@ namespace hpl {
 		tempBuffer.mvSize = avSize;
 		tempBuffer.mPixelFormat = aPixelFormat;
 		tempBuffer.mlIndex = alIndex;
+		tempBuffer.mlScreenSizeDiv = alScreenSizeDiv;
 
 		//Create texture
 		tString sNameSuffix = cString::ToString(avSize.x)+"x"+cString::ToString(avSize.y)+":"+cString::ToString((int)aPixelFormat);

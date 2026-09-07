@@ -69,6 +69,7 @@ public:
 	virtual void ExitPressed()=0;
 
 	void SetActive(bool abX);
+	virtual void OnScreenResize();
 
 protected:
 	virtual void OnSetActive(bool abX){}
@@ -92,6 +93,8 @@ class cLuxMainMenu : public iLuxUpdateable
 public:	
 	cLuxMainMenu();
 	~cLuxMainMenu();
+
+	void OnScreenResize();
 
 	void LoadUserConfig();
 	void SaveUserConfig();
@@ -285,6 +288,7 @@ private:
 	cCamera *mpBgCamera;
 
 	bool mbGuiCreated;
+	// Menu virtual extent; render-target dimensions come from low-level graphics.
 	cVector2f mvScreenSize;
 
 	std::vector<cWidgetLabel*> mvTopMenuLabels;

@@ -140,6 +140,7 @@ namespace hpl {
 
 		cVector2f GetScreenSizeFloat();
 		const cVector2l& GetScreenSizeInt();
+		bool UpdateScreenSize();
 		
 		/////////////////////////////////////////////////////
 		/////////////// DATA CREATION //////////////////////

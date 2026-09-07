@@ -43,6 +43,7 @@ public:
 	~cLuxEffectRenderer();
 
 	void Reset();
+	void OnScreenResize();
 
 	void Update(float afTimeStep);
 

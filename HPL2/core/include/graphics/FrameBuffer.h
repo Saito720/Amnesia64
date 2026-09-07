@@ -96,6 +96,8 @@ namespace hpl {
 		iFrameBufferAttachment* GetStencilBuffer(){ return mpStencilBuffer;}
 
 		inline const cVector2l& GetSize(){ return mvSize;}
+		// Update the cached dimensions after resizing all attached storage.
+		void SetSize(const cVector2l& avSize){ mvSize = avSize; }
 
 	protected:
 		iLowLevelGraphics* mpLowLevelGraphics;

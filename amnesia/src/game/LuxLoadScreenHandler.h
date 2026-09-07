@@ -38,6 +38,8 @@ friend class cLuxLoadScreenHandler_SaveData;
 public:	
 	cLuxLoadScreenHandler();
 	~cLuxLoadScreenHandler();
+
+	void OnScreenResize();
 	
 	void LoadFonts();
 

@@ -43,6 +43,12 @@
 
 //--------------------------------------------------------------------------------
 
+static cVector2f GetMainMenuGuiSize()
+{
+	const cVector2f vSize = gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeFloat();
+	const float fScale = cMath::Max(1.0f, cMath::Max(640.0f / vSize.x, 480.0f / vSize.y));
+	return vSize * fScale;
+}
 static const bool gbDebug_SkipBGScene = false;
 static const bool gbDebug_FastLoadOptions = false;
 const int glHardMode_SaveCost = 4;
@@ -80,7 +86,7 @@ iLuxMainMenuWindow::iLuxMainMenuWindow(cGuiSet *apGuiSet, cGuiSkin *apGuiSkin)
 
 	mpWindow = NULL;
 
-	mvScreenSize = gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeFloat();
+	mvScreenSize = GetMainMenuGuiSize();
 }
 
 void iLuxMainMenuWindow::SetActive(bool abX)
@@ -155,7 +161,8 @@ cLuxMainMenu::cLuxMainMenu() : iLuxUpdateable("LuxDebugHandler")
 
 	///////////////////////
 	// Load settings
-	mvScreenSize = gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeFloat();
+	mvScreenSize = GetMainMenuGuiSize();
+	mpGuiSet->SetVirtualSize(mvScreenSize, -1000, 1000);
 
 	mfMainFadeInTime = gpBase->mpMenuCfg->GetFloat("Main","MainFadeInTime", 0);
 	mfMainFadeOutTimeFast = gpBase->mpMenuCfg->GetFloat("Main","MainFadeOutTimeFast", 0);
@@ -172,10 +179,12 @@ cLuxMainMenu::cLuxMainMenu() : iLuxUpdateable("LuxDebugHandler")
 	mvTopMenuStartPosInGame.z = 2;
 	
 	mvTopMenuFontSize.x  *= (mvScreenSize.y / mvScreenSize.x) / (3.0f/4.0f);//Make font more narrow to compensate for wide screen.
+	const float fMenuScale = cMath::Min(1.0f, mvScreenSize.x * 0.75f / mvScreenSize.y);
+	mvTopMenuFontSize *= fMenuScale;
 
 	mvLogoPos = gpBase->mpMenuCfg->GetVector2f("Main", "MainMenuLogoStartRelativePos", 0) * mvScreenSize;
 	mvLogoPos.z = 2;
-	mvLogoSize = gpBase->mpMenuCfg->GetVector2f("Main", "MainMenuLogoRelativeSize", 0) * mvScreenSize;
+	mvLogoSize = gpBase->mpMenuCfg->GetVector2f("Main", "MainMenuLogoRelativeSize", 0) * mvScreenSize * fMenuScale;
 	
 	msMusic = gpBase->mpMenuCfg->GetString("Main", "Music", "");
 	msZoomSound = gpBase->mpMenuCfg->GetString("Main", "ZoomSound", "");
@@ -455,6 +464,17 @@ void cLuxMainMenu::Update(float afTimeStep)
 
 void cLuxMainMenu::OnDraw(float afFrameTime)
 {
+	const cVector2l vRenderSize = mpGraphics->GetLowLevel()->GetScreenSizeInt();
+	if(mpScreenTexture && (mpScreenTexture->GetWidth() != vRenderSize.x ||
+		mpScreenTexture->GetHeight() != vRenderSize.y))
+	{
+		const bool bWasVisible = mpViewport->IsVisible();
+		mpViewport->SetVisible(false);
+		DestroyBackground();
+		gpBase->mpHelpFuncs->RenderBackgroundScreen(true);
+		CreateBackground();
+		mpViewport->SetVisible(bWasVisible);
+	}
 	/////////////////////////////////
 	//Screen background
 	if(mpScreenGfx)
@@ -1323,6 +1343,7 @@ void cLuxMainMenu::CreateScreenTextures()
 void cLuxMainMenu::RenderBlur(iTexture *apInputTexture, iTexture *apTempTexture, iFrameBuffer **apBlurBuffers)
 {
 	iLowLevelGraphics *pLowGfx = mpGraphics->GetLowLevel();
+	const cVector2f vRenderSize = pLowGfx->GetScreenSizeFloat();
 
 	//Draw horizontal blur to temp from screen
 	mpBlurProgram[0]->Bind();
@@ -1330,7 +1351,7 @@ void cLuxMainMenu::RenderBlur(iTexture *apInputTexture, iTexture *apTempTexture,
 
 	pLowGfx->SetTexture(0,apInputTexture);
 
-	pLowGfx->DrawQuad(0,mvScreenSize,cVector2f(0, mvScreenSize.y),cVector2f(mvScreenSize.x,0),cColor(1,1));
+	pLowGfx->DrawQuad(0,vRenderSize,cVector2f(0, vRenderSize.y),cVector2f(vRenderSize.x,0),cColor(1,1));
 	mpBlurProgram[0]->UnBind();
 
 	//Draw vertical blur to final from temp
@@ -1339,18 +1360,19 @@ void cLuxMainMenu::RenderBlur(iTexture *apInputTexture, iTexture *apTempTexture,
 
 	pLowGfx->SetTexture(0,apTempTexture);
 
-	pLowGfx->DrawQuad(0,mvScreenSize,cVector2f(0, mvScreenSize.y),cVector2f(mvScreenSize.x,0),cColor(1,1));
+	pLowGfx->DrawQuad(0,vRenderSize,cVector2f(0, vRenderSize.y),cVector2f(vRenderSize.x,0),cColor(1,1));
 	mpBlurProgram[1]->UnBind();
 }
 
 void cLuxMainMenu::RenderBlurTexture()
 {
 	iLowLevelGraphics *pLowGfx = mpGraphics->GetLowLevel();
+	const cVector2f vRenderSize = pLowGfx->GetScreenSizeFloat();
 
 	//////////////////////////////
 	// Create frame buffers
 	iTexture* pTempBlurTexture = mpGraphics->CreateTexture("TempBlur",eTextureType_Rect,eTextureUsage_RenderTarget);
-	pTempBlurTexture->CreateFromRawData(cVector3l((int)mvScreenSize.x, (int)mvScreenSize.y,0),ePixelFormat_RGBA,NULL);
+	pTempBlurTexture->CreateFromRawData(cVector3l((int)vRenderSize.x, (int)vRenderSize.y,0),ePixelFormat_RGBA,NULL);
 	pTempBlurTexture->SetWrapSTR(eTextureWrap_ClampToEdge);
 	
 	iFrameBuffer *pBlurBuffer[2];
@@ -1371,7 +1393,7 @@ void cLuxMainMenu::RenderBlurTexture()
 	pLowGfx->SetDepthTestActive(false);
 	pLowGfx->SetDepthWriteActive(false);
 	
-	pLowGfx->SetOrthoProjection(mvScreenSize,-1000,1000);
+	pLowGfx->SetOrthoProjection(vRenderSize,-1000,1000);
 	pLowGfx->SetIdentityMatrix(eMatrix_ModelView);
 
 	//Copy screen to screen texture
@@ -1900,3 +1922,58 @@ bool cLuxMainMenu::HardModeTextDraw(iWidget* apWidget, const cGuiMessageData& aD
 }
 kGuiCallbackDeclaredFuncEnd(cLuxMainMenu, HardModeTextDraw);
 
+
+//-----------------------------------------------------------------------
+
+void iLuxMainMenuWindow::OnScreenResize()
+{
+	mvScreenSize = GetMainMenuGuiSize();
+	if(mpWindow) mpWindow->CenterGlobalPositionInSet();
+}
+
+static void ResizeMainMenuLabel(cWidgetLabel* apLabel, float afScaleX, float afFontScale,
+	float afOldStartY, float afNewStartY)
+{
+	if(apLabel == NULL) return;
+
+	cVector3f vPos = apLabel->GetLocalPosition();
+	const float fCenterX = (vPos.x + apLabel->GetSize().x * 0.5f) * afScaleX;
+	apLabel->SetDefaultFontSize(apLabel->GetDefaultFontSize() * afFontScale);
+	vPos.x = fCenterX - apLabel->GetSize().x * 0.5f;
+	vPos.y = afNewStartY + (vPos.y - afOldStartY) * afFontScale;
+	apLabel->SetPosition(vPos);
+}
+
+void cLuxMainMenu::OnScreenResize()
+{
+	const cVector2f vNewSize = GetMainMenuGuiSize();
+	if(vNewSize == mvScreenSize) return;
+
+	const cVector2f vScale = vNewSize / mvScreenSize;
+	const float fFontScale = cMath::Min(vNewSize.y, vNewSize.x * 0.75f) /
+		cMath::Min(mvScreenSize.y, mvScreenSize.x * 0.75f);
+	const bool bInGame = gpBase->mpMapHandler->MapIsLoaded();
+	const float fOldStartY = bInGame ? mvTopMenuStartPosInGame.y : mvTopMenuStartPos.y;
+	mvScreenSize = vNewSize;
+	mpGuiSet->SetVirtualSize(mvScreenSize, -1000, 1000);
+
+	mvTopMenuStartPos.x *= vScale.x;
+	mvTopMenuStartPos.y *= vScale.y;
+	mvTopMenuStartPosInGame.x *= vScale.x;
+	mvTopMenuStartPosInGame.y *= vScale.y;
+	const float fNewStartY = bInGame ? mvTopMenuStartPosInGame.y : mvTopMenuStartPos.y;
+	mvTopMenuFontSize *= fFontScale;
+	mvLogoPos.x *= vScale.x;
+	mvLogoPos.y *= vScale.y;
+	mvLogoSize *= fFontScale;
+
+	// Keep widgets and their pending settings alive while adapting the layout.
+	for(size_t i=0; i<mvTopMenuLabels.size(); ++i)
+		ResizeMainMenuLabel(mvTopMenuLabels[i], vScale.x, fFontScale, fOldStartY, fNewStartY);
+	ResizeMainMenuLabel(static_cast<cWidgetLabel*>(mpGuiSet->GetWidgetFromName("SaveDescription")),
+		vScale.x, fFontScale, fOldStartY, fNewStartY);
+	ResizeMainMenuLabel(static_cast<cWidgetLabel*>(mpGuiSet->GetWidgetFromName("NumTinderboxes")),
+		vScale.x, fFontScale, fOldStartY, fNewStartY);
+	for(size_t i=0; i<mvWindows.size(); ++i)
+		if(mvWindows[i]) mvWindows[i]->OnScreenResize();
+}

@@ -105,6 +105,8 @@ public:
 	cLuxPreMenu();
 	~cLuxPreMenu();
 
+	void OnScreenResize();
+
 	void Update(float afTimeStep);
 
 	void OnEnterContainer(const tString& asOldContainer);

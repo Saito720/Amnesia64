@@ -76,6 +76,7 @@ namespace hpl {
 		void Update(float afTimeStep);
 		void OnDraw(float afFrameTime);
 		void OnPostBufferSwap();
+		void OnScreenResize();
 
 		iGuiMaterial* GetMaterial(eGuiMaterial aType);
 

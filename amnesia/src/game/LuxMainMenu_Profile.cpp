@@ -34,6 +34,7 @@
 
 cLuxMainMenu_Profile::cLuxMainMenu_Profile(cGuiSet *apGuiSet, cGuiSkin *apGuiSkin) : iLuxMainMenuWindow(apGuiSet, apGuiSkin)
 {
+	mpWindowEnterName = NULL;
 	mlLastPickedProfile = -1;
 	msDefaultProfileName = kTranslate("MainMenu","New Player");
 
@@ -632,3 +633,11 @@ bool cLuxMainMenu_Profile::LockProfileList(iWidget* apWidget, const cGuiMessageD
 kGuiCallbackDeclaredFuncEnd(cLuxMainMenu_Profile, LockProfileList);
 
 //----------------------------------------------------------------------
+
+//-----------------------------------------------------------------------
+
+void cLuxMainMenu_Profile::OnScreenResize()
+{
+	iLuxMainMenuWindow::OnScreenResize();
+	if(mpWindowEnterName) mpWindowEnterName->CenterGlobalPositionInSet();
+}

@@ -129,6 +129,7 @@ namespace hpl {
 		
 		bool LoadData();
 		void DestroyData();
+		bool ResizeScreenBuffers();
 
 		iTexture* GetPostEffectTexture();
 

@@ -55,6 +55,7 @@ namespace hpl {
 		cVector2l mvSize;
 		ePixelFormat mPixelFormat;
 		int mlIndex;
+		int mlScreenSizeDiv;
 	};
 
 	//------------------------------------------------------
@@ -90,6 +91,7 @@ namespace hpl {
 					cResources* apResources, tFlag alHplSetupFlags);
 
 		void Update(float afTimeStep);
+		void OnScreenResize();
 
 		cVideoMode* GetValidVideoMode(int alX);
 		
@@ -102,6 +104,9 @@ namespace hpl {
 		void DestroyFrameBuffer(iFrameBuffer* apFrameBuffer);
 
 		iFrameBuffer* GetTempFrameBuffer(const cVector2l& avSize, ePixelFormat aPixelFormat, int alIndex);
+		// Shared buffers that follow the screen size without changing their object identities.
+		iFrameBuffer* GetScreenTempFrameBuffer(int alSizeDiv, ePixelFormat aPixelFormat, int alIndex);
+		bool ResizeRenderTexture(iTexture* apTexture, const cVector2l& avSize);
 
 		iDepthStencilBuffer* CreateDepthStencilBuffer(	const cVector2l& avSize, int alDepthBits, int alStencilBits,
 														bool abLookForMatchingFirst);
@@ -136,6 +141,8 @@ namespace hpl {
 		bool GetScreenIsSetUp(){ return mbScreenIsSetup;}
 	
 	private:
+		iFrameBuffer* CreateTempFrameBuffer(const cVector2l& avSize, ePixelFormat aPixelFormat, int alIndex, int alScreenSizeDiv);
+
 		iLowLevelGraphics *mpLowLevelGraphics;
 		iLowLevelResources *mpLowLevelResources;
 		cMeshCreator *mpMeshCreator;

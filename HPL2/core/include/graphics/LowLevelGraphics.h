@@ -86,6 +86,9 @@ namespace hpl {
 		virtual cVector2f GetScreenSizeFloat()=0;
 		virtual const cVector2l& GetScreenSizeInt()=0;
 
+		// Called between frames. Returns true when the window's render size changes.
+		virtual bool UpdateScreenSize(){ return false; }
+
 		/*
 		* Get fullscreen mode
 		*/

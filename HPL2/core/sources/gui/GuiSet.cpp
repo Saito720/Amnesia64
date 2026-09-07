@@ -284,6 +284,7 @@ namespace hpl {
 		mfContextMenuZ = 500;
 
 		mvVirtualSize = mpGraphics->GetLowLevel()->GetScreenSizeFloat();
+		mbVirtualSizeIsScreenSize = true;
 		mfVirtualMinZ = -1000;
 		mfVirtualMaxZ = 1000;
 		mvVirtualSizeOffset = cVector2f(0);
@@ -1269,10 +1270,22 @@ namespace hpl {
 
 	void cGuiSet::SetVirtualSize(const cVector2f& avSize, float afMinZ, float afMaxZ, const cVector2f& avOffset)
 	{
+		mbVirtualSizeIsScreenSize = false;
 		mvVirtualSize = avSize;
 		mfVirtualMinZ = afMinZ;
 		mfVirtualMaxZ = afMaxZ;
 		mvVirtualSizeOffset = avOffset;
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cGuiSet::OnScreenResize()
+	{
+		if(mbVirtualSizeIsScreenSize)
+		{
+			mvVirtualSize = mpGraphics->GetLowLevel()->GetScreenSizeFloat();
+			if(GetRootWidgetClips()) mpWidgetRoot->SetSize(mvVirtualSize);
+		}
 	}
 
 	//-----------------------------------------------------------------------

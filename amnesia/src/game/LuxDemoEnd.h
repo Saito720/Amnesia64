@@ -32,6 +32,8 @@ public:
 	cLuxDemoEnd();
 	~cLuxDemoEnd();
 
+	void OnScreenResize();
+
 	void LoadFonts();
 
 	void Reset();

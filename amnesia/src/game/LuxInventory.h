@@ -176,6 +176,8 @@ friend class cLuxInventory_Item;
 public:	
 	cLuxInventory();
 	~cLuxInventory();
+
+	void OnScreenResize();
 	
 	////////////////////////
 	// General

@@ -48,6 +48,7 @@ public:
 	void SaveUserConfig();
 	
 	void OnStart();
+	void OnScreenResize();
 	void Update(float afTimeStep);
 	void Reset();
 

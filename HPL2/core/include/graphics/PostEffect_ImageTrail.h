@@ -64,6 +64,7 @@ namespace hpl {
 		~cPostEffect_ImageTrail();
 
 		void Reset();
+		bool ResizeScreenBuffers();
 
 	private:
 		void OnSetActive(bool abX);

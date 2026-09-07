@@ -270,6 +270,7 @@ public:
 	////////////////////
 	// Free cam
 	void SetFreeCamActive(bool abX);
+	bool GetFreeCamActive() const { return mbFreeCameraActive; }
 	void SetFreeCamSpeed(float afSpeed);
 	
 	////////////////////

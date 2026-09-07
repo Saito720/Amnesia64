@@ -40,6 +40,7 @@
 #include "LuxProp_Item.h"
 #include "LuxProp_Lamp.h"
 #include "LuxArea_Sticky.h"
+#include "resources/EntFileManager.h"
 
 #include <sstream>
 
@@ -547,14 +548,27 @@ void cLuxMap::LoadCheckPoint()
 
 //-----------------------------------------------------------------------
 
-void cLuxMap::CreateEntity(const tString& asName, const tString& asFile, const cMatrixf& a_mtxTransform,const cVector3f& avScale)
+void cLuxMap::CreateEntity(const tString& asName, const tString& asFile, const cMatrixf& a_mtxTransform,const cVector3f& avScale,
+						   iEntityLoader *apLoaderOverride)
 {
 	//Only set var if not already set!
 	bool bSetCurrentMapLoading = gpBase->mpCurrentMapLoading==NULL;
 	
 	if(bSetCurrentMapLoading)	gpBase->mpCurrentMapLoading = this;
 
-	mpWorld->CreateEntity(asName, a_mtxTransform, asFile,GetFreeEntityID() , true, avScale);
+	if(apLoaderOverride)
+	{
+		cEntFileManager *pFiles = mpEngine->GetResources()->GetEntFileManager();
+		cEntFile *pFile = pFiles->CreateEntFile(asFile);
+		if(pFile)
+		{
+			iEntity3D *pEntity = apLoaderOverride->Load(asName, GetFreeEntityID(), true, pFile->GetXmlDoc(),
+				a_mtxTransform, avScale, mpWorld, pFile->GetName(), pFile->GetFullPath(), NULL);
+			if(pEntity) pEntity->SetSourceFile(pFile->GetName());
+			pFiles->Destroy(pFile);
+		}
+	}
+	else mpWorld->CreateEntity(asName, a_mtxTransform, asFile,GetFreeEntityID() , true, avScale);
 
 	if(bSetCurrentMapLoading)	gpBase->mpCurrentMapLoading = NULL;
 }

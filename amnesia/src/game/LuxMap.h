@@ -98,7 +98,8 @@ public:
 
 	void PlacePlayerAtStartPos(const tString& asPosName);
 
-	void CreateEntity(const tString& asName, const tString& asFile, const cMatrixf& a_mtxTransform, const cVector3f& avScale);
+	void CreateEntity(const tString& asName, const tString& asFile, const cMatrixf& a_mtxTransform, const cVector3f& avScale,
+					  iEntityLoader *apLoaderOverride=NULL);
 
 	/**
 	 * This also destroys timer and light connections

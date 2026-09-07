@@ -83,6 +83,8 @@ public:
 	void Update(float afTimeStep);
 	void Reset();
 	void OnPostRender(float afFrameTime);
+	void AppLostInputFocus();
+	void AppLostVisibility();
 
 	tWString GetInputName(const tString& asActionName);
 
@@ -126,6 +128,10 @@ public:
 
 private:
 	void UpdateGlobalInput();
+	void UpdateSpawnMenuInput();
+	void SuppressSpawnMenuMouseInput();
+	void CloseSpawnMenu();
+	bool SpawnMenuHasTextFocus() const;
 	bool UpdateGamepadUIInput();
 	
 	void UpdateGameInput();
@@ -164,6 +170,11 @@ private:
 	cLuxPlayer *mpPlayer;
 
 	eLuxInputState mState;
+
+	bool mbSpawnMenuWasActive;
+	bool mbSpawnMenuBlockedUntilRelease;
+	bool mbSuppressPlayerMouseInput;
+	bool mbSuppressPlayerLookThisFrame;
 
 	bool mbSmoothMouse;
 	bool mbInvertMouse;

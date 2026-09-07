@@ -213,6 +213,9 @@
     <ClCompile Include="LuxCompletionCountHandler.cpp" />
     <ClCompile Include="LuxCredits.cpp" />
     <ClCompile Include="LuxDebugHandler.cpp" />
+    <ClCompile Include="LuxSpawnHandler.cpp" />
+    <ClCompile Include="LuxSpawnMenu.cpp" />
+    <ClCompile Include="LuxSpawnThumbnail.cpp" />
     <ClCompile Include="LuxDemoEnd.cpp" />
     <ClCompile Include="LuxEffectHandler.cpp" />
     <ClCompile Include="LuxEffectRenderer.cpp" />
@@ -323,6 +326,9 @@
     <ClInclude Include="LuxCompletionCountHandler.h" />
     <ClInclude Include="LuxCredits.h" />
     <ClInclude Include="LuxDebugHandler.h" />
+    <ClInclude Include="LuxSpawnHandler.h" />
+    <ClInclude Include="LuxSpawnMenu.h" />
+    <ClInclude Include="LuxSpawnThumbnail.h" />
     <ClInclude Include="LuxDemoEnd.h" />
     <ClInclude Include="LuxEffectHandler.h" />
     <ClInclude Include="LuxEffectRenderer.h" />

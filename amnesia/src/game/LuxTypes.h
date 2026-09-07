@@ -426,6 +426,10 @@ enum eLuxAction
 	eLuxAction_ZoomOut,
 	
 
+	eLuxAction_SpawnMenu,
+	eLuxAction_UndoSpawn,
+	eLuxAction_FreeCam,
+
 	eLuxAction_LastEnum
 };
 

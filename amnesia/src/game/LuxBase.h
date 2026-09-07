@@ -35,6 +35,8 @@ class cLuxInputHandler;
 class cLuxEffectHandler;
 
 class cLuxDebugHandler;
+class cLuxSpawnMenu;
+class cLuxSpawnHandler;
 class cLuxSaveHandler;
 class cLuxScriptHandler;
 class cLuxHelpFuncs;
@@ -221,6 +223,8 @@ public:
 	cLuxMapHandler *mpMapHandler;
 	cLuxMapHelper *mpMapHelper;
 	cLuxDebugHandler *mpDebugHandler;
+	cLuxSpawnMenu *mpSpawnMenu;
+	cLuxSpawnHandler *mpSpawnHandler;
 	cLuxSaveHandler *mpSaveHandler;
 	cLuxScriptHandler *mpScriptHandler;
 	cLuxHelpFuncs *mpHelpFuncs;

@@ -24,3 +24,39 @@ Executables and libraries are written to `x64/Debug` or `x64/Release` for x64,
 and `Debug` or `Release` for x86.
 
 See [OpenAL Soft build and update details](HPL2/dependencies/sources/OPENAL_SOFT.md).
+
+## In-game entity spawning
+
+While a map is loaded:
+
+| Control | Action |
+| --- | --- |
+| Hold **X** | Show the spawn menu and release the mouse cursor. Releasing X closes it. |
+| Left click a thumbnail | Spawn that entity at the centre of the camera's aim. |
+| **Z** | Remove the newest surviving entity you spawned. Press again to work backwards. |
+| **V** | Toggle the existing free camera. Spawning also works from this camera. |
+| **B** | Toggle the crosshair (moved from X; old X crosshair bindings migrate automatically). |
+
+The menu has one **Entities** tab, a directory tree, and a scrolling thumbnail grid.
+It recursively indexes `.ent` files under `entities/`, including an active custom
+story's `entities/` folder. Selecting a folder also shows its descendants;
+double-click a folder to expand or collapse it. **Refresh** picks up added files.
+Thumbnails use the engine's mesh renderer and a bounded in-memory cache. Entities
+without a usable preview still appear with their filenames.
+
+Aim at a surface before holding X. The game continues running, and movement remains
+available while browsing; mouse look and object interaction are withheld until the
+menu closes and its mouse buttons have been released. Escape dismisses the overlay.
+The menu also closes on focus loss, map changes, and other game menus.
+
+Placement follows Garry's Mod's sandbox spawning conventions: a 2,048 Source-unit
+aim trace (about 52.02 metres in HPL), orientation relative to the camera, bounds
+offset against the hit surface, and corrections for nearby obstacles. HPL also
+checks a conservative bounding hull and refuses a spawn when there is insufficient
+room. Static entities receive normal game ownership so undo removes their meshes,
+bodies, lights, and other owned components as well.
+
+Spawned entities and undo history are local to the current map session; they are
+not stored in campaign saves. Entries destroyed or collected by gameplay are
+skipped by undo. All entity files are listed, including enemies and objects normally
+configured by level scripts; their existing game behavior still applies.

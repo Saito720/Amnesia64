@@ -26,6 +26,8 @@
 #include "LuxMap.h"
 
 #include "LuxDebugHandler.h"
+#include "LuxSpawnMenu.h"
+#include "LuxSpawnHandler.h"
 #include "LuxSaveHandler.h"
 #include "LuxScriptHandler.h"
 #include "LuxHelpFuncs.h"
@@ -355,6 +357,8 @@ cLuxBase::cLuxBase()
 	///////////////////////////////
 	// Init pointers
 	mpEngine = NULL;
+	mpSpawnMenu = NULL;
+	mpSpawnHandler = NULL;
 
 	mpMainConfig = NULL;
 	mpUserConfig = NULL;
@@ -1273,6 +1277,8 @@ bool cLuxBase::InitGame()
 	mpPlayer = CreateModule( cLuxPlayer, "Default");
 	mpInsanityHandler = CreateModule( cLuxInsanityHandler, "Default"); 
 	mpDebugHandler = CreateModule( cLuxDebugHandler, "Default");
+	mpSpawnHandler = CreateModule( cLuxSpawnHandler, "Default");
+	mpSpawnMenu = CreateModule( cLuxSpawnMenu, "Default");
 	mpEffectRenderer = CreateModule( cLuxEffectRenderer, "Default");
 	mpMusicHandler = CreateModule( cLuxMusicHandler, "Default");
 	mpMessageHandler = CreateModule( cLuxMessageHandler, "Default");

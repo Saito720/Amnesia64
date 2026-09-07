@@ -38,6 +38,8 @@
 #include "LuxLoadScreenHandler.h"
 
 #include "LuxDebugHandler.h"
+#include "LuxSpawnMenu.h"
+#include "LuxSpawnHandler.h"
 
 //////////////////////////////////////////////////////////////////////////
 // ACTION LISTS
@@ -79,6 +81,10 @@ static cLuxAction gvLuxActions[] =
 	cLuxAction("QuickSave",eLuxAction_QuickSave,	false, eLuxActionCategory_System),
 	cLuxAction("QuickLoad",eLuxAction_QuickLoad,	false, eLuxActionCategory_System),
 	cLuxAction("FastForward",eLuxAction_FastForward,	false, eLuxActionCategory_System),
+
+	cLuxAction("SpawnMenu", eLuxAction_SpawnMenu, false, eLuxActionCategory_System),
+	cLuxAction("UndoSpawn", eLuxAction_UndoSpawn, false, eLuxActionCategory_System),
+	cLuxAction("FreeCam", eLuxAction_FreeCam, false, eLuxActionCategory_System),
 
 	cLuxAction("Inventory",eLuxAction_Inventory,	true, eLuxActionCategory_Misc),
 	cLuxAction("Journal",eLuxAction_Journal,		true, eLuxActionCategory_Misc),
@@ -193,7 +199,10 @@ static cLuxInput gvLuxInputs[] =
 	cLuxInput("Keyboard", eKey_J, eLuxAction_Journal),
 	cLuxInput("Keyboard", eKey_M, eLuxAction_QuestLog),
 	cLuxInput("Keyboard", eKey_N, eLuxAction_RecentText),
-	cLuxInput("Keyboard", eKey_X, eLuxAction_CrosshairToggle),
+	cLuxInput("Keyboard", eKey_B, eLuxAction_CrosshairToggle),
+	cLuxInput("Keyboard", eKey_X, eLuxAction_SpawnMenu),
+	cLuxInput("Keyboard", eKey_Z, eLuxAction_UndoSpawn),
+	cLuxInput("Keyboard", eKey_V, eLuxAction_FreeCam),
 
 	cLuxInput("Keyboard", eKey_W, eLuxAction_Forward),
 	cLuxInput("Keyboard", eKey_S, eLuxAction_Backward),
@@ -342,6 +351,11 @@ cLuxInputHandler::cLuxInputHandler() : iLuxUpdateable("LuxInputHandler")
 	// Variable init
 	mState = eLuxInputState_Game;
 	mfMouseActiveAt = -1;
+	mpPlayer = NULL;
+	mbSpawnMenuWasActive = false;
+	mbSpawnMenuBlockedUntilRelease = false;
+	mbSuppressPlayerMouseInput = false;
+	mbSuppressPlayerLookThisFrame = false;
 }
 
 //-----------------------------------------------------------------------
@@ -395,6 +409,15 @@ void cLuxInputHandler::LoadUserConfig()
 			tString sInput = gpBase->mpUserKeyConfig->GetString(pAction->GetName(), gvLuxInputPos[j], "");
 			if(sInput.empty())
 				continue;
+
+			// X now opens the spawn menu. Retain other custom bindings and
+			// the gamepad binding when migrating the old crosshair default.
+			if(pLuxAction->mlId == eLuxAction_CrosshairToggle &&
+				cString::ToLowerCase(sInput) == "keyboard.x")
+			{
+				sInput = "Keyboard.B";
+				gpBase->mpUserKeyConfig->SetString(pAction->GetName(), gvLuxInputPos[j], sInput);
+			}
 
 			bHasUserDefinedInputs = CreateSubActionFromInputString(pAction, sInput) || 
 									bHasUserDefinedInputs;
@@ -483,9 +506,14 @@ void cLuxInputHandler::OnStart()
 
 void cLuxInputHandler::Update(float afTimeStep)
 {
+	mbSuppressPlayerLookThisFrame = false;
+	// Close before routing clicks when X and a mouse button are released
+	// together, so a disappearing menu cannot spawn another entity.
+	UpdateSpawnMenuInput();
 	///////////////////////////////////
 	// Update input for current state
 	UpdateGlobalInput();
+	SuppressSpawnMenuMouseInput();
 
 	switch(mState)
 	{
@@ -514,7 +542,27 @@ void cLuxInputHandler::Update(float afTimeStep)
 
 void cLuxInputHandler::Reset()
 {
+	CloseSpawnMenu();
+	mbSpawnMenuBlockedUntilRelease = true;
+	mbSpawnMenuWasActive = false;
+	ResetSmoothMousePos();
+}
 
+//-----------------------------------------------------------------------
+
+void cLuxInputHandler::AppLostInputFocus()
+{
+	CloseSpawnMenu();
+	mbSpawnMenuBlockedUntilRelease = true;
+	mpInput->ResetActionsToCurrentState();
+	ResetSmoothMousePos();
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxInputHandler::AppLostVisibility()
+{
+	AppLostInputFocus();
 }
 
 //-----------------------------------------------------------------------
@@ -543,6 +591,11 @@ tWString cLuxInputHandler::GetInputName(const tString& asActionName)
 
 void cLuxInputHandler::ChangeState(eLuxInputState aState)
 {
+	if(aState != eLuxInputState_Game)
+	{
+		CloseSpawnMenu();
+		mbSpawnMenuBlockedUntilRelease = true;
+	}
 	mState = aState;
 	
 
@@ -700,6 +753,114 @@ void cLuxInputHandler::AppDeviceWasRemoved()
 
 //-----------------------------------------------------------------------
 
+bool cLuxInputHandler::SpawnMenuHasTextFocus() const
+{
+	if(gpBase->mpSpawnMenu == NULL || !gpBase->mpSpawnMenu->IsActive()) return false;
+	cGuiSet* pSet = gpBase->mpSpawnMenu->GetGuiSet();
+	iWidget* pWidget = pSet ? pSet->GetFocusedWidget() : NULL;
+	return pWidget && pWidget->GetType() == eWidgetType_TextBox;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxInputHandler::CloseSpawnMenu()
+{
+	if(gpBase->mpSpawnMenu == NULL) return;
+	if(gpBase->mpSpawnMenu->IsActive() || mbSpawnMenuWasActive)
+	{
+		gpBase->mpSpawnMenu->SetActive(false);
+		// SetActive clears widget focus/pressed state first, so these releases
+		// only clear the GUI set's button mask and cannot activate a card.
+		cGuiSet* pSet = gpBase->mpSpawnMenu->GetGuiSet();
+		if(pSet)
+		{
+			for(int i = 0; i < eMouseButton_LastEnum; ++i)
+				pSet->SendMessage(eGuiMessage_MouseUp, cGuiMessageData(1 << i));
+		}
+		mbSuppressPlayerMouseInput = true;
+		mbSuppressPlayerLookThisFrame = true;
+		ResetSmoothMousePos();
+	}
+	mbSpawnMenuWasActive = false;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxInputHandler::UpdateSpawnMenuInput()
+{
+	if(gpBase->mpSpawnMenu == NULL) return;
+
+	const bool bHeld = mpInput->GetKeyboard()->KeyIsDown(eKey_X);
+	if(!bHeld) mbSpawnMenuBlockedUntilRelease = false;
+
+	const bool bCanOpen = mState == eLuxInputState_Game &&
+		mpGraphics->GetLowLevel()->GetWindowInputFocus() &&
+		gpBase->mpMapHandler->GetCurrentMap() != NULL &&
+		mpPlayer && mpPlayer->IsActive() && !mpPlayer->IsDead() &&
+		mpPlayer->GetCurrentStateData()->AllowPlayerMenus() &&
+		!gpBase->mpMessageHandler->IsPauseMessageActive() &&
+		!gpBase->mpEffectHandler->GetPlayerIsPaused();
+
+	// Map cleanup may close the overlay without changing the input state.
+	// Require a fresh X press after that, or after returning from a menu.
+	if(mbSpawnMenuWasActive && !gpBase->mpSpawnMenu->IsActive() && bHeld)
+		mbSpawnMenuBlockedUntilRelease = true;
+
+	if(!bCanOpen || !bHeld || mbSpawnMenuBlockedUntilRelease)
+	{
+		if(!bCanOpen && bHeld) mbSpawnMenuBlockedUntilRelease = true;
+		CloseSpawnMenu();
+		return;
+	}
+
+	if(!gpBase->mpSpawnMenu->IsActive())
+	{
+		gpBase->mpSpawnMenu->SetActive(true);
+		if(gpBase->mpSpawnMenu->IsActive())
+		{
+			// End an in-progress grab/attack before the GUI owns the mouse.
+			mpPlayer->DoAction(eLuxPlayerAction_Interact, false);
+			mpPlayer->DoAction(eLuxPlayerAction_Attack, false);
+			mbSuppressPlayerLookThisFrame = true;
+			ResetSmoothMousePos();
+		}
+	}
+
+	mbSpawnMenuWasActive = gpBase->mpSpawnMenu->IsActive();
+	if(mbSpawnMenuWasActive) mbSuppressPlayerMouseInput = true;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxInputHandler::SuppressSpawnMenuMouseInput()
+{
+	if(!mbSuppressPlayerMouseInput) return;
+
+	// GUI clicks and game interactions use separate actions bound to the
+	// same buttons. Consume both press and release until the buttons used
+	// in the menu are up, even when X was released first.
+	const int vActions[] = {
+		eLuxAction_Attack, eLuxAction_Interact,
+		eLuxAction_ScrollUp, eLuxAction_ScrollDown
+	};
+	for(size_t i = 0; i < sizeof(vActions) / sizeof(vActions[0]); ++i)
+	{
+		mpInput->BecameTriggerd(vActions[i]);
+		mpInput->WasTriggerd(vActions[i]);
+		mpInput->DoubleTriggerd(vActions[i], 0.3f);
+	}
+
+	bool bHeld = mpInput->IsTriggerd(eLuxAction_Attack) ||
+		mpInput->IsTriggerd(eLuxAction_Interact);
+	for(int i = 0; i < eMouseButton_LastEnum; ++i)
+		bHeld = bHeld || mpInput->GetMouse()->ButtonIsDown((eMouseButton)i);
+
+	if(!gpBase->mpSpawnMenu->IsActive() && !bHeld)
+		mbSuppressPlayerMouseInput = false;
+}
+
+//-----------------------------------------------------------------------
+
 void cLuxInputHandler::UpdateGlobalInput()
 {
 	/////////////////
@@ -741,7 +902,7 @@ void cLuxInputHandler::UpdateGlobalInput()
 
 	/////////////////
 	// Debug output
-	if(mpInput->BecameTriggerd(eLuxAction_PrintInfo))
+	if(!SpawnMenuHasTextFocus() && mpInput->BecameTriggerd(eLuxAction_PrintInfo))
 	{
 		gpBase->mpMapHandler->GetViewport()->GetRenderSettings()->mbLog = true;
 	}
@@ -755,7 +916,10 @@ void cLuxInputHandler::UpdateGlobalInput()
 		//Key presses
 		while(mpInput->GetKeyboard()->KeyIsPressed())
 		{
-			pGui->SendKeyPress(mpInput->GetKeyboard()->GetKey());
+			cKeyPress key = mpInput->GetKeyboard()->GetKey();
+			// Holding X must not type repeated X characters into search.
+			if(gpBase->mpSpawnMenu == NULL || !gpBase->mpSpawnMenu->IsActive() || key.mKey != eKey_X)
+				pGui->SendKeyPress(key);
 		}
 
 		//Mouse movement
@@ -910,11 +1074,42 @@ bool cLuxInputHandler::UpdateGamepadUIInput()
 
 void cLuxInputHandler::UpdateGameInput()
 {
+	const bool bSpawnMenuActive = gpBase->mpSpawnMenu && gpBase->mpSpawnMenu->IsActive();
+	if(bSpawnMenuActive && mpInput->BecameTriggerd(eLuxAction_Exit))
+	{
+		CloseSpawnMenu();
+		mbSpawnMenuBlockedUntilRelease = true;
+		return;
+	}
+
+	if(SpawnMenuHasTextFocus())
+	{
+		// Typing a name must not walk, open another menu, undo an object,
+		// or toggle the camera. Reset action edges so typed keys cannot
+		// become delayed gameplay presses when search loses focus.
+		mpPlayer->Run(false);
+		mpPlayer->Jump(false);
+		mpPlayer->Crouch(false);
+		mpInput->ResetActionsToCurrentState();
+		return;
+	}
+
+	const bool bUndoSpawn = mpInput->BecameTriggerd(eLuxAction_UndoSpawn);
+	const bool bToggleFreeCam = mpInput->BecameTriggerd(eLuxAction_FreeCam);
+	if(mpPlayer->IsActive() && !mpPlayer->IsDead() &&
+		gpBase->mpMapHandler->GetCurrentMap() &&
+		!gpBase->mpMessageHandler->IsPauseMessageActive() &&
+		!gpBase->mpEffectHandler->GetPlayerIsPaused())
+	{
+		if(bUndoSpawn && gpBase->mpSpawnHandler) gpBase->mpSpawnHandler->UndoLastSpawn();
+		if(bToggleFreeCam) mpPlayer->SetFreeCamActive(!mpPlayer->GetFreeCamActive());
+	}
 	/////////////////
 	// Debug
 	if(mpInput->BecameTriggerd(eLuxAction_OpenDebug))
 	{
 		gpBase->mpDebugHandler->SetDebugWindowActive(true);
+		if(mState != eLuxInputState_Game) return;
 	}
 	if(mpInput->BecameTriggerd(eLuxAction_ReloadMap) && gpBase->mpConfigHandler->mbLoadDebugMenu)
 	{
@@ -944,6 +1139,7 @@ void cLuxInputHandler::UpdateGameInput()
 	if(mpInput->BecameTriggerd(eLuxAction_Exit))
 	{
 		gpBase->mpEngine->GetUpdater()->SetContainer("MainMenu");
+		return;
 	}
 
 	////////////////////
@@ -991,7 +1187,21 @@ void cLuxInputHandler::UpdateGamePlayerInput()
 
 	////////////////////
 	// High level
-	if(mpPlayer->GetCurrentStateData()->AllowPlayerMenus())
+	if(gpBase->mpSpawnMenu->IsActive())
+	{
+		// Tab and other menu shortcuts may be used by GUI widgets. Consume
+		// their edges so releasing X cannot open another menu afterward.
+		const int vMenuActions[] = {
+			eLuxAction_Inventory, eLuxAction_Journal,
+			eLuxAction_QuestLog, eLuxAction_RecentText
+		};
+		for(size_t i = 0; i < sizeof(vMenuActions) / sizeof(vMenuActions[0]); ++i)
+		{
+			mpInput->BecameTriggerd(vMenuActions[i]);
+			mpInput->WasTriggerd(vMenuActions[i]);
+		}
+	}
+	else if(mpPlayer->GetCurrentStateData()->AllowPlayerMenus())
 	{
 		if(mpInput->BecameTriggerd(eLuxAction_Inventory))
 		{
@@ -1020,6 +1230,8 @@ void cLuxInputHandler::UpdateGamePlayerInput()
 			}
 		}
 	}
+
+	if(mState != eLuxInputState_Game) return;
 
 	/////////////////
 	// Movement Direction
@@ -1117,6 +1329,8 @@ void cLuxInputHandler::UpdateGamePlayerInput()
 
 	// Mouse
 	cVector2l vMouseRelPos = mpInput->GetMouse()->GetRelPosition();
+	if(gpBase->mpSpawnMenu->IsActive() || mbSuppressPlayerLookThisFrame)
+		vMouseRelPos = 0;
 	cVector2f vMouseRelPosFloat = cVector2f((float)vMouseRelPos.x, (float)vMouseRelPos.y)*mfMouseSensitivity;
 	cVector2l vAbsRel = cMath::RoundToInt(vMouseRelPosFloat);
 	cVector2f vRelPos = cVector2f((float)vAbsRel.x,(float)vAbsRel.y) / (1.7f * mpGraphics->GetLowLevel()->GetScreenSizeFloat().y);
@@ -1219,6 +1433,13 @@ void cLuxInputHandler::UpdateGamePlayerInput()
 		vFinalPos = 0;
 	}
 
+	// Keep the placement view steady while browsing, including smoothing
+	// history and the gamepad look stick.
+	if(gpBase->mpSpawnMenu->IsActive() || mbSuppressPlayerLookThisFrame)
+	{
+		ResetSmoothMousePos();
+		return;
+	}
 	mpPlayer->AddYaw(-vFinalPos.x);
 	mpPlayer->AddPitch(-vFinalPos.y);
 }
@@ -1434,6 +1655,9 @@ void cLuxInputHandler::UpdateLoadScreenInput()
 
 bool cLuxInputHandler::CurrentStateSendsInputToGui()
 {
+	if(mState == eLuxInputState_Game && gpBase->mpSpawnMenu &&
+		gpBase->mpSpawnMenu->IsActive()) return true;
+
 	switch(mState)
 	{
 	case eLuxInputState_Inventory:

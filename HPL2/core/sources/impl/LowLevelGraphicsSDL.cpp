@@ -87,6 +87,8 @@ namespace hpl {
 
 	cLowLevelGraphicsSDL::cLowLevelGraphicsSDL()
 	{
+		mpOverlayCallback = NULL;
+		mpOverlayCallbackData = NULL;
 		mlBatchArraySize = 20000;
 		mlVertexCount = 0;
 		mlIndexCount =0;
@@ -1081,7 +1083,7 @@ namespace hpl {
 
 	void cLowLevelGraphicsSDL::SwapBuffers()
 	{
-		;
+		if(mpOverlayCallback) mpOverlayCallback(mpOverlayCallbackData);
 #if SDL_VERSION_ATLEAST(2, 0, 0)
         SDL_GL_SwapWindow(mpScreen);
 #else

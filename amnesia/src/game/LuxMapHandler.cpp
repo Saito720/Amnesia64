@@ -18,6 +18,8 @@
  */
 
 #include "LuxMapHandler.h"
+#include "LuxMultiplayer.h"
+#include "LuxMultiplayerWorld.h"
 
 #include "LuxMap.h"
 #include "LuxPlayer.h"
@@ -356,6 +358,7 @@ void cLuxMapHandler::DestroyDataCache()
 
 void cLuxMapHandler::SetUpdateActive(bool abX)
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()) abX = true;
 	mbUpdateActive = abX;
 	
 	if(mpCurrentMap) mpCurrentMap->GetWorld()->SetActive(mbUpdateActive);
@@ -365,6 +368,8 @@ void cLuxMapHandler::SetUpdateActive(bool abX)
 
 void cLuxMapHandler::RenderSolid(cRendererCallbackFunctions* apFunctions)
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive())
+		gpBase->mpMultiplayer->GetWorld()->RenderSolid(apFunctions);
 	//mpViewport->GetRenderSettings()->mbLog = false;
 	if(mpCurrentMap) mpCurrentMap->OnRenderSolid(apFunctions);
 }
@@ -386,7 +391,7 @@ void cLuxMapHandler::OnLeaveContainer(const tString& asNewContainer)
 	mpViewport->SetActive(false);
 	mpViewport->SetVisible(false);
 
-	if(mpCurrentMap) mpCurrentMap->GetWorld()->SetActive(false);
+	if(mpCurrentMap) mpCurrentMap->GetWorld()->SetActive(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive());
 }
 
 
@@ -394,6 +399,7 @@ void cLuxMapHandler::OnLeaveContainer(const tString& asNewContainer)
 
 void cLuxMapHandler::ChangeMap(const tString& asMapName, const tString& asStartPos, const tString& asStartSound, const tString& asEndSound)
 {
+	if(gpBase->mpMultiplayer && !gpBase->mpMultiplayer->RequestMapChange(asMapName,asStartPos,asStartSound,asEndSound)) return;
 	mMapChangeData.mbActive = true;
 	mMapChangeData.msMapFile = cString::SetFileExt(asMapName, "map");
 	mMapChangeData.msStartPos = asStartPos;
@@ -412,7 +418,11 @@ cLuxMap* cLuxMapHandler::LoadMap(const tString& asFileName, bool abLoadEntities)
 {
 	cLuxMap *pMap = hplNew( cLuxMap, ( FileToMapName(asFileName)) );
 	
-	pMap->LoadFromFile(msMapFolder+asFileName, abLoadEntities);
+	if(!pMap->LoadFromFile(msMapFolder+asFileName, abLoadEntities))
+	{
+		hplDelete(pMap);
+		return NULL;
+	}
 
 	mlstMaps.push_back(pMap);
 
@@ -463,6 +473,7 @@ void cLuxMapHandler::SetCurrentMap(cLuxMap* apMap, bool abRunScript, bool abFirs
 		mpCurrentMap->SetCheckPoint("_auto", asPlayerPos, "");
 		
 		//Map enter callback
+		if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->OnMapLoaded(mpCurrentMap,asPlayerPos);
 		mpCurrentMap->OnEnter(abRunScript, abFirstTime);
 
 		//Set this as world in viewport
@@ -482,6 +493,7 @@ void cLuxMapHandler::SetCurrentMap(cLuxMap* apMap, bool abRunScript, bool abFirs
 
 void cLuxMapHandler::PauseSoundsAndMusic()
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()) return;
 	if(mbPausedSoundsAndMusic) return;
 
 	cSound *pSound = gpBase->mpEngine->GetSound();
@@ -642,6 +654,7 @@ void cLuxMapHandler::CheckMapChange(float afTimeStep)
 		if(pMap == NULL)
 		{
 			Error("Could not load map '%s'!\n", mMapChangeData.msMapFile.c_str());
+			mpSavedGameMutex->Unlock();
 			return;
 		}
 		

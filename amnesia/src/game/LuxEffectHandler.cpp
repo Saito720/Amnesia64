@@ -18,6 +18,7 @@
  */
 
 #include "LuxEffectHandler.h"
+#include "LuxMultiplayer.h"
 
 #include "LuxMapHandler.h"
 #include "LuxMap.h"
@@ -1013,6 +1014,8 @@ void cLuxEffect_PlayVoice::AddVoice(const tString& asVoiceFile, const tString& a
 
 void cLuxEffect_PlayVoice::PauseCurrentVoices()
 {
+	// Voice completion can drive host scripts; inventory must not suspend it.
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()) return;
 	if(mbActive==false || mbPaused) return;
 
 	mbPaused = true;

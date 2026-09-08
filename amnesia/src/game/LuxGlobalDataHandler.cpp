@@ -18,6 +18,7 @@
  */
 
 #include "LuxGlobalDataHandler.h"
+#include "LuxMultiplayer.h"
 
 #include "LuxMap.h"
 #include "LuxMapHandler.h"
@@ -59,6 +60,7 @@ cLuxGlobalDataHandler::~cLuxGlobalDataHandler()
 
 void cLuxGlobalDataHandler::LoadAndInitGlobalScript()
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return;
 	LoadScript();
 
 	RunScript("OnGameStart()");
@@ -150,6 +152,7 @@ bool cLuxGlobalDataHandler::RecompileScript(tString *apOutput)
 
 void cLuxGlobalDataHandler::RunScript(const tString& asCommand)
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return;
 	if(mpScript==NULL) return;
 
 	mpScript->Run(asCommand);

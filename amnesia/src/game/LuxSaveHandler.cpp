@@ -18,6 +18,7 @@
  */
 
 #include "LuxSaveHandler.h"
+#include "LuxMultiplayer.h"
 
 #include "LuxMapHandler.h"
 #include "LuxMap.h"
@@ -202,6 +203,7 @@ void cLuxSaveHandler::Reset()
 
 void cLuxSaveHandler::SaveGameToFile(const tWString& asFile, bool abSaveSnapshot)
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->ShouldSuppressOfflineSaves()) return;
 	Log("-------- BEGIN SAVE TO: %s ---------\n", cString::To8Char(asFile).c_str());
 
 	cLuxSaveGame_SaveData* pData = CreateSaveGameData();
@@ -237,6 +239,7 @@ void cLuxSaveHandler::SaveGameToFile(const tWString& asFile, bool abSaveSnapshot
 
 void cLuxSaveHandler::LoadGameFromFile(const tWString& asFile)
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->ShouldSuppressOfflineSaves()) return;
 	Log("-------- BEGIN LOAD FROM %s ---------\n", cString::To8Char(asFile).c_str());
 
 	cLuxSaveGame_SaveData * pSaveGame = hplNew(cLuxSaveGame_SaveData, ());
@@ -256,6 +259,7 @@ void cLuxSaveHandler::LoadGameFromFile(const tWString& asFile)
 
 bool cLuxSaveHandler::AutoSave()
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->ShouldSuppressOfflineSaves()) return false;
 	//////////////////////
 	// HARDMODE
 	if (gpBase->mbHardMode)
@@ -274,6 +278,7 @@ bool cLuxSaveHandler::AutoSave()
 
 bool cLuxSaveHandler::AutoLoad(bool abResetProgressLogger)
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->ShouldSuppressOfflineSaves()) return false;
 	// Wait until any pending save is done.
 	if(mSaveHandlerThreadClass.IsRunning())
 		mSaveHandlerThreadClass.ProcessPendingSaves();
@@ -325,6 +330,7 @@ bool cLuxSaveHandler::SaveFileExists()
 // HARDMODE
 bool cLuxSaveHandler::HardModeSave()
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->ShouldSuppressOfflineSaves()) return false;
 	SaveGameToFile(gpBase->msProfileSavePath + GetSaveName(_W("HardMode")));
 	return true;
 }

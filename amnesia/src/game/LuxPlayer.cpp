@@ -20,6 +20,8 @@
 #include "LuxPlayer.h"
 
 #include "LuxMap.h"
+#include "LuxMultiplayer.h"
+#include "LuxMultiplayerWorld.h"
 #include "LuxInventory.h"
 #include "LuxMessageHandler.h"
 #include "LuxMapHandler.h"
@@ -783,10 +785,19 @@ void cLuxPlayer::ChangeState(eLuxPlayerState aState)
 {
 	if(mState == aState) return;
 
+	// Wait for an exclusive host lease before an interaction state changes
+	// masses, disables gravity or starts applying its PID forces.
+	cLuxMultiplayerWorld* pMultiplayerWorld = gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()
+		? gpBase->mpMultiplayer->GetWorld() : NULL;
+	if(pMultiplayerWorld && cLuxMultiplayerWorld::IsInteractionState(aState) &&
+		!pMultiplayerWorld->RequestInteraction(cLuxPlayerStateVars::mpInteractBody, aState, cLuxPlayerStateVars::mvInteractPos)) return;
+
 	mvStates[mState]->OnLeaveState(aState);
 
 	eLuxPlayerState prevState = mState;
 	mState = aState;
+	if(pMultiplayerWorld && cLuxMultiplayerWorld::IsInteractionState(prevState) &&
+		!cLuxMultiplayerWorld::IsInteractionState(aState)) pMultiplayerWorld->ReleaseInteraction();
 
 	mvStates[mState]->SetPreviousState(prevState);
 	mvStates[mState]->OnEnterState(prevState);

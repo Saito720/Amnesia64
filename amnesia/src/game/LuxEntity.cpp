@@ -18,6 +18,7 @@
  */
 
 #include "LuxEntity.h"
+#include "LuxMultiplayer.h"
 
 #include "LuxMap.h"
 #include "LuxPlayer.h"
@@ -131,6 +132,11 @@ void iLuxEntity::RunCallbackFunc(const tString& asType)
 
 void iLuxEntity::RunInteractCallbackFunc()
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient())
+	{
+		if(GetBodyNum()>0) gpBase->mpMultiplayer->RequestEntityInteraction(this,GetBody(0),cVector3f(0));
+		return;
+	}
 	if(msInteractCallback=="")return;
 	
 	mpMap->RunScript(msInteractCallback + "(\""+msName+"\")");
@@ -380,6 +386,7 @@ void iLuxEntity::PreloadEntityModel(const tString &asFile)
 
 bool iLuxEntity::CollidesWithPlayer()
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->RemotePlayerTouches(this)) return true;
 	iPhysicsWorld *pPhysicsWorld = mpMap->GetPhysicsWorld();
 	cCollideData collideData;
 	collideData.SetMaxSize(1);

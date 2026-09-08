@@ -18,6 +18,7 @@
  */
 
 #include "LuxScriptHandler.h"
+#include "LuxMultiplayerScript.h"
 
 #include "LuxMap.h"
 #include "LuxPlayer.h"
@@ -989,6 +990,7 @@ string& __stdcall cLuxScriptHandler::GetGlobalVarString(string& asName)
 
 void __stdcall cLuxScriptHandler::StartCredits(string& asMusic, bool abLoopMusic, string& asTextCat, string& asTextEntry, int alEndNum)
 {
+    cLuxMultiplayerScriptScope networkEffect(1, asMusic, abLoopMusic, asTextCat, asTextEntry, alEndNum);
 	gpBase->mpCredits->Setup(asMusic, abLoopMusic, asTextCat, asTextEntry, alEndNum);
 	gpBase->mpEngine->GetUpdater()->SetContainer("Credits");
 }
@@ -1004,6 +1006,7 @@ void __stdcall cLuxScriptHandler::AddKeyPart(int alKeyPart)
 
 void __stdcall cLuxScriptHandler::StartDemoEnd()
 {
+    cLuxMultiplayerScriptScope networkEffect(2);
 	if(gpBase->mpDemoEnd)
 		gpBase->mpEngine->GetUpdater()->SetContainer("DemoEnd");
 }
@@ -1053,6 +1056,7 @@ void __stdcall cLuxScriptHandler::DestroyDataCache()
 
 void __stdcall cLuxScriptHandler::SetMapDisplayNameEntry(string& asNameEntry)
 {
+    cLuxMultiplayerScriptScope networkEffect(3, asNameEntry);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	if(pMap)	pMap->SetDisplayNameEntry(asNameEntry);
 }
@@ -1061,6 +1065,7 @@ void __stdcall cLuxScriptHandler::SetMapDisplayNameEntry(string& asNameEntry)
 
 void __stdcall cLuxScriptHandler::SetSkyBoxActive(bool abActive)
 {
+    cLuxMultiplayerScriptScope networkEffect(4, abActive);
 	cWorld *pWorld = gpBase->mpMapHandler->GetCurrentMap()->GetWorld();
 
 	pWorld->SetSkyBoxActive(abActive);
@@ -1068,6 +1073,7 @@ void __stdcall cLuxScriptHandler::SetSkyBoxActive(bool abActive)
 
 void __stdcall cLuxScriptHandler::SetSkyBoxTexture(string& asTexture)
 {
+    cLuxMultiplayerScriptScope networkEffect(5, asTexture);
 	cWorld *pWorld = gpBase->mpMapHandler->GetCurrentMap()->GetWorld();
 
     iTexture *pTexture;
@@ -1081,6 +1087,7 @@ void __stdcall cLuxScriptHandler::SetSkyBoxTexture(string& asTexture)
 
 void __stdcall cLuxScriptHandler::SetSkyBoxColor(float afR, float afG, float afB, float afA)
 {
+    cLuxMultiplayerScriptScope networkEffect(6, afR, afG, afB, afA);
 	cWorld *pWorld = gpBase->mpMapHandler->GetCurrentMap()->GetWorld();
 
 	pWorld->SetSkyBoxColor(cColor(afR, afG, afB, afA));
@@ -1090,6 +1097,7 @@ void __stdcall cLuxScriptHandler::SetSkyBoxColor(float afR, float afG, float afB
 
 void __stdcall cLuxScriptHandler::SetFogActive(bool abActive)
 {
+    cLuxMultiplayerScriptScope networkEffect(7, abActive);
 	cWorld *pWorld = gpBase->mpMapHandler->GetCurrentMap()->GetWorld();
 
 	pWorld->SetFogActive(abActive);
@@ -1097,6 +1105,7 @@ void __stdcall cLuxScriptHandler::SetFogActive(bool abActive)
 
 void __stdcall cLuxScriptHandler::SetFogColor(float afR, float afG, float afB, float afA)
 {
+    cLuxMultiplayerScriptScope networkEffect(8, afR, afG, afB, afA);
 	cWorld *pWorld = gpBase->mpMapHandler->GetCurrentMap()->GetWorld();
 
 	pWorld->SetFogColor(cColor(afR, afG, afB, afA));
@@ -1104,6 +1113,7 @@ void __stdcall cLuxScriptHandler::SetFogColor(float afR, float afG, float afB, f
 
 void __stdcall cLuxScriptHandler::SetFogProperties(float afStart, float afEnd, float afFalloffExp, bool abCulling)
 {
+    cLuxMultiplayerScriptScope networkEffect(9, afStart, afEnd, afFalloffExp, abCulling);
 	cWorld *pWorld = gpBase->mpMapHandler->GetCurrentMap()->GetWorld();
 
 	pWorld->SetFogStart(afStart);
@@ -1116,6 +1126,7 @@ void __stdcall cLuxScriptHandler::SetFogProperties(float afStart, float afEnd, f
 
 void __stdcall cLuxScriptHandler::SetupLoadScreen(string &asTextCat, string &asTextEntry, int alRandomNum, string &asImageFile)
 {
+    cLuxMultiplayerScriptScope networkEffect(10, asTextCat, asTextEntry, alRandomNum, asImageFile);
 	gpBase->mpLoadScreenHandler->SetupLoadText(asTextCat, asTextEntry, alRandomNum, asImageFile);
 }
 
@@ -1123,11 +1134,13 @@ void __stdcall cLuxScriptHandler::SetupLoadScreen(string &asTextCat, string &asT
 
 void __stdcall cLuxScriptHandler::FadeIn(float afTime)
 {
+    cLuxMultiplayerScriptScope networkEffect(11, afTime);
 	gpBase->mpEffectHandler->GetFade()->FadeIn(afTime);
 }
 
 void __stdcall cLuxScriptHandler::FadeOut(float afTime)
 {
+    cLuxMultiplayerScriptScope networkEffect(12, afTime);
 	gpBase->mpEffectHandler->GetFade()->FadeOut(afTime);
 }
 
@@ -1135,6 +1148,7 @@ void __stdcall cLuxScriptHandler::FadeOut(float afTime)
 
 void __stdcall cLuxScriptHandler::FadeImageTrailTo(float afAmount, float afSpeed)
 {
+    cLuxMultiplayerScriptScope networkEffect(13, afAmount, afSpeed);
 	gpBase->mpEffectHandler->GetImageTrail()->FadeTo(afAmount, afSpeed);
 }
 
@@ -1142,6 +1156,7 @@ void __stdcall cLuxScriptHandler::FadeImageTrailTo(float afAmount, float afSpeed
 
 void __stdcall cLuxScriptHandler::FadeSepiaColorTo(float afAmount, float afSpeed)
 {
+    cLuxMultiplayerScriptScope networkEffect(14, afAmount, afSpeed);
 	gpBase->mpEffectHandler->GetSepiaColor()->FadeTo(afAmount, afSpeed);
 }
 
@@ -1149,11 +1164,13 @@ void __stdcall cLuxScriptHandler::FadeSepiaColorTo(float afAmount, float afSpeed
 
 void __stdcall cLuxScriptHandler::FadeRadialBlurTo(float afSize, float afSpeed)
 {
+    cLuxMultiplayerScriptScope networkEffect(15, afSize, afSpeed);
 	gpBase->mpEffectHandler->GetRadialBlur()->FadeTo(afSize, afSpeed);
 }
 
 void __stdcall cLuxScriptHandler::SetRadialBlurStartDist(float afStartDist)
 {
+    cLuxMultiplayerScriptScope networkEffect(16, afStartDist);
 	gpBase->mpEffectHandler->GetRadialBlur()->SetBlurStartDist(afStartDist);
 }
 
@@ -1161,6 +1178,7 @@ void __stdcall cLuxScriptHandler::SetRadialBlurStartDist(float afStartDist)
 
 void __stdcall cLuxScriptHandler::StartEffectFlash(float afFadeIn, float afWhite, float afFadeOut)
 {
+    cLuxMultiplayerScriptScope networkEffect(17, afFadeIn, afWhite, afFadeOut);
 	gpBase->mpEffectHandler->GetFlash()->Start(afFadeOut, afWhite, afFadeOut);
 }
 
@@ -1168,6 +1186,7 @@ void __stdcall cLuxScriptHandler::StartEffectFlash(float afFadeIn, float afWhite
 
 void __stdcall cLuxScriptHandler::StartEffectEmotionFlash(string &asTextCat, string &asTextEntry, string &asSound)
 {
+    cLuxMultiplayerScriptScope networkEffect(18, asTextCat, asTextEntry, asSound);
 	gpBase->mpEffectHandler->GetEmotionFlash()->Start(asTextCat, asTextEntry, asSound);
 }
 
@@ -1175,6 +1194,7 @@ void __stdcall cLuxScriptHandler::StartEffectEmotionFlash(string &asTextCat, str
 
 void __stdcall cLuxScriptHandler::SetInDarknessEffectsActive(bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(19, abX);
 	gpBase->mpPlayer->GetHelperInDarkness()->SetActive(abX);
 }
 
@@ -1184,6 +1204,7 @@ void __stdcall cLuxScriptHandler::AddEffectVoice(string& asVoiceFile, string& as
 												string& asTextCat, string& asTextEntry, bool abUsePostion, 
 												string& asPosEntity, float afMinDistance, float afMaxDistance)
 {
+    cLuxMultiplayerScriptScope networkEffect(20, asVoiceFile, asEffectFile, asTextCat, asTextEntry, abUsePostion, asPosEntity, afMinDistance, afMaxDistance);
 	cVector3f vPos(0);
 	if(abUsePostion)
 	{
@@ -1201,6 +1222,7 @@ void __stdcall cLuxScriptHandler::AddEffectVoice(string& asVoiceFile, string& as
 
 void __stdcall cLuxScriptHandler::StopAllEffectVoices(float afFadeOutTime)
 {
+    cLuxMultiplayerScriptScope networkEffect(21, afFadeOutTime);
 	gpBase->mpEffectHandler->GetPlayVoice()->StopVoices(1.0f/afFadeOutTime);
 }
 
@@ -1215,11 +1237,13 @@ bool __stdcall cLuxScriptHandler::GetEffectVoiceActive()
 
 void __stdcall cLuxScriptHandler::StartPlayerSpawnPS(string& asSPSFile)
 {
+    cLuxMultiplayerScriptScope networkEffect(22, asSPSFile);
 	gpBase->mpPlayer->GetHelperSpawnPS()->Start(asSPSFile);
 }
 
 void __stdcall cLuxScriptHandler::StopPlayerSpawnPS()
 {
+    cLuxMultiplayerScriptScope networkEffect(23);
 	gpBase->mpPlayer->GetHelperSpawnPS()->Stop();
 }
 
@@ -1234,6 +1258,7 @@ void __stdcall cLuxScriptHandler::SetEffectVoiceOverCallback(string& asFunc)
 
 void __stdcall cLuxScriptHandler::StartScreenShake(float afAmount, float afTime, float afFadeInTime,float afFadeOutTime)
 {
+    cLuxMultiplayerScriptScope networkEffect(24, afAmount, afTime, afFadeInTime, afFadeOutTime);
 	gpBase->mpEffectHandler->GetScreenShake()->Start(afAmount, afTime, afFadeInTime, afFadeOutTime);
 }
 
@@ -1248,6 +1273,7 @@ bool __stdcall cLuxScriptHandler::GetFlashbackIsActive()
 
 void __stdcall cLuxScriptHandler::SetInsanitySetEnabled(string& asSet, bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(25, asSet, abX);
 	if(abX)	gpBase->mpInsanityHandler->EnableSet(asSet);
 	else	gpBase->mpInsanityHandler->DisableSet(asSet);
 
@@ -1255,16 +1281,19 @@ void __stdcall cLuxScriptHandler::SetInsanitySetEnabled(string& asSet, bool abX)
 
 void __stdcall cLuxScriptHandler::StartRandomInsanityEvent()
 {
+    cLuxMultiplayerScriptScope networkEffect(26);
 	gpBase->mpInsanityHandler->StartEvent();
 }
 
 void __stdcall cLuxScriptHandler::StartInsanityEvent(string& asEventName)
 {
+    cLuxMultiplayerScriptScope networkEffect(27, asEventName);
 	gpBase->mpInsanityHandler->StartEvent(asEventName);
 }
 
 void __stdcall cLuxScriptHandler::StopCurrentInsanityEvent()
 {
+    cLuxMultiplayerScriptScope networkEffect(28);
 	gpBase->mpInsanityHandler->StopCurrentEvent();
 }
 
@@ -1324,6 +1353,7 @@ void __stdcall cLuxScriptHandler::UnlockAchievement(string& asName)
 
 void __stdcall cLuxScriptHandler::PlayGuiSound(string& asSoundEntFile, float afVolume)
 {
+    cLuxMultiplayerScriptScope networkEffect(29, asSoundEntFile, afVolume);
 	tString sExt = cString::GetFileExt(asSoundEntFile);
 
 	//Sound entity!
@@ -1345,6 +1375,7 @@ void __stdcall cLuxScriptHandler::PlayGuiSound(string& asSoundEntFile, float afV
 
 void __stdcall cLuxScriptHandler::SetPlayerActive(bool abActive)
 {
+    cLuxMultiplayerScriptScope networkEffect(30, abActive);
 	gpBase->mpPlayer->SetActive(abActive);
 }
 
@@ -1352,6 +1383,7 @@ void __stdcall cLuxScriptHandler::SetPlayerActive(bool abActive)
 
 void __stdcall cLuxScriptHandler::ChangePlayerStateToNormal()
 {
+    cLuxMultiplayerScriptScope networkEffect(31);
 	gpBase->mpPlayer->ChangeState(eLuxPlayerState_Normal);
 }
 
@@ -1359,6 +1391,7 @@ void __stdcall cLuxScriptHandler::ChangePlayerStateToNormal()
 
 void __stdcall cLuxScriptHandler::SetPlayerCrouching(bool abCrouch)
 {
+    cLuxMultiplayerScriptScope networkEffect(32, abCrouch);
 	gpBase->mpPlayer->ChangeMoveState(eLuxMoveState_Normal);
 
 	cLuxMoveState_Normal *pState = static_cast<cLuxMoveState_Normal*>(gpBase->mpPlayer->GetMoveStateData(eLuxMoveState_Normal));
@@ -1369,6 +1402,7 @@ void __stdcall cLuxScriptHandler::SetPlayerCrouching(bool abCrouch)
 
 void __stdcall cLuxScriptHandler::AddPlayerBodyForce(float afX, float afY, float afZ, bool abUseLocalCoords)
 {
+    cLuxMultiplayerScriptScope networkEffect(33, afX, afY, afZ, abUseLocalCoords);
 	iCharacterBody *pBody = gpBase->mpPlayer->GetCharacterBody();
 
 	cVector3f vForce;
@@ -1388,6 +1422,7 @@ void __stdcall cLuxScriptHandler::AddPlayerBodyForce(float afX, float afY, float
 
 void __stdcall cLuxScriptHandler::ShowPlayerCrossHairIcons(bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(34, abX);
 	gpBase->mpPlayer->SetScriptShowFocusIconAndCrossHair(abX);
 }
 
@@ -1395,6 +1430,7 @@ void __stdcall cLuxScriptHandler::ShowPlayerCrossHairIcons(bool abX)
 
 void __stdcall cLuxScriptHandler::SetPlayerPos(float afX, float afY, float afZ)
 {
+    cLuxMultiplayerScriptScope networkEffect(35, afX, afY, afZ);
 	return gpBase->mpPlayer->GetCharacterBody()->SetFeetPosition(cVector3f(afX, afY, afZ));
 }
 
@@ -1423,11 +1459,13 @@ float __stdcall cLuxScriptHandler::GetPlayerPosZ()
 
 void __stdcall cLuxScriptHandler::SetPlayerSanity(float afSanity)
 {
+    cLuxMultiplayerScriptScope networkEffect(36, afSanity);
 	gpBase->mpPlayer->SetSanity(afSanity);
 }
 
 void __stdcall cLuxScriptHandler::AddPlayerSanity(float afSanity)
 {
+    cLuxMultiplayerScriptScope networkEffect(37, afSanity);
 	gpBase->mpPlayer->AddSanity(afSanity);
 }
 
@@ -1438,11 +1476,13 @@ float __stdcall cLuxScriptHandler::GetPlayerSanity()
 
 void __stdcall cLuxScriptHandler::SetPlayerHealth(float afHealth)
 {
+    cLuxMultiplayerScriptScope networkEffect(38, afHealth);
 	gpBase->mpPlayer->SetHealth(afHealth);
 }
 
 void __stdcall cLuxScriptHandler::AddPlayerHealth(float afHealth)
 {
+    cLuxMultiplayerScriptScope networkEffect(39, afHealth);
 	gpBase->mpPlayer->AddHealth(afHealth);
 }
 
@@ -1453,11 +1493,13 @@ float __stdcall cLuxScriptHandler::GetPlayerHealth()
 
 void __stdcall cLuxScriptHandler::SetPlayerLampOil(float afOil)
 {
+    cLuxMultiplayerScriptScope networkEffect(40, afOil);
 	gpBase->mpPlayer->SetLampOil(afOil);
 }
 
 void __stdcall cLuxScriptHandler::AddPlayerLampOil(float afOil)
 {
+    cLuxMultiplayerScriptScope networkEffect(41, afOil);
 	gpBase->mpPlayer->AddLampOil(afOil);
 }
 
@@ -1484,11 +1526,13 @@ float __stdcall cLuxScriptHandler::GetPlayerYSpeed()
 
 void __stdcall cLuxScriptHandler::MovePlayerForward(float afAmount)
 {
+    cLuxMultiplayerScriptScope networkEffect(42, afAmount);
 	gpBase->mpPlayer->GetCharacterBody()->Move(eCharDir_Forward, afAmount);
 }
 
 void __stdcall cLuxScriptHandler::SetPlayerPermaDeathSound(string& asSound)
 {
+    cLuxMultiplayerScriptScope networkEffect(43, asSound);
 	gpBase->mpPlayer->SetCurrentPermaDeathSound(asSound);
 }
 
@@ -1496,6 +1540,7 @@ void __stdcall cLuxScriptHandler::SetPlayerPermaDeathSound(string& asSound)
 
 void __stdcall cLuxScriptHandler::SetSanityDrainDisabled(bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(44, abX);
 	gpBase->mpPlayer->SetSanityDrainDisabled(abX);
 }
 
@@ -1503,6 +1548,7 @@ void __stdcall cLuxScriptHandler::SetSanityDrainDisabled(bool abX)
 
 void __stdcall cLuxScriptHandler::GiveSanityBoost()
 {
+    cLuxMultiplayerScriptScope networkEffect(45);
 	if(gpBase->mpPlayer->GetSanity() < 25.0f)
 		gpBase->mpPlayer->AddSanity(100.0f - gpBase->mpPlayer->GetSanity());
 	else if(gpBase->mpPlayer->GetSanity() < 50.0f)
@@ -1518,6 +1564,7 @@ void __stdcall cLuxScriptHandler::GiveSanityBoost()
 
 void __stdcall cLuxScriptHandler::GiveSanityBoostSmall()
 {
+    cLuxMultiplayerScriptScope networkEffect(46);
 	cLuxPlayer* pPlayer = gpBase->mpPlayer;
 
 	if(pPlayer->GetSanity() < 25.0f)
@@ -1545,6 +1592,7 @@ void __stdcall cLuxScriptHandler::GiveSanityBoostSmall()
 
 void __stdcall cLuxScriptHandler::GivePlayerDamage(float afAmount, string& asType, bool abSpinHead, bool abLethal)
 {
+    cLuxMultiplayerScriptScope networkEffect(47, afAmount, asType, abSpinHead, abLethal);
 	tString sLowType = cString::ToLowerCase(asType);
 	eLuxDamageType type = eLuxDamageType_BloodSplat;
 	if(sLowType == "claws") type = eLuxDamageType_Claws;
@@ -1557,21 +1605,25 @@ void __stdcall cLuxScriptHandler::GivePlayerDamage(float afAmount, string& asTyp
 
 void __stdcall cLuxScriptHandler::FadePlayerFOVMulTo(float afX, float afSpeed)
 {
+    cLuxMultiplayerScriptScope networkEffect(48, afX, afSpeed);
 	gpBase->mpPlayer->FadeFOVMulTo(afX, afSpeed);
 }
 
 void __stdcall cLuxScriptHandler::FadePlayerAspectMulTo(float afX, float afSpeed)
 {
+    cLuxMultiplayerScriptScope networkEffect(49, afX, afSpeed);
 	gpBase->mpPlayer->FadeAspectMulTo(afX, afSpeed);
 }
 
 void __stdcall cLuxScriptHandler::FadePlayerRollTo(float afX, float afSpeedMul, float afMaxSpeed)
 {
+    cLuxMultiplayerScriptScope networkEffect(50, afX, afSpeedMul, afMaxSpeed);
 	gpBase->mpPlayer->FadeRollTo(cMath::ToRad(afX), afSpeedMul, cMath::ToRad(afMaxSpeed));
 }
 
 void __stdcall cLuxScriptHandler::MovePlayerHeadPos(float afX, float afY, float afZ, float afSpeed, float afSlowDownDist)
 {
+    cLuxMultiplayerScriptScope networkEffect(51, afX, afY, afZ, afSpeed, afSlowDownDist);
 	gpBase->mpPlayer->MoveHeadPosAdd(eLuxHeadPosAdd_Script, cVector3f(afX, afY, afZ), afSpeed, afSlowDownDist);
 }
 
@@ -1580,6 +1632,7 @@ void __stdcall cLuxScriptHandler::MovePlayerHeadPos(float afX, float afY, float 
 
 void __stdcall cLuxScriptHandler::StartPlayerLookAt(string& asEntityName, float afSpeedMul, float afMaxSpeed, string & asAtTargetCallback)
 {
+    cLuxMultiplayerScriptScope networkEffect(52, asEntityName, afSpeedMul, afMaxSpeed, asAtTargetCallback);
 	iLuxEntity *pEntity = GetEntity(asEntityName, eLuxEntityType_LastEnum, -1);
 	if(pEntity==NULL) return;
 
@@ -1600,6 +1653,7 @@ void __stdcall cLuxScriptHandler::StartPlayerLookAt(string& asEntityName, float 
 
 void __stdcall cLuxScriptHandler::StopPlayerLookAt()
 {
+    cLuxMultiplayerScriptScope networkEffect(53);
 	gpBase->mpPlayer->GetHelperLookAt()->SetActive(false);
 }
 
@@ -1607,31 +1661,37 @@ void __stdcall cLuxScriptHandler::StopPlayerLookAt()
 
 void __stdcall cLuxScriptHandler::SetPlayerMoveSpeedMul(float afMul)
 {
+    cLuxMultiplayerScriptScope networkEffect(54, afMul);
 	gpBase->mpPlayer->SetScriptMoveSpeedMul(afMul);
 }
 
 void __stdcall cLuxScriptHandler::SetPlayerRunSpeedMul(float afMul)
 {
+    cLuxMultiplayerScriptScope networkEffect(55, afMul);
 	gpBase->mpPlayer->SetScriptRunSpeedMul(afMul);
 }
 
 void __stdcall cLuxScriptHandler::SetPlayerLookSpeedMul(float afMul)
 {
+    cLuxMultiplayerScriptScope networkEffect(56, afMul);
 	gpBase->mpPlayer->SetLookSpeedMul(afMul);
 }
 
 void __stdcall cLuxScriptHandler::SetPlayerJumpForceMul(float afMul)
 {
+    cLuxMultiplayerScriptScope networkEffect(57, afMul);
 	gpBase->mpPlayer->SetScriptJumpForceMul(afMul);
 }
 
 void __stdcall cLuxScriptHandler::SetPlayerJumpDisabled(bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(58, abX);
 	gpBase->mpPlayer->SetJumpDisabled(abX);
 }
 
 void __stdcall cLuxScriptHandler::SetPlayerCrouchDisabled(bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(59, abX);
 	gpBase->mpPlayer->SetCrouchDisabled(abX);
 }
 
@@ -1639,6 +1699,7 @@ void __stdcall cLuxScriptHandler::SetPlayerCrouchDisabled(bool abX)
 
 void __stdcall cLuxScriptHandler::SetPlayerFallDamageDisabled(bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(60, abX);
 	gpBase->mpPlayer->SetNoFallDamage(abX);
 }
 
@@ -1646,6 +1707,7 @@ void __stdcall cLuxScriptHandler::SetPlayerFallDamageDisabled(bool abX)
 
 void __stdcall cLuxScriptHandler::TeleportPlayer(string &asStartPosName)
 {
+    cLuxMultiplayerScriptScope networkEffect(61, asStartPosName);
 	cLuxNode_PlayerStart *pNode = gpBase->mpMapHandler->GetCurrentMap()->GetPlayerStart(asStartPosName);
 	if(pNode==NULL)
 	{
@@ -1660,6 +1722,7 @@ void __stdcall cLuxScriptHandler::TeleportPlayer(string &asStartPosName)
 
 void __stdcall cLuxScriptHandler::SetLanternActive(bool abX, bool abUseEffects)
 {
+    cLuxMultiplayerScriptScope networkEffect(62, abX, abUseEffects);
 	gpBase->mpPlayer->GetHelperLantern()->SetActive(abX, abUseEffects);
 }
 
@@ -1674,6 +1737,7 @@ bool __stdcall cLuxScriptHandler::GetLanternActive()
 
 void __stdcall cLuxScriptHandler::SetLanternDisabled(bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(63, abX);
 	gpBase->mpPlayer->GetHelperLantern()->SetDisabled(abX);
 }
 
@@ -1690,6 +1754,7 @@ void __stdcall cLuxScriptHandler::SetLanternLitCallback(string &asCallback)
 
 void __stdcall cLuxScriptHandler::SetMessage(string &asTextCategory, string &asTextEntry, float afTime)
 {
+    cLuxMultiplayerScriptScope networkEffect(64, asTextCategory, asTextEntry, afTime);
 	gpBase->mpMessageHandler->SetMessage(kTranslate(asTextCategory, asTextEntry), afTime);
 }
 
@@ -1697,6 +1762,7 @@ void __stdcall cLuxScriptHandler::SetMessage(string &asTextCategory, string &asT
 
 void __stdcall cLuxScriptHandler::SetDeathHint(string &asTextCategory, string &asTextEntry)
 {
+    cLuxMultiplayerScriptScope networkEffect(65, asTextCategory, asTextEntry);
 	gpBase->mpPlayer->GetHelperDeath()->SetHint(asTextCategory, asTextEntry);
 }
 
@@ -1704,6 +1770,7 @@ void __stdcall cLuxScriptHandler::SetDeathHint(string &asTextCategory, string &a
 
 void __stdcall cLuxScriptHandler::DisableDeathStartSound()
 {
+    cLuxMultiplayerScriptScope networkEffect(66);
 	gpBase->mpPlayer->GetHelperDeath()->DisableStartSound();
 }
 
@@ -1711,6 +1778,7 @@ void __stdcall cLuxScriptHandler::DisableDeathStartSound()
 
 void __stdcall cLuxScriptHandler::AddNote(string& asNameAndTextEntry, string& asImage)
 {
+    cLuxMultiplayerScriptScope networkEffect(67, asNameAndTextEntry, asImage);
 	gpBase->mpJournal->AddNote(asNameAndTextEntry, asImage);
 }
 
@@ -1718,6 +1786,7 @@ void __stdcall cLuxScriptHandler::AddNote(string& asNameAndTextEntry, string& as
 
 void __stdcall cLuxScriptHandler::AddDiary(string& asNameAndTextEntry, string& asImage)
 {
+    cLuxMultiplayerScriptScope networkEffect(68, asNameAndTextEntry, asImage);
 	int lReturnNum=0;
 	gpBase->mpJournal->AddDiary(asNameAndTextEntry, asImage,lReturnNum);
 }
@@ -1726,6 +1795,7 @@ void __stdcall cLuxScriptHandler::AddDiary(string& asNameAndTextEntry, string& a
 
 void __stdcall cLuxScriptHandler::ReturnOpenJournal(bool abOpenJournal)
 {
+    cLuxMultiplayerScriptScope networkEffect(69, abOpenJournal);
 	cLuxItemType_Diary::mbShowJournalOnPickup = abOpenJournal;
 }
 
@@ -1733,6 +1803,7 @@ void __stdcall cLuxScriptHandler::ReturnOpenJournal(bool abOpenJournal)
 
 void __stdcall cLuxScriptHandler::AddQuest(string& asName, string& asNameAndTextEntry)
 {
+    cLuxMultiplayerScriptScope networkEffect(70, asName, asNameAndTextEntry);
 	tString sTextEntry = "Quest_"+asNameAndTextEntry+"_Text";
 
 	if(gpBase->mpJournal->AddQuestNote(asName, asNameAndTextEntry))
@@ -1753,6 +1824,7 @@ void __stdcall cLuxScriptHandler::AddQuest(string& asName, string& asNameAndText
 
 void __stdcall cLuxScriptHandler::CompleteQuest(string& asName, string& asNameAndTextEntry)
 {
+    cLuxMultiplayerScriptScope networkEffect(71, asName, asNameAndTextEntry);
 	tString sTextEntry = "Quest_"+asNameAndTextEntry+"_Text";
 
 	gpBase->mpJournal->AddQuestNote(asName, asNameAndTextEntry);
@@ -1801,6 +1873,7 @@ bool __stdcall cLuxScriptHandler::QuestIsAdded(string& asName)
 
 void __stdcall cLuxScriptHandler::SetNumberOfQuestsInMap(int alNumberOfQuests)
 {
+    cLuxMultiplayerScriptScope networkEffect(72, alNumberOfQuests);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	if(pMap==NULL) return;
 
@@ -1811,21 +1884,25 @@ void __stdcall cLuxScriptHandler::SetNumberOfQuestsInMap(int alNumberOfQuests)
 
 void __stdcall cLuxScriptHandler::GiveHint(string& asName, string& asMessageCat, string& asMessageEntry, float afTimeShown)
 {
+    cLuxMultiplayerScriptScope networkEffect(73, asName, asMessageCat, asMessageEntry, afTimeShown);
 	gpBase->mpHintHandler->Add(asName, kTranslate(asMessageCat, asMessageEntry), afTimeShown);
 }
 
 void __stdcall cLuxScriptHandler::RemoveHint(string &asName)
 {
+    cLuxMultiplayerScriptScope networkEffect(74, asName);
 	gpBase->mpHintHandler->Remove(asName);
 }
 
 void __stdcall cLuxScriptHandler::BlockHint(string& asName)
 {
+    cLuxMultiplayerScriptScope networkEffect(75, asName);
 	gpBase->mpHintHandler->Block(asName);
 }
 
 void __stdcall cLuxScriptHandler::UnBlockHint(string& asName)
 {
+    cLuxMultiplayerScriptScope networkEffect(76, asName);
 	gpBase->mpHintHandler->UnBlock(asName);
 }
 
@@ -1833,6 +1910,7 @@ void __stdcall cLuxScriptHandler::UnBlockHint(string& asName)
 
 void __stdcall cLuxScriptHandler::ExitInventory()
 {
+    cLuxMultiplayerScriptScope networkEffect(77);
 	if(gpBase->mpInputHandler->GetState() != eLuxInputState_Inventory) return;
 
 	gpBase->mpInventory->ExitPressed();
@@ -1842,11 +1920,13 @@ void __stdcall cLuxScriptHandler::ExitInventory()
 
 void __stdcall cLuxScriptHandler::SetInventoryDisabled(bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(78, abX);
 	gpBase->mpInventory->SetDisabled(abX);
 }
 
 void __stdcall cLuxScriptHandler::SetInventoryMessage(string &asTextCategory, string &asTextEntry, float afTime)
 {
+    cLuxMultiplayerScriptScope networkEffect(79, asTextCategory, asTextEntry, afTime);
 	gpBase->mpInventory->SetMessageText(kTranslate(asTextCategory, asTextEntry), afTime);
 }
 
@@ -1854,6 +1934,7 @@ void __stdcall cLuxScriptHandler::SetInventoryMessage(string &asTextCategory, st
 
 void __stdcall cLuxScriptHandler::GiveItem(string& asName, string& asType, string& asSubTypeName, string& asImageName, float afAmount)
 {
+    cLuxMultiplayerScriptScope networkEffect(80, asName, asType, asSubTypeName, asImageName, afAmount);
 	eLuxItemType type = gpBase->mpInventory->GetItemTypeFromString(asType);
 	gpBase->mpInventory->AddItem(asName,type,asSubTypeName,asImageName, afAmount, "", "");
 }
@@ -1862,6 +1943,7 @@ void __stdcall cLuxScriptHandler::GiveItem(string& asName, string& asType, strin
 
 void __stdcall cLuxScriptHandler::GiveItemFromFile(string& asName, string& asFileName)
 {
+    cLuxMultiplayerScriptScope networkEffect(81, asName, asFileName);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	if(pMap==NULL) return;
 
@@ -1888,6 +1970,7 @@ void __stdcall cLuxScriptHandler::GiveItemFromFile(string& asName, string& asFil
 
 void __stdcall cLuxScriptHandler::RemoveItem(string& asName)
 {
+    cLuxMultiplayerScriptScope networkEffect(82, asName);
 	gpBase->mpInventory->RemoveItem(asName);
 }
 
@@ -1930,12 +2013,14 @@ void __stdcall cLuxScriptHandler::RemoveUseItemCallback(string& asName)
 
 void __stdcall cLuxScriptHandler::PreloadParticleSystem(string& asPSFile)
 {
+    cLuxMultiplayerScriptScope networkEffect(83, asPSFile);
 	cResources *pResources = gpBase->mpEngine->GetResources();
 	pResources->GetParticleManager()->Preload(asPSFile);	
 }
 
 void __stdcall cLuxScriptHandler::PreloadSound(string& asSoundFile)
 {
+    cLuxMultiplayerScriptScope networkEffect(84, asSoundFile);
 	cResources *pResources = gpBase->mpEngine->GetResources();
 	pResources->GetSoundEntityManager()->Preload(asSoundFile);
 }
@@ -1944,6 +2029,7 @@ void __stdcall cLuxScriptHandler::PreloadSound(string& asSoundFile)
 
 void __stdcall cLuxScriptHandler::CreateParticleSystemAtEntity(string& asPSName, string& asPSFile, string& asEntity, bool abSavePS)
 {
+    cLuxMultiplayerScriptScope networkEffect(85, asPSName, asPSFile, asEntity, abSavePS);
 	CreateParticleSystemAtEntityExt(asPSName, asPSFile, asEntity, abSavePS, 1,1,1,1, false, 1,2,100,110);
 }
 
@@ -1952,6 +2038,7 @@ void __stdcall cLuxScriptHandler::CreateParticleSystemAtEntityExt(	string& asPSN
 																	bool abFadeAtDistance, float afFadeMinEnd, float afFadeMinStart, 
 																	float afFadeMaxStart, float afFadeMaxEnd)
 {
+    cLuxMultiplayerScriptScope networkEffect(86, asPSName, asPSFile, asEntity, abSavePS, afR, afG, afB, afA, abFadeAtDistance, afFadeMinEnd, afFadeMinStart, afFadeMaxStart, afFadeMaxEnd);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	if(pMap==NULL) return;
 
@@ -2001,6 +2088,7 @@ void __stdcall cLuxScriptHandler::CreateParticleSystemAtEntityExt(	string& asPSN
 
 void __stdcall cLuxScriptHandler::DestroyParticleSystem(string& asName)
 {
+    cLuxMultiplayerScriptScope networkEffect(87, asName);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	if(pMap==NULL) return;
 
@@ -2025,6 +2113,7 @@ void __stdcall cLuxScriptHandler::DestroyParticleSystem(string& asName)
 
 void __stdcall cLuxScriptHandler::PlaySoundAtEntity(string& asSoundName, string& asSoundFile, string& asEntity, float afFadeTime, bool abSaveSound)
 {
+    cLuxMultiplayerScriptScope networkEffect(88, asSoundName, asSoundFile, asEntity, afFadeTime, abSaveSound);
 	float fFadeSpeed = afFadeTime ==0 ? 0 : 1.0f/afFadeTime;
 
 	bool bRemoveWhenOver = true;//abSaveSound ? false : true;
@@ -2077,6 +2166,7 @@ void __stdcall cLuxScriptHandler::PlaySoundAtEntity(string& asSoundName, string&
 
 void __stdcall cLuxScriptHandler::FadeInSound(string& asSoundName, float afFadeTime, bool abPlayStart)
 {
+    cLuxMultiplayerScriptScope networkEffect(89, asSoundName, afFadeTime, abPlayStart);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	if(pMap==NULL) return;
 
@@ -2099,6 +2189,7 @@ void __stdcall cLuxScriptHandler::FadeInSound(string& asSoundName, float afFadeT
 
 void __stdcall cLuxScriptHandler::StopSound(string& asSoundName, float afFadeTime)
 {
+    cLuxMultiplayerScriptScope networkEffect(90, asSoundName, afFadeTime);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	if(pMap==NULL) return;
 
@@ -2125,6 +2216,7 @@ void __stdcall cLuxScriptHandler::StopSound(string& asSoundName, float afFadeTim
 
 void __stdcall cLuxScriptHandler::SetLightVisible(string& asLightName, bool abVisible)
 {
+    cLuxMultiplayerScriptScope networkEffect(91, asLightName, abVisible);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	if(pMap==NULL) return;
 
@@ -2142,6 +2234,7 @@ void __stdcall cLuxScriptHandler::SetLightVisible(string& asLightName, bool abVi
 
 void __stdcall cLuxScriptHandler::FadeLightTo(string& asLightName, float afR, float afG, float afB, float afA, float afRadius, float afTime)
 {
+    cLuxMultiplayerScriptScope networkEffect(92, asLightName, afR, afG, afB, afA, afRadius, afTime);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	if(pMap==NULL) return;
 
@@ -2170,6 +2263,7 @@ void __stdcall cLuxScriptHandler::FadeLightTo(string& asLightName, float afR, fl
 
 void __stdcall cLuxScriptHandler::SetLightFlickerActive(string& asLightName, bool abActive)
 {
+    cLuxMultiplayerScriptScope networkEffect(93, asLightName, abActive);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	if(pMap==NULL) return;
 
@@ -2188,11 +2282,13 @@ void __stdcall cLuxScriptHandler::SetLightFlickerActive(string& asLightName, boo
 
 void __stdcall cLuxScriptHandler::PlayMusic(string& asMusicFile, bool abLoop, float afVolume, float afFadeTime, int alPrio, bool abResume)
 {
+    cLuxMultiplayerScriptScope networkEffect(94, asMusicFile, abLoop, afVolume, afFadeTime, alPrio, abResume);
 	gpBase->mpMusicHandler->Play(asMusicFile, abLoop, afVolume, afFadeTime,alPrio,abResume, false);
 }
 
 void __stdcall cLuxScriptHandler::StopMusic(float afFadeTime, int alPrio)
 {
+    cLuxMultiplayerScriptScope networkEffect(95, afFadeTime, alPrio);
 	gpBase->mpMusicHandler->Stop(afFadeTime, alPrio);
 }
 
@@ -2200,6 +2296,7 @@ void __stdcall cLuxScriptHandler::StopMusic(float afFadeTime, int alPrio)
 
 void __stdcall cLuxScriptHandler::FadeGlobalSoundVolume(float afDestVolume, float afTime)
 {
+    cLuxMultiplayerScriptScope networkEffect(96, afDestVolume, afTime);
 	bool abDestroy = afDestVolume==1;
 	cSoundHandler *pSoundHandler = gpBase->mpEngine->GetSound()->GetSoundHandler();
 
@@ -2214,6 +2311,7 @@ void __stdcall cLuxScriptHandler::FadeGlobalSoundVolume(float afDestVolume, floa
 
 void __stdcall cLuxScriptHandler::FadeGlobalSoundSpeed(float afDestSpeed, float afTime)
 {
+    cLuxMultiplayerScriptScope networkEffect(97, afDestSpeed, afTime);
 	bool abDestroy = afDestSpeed==1;
 	cSoundHandler *pSoundHandler = gpBase->mpEngine->GetSound()->GetSoundHandler();
 
@@ -2229,6 +2327,7 @@ void __stdcall cLuxScriptHandler::FadeGlobalSoundSpeed(float afDestSpeed, float 
 
 void __stdcall cLuxScriptHandler::SetEntityActive(string& asName, bool abActive)
 {
+    cLuxMultiplayerScriptScope networkEffect(98, asName, abActive);
 	BEGIN_SET_PROPERTY(eLuxEntityType_LastEnum,-1)
 
 		pEntity->SetActive(abActive);
@@ -2240,6 +2339,7 @@ void __stdcall cLuxScriptHandler::SetEntityActive(string& asName, bool abActive)
 
 void __stdcall cLuxScriptHandler::SetEntityVisible(string& asName, bool abVisible)
 {
+    cLuxMultiplayerScriptScope networkEffect(99, asName, abVisible);
 	BEGIN_SET_PROPERTY(eLuxEntityType_LastEnum,-1)
 		if (pEntity->GetMeshEntity() == NULL) continue;
 
@@ -2259,6 +2359,7 @@ bool __stdcall cLuxScriptHandler::GetEntityExists(string& asName)
 
 void __stdcall cLuxScriptHandler::SetEntityPos(string& asName, float afX, float afY, float afZ)
 {
+    cLuxMultiplayerScriptScope networkEffect(100, asName, afX, afY, afZ);
 	BEGIN_SET_PROPERTY(eLuxEntityType_LastEnum,-1)
 		
 		if (pEntity->GetEntityType() == eLuxEntityType_Enemy)
@@ -2365,6 +2466,7 @@ static eLuxFocusCrosshair StringToCrossHair(const tString &asCrossHair)
 
 void __stdcall cLuxScriptHandler::SetEntityCustomFocusCrossHair(string& asName, string &asCrossHair)
 {
+    cLuxMultiplayerScriptScope networkEffect(101, asName, asCrossHair);
 	BEGIN_SET_PROPERTY(eLuxEntityType_LastEnum,-1)
 
 		pEntity->SetCustomFocusCrossHair(StringToCrossHair(asCrossHair));
@@ -2376,6 +2478,7 @@ void __stdcall cLuxScriptHandler::SetEntityCustomFocusCrossHair(string& asName, 
 
 void __stdcall cLuxScriptHandler::CreateEntityAtArea(string& asEntityName, string& asEntityFile, string& asAreaName, bool abFullGameSave)
 {
+    cLuxMultiplayerScriptScope networkEffect(102, asEntityName, asEntityFile, asAreaName, abFullGameSave);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 
 	iLuxArea *pArea = ToArea(GetEntity(asAreaName,eLuxEntityType_Area, -1));
@@ -2399,6 +2502,7 @@ void __stdcall cLuxScriptHandler::CreateEntityAtArea(string& asEntityName, strin
 
 void __stdcall cLuxScriptHandler::ReplaceEntity(string& asName, string& asBodyName, string& asNewEntityName, string& asNewEntityFile, bool abFullGameSave)
 {
+    cLuxMultiplayerScriptScope networkEffect(103, asName, asBodyName, asNewEntityName, asNewEntityFile, abFullGameSave);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 
 	iLuxEntity *pEntity = GetEntity(asName,eLuxEntityType_LastEnum, -1);
@@ -2427,6 +2531,7 @@ void __stdcall cLuxScriptHandler::ReplaceEntity(string& asName, string& asBodyNa
 
 void __stdcall cLuxScriptHandler::PlaceEntityAtEntity(string& asName, string& asTargetEntity, string& asTargetBodyName, bool abUseRotation)
 {
+    cLuxMultiplayerScriptScope networkEffect(104, asName, asTargetEntity, asTargetBodyName, abUseRotation);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 
 	iLuxEntity *pEntity = GetEntity(asName,eLuxEntityType_LastEnum, -1);
@@ -2475,6 +2580,7 @@ void __stdcall cLuxScriptHandler::SetEntityPlayerLookAtCallback(string& asName, 
 
 void __stdcall cLuxScriptHandler::SetEntityPlayerInteractCallback(string& asName, string& asCallback, bool abRemoveOnInteraction)
 {
+    cLuxMultiplayerScriptScope networkEffect(165, asName, asCallback, abRemoveOnInteraction);
 	BEGIN_SET_PROPERTY(eLuxEntityType_LastEnum,-1)
 
 		pEntity->SetPlayerInteractCallback(asCallback, abRemoveOnInteraction);
@@ -2508,6 +2614,7 @@ void __stdcall cLuxScriptHandler::SetEntityConnectionStateChangeCallback(string&
 
 void __stdcall cLuxScriptHandler::SetEntityInteractionDisabled(string& asName, bool abDisabled)
 {
+    cLuxMultiplayerScriptScope networkEffect(105, asName, abDisabled);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,-1)
 
 		iLuxProp *pProp = ToProp(pEntity);
@@ -2534,6 +2641,7 @@ bool __stdcall cLuxScriptHandler::GetEntitiesCollide(string& asEntityA, string& 
 
 void __stdcall cLuxScriptHandler::SetPropEffectActive(string& asName, bool abActive, bool abFadeAndPlaySounds)
 {
+    cLuxMultiplayerScriptScope networkEffect(106, asName, abActive, abFadeAndPlaySounds);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,-1)
 
 		iLuxProp *pProp = ToProp(pEntity);
@@ -2547,6 +2655,7 @@ void __stdcall cLuxScriptHandler::SetPropEffectActive(string& asName, bool abAct
 
 void __stdcall cLuxScriptHandler::SetPropActiveAndFade(string& asName, bool abActive, float afFadeTime)
 {
+    cLuxMultiplayerScriptScope networkEffect(107, asName, abActive, afFadeTime);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,-1)
 
 		iLuxProp *pProp = ToProp(pEntity);
@@ -2566,6 +2675,7 @@ void __stdcall cLuxScriptHandler::SetPropActiveAndFade(string& asName, bool abAc
 
 void __stdcall cLuxScriptHandler::SetPropStaticPhysics(string& asName, bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(108, asName, abX);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,-1)
 
 		iLuxProp *pProp = ToProp(pEntity);
@@ -2588,6 +2698,7 @@ bool __stdcall cLuxScriptHandler::GetPropIsInteractedWith(string& asName)
 
 void __stdcall cLuxScriptHandler::RotatePropToSpeed(string& asName, float afAcc, float afGoalSpeed, float afAxisX, float afAxisY, float afAxisZ, bool abResetSpeed, string& asOffsetArea)
 {
+    cLuxMultiplayerScriptScope networkEffect(109, asName, afAcc, afGoalSpeed, afAxisX, afAxisY, afAxisZ, abResetSpeed, asOffsetArea);
 	iLuxArea *pArea = NULL;
 	if(asOffsetArea != "")
 	{
@@ -2632,6 +2743,7 @@ void __stdcall  cLuxScriptHandler::StopPropMovement(string& asName)
 
 void __stdcall cLuxScriptHandler::AttachPropToProp(string& asPropName, string& asAttachName, string& asAttachFile, float afPosX, float afPosY, float afPosZ, float afRotX, float afRotY, float afRotZ)
 {
+    cLuxMultiplayerScriptScope networkEffect(110, asPropName, asAttachName, asAttachFile, afPosX, afPosY, afPosZ, afRotX, afRotY, afRotZ);
 	tString asName = asPropName;
 
 	cMatrixf mtxTransform = cMath::MatrixRotate(cMath::Vector3ToRad(cVector3f(afRotX, afRotY, afRotZ)), eEulerRotationOrder_XYZ);
@@ -2649,6 +2761,7 @@ void __stdcall cLuxScriptHandler::AttachPropToProp(string& asPropName, string& a
 
 void __stdcall cLuxScriptHandler::AddAttachedPropToProp(string& asPropName, string& asAttachName, string& asAttachFile, float afPosX, float afPosY, float afPosZ, float afRotX, float afRotY, float afRotZ)
 {
+    cLuxMultiplayerScriptScope networkEffect(111, asPropName, asAttachName, asAttachFile, afPosX, afPosY, afPosZ, afRotX, afRotY, afRotZ);
 	Warning("AddAttachedPropToProp is deprectated, use AttachPropToProp instead!\n");
 	AttachPropToProp(asPropName, asAttachName, asAttachFile, afPosX, afPosY, afRotZ, afRotX, afRotY, afRotZ);
 }
@@ -2657,6 +2770,7 @@ void __stdcall cLuxScriptHandler::AddAttachedPropToProp(string& asPropName, stri
 
 void __stdcall cLuxScriptHandler::RemoveAttachedPropFromProp(string& asPropName, string& asAttachName)
 {
+    cLuxMultiplayerScriptScope networkEffect(112, asPropName, asAttachName);
 	tString asName = asPropName;
 
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,-1)
@@ -2674,6 +2788,7 @@ void __stdcall cLuxScriptHandler::RemoveAttachedPropFromProp(string& asPropName,
 
 void __stdcall cLuxScriptHandler::SetLampLit(string& asName, bool abLit, bool abEffects)
 {
+    cLuxMultiplayerScriptScope networkEffect(113, asName, abLit, abEffects);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,eLuxPropType_Lamp)
 
 		cLuxProp_Lamp *pLamp = ToLamp(pEntity);
@@ -2686,6 +2801,7 @@ void __stdcall cLuxScriptHandler::SetLampLit(string& asName, bool abLit, bool ab
 
 void __stdcall cLuxScriptHandler::SetSwingDoorLocked(string& asName, bool abLocked, bool abEffects)
 {
+    cLuxMultiplayerScriptScope networkEffect(114, asName, abLocked, abEffects);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,eLuxPropType_SwingDoor)
     
 		cLuxProp_SwingDoor *pSwingDoor = ToSwingDoor(pEntity);
@@ -2698,6 +2814,7 @@ void __stdcall cLuxScriptHandler::SetSwingDoorLocked(string& asName, bool abLock
 
 void __stdcall cLuxScriptHandler::SetSwingDoorClosed(string& asName, bool abClosed, bool abEffects)
 {
+    cLuxMultiplayerScriptScope networkEffect(115, asName, abClosed, abEffects);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,eLuxPropType_SwingDoor)
 
 		cLuxProp_SwingDoor *pSwingDoor = ToSwingDoor(pEntity);
@@ -2710,6 +2827,7 @@ void __stdcall cLuxScriptHandler::SetSwingDoorClosed(string& asName, bool abClos
 
 void __stdcall cLuxScriptHandler::SetSwingDoorDisableAutoClose(string& asName, bool abDisableAutoClose)
 {
+    cLuxMultiplayerScriptScope networkEffect(116, asName, abDisableAutoClose);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,eLuxPropType_SwingDoor)
 
 		cLuxProp_SwingDoor *pSwingDoor = ToSwingDoor(pEntity);
@@ -2748,6 +2866,7 @@ int __stdcall cLuxScriptHandler::GetSwingDoorState(string &asName)
 
 void __stdcall cLuxScriptHandler::SetLevelDoorLocked(string& asName, bool abLocked)
 {
+    cLuxMultiplayerScriptScope networkEffect(117, asName, abLocked);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,eLuxPropType_LevelDoor)
 
 		cLuxProp_LevelDoor *pLevelDoor = ToLevelDoor(pEntity);
@@ -2758,6 +2877,7 @@ void __stdcall cLuxScriptHandler::SetLevelDoorLocked(string& asName, bool abLock
 
 void __stdcall cLuxScriptHandler::SetLevelDoorLockedSound(string& asName, string& asSound)
 {
+    cLuxMultiplayerScriptScope networkEffect(118, asName, asSound);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,eLuxPropType_LevelDoor)
 
 		cLuxProp_LevelDoor *pLevelDoor = ToLevelDoor(pEntity);
@@ -2770,6 +2890,7 @@ void __stdcall cLuxScriptHandler::SetLevelDoorLockedSound(string& asName, string
 
 void __stdcall cLuxScriptHandler::SetLevelDoorLockedText(string& asName, string& asTextCat, string& asTextEntry)
 {
+    cLuxMultiplayerScriptScope networkEffect(119, asName, asTextCat, asTextEntry);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,eLuxPropType_LevelDoor)
 
 		cLuxProp_LevelDoor *pLevelDoor = ToLevelDoor(pEntity);
@@ -2782,6 +2903,7 @@ void __stdcall cLuxScriptHandler::SetLevelDoorLockedText(string& asName, string&
 
 void __stdcall cLuxScriptHandler::SetPropObjectStuckState(string& asName, int alState)
 {
+    cLuxMultiplayerScriptScope networkEffect(120, asName, alState);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,eLuxPropType_Object)
 
 		cLuxProp_Object *pObject = ToObject(pEntity);
@@ -2792,6 +2914,7 @@ void __stdcall cLuxScriptHandler::SetPropObjectStuckState(string& asName, int al
 
 void __stdcall cLuxScriptHandler::SetWheelAngle(string& asName, float afAngle, bool abAutoMove)
 {
+    cLuxMultiplayerScriptScope networkEffect(121, asName, afAngle, abAutoMove);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,eLuxPropType_Wheel)
 
 		cLuxProp_Wheel *pWheel = ToWheel(pEntity);
@@ -2804,6 +2927,7 @@ void __stdcall cLuxScriptHandler::SetWheelAngle(string& asName, float afAngle, b
 
 void __stdcall cLuxScriptHandler::SetWheelStuckState(string& asName, int alState, bool afEffects)
 {
+    cLuxMultiplayerScriptScope networkEffect(122, asName, alState, afEffects);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,eLuxPropType_Wheel)
 
 		cLuxProp_Wheel *pWheel = ToWheel(pEntity);
@@ -2817,6 +2941,7 @@ void __stdcall cLuxScriptHandler::SetWheelStuckState(string& asName, int alState
 
 void __stdcall cLuxScriptHandler::SetLeverStuckState(string& asName, int alState, bool afEffects)
 {
+    cLuxMultiplayerScriptScope networkEffect(123, asName, alState, afEffects);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,eLuxPropType_Lever)
 
 		cLuxProp_Lever *pLever = ToLever(pEntity);
@@ -2828,6 +2953,7 @@ void __stdcall cLuxScriptHandler::SetLeverStuckState(string& asName, int alState
 
 void __stdcall cLuxScriptHandler::SetWheelInteractionDisablesStuck(string& asName, bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(124, asName, abX);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,eLuxPropType_Wheel)
 
 		cLuxProp_Wheel *pWheel = ToWheel(pEntity);
@@ -2840,6 +2966,7 @@ void __stdcall cLuxScriptHandler::SetWheelInteractionDisablesStuck(string& asNam
 
 void __stdcall cLuxScriptHandler::SetLeverInteractionDisablesStuck(string& asName, bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(125, asName, abX);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,eLuxPropType_Lever)
 
 		cLuxProp_Lever *pLever = ToLever(pEntity);
@@ -2862,6 +2989,7 @@ int __stdcall cLuxScriptHandler::GetLeverState(string& asName)
 
 void __stdcall cLuxScriptHandler::SetMultiSliderStuckState(string& asName, int alStuckState, bool abEffects)
 {
+    cLuxMultiplayerScriptScope networkEffect(126, asName, alStuckState, abEffects);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,eLuxPropType_MultiSlider)
 
 		cLuxProp_MultiSlider *pSlider = ToMultiSlider(pEntity);
@@ -2885,6 +3013,7 @@ void __stdcall cLuxScriptHandler::SetMultiSliderCallback(string& asName, string&
 
 void __stdcall cLuxScriptHandler::SetButtonSwitchedOn(string& asName, bool abSwitchedOn, bool abEffects)
 {
+    cLuxMultiplayerScriptScope networkEffect(127, asName, abSwitchedOn, abEffects);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,eLuxPropType_Button)
 
 		cLuxProp_Button *pButton = ToButton(pEntity);
@@ -2897,11 +3026,13 @@ void __stdcall cLuxScriptHandler::SetButtonSwitchedOn(string& asName, bool abSwi
 
 void __stdcall cLuxScriptHandler::SetAllowStickyAreaAttachment(bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(128, abX);
 	cLuxArea_Sticky::SetAllowAttachment(abX);
 }
 
 void __stdcall cLuxScriptHandler::AttachPropToStickyArea(string& asAreaName, string& asProp)
 {
+    cLuxMultiplayerScriptScope networkEffect(129, asAreaName, asProp);
 	cLuxArea_Sticky *pStickyArea = ToStickyArea(GetEntity(asAreaName,eLuxEntityType_Area,eLuxAreaType_Sticky));
 	iLuxProp *pProp = ToProp(GetEntity(asProp,eLuxEntityType_Prop,-1));
 	
@@ -2912,6 +3043,7 @@ void __stdcall cLuxScriptHandler::AttachPropToStickyArea(string& asAreaName, str
 
 void __stdcall cLuxScriptHandler::AttachBodyToStickyArea(string& asAreaName, string& asBody)
 {
+    cLuxMultiplayerScriptScope networkEffect(130, asAreaName, asBody);
 	cLuxArea_Sticky *pStickyArea = ToStickyArea(GetEntity(asAreaName,eLuxEntityType_Area,eLuxAreaType_Sticky));
 	if(pStickyArea==NULL) return;
 	
@@ -2928,6 +3060,7 @@ void __stdcall cLuxScriptHandler::AttachBodyToStickyArea(string& asAreaName, str
 
 void __stdcall cLuxScriptHandler::DetachFromStickyArea(string& asAreaName)
 {
+    cLuxMultiplayerScriptScope networkEffect(131, asAreaName);
 	cLuxArea_Sticky *pStickyArea = ToStickyArea(GetEntity(asAreaName,eLuxEntityType_Area,eLuxAreaType_Sticky));
 	
 	if(pStickyArea) pStickyArea->DetachBody();
@@ -2937,6 +3070,7 @@ void __stdcall cLuxScriptHandler::DetachFromStickyArea(string& asAreaName)
 
 void __stdcall cLuxScriptHandler::SetNPCAwake(string& asName, bool abAwake, bool abEffects)
 {
+    cLuxMultiplayerScriptScope networkEffect(132, asName, abAwake, abEffects);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,eLuxPropType_NPC)
 
 		cLuxProp_NPC *pNPC = ToNPC(pEntity);
@@ -2947,6 +3081,7 @@ void __stdcall cLuxScriptHandler::SetNPCAwake(string& asName, bool abAwake, bool
 
 void __stdcall cLuxScriptHandler::SetNPCFollowPlayer(string& asName, bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(133, asName, abX);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,eLuxPropType_NPC)
 
 		cLuxProp_NPC *pNPC = ToNPC(pEntity);
@@ -2959,6 +3094,7 @@ void __stdcall cLuxScriptHandler::SetNPCFollowPlayer(string& asName, bool abX)
 
 void __stdcall cLuxScriptHandler::SetEnemyDisabled(string& asName, bool abDisabled)
 {
+    cLuxMultiplayerScriptScope networkEffect(134, asName, abDisabled);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Enemy,-1)
 
 		iLuxEnemy *pEnemy = ToEnemy(pEntity);
@@ -2971,6 +3107,7 @@ void __stdcall cLuxScriptHandler::SetEnemyDisabled(string& asName, bool abDisabl
 
 void __stdcall cLuxScriptHandler::SetEnemyIsHallucination(string& asName, bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(135, asName, abX);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Enemy,-1)
 
 		iLuxEnemy *pEnemy = ToEnemy(pEntity);
@@ -2983,6 +3120,7 @@ void __stdcall cLuxScriptHandler::SetEnemyIsHallucination(string& asName, bool a
 
 void __stdcall cLuxScriptHandler::FadeEnemyToSmoke(string& asName, bool abPlaySound)
 {
+    cLuxMultiplayerScriptScope networkEffect(136, asName, abPlaySound);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Enemy,-1)
 
 		iLuxEnemy *pEnemy = ToEnemy(pEntity);
@@ -2993,6 +3131,7 @@ void __stdcall cLuxScriptHandler::FadeEnemyToSmoke(string& asName, bool abPlaySo
 
 void __stdcall cLuxScriptHandler::ShowEnemyPlayerPosition(string& asName)
 {
+    cLuxMultiplayerScriptScope networkEffect(137, asName);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Enemy,-1)
 
 		iLuxEnemy *pEnemy = ToEnemy(pEntity);
@@ -3012,6 +3151,7 @@ void __stdcall cLuxScriptHandler::ShowEnemyPlayerPosition(string& asName)
 
 void __stdcall cLuxScriptHandler::AlertEnemyOfPlayerPresence(string& asName)
 {
+    cLuxMultiplayerScriptScope networkEffect(138, asName);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Enemy,-1)
 
 		iLuxEnemy *pEnemy = ToEnemy(pEntity);
@@ -3033,6 +3173,7 @@ void __stdcall cLuxScriptHandler::AlertEnemyOfPlayerPresence(string& asName)
 
 void __stdcall cLuxScriptHandler::SetEnemyDisableTriggers(string& asName, bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(139, asName, abX);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Enemy,-1)
 
 		iLuxEnemy *pEnemy = ToEnemy(pEntity);
@@ -3046,6 +3187,7 @@ void __stdcall cLuxScriptHandler::SetEnemyDisableTriggers(string& asName, bool a
 
 void __stdcall cLuxScriptHandler::AddEnemyPatrolNode(string& asName, string& asNodeName, float afWaitTime, string& asAnimation)
 {
+    cLuxMultiplayerScriptScope networkEffect(140, asName, asNodeName, afWaitTime, asAnimation);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Enemy,-1)
 		
 		iLuxEnemy *pEnemy = ToEnemy(pEntity);
@@ -3071,6 +3213,7 @@ void __stdcall cLuxScriptHandler::AddEnemyPatrolNode(string& asName, string& asN
 
 void __stdcall cLuxScriptHandler::ClearEnemyPatrolNodes(string& asName)
 {
+    cLuxMultiplayerScriptScope networkEffect(141, asName);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Enemy,-1)
 		
 		iLuxEnemy *pEnemy = ToEnemy(pEntity);
@@ -3081,6 +3224,7 @@ void __stdcall cLuxScriptHandler::ClearEnemyPatrolNodes(string& asName)
 
 void __stdcall cLuxScriptHandler::SetEnemySanityDecreaseActive(string& asName, bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(142, asName, abX);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Enemy,-1)
 		
 		iLuxEnemy *pEnemy = ToEnemy(pEntity);
@@ -3091,6 +3235,7 @@ void __stdcall cLuxScriptHandler::SetEnemySanityDecreaseActive(string& asName, b
 
 void __stdcall cLuxScriptHandler::TeleportEnemyToNode(string & asName, string & asNodeName, bool abChangeY)
 {
+    cLuxMultiplayerScriptScope networkEffect(143, asName, asNodeName, abChangeY);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Enemy,-1)
 
 		iLuxEnemy *pEnemy = ToEnemy(pEntity);
@@ -3112,6 +3257,7 @@ void __stdcall cLuxScriptHandler::TeleportEnemyToNode(string & asName, string & 
 
 void __stdcall cLuxScriptHandler::TeleportEnemyToEntity(string & asName, string & asTargetEntity, string & asTargetBody, bool abChangeY)
 {
+    cLuxMultiplayerScriptScope networkEffect(144, asName, asTargetEntity, asTargetBody, abChangeY);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Enemy,-1)
 
 		iLuxEnemy *pEnemy = ToEnemy(pEntity);
@@ -3144,6 +3290,7 @@ void __stdcall cLuxScriptHandler::TeleportEnemyToEntity(string & asName, string 
 
 void __stdcall cLuxScriptHandler::ChangeManPigPose(string& asName, string& asPoseType)
 {
+    cLuxMultiplayerScriptScope networkEffect(145, asName, asPoseType);
 	eLuxEnemyPoseType pose = eLuxEnemyPoseType_LastEnum;
 	if(asPoseType == "Biped")			pose =eLuxEnemyPoseType_Biped;
 	else if(asPoseType == "Quadruped")	pose =eLuxEnemyPoseType_Quadruped;
@@ -3167,6 +3314,7 @@ void __stdcall cLuxScriptHandler::ChangeManPigPose(string& asName, string& asPos
 
 void __stdcall cLuxScriptHandler::SetTeslaPigFadeDisabled(string& asName, bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(146, asName, abX);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Enemy,-1)
 
 		cLuxEnemy_ManPig *pEnemy = ToManPig(pEntity);
@@ -3180,6 +3328,7 @@ void __stdcall cLuxScriptHandler::SetTeslaPigFadeDisabled(string& asName, bool a
 
 void __stdcall cLuxScriptHandler::SetTeslaPigSoundDisabled(string& asName, bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(147, asName, abX);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Enemy,-1)
 
 		cLuxEnemy_ManPig *pEnemy = ToManPig(pEntity);
@@ -3193,6 +3342,7 @@ void __stdcall cLuxScriptHandler::SetTeslaPigSoundDisabled(string& asName, bool 
 
 void __stdcall cLuxScriptHandler::SetTeslaPigEasyEscapeDisabled(string& asName, bool abX)
 {
+    cLuxMultiplayerScriptScope networkEffect(148, asName, abX);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Enemy,-1)
 
 		cLuxEnemy_ManPig *pEnemy = ToManPig(pEntity);
@@ -3206,6 +3356,7 @@ void __stdcall cLuxScriptHandler::SetTeslaPigEasyEscapeDisabled(string& asName, 
 
 void __stdcall cLuxScriptHandler::ForceTeslaPigSighting(string& asName)
 {
+    cLuxMultiplayerScriptScope networkEffect(149, asName);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Enemy,-1)
 
 		cLuxEnemy_ManPig *pEnemy = ToManPig(pEntity);
@@ -3233,6 +3384,7 @@ string& __stdcall cLuxScriptHandler::GetEnemyStateName(string& asName)
 
 void __stdcall cLuxScriptHandler::SetMoveObjectState(string& asName, float afState)
 {
+    cLuxMultiplayerScriptScope networkEffect(150, asName, afState);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop, eLuxPropType_MoveObject)
 
 		cLuxProp_MoveObject *pMoveObj = ToMoveObject(pEntity);
@@ -3243,6 +3395,7 @@ void __stdcall cLuxScriptHandler::SetMoveObjectState(string& asName, float afSta
 
 void __stdcall cLuxScriptHandler::SetMoveObjectStateExt(string& asName, float afState, float afAcc, float afMaxSpeed, float afSlowdownDist, bool abResetSpeed)
 {
+    cLuxMultiplayerScriptScope networkEffect(151, asName, afState, afAcc, afMaxSpeed, afSlowdownDist, abResetSpeed);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop, eLuxPropType_MoveObject)
 
 		cLuxProp_MoveObject *pMoveObj = ToMoveObject(pEntity);
@@ -3255,6 +3408,7 @@ void __stdcall cLuxScriptHandler::SetMoveObjectStateExt(string& asName, float af
 
 void __stdcall cLuxScriptHandler::SetPropHealth(string& asName, float afHealth)
 {
+    cLuxMultiplayerScriptScope networkEffect(152, asName, afHealth);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop, -1)
 
 		iLuxProp *pProp = ToProp(pEntity);
@@ -3265,6 +3419,7 @@ void __stdcall cLuxScriptHandler::SetPropHealth(string& asName, float afHealth)
 
 void __stdcall cLuxScriptHandler::AddPropHealth(string& asName, float afHealth)
 {
+    cLuxMultiplayerScriptScope networkEffect(153, asName, afHealth);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop, -1)
 
 		iLuxProp *pProp = ToProp(pEntity);
@@ -3285,6 +3440,7 @@ float __stdcall cLuxScriptHandler::GetPropHealth(string& asName)
 
 void __stdcall cLuxScriptHandler::ResetProp(string& asName)
 {
+    cLuxMultiplayerScriptScope networkEffect(154, asName);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop, -1)
 
 		iLuxProp *pProp = ToProp(pEntity);
@@ -3297,6 +3453,7 @@ void __stdcall cLuxScriptHandler::ResetProp(string& asName)
 
 void __stdcall cLuxScriptHandler::PlayPropAnimation(string& asProp, string& asAnimation, float afFadeTime, bool abLoop, string &asCallback)
 {
+    cLuxMultiplayerScriptScope networkEffect(155, asProp, asAnimation, afFadeTime, abLoop, asCallback);
 	tString asName = asProp;
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop, -1)
 
@@ -3361,6 +3518,7 @@ cVector3f VecToCoordSystem(iPhysicsBody *apBody, const cVector3f& avVec, const t
 
 void __stdcall cLuxScriptHandler::AddPropForce(string& asName, float afX, float afY, float afZ, string& asCoordSystem)
 {
+    cLuxMultiplayerScriptScope networkEffect(156, asName, afX, afY, afZ, asCoordSystem);
 	iLuxProp* pProp = ToProp(GetEntity(asName, eLuxEntityType_Prop, -1));
 	if(pProp==NULL) return;
 	cVector3f vVec(afX, afY, afZ);
@@ -3374,6 +3532,7 @@ void __stdcall cLuxScriptHandler::AddPropForce(string& asName, float afX, float 
 
 void __stdcall cLuxScriptHandler::AddPropImpulse(string& asName, float afX, float afY, float afZ, string& asCoordSystem)
 {
+    cLuxMultiplayerScriptScope networkEffect(157, asName, afX, afY, afZ, asCoordSystem);
 	iLuxProp* pProp = ToProp(GetEntity(asName, eLuxEntityType_Prop, -1));
 	if(pProp==NULL) return;
 	cVector3f vVec(afX, afY, afZ);
@@ -3388,6 +3547,7 @@ void __stdcall cLuxScriptHandler::AddPropImpulse(string& asName, float afX, floa
 
 void __stdcall cLuxScriptHandler::AddBodyForce(string& asName, float afX, float afY, float afZ, string& asCoordSystem)
 {
+    cLuxMultiplayerScriptScope networkEffect(158, asName, afX, afY, afZ, asCoordSystem);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	iPhysicsBody *pBody = pMap->GetPhysicsWorld()->GetBody(asName);
 	if(pBody==NULL){
@@ -3402,6 +3562,7 @@ void __stdcall cLuxScriptHandler::AddBodyForce(string& asName, float afX, float 
 
 void __stdcall cLuxScriptHandler::AddBodyImpulse(string& asName, float afX, float afY, float afZ, string& asCoordSystem)
 {
+    cLuxMultiplayerScriptScope networkEffect(159, asName, afX, afY, afZ, asCoordSystem);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	iPhysicsBody *pBody = pMap->GetPhysicsWorld()->GetBody(asName);
 	if(pBody==NULL){
@@ -3415,6 +3576,7 @@ void __stdcall cLuxScriptHandler::AddBodyImpulse(string& asName, float afX, floa
 
 void __stdcall cLuxScriptHandler::BreakJoint(string& asName)
 {
+    cLuxMultiplayerScriptScope networkEffect(160, asName);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	iPhysicsJoint *pJoint = pMap->GetPhysicsWorld()->GetJoint(asName);
 	if(pJoint == NULL)
@@ -3430,6 +3592,7 @@ void __stdcall cLuxScriptHandler::BreakJoint(string& asName)
 
 void __stdcall cLuxScriptHandler::SetBodyMass(string& asName, float afMass)
 {
+    cLuxMultiplayerScriptScope networkEffect(161, asName, afMass);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	iPhysicsBody *pBody = pMap->GetPhysicsWorld()->GetBody(asName);
 	if(pBody==NULL){
@@ -3460,6 +3623,7 @@ void __stdcall cLuxScriptHandler::InteractConnectPropWithRope(	string& asName, s
 																float afSpeedMul,float afMinSpeed, float afMaxSpeed,
 																bool abInvert, int alStatesUsed)
 {
+    cLuxMultiplayerScriptScope networkEffect(162, asName, asPropName, asRopeName, abInteractOnly, afSpeedMul, afMinSpeed, afMaxSpeed, abInvert, alStatesUsed);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	iPhysicsWorld *pPhysicsWorld = pMap->GetPhysicsWorld();
 
@@ -3486,6 +3650,7 @@ void __stdcall cLuxScriptHandler::InteractConnectPropWithRope(	string& asName, s
 void __stdcall cLuxScriptHandler::InteractConnectPropWithMoveObject(	string& asName, string& asPropName, string& asMoveObjectName, bool abInteractOnly,
 																		bool abInvert, int alStatesUsed)
 {
+    cLuxMultiplayerScriptScope networkEffect(163, asName, asPropName, asMoveObjectName, abInteractOnly, abInvert, alStatesUsed);
 	iLuxProp *pProp = ToProp(GetEntity(asPropName, eLuxEntityType_Prop, -1));
 	if(pProp==NULL) return;
 
@@ -3502,6 +3667,7 @@ void __stdcall cLuxScriptHandler::InteractConnectPropWithMoveObject(	string& asN
 
 void __stdcall cLuxScriptHandler::ConnectEntities(string& asName, string& asMainEntity, string& asConnectEntity, bool abInvertStateSent, int alStatesUsed, string& asCallbackFunc)
 {
+    cLuxMultiplayerScriptScope networkEffect(164, asName, asMainEntity, asConnectEntity, abInvertStateSent, alStatesUsed, asCallbackFunc);
 	iLuxEntity *pMainEntity = GetEntity(asMainEntity, eLuxEntityType_LastEnum, -1);
 	if(pMainEntity==NULL) return;	
 

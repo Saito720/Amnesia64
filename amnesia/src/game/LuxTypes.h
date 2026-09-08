@@ -655,6 +655,8 @@ public:
 	int mlStates;
 
 	bool mbColliding;
+	// Runtime attribution only; remote players do not persist in offline saves.
+	bool mbRemotePlayerColliding = false;
 };
 
 typedef std::list<cLuxCollideCallback*> tLuxCollideCallbackList;

@@ -29,6 +29,7 @@
 //----------------------------------------------
 
 class cLuxMapHandler;
+class cLuxMultiplayer;
 class cLuxMapHelper;
 class cLuxInputHandler;
 
@@ -219,6 +220,8 @@ public:
 	cLuxInputHandler *mpInputHandler;
 	cLuxEffectHandler *mpEffectHandler;
 	cLuxMapHandler *mpMapHandler;
+	cLuxMultiplayer *mpMultiplayer;
+	tString msSteamConnectLobby;
 	cLuxMapHelper *mpMapHelper;
 	cLuxDebugHandler *mpDebugHandler;
 	cLuxSaveHandler *mpSaveHandler;

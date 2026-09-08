@@ -1,6 +1,8 @@
 cmake_minimum_required (VERSION 2.8.11)
 project(HPL2)
 
+add_subdirectory(../dependencies/networking networking)
+
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(BoilerPlate)
 
@@ -77,6 +79,7 @@ file(GLOB common_sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
     sources/haptic/*
     sources/input/*
     sources/math/*
+    sources/network/*
     sources/physics/*
     sources/resources/*
     sources/scene/*
@@ -281,6 +284,7 @@ elseif(APPLE)
 endif()
 
 target_link_libraries(HPL2
+    HPLNetworking
     OALWrapper # also pulls in ogg,vorbis,SDL
     ${NEWTON_LIBRARY}
     ${ANGELSCRIPT_LIBRARY}

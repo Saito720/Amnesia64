@@ -18,6 +18,7 @@
  */
 
 #include "LuxMap.h"
+#include "LuxMultiplayer.h"
 
 #include "LuxConfigHandler.h"
 
@@ -69,6 +70,8 @@ cLuxDissolveEntity::~cLuxDissolveEntity()
 
 cLuxMap::cLuxMap(const tString& asName)
 {
+	mpWorld = NULL;
+	mpPhysicsWorld = NULL;
 	mpEngine = gpBase->mpEngine;
 
 	msName = asName;
@@ -109,7 +112,7 @@ cLuxMap::~cLuxMap()
 	STLDeleteAll(mlstUseItemCallbacks);
 	STLDeleteAll(mlstDissolveEntities);
 
-	mpEngine->GetScene()->DestroyWorld(mpWorld);	
+	if(mpWorld) mpEngine->GetScene()->DestroyWorld(mpWorld);
 
 	if(mpScript)
 		mpEngine->GetResources()->GetScriptManager()->Destroy(mpScript);
@@ -162,6 +165,7 @@ bool cLuxMap::LoadFromFile(const tString & asFile, bool abLoadEntities)
 		}
 	}
 	
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) bScriptExists = false;
 	if(bScriptExists)
 	{
 		tString sCompileMessages = "";
@@ -187,13 +191,21 @@ bool cLuxMap::LoadFromFile(const tString & asFile, bool abLoadEntities)
 	}
 	else
 	{
-		Error("Script file %s does not exist!\n", sScriptFile.c_str());
+		if(!gpBase->mpMultiplayer || !gpBase->mpMultiplayer->IsClient())
+			Error("Script file %s does not exist!\n", sScriptFile.c_str());
 	}
 
 	//Load the world
-	mpWorld = mpEngine->GetScene()->LoadWorld(asFile,lFlags);
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient())
+		mpWorld = mpEngine->GetResources()->GetWorldLoaderHandler()->LoadWorld(cString::To16Char(asFile),lFlags);
+	else
+		mpWorld = mpEngine->GetScene()->LoadWorld(asFile,lFlags);
 	if(mpWorld==NULL) 
+	{
+		gpBase->mpCurrentMapLoading = NULL;
+		if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()) return false;
 		FatalError("Could not load world file '%s'\n", asFile.c_str());
+	}
 
 	mpPhysicsWorld = mpWorld->GetPhysicsWorld();
 
@@ -403,6 +415,7 @@ void cLuxMap::Update(float afTimeStep)
 
 void cLuxMap::RunScript(const tString& asCommand)
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return;
 	if(mpScript==NULL) return;
 	if(this != gpBase->mpMapHandler->GetCurrentMap()) return;
 

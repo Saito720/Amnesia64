@@ -18,6 +18,8 @@
  */
 
 #include "LuxTypes.h"
+#include "LuxMultiplayer.h"
+#include "LuxMultiplayerTriggerPolicy.h"
 
 #include "LuxEntity.h"
 #include "LuxArea.h"
@@ -166,6 +168,15 @@ void iLuxCollideCallbackContainer::CheckCollisionCallback(const tString& asName,
 		if(pEntity->IsActive()==false) continue;
 
 		bCollide = CheckEntityCollision(pEntity, apMap);
+		bool bRemotePlayerTrigger = false;
+		if(asName == "Player" && gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsHost())
+		{
+			const bool bRemoteCollide = gpBase->mpMultiplayer->RemotePlayerTouches(pEntity);
+			bRemotePlayerTrigger = luxnet::UpdatePlayerTriggerOrigin(bCollide, bRemoteCollide,
+				pCallback->mbRemotePlayerColliding);
+			bCollide = bCollide || bRemoteCollide;
+		}
+		else pCallback->mbRemotePlayerColliding = false;
 
 		/////////////////////
 		//Handle collision
@@ -176,6 +187,7 @@ void iLuxCollideCallbackContainer::CheckCollisionCallback(const tString& asName,
 			if(lState == pCallback->mlStates || pCallback->mlStates==0)
 			{
 				tString sCommand = pCallback->msCallbackFunc+"(\"" + asName + "\", \""+ pEntity->GetName()+"\", "+cString::ToString(lState)+")" ;
+				cLuxMultiplayerRemoteTriggerScope remoteTrigger(bRemotePlayerTrigger);
 				apMap->RunScript(sCommand);
 			
 				///////////////////////
@@ -235,7 +247,7 @@ bool iLuxCollideCallbackContainer::CheckEntityCollision(iLuxEntity*apEntity, cLu
 		for(int j=0; j<apEntity->GetBodyNum(); ++j)
 		{
 			iPhysicsBody *pBodyA = GetBody(i);
-			iPhysicsBody *pBodyB = apEntity->GetBody(i);
+			iPhysicsBody *pBodyB = apEntity->GetBody(j);
 
 			if(cMath::CheckBVIntersection(*pBodyA->GetBoundingVolume(), *pBodyB->GetBoundingVolume()))
 			{
@@ -274,6 +286,7 @@ void iLuxCollideCallbackContainer::AddCollideCallback(iLuxEntity *apEntity, cons
 	pCallback->msCallbackFunc = asCallbackFunc;
 	pCallback->mbDeleteWhenColliding = abRemoveAtCollide;
 	pCallback->mbColliding = false;
+	pCallback->mbRemotePlayerColliding = false;
 	pCallback->mlStates = alStates;
 
 	apEntity->AddCollideCallbackParent(this);
@@ -526,6 +539,7 @@ void cLuxCollideCallback_SaveData::ToCallback(cLuxMap *apMap, iLuxCollideCallbac
 	apCallback->mbDeleteWhenColliding = mbDeleteWhenColliding;
 	apCallback->mlStates = mlStates;
 	apCallback->mbColliding = mbColliding;
+	apCallback->mbRemotePlayerColliding = false;
 
 	apCallback->mpCollideEntity = apMap->GetEntityByID(mlCollideEntity);
 	if(apCallback->mpCollideEntity==NULL)

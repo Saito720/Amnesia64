@@ -51,7 +51,8 @@ namespace hpl {
 	//-----------------------------------------------------------------------
 
 	cLowLevelInputSDL::cLowLevelInputSDL(iLowLevelGraphics *apLowLevelGraphics)
-        : mpLowLevelGraphics(apLowLevelGraphics), mbQuitMessagePosted(false)
+        : mpLowLevelGraphics(apLowLevelGraphics), mbQuitMessagePosted(false),
+          mpEventCallback(NULL), mpEventCallbackData(NULL)
 	{
 		LockInput(true);
 		RelativeMouse(false);
@@ -99,6 +100,7 @@ namespace hpl {
 		mlstEvents.clear();
 		while(SDL_PollEvent(&sdlEvent)!=0)
 		{
+			if(mpEventCallback) mpEventCallback(mpEventCallbackData, sdlEvent);
 #if defined _WIN32 && !SDL_VERSION_ATLEAST(2,0,0)
 			if(sdlEvent.type==SDL_SYSWMEVENT)
 			{

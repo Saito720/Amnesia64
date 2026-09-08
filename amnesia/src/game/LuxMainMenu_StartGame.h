@@ -64,6 +64,11 @@ private:
 	bool PressCancel(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(PressCancel);
 
+	bool PressMultiplayer(iWidget* apWidget, const cGuiMessageData& aData);
+	kGuiCallbackDeclarationEnd(PressMultiplayer);
+	bool UIPressMultiplayer(iWidget* apWidget, const cGuiMessageData& aData);
+	kGuiCallbackDeclarationEnd(UIPressMultiplayer);
+
 	bool UIPressStart(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(UIPressStart);
 

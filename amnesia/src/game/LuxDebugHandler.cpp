@@ -18,6 +18,7 @@
  */
 
 #include "LuxDebugHandler.h"
+#include "LuxMultiplayer.h"
 
 #include "LuxMap.h"
 #include "LuxPlayer.h"
@@ -227,6 +228,14 @@ static void PrintContainerNode(iRenderableContainerNode *apNode, int alLevel)
 
 void cLuxDebugHandler::Update(float afTimeStep)
 {
+	const bool bMultiplayer = gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive();
+	if(mpCBFastForward) mpCBFastForward->SetEnabled(!bMultiplayer);
+	if(bMultiplayer) SetFastForward(false);
+	if(bMultiplayer && gpBase->mpMultiplayer->IsClient())
+	{
+		if(gpBase->mpInputHandler->GetState() == eLuxInputState_Debug) SetDebugWindowActive(false);
+		return;
+	}
 	iCharacterBody *pCharBody = gpBase->mpPlayer->GetCharacterBody();
 	
 	if(mbFirstUpdateOnMap)// && mlTempCount>0)
@@ -254,6 +263,15 @@ void cLuxDebugHandler::Update(float afTimeStep)
 	if(mlTempCount > 30 && m_lstBatchMaps.empty()==false)
 	{
 		mlTempCount =0;
+		if(bMultiplayer)
+		{
+			// Queue map loading outside this update; resetting all game modules
+			// here would tear down the host's network session.
+			tString sMap = m_lstBatchMaps.front();
+			m_lstBatchMaps.pop_front();
+			gpBase->mpMultiplayer->HostChangeMap(sMap);
+			return;
+		}
 
 		cLuxModelCache cache;
 		cache.Create();
@@ -312,6 +330,7 @@ void cLuxDebugHandler::OnMapLeave(cLuxMap *apMap)
 
 void cLuxDebugHandler::SetDebugWindowActive(bool abActive)
 {
+	if(abActive && gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return;
 	if(gpBase->mpConfigHandler->mbLoadDebugMenu==false) return;
 
 	//////////////////
@@ -709,6 +728,8 @@ void cLuxDebugHandler::AddMessage(const tWString& asText, bool abCheckForDuplica
 
 void cLuxDebugHandler::SetFastForward(bool abX)
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()) abX = false;
+	if(mpCBFastForward) mpCBFastForward->SetChecked(abX, false);
 	if(mbFastForward == abX) return;
 
 	mbFastForward = abX;
@@ -1233,6 +1254,16 @@ void cLuxDebugHandler::ReloadTranslations()
 
 void cLuxDebugHandler::ReloadMap()
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive())
+	{
+		if(gpBase->mpMultiplayer->IsHost())
+		{
+			cLuxMap* pMap = gpBase->mpMapHandler->GetCurrentMap();
+			if(pMap && pMap->GetWorld())
+				gpBase->mpMultiplayer->HostChangeMap(cString::To8Char(pMap->GetWorld()->GetFilePath()), "", mbReloadFromCurrentPosition);
+		}
+		return;
+	}
 	///////////////////
 	// Reload all resources
 	gpBase->mpEngine->GetResources()->LoadResourceDirsFile(gpBase->msResourceConfigPath
@@ -1293,6 +1324,11 @@ void cLuxDebugHandler::ReloadMap()
 
 void cLuxDebugHandler::QuickReloadMap()
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive())
+	{
+		ReloadMap();
+		return;
+	}
 	///////////////////
 	// Save cache of all entity meshes
 	cLuxModelCache cache;
@@ -1312,6 +1348,11 @@ void cLuxDebugHandler::QuickReloadMap()
 
 void cLuxDebugHandler::TestChangeMapSave()
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive())
+	{
+		AddErrorOrWarningMessage(_W("The saved-map debug test is unavailable during multiplayer."));
+		return;
+	}
 	gpBase->mpLoadScreenHandler->DrawMenuScreen();
 
 	///////////////////
@@ -1640,6 +1681,7 @@ kGuiCallbackDeclaredFuncEnd(cLuxDebugHandler, PressTestChangeMapSave);
 
 bool cLuxDebugHandler::PressLoadWorld(iWidget* apWidget,const cGuiMessageData& aData)
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return true;
 	mvPickedFiles.clear();
 	
 	cGuiPopUpFilePicker* pPicker = mpGuiSet->CreatePopUpLoadFilePicker(mvPickedFiles,false,msCurrentFilePath,false, this, kGuiCallback(LoadWorldFromFilePicker));
@@ -1657,6 +1699,12 @@ bool cLuxDebugHandler::LoadWorldFromFilePicker(iWidget* apWidget,const cGuiMessa
 	tWString& sFilePath = mvPickedFiles[0];
 
 	msCurrentFilePath = cString::GetFilePathW(sFilePath);
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive())
+	{
+		if(gpBase->mpMultiplayer->IsHost())
+			gpBase->mpMultiplayer->HostChangeMap(cString::To8Char(sFilePath));
+		return true;
+	}
 	
 	tString sMapFile = cString::To8Char(cString::GetFileNameW(sFilePath));
 	gpBase->Reset();

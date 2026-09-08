@@ -2,9 +2,10 @@
 64-bit Windows port of Amnesia: The Dark Descent
 
 ## Key changes:
+- Experimental Steam multiplayer using Steamworks 1.65 lobbies and Steam Datagram Relay, with campaign host/join and a global tilde-key ImGui window. Direct IP remains available. See [multiplayer status, controls and tests](MULTIPLAYER.md).
 - Can be compiled in both 32-bit and 64-bit modes using Visual Studio 2026 with the v145 build tools.
 - Single solution file for all projects (main game, HPL2, dependencies and editors). No need to compile the engine separately.
-- Produces self-contained .exe files without dependency on 3rd party dlls (this prevents cluttering user's game folder with 64-bit dlls).
+- Engine dependencies are linked statically. Steam-enabled builds additionally ship Valve's `steam_api64.dll` (`steam_api.dll` for 32-bit builds) beside the executable.
 - Some libraries were changed, most notably:
 	- SDL2 was upgraded from 2.0.4 to 2.0.12
 	- alut was replaced with freealut
@@ -24,3 +25,14 @@ Executables and libraries are written to `x64/Debug` or `x64/Release` for x64,
 and `Debug` or `Release` for x86.
 
 See [OpenAL Soft build and update details](HPL2/dependencies/sources/OPENAL_SOFT.md).
+
+Steamworks SDK 1.65 headers and redistributables are included under
+`HPL2/dependencies/steamworks/sdk`; the original ZIP is not needed to build.
+The default build uses the AppID in `steam_appid.txt`
+(currently **1362050**) and deploys its Steam runtime beside the executable.
+See [Steamworks build and development setup](HPL2/dependencies/steamworks/README.md).
+
+Dear ImGui and the standalone GameNetworkingSockets/protobuf sources are also
+included. Build with `/p:HplUseSteamworks=false` for the account-free direct-IP
+backend. A build selects one networking backend; the two libraries are not linked
+together. No build-time download is required. See [networking dependency details](HPL2/dependencies/networking/README.md).

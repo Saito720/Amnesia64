@@ -167,6 +167,7 @@ private:
 
 	bool mbSmoothMouse;
 	bool mbInvertMouse;
+	bool mbMultiplayerCapturing;
 
 	double mfMouseActiveAt;
 

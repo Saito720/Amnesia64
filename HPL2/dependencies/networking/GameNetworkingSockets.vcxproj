@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32"><Configuration>Debug</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32"><Configuration>Release</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>18.0</VCProjectVersion>
+    <Keyword>MakeFileProj</Keyword>
+    <ProjectGuid>{5FCBB60D-4B87-42D8-8D66-CB67C1C569D0}</ProjectGuid>
+    <RootNamespace>GameNetworkingSockets</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Makefile</ConfigurationType>
+    <PlatformToolset>v145</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="Networking.props" />
+  <PropertyGroup>
+    <CMakeExecutable Condition="'$(CMakeExecutable)'=='' and Exists('$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe')">$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe</CMakeExecutable>
+    <CMakeExecutable Condition="'$(CMakeExecutable)'==''">cmake.exe</CMakeExecutable>
+    <RepositoryRoot>$(ProjectDir)..\..\..\</RepositoryRoot>
+    <OutDir Condition="'$(Platform)'=='Win32'">$(RepositoryRoot)$(Configuration)\</OutDir>
+    <OutDir Condition="'$(Platform)'=='x64'">$(RepositoryRoot)x64\$(Configuration)\</OutDir>
+    <IntDir>$(RepositoryRoot)bld\networking-vs\$(Platform)\$(Configuration)\</IntDir>
+    <NetworkingBuildCommand>powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)Build.ps1&quot; -UseSteamworks &quot;$(HplUseSteamworks)&quot; -Configuration &quot;$(Configuration)&quot; -Platform &quot;$(Platform)&quot; -Toolset &quot;$(PlatformToolset)&quot; -CMake &quot;$(CMakeExecutable)&quot; -VisualStudioInstance &quot;$([System.IO.Path]::GetFullPath('$(VSInstallDir).'))&quot; -OutputDirectory &quot;$(OutDir).&quot;</NetworkingBuildCommand>
+    <NMakeOutput Condition="'$(HplUseSteamworks)'!='true'">$(OutDir)GameNetworkingSockets_s.lib</NMakeOutput>
+    <NMakeOutput Condition="'$(HplUseSteamworks)'=='true'">$(HplSteamRuntimeDirectory)$(HplSteamApiName).dll</NMakeOutput>
+    <NMakeBuildCommandLine>$(NetworkingBuildCommand)</NMakeBuildCommandLine>
+    <NMakeReBuildCommandLine>$(NetworkingBuildCommand)</NMakeReBuildCommandLine>
+    <NMakeCleanCommandLine>$(NetworkingBuildCommand) -Clean</NMakeCleanCommandLine>
+  </PropertyGroup>
+  <ItemGroup><None Include="CMakeLists.txt" /><None Include="Build.ps1" /><None Include="README.md" /></ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

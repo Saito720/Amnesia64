@@ -73,6 +73,8 @@ public:
 	//Properties
 	void SetLocked(bool abLocked);
 	bool GetLocked(){ return mbLocked; }
+	const tString& GetMapFile() const { return msMapFile; }
+	const tString& GetStartPos() const { return msStartPos; }
 
 	void SetLockedSound(const tString& asSound){ msLockedSound = asSound;}
 	void SetLockedText(const tString& asCat, const tString& asEntry){ msLockedTextCat = asCat; msLockedTextEntry=asEntry;}

@@ -58,12 +58,19 @@ namespace hpl {
 
 		bool isQuitMessagePosted();
 		void resetQuitMessagePosted();
+
+		// Observe platform events without consuming releases needed by engine devices.
+		typedef void (*tEventCallback)(void*, const SDL_Event&);
+		void SetEventCallback(tEventCallback apCallback, void* apUserData)
+		{ mpEventCallback = apCallback; mpEventCallbackData = apUserData; }
 	public:
 		std::list<SDL_Event> mlstEvents;
 
 	private: 
 		iLowLevelGraphics *mpLowLevelGraphics;
 		bool mbQuitMessagePosted;
+		tEventCallback mpEventCallback;
+		void* mpEventCallbackData;
 	};
 };
 #endif // HPL_LOWLEVELINPUT_SDL_H

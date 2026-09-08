@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <HplSteamworksRoot>$(MSBuildThisFileDirectory)..\steamworks\sdk\</HplSteamworksRoot>
+    <HplUseSteamworks Condition="'$(HplUseSteamworks)'=='' and Exists('$(HplSteamworksRoot)public\steam\steam_api.h')">true</HplUseSteamworks>
+    <HplUseSteamworks Condition="'$(HplUseSteamworks)'==''">false</HplUseSteamworks>
+    <HplDeploySteamAppId Condition="'$(HplDeploySteamAppId)'==''">true</HplDeploySteamAppId>
+    <HplSteamAppIdFile>$(MSBuildThisFileDirectory)..\..\..\steam_appid.txt</HplSteamAppIdFile>
+    <HplSteamAppId Condition="'$(HplSteamAppId)'=='' and Exists('$(HplSteamAppIdFile)')">$([System.IO.File]::ReadAllText('$(HplSteamAppIdFile)').Trim())</HplSteamAppId>
+    <HplNetworkingIncludeDirectories Condition="'$(HplUseSteamworks)'=='true'">$(HplSteamworksRoot)public</HplNetworkingIncludeDirectories>
+    <HplNetworkingDefinitions Condition="'$(HplUseSteamworks)'=='true'">HPL_USE_STEAMWORKS;HPL_STEAM_APP_ID=$(HplSteamAppId)</HplNetworkingDefinitions>
+    <HplSteamRuntimeDirectory Condition="'$(Platform)'=='x64'">$(HplSteamworksRoot)redistributable_bin\win64\</HplSteamRuntimeDirectory>
+    <HplSteamRuntimeDirectory Condition="'$(Platform)'!='x64'">$(HplSteamworksRoot)redistributable_bin\</HplSteamRuntimeDirectory>
+    <HplSteamApiName Condition="'$(Platform)'=='x64'">steam_api64</HplSteamApiName>
+    <HplSteamApiName Condition="'$(Platform)'!='x64'">steam_api</HplSteamApiName>
+    <HplNetworkingLibraries Condition="'$(HplUseSteamworks)'=='true'">$(HplSteamRuntimeDirectory)$(HplSteamApiName).lib</HplNetworkingLibraries>
+    <HplNetworkingIncludeDirectories Condition="'$(HplUseSteamworks)'!='true'">$(MSBuildThisFileDirectory)..\sources\GameNetworkingSockets\include</HplNetworkingIncludeDirectories>
+    <HplNetworkingDefinitions Condition="'$(HplUseSteamworks)'!='true'">STEAMNETWORKINGSOCKETS_STATIC_LINK</HplNetworkingDefinitions>
+    <HplNetworkingLibraries Condition="'$(HplUseSteamworks)'!='true'">GameNetworkingSockets_s.lib;HPLProtobuf.lib</HplNetworkingLibraries>
+  </PropertyGroup>
+  <Target Name="ValidateHplSteamworks" BeforeTargets="PrepareForBuild" Condition="'$(HplUseSteamworks)'=='true'">
+    <Error Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(HplSteamAppId)', '^[1-9][0-9]{0,9}$'))" Text="Steamworks requires a numeric AppID in root steam_appid.txt or /p:HplSteamAppId=your_app_id." />
+    <Error Condition="!Exists('$(HplSteamworksRoot)public\steam\steam_api.h') or !Exists('$(HplSteamRuntimeDirectory)$(HplSteamApiName).lib') or !Exists('$(HplSteamRuntimeDirectory)$(HplSteamApiName).dll')" Text="Steamworks SDK headers or runtime are missing. Restore HPL2/dependencies/steamworks/sdk or build with /p:HplUseSteamworks=false." />
+  </Target>
+</Project>

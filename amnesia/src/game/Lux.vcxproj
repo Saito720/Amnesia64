@@ -53,6 +53,7 @@
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="..\..\..\HPL2\dependencies\networking\Networking.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
   <ImportGroup Label="Shared">
@@ -84,10 +85,10 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..\..\..\HPL2\core\include;..\..\..\HPL2\dependencies\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(HplNetworkingIncludeDirectories);..\..\..\HPL2\dependencies\sources\imgui;..\..\..\HPL2\dependencies\include\SDL2;..\..\..\HPL2\core\include;..\..\..\HPL2\dependencies\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;MEMORY_MANAGER_ACTIVE;USE_SDL2;USE_GAMEPAD;GLEW_STATIC;_NEWTON_USE_LIB;IL_STATIC_LIB;HAVE_LIBC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(HplNetworkingDefinitions);WIN32;_DEBUG;_WINDOWS;MEMORY_MANAGER_ACTIVE;USE_SDL2;USE_GAMEPAD;GLEW_STATIC;_NEWTON_USE_LIB;IL_STATIC_LIB;HAVE_LIBC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <DisableSpecificWarnings>26495;26812;4244</DisableSpecificWarnings>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -95,18 +96,18 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>dbghelp.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(HplNetworkingLibraries);ws2_32.lib;crypt32.lib;bcrypt.lib;Iphlpapi.lib;dbghelp.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..\..\..\HPL2\core\include;..\..\..\HPL2\dependencies\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(HplNetworkingIncludeDirectories);..\..\..\HPL2\dependencies\sources\imgui;..\..\..\HPL2\dependencies\include\SDL2;..\..\..\HPL2\core\include;..\..\..\HPL2\dependencies\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;USE_GAMEPAD;USE_SDL2;GLEW_STATIC;_NEWTON_USE_LIB;IL_STATIC_LIB;HAVE_LIBC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(HplNetworkingDefinitions);WIN32;NDEBUG;_WINDOWS;USE_GAMEPAD;USE_SDL2;GLEW_STATIC;_NEWTON_USE_LIB;IL_STATIC_LIB;HAVE_LIBC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <DisableSpecificWarnings>26495;26812;4244</DisableSpecificWarnings>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -117,15 +118,15 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>winmm.lib;setupapi.lib;Imm32.lib;Version.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(HplNetworkingLibraries);ws2_32.lib;crypt32.lib;bcrypt.lib;Iphlpapi.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..\..\..\HPL2\core\include;..\..\..\HPL2\dependencies\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(HplNetworkingIncludeDirectories);..\..\..\HPL2\dependencies\sources\imgui;..\..\..\HPL2\dependencies\include\SDL2;..\..\..\HPL2\core\include;..\..\..\HPL2\dependencies\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WarningLevel>Level3</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>_DEBUG;_WINDOWS;MEMORY_MANAGER_ACTIVE;USE_SDL2;USE_GAMEPAD;GLEW_STATIC;_NEWTON_USE_LIB;IL_STATIC_LIB;HAVE_LIBC;AL_LIBTYPE_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(HplNetworkingDefinitions);_DEBUG;_WINDOWS;MEMORY_MANAGER_ACTIVE;USE_SDL2;USE_GAMEPAD;GLEW_STATIC;_NEWTON_USE_LIB;IL_STATIC_LIB;HAVE_LIBC;AL_LIBTYPE_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <DisableSpecificWarnings>26495;26812;4244</DisableSpecificWarnings>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -133,18 +134,18 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>dbghelp.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;Avrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(HplNetworkingLibraries);ws2_32.lib;crypt32.lib;bcrypt.lib;Iphlpapi.lib;dbghelp.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;Avrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>..\..\..\HPL2\core\include;..\..\..\HPL2\dependencies\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(HplNetworkingIncludeDirectories);..\..\..\HPL2\dependencies\sources\imgui;..\..\..\HPL2\dependencies\include\SDL2;..\..\..\HPL2\core\include;..\..\..\HPL2\dependencies\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <WarningLevel>Level3</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;_WINDOWS;USE_GAMEPAD;USE_SDL2;GLEW_STATIC;_NEWTON_USE_LIB;IL_STATIC_LIB;HAVE_LIBC;AL_LIBTYPE_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>$(HplNetworkingDefinitions);NDEBUG;_WINDOWS;USE_GAMEPAD;USE_SDL2;GLEW_STATIC;_NEWTON_USE_LIB;IL_STATIC_LIB;HAVE_LIBC;AL_LIBTYPE_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <DisableSpecificWarnings>26495;26812;4244</DisableSpecificWarnings>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
@@ -155,11 +156,22 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>winmm.lib;setupapi.lib;Imm32.lib;Version.lib;Avrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(HplNetworkingLibraries);ws2_32.lib;crypt32.lib;bcrypt.lib;Iphlpapi.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;Avrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="LuxAchievementHandler.cpp" />
+    <ClCompile Include="LuxMultiplayer.cpp" />
+    <ClCompile Include="LuxMultiplayerContent.cpp" />
+    <ClCompile Include="LuxMultiplayerScript.cpp" />
+    <ClCompile Include="LuxMultiplayerUI.cpp" />
+    <ClCompile Include="LuxMultiplayerWorld.cpp" />
+    <ClCompile Include="..\..\..\HPL2\dependencies\sources\imgui\imgui.cpp" />
+    <ClCompile Include="..\..\..\HPL2\dependencies\sources\imgui\imgui_draw.cpp" />
+    <ClCompile Include="..\..\..\HPL2\dependencies\sources\imgui\imgui_tables.cpp" />
+    <ClCompile Include="..\..\..\HPL2\dependencies\sources\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="..\..\..\HPL2\dependencies\sources\imgui\backends\imgui_impl_sdl2.cpp" />
+    <ClCompile Include="..\..\..\HPL2\dependencies\sources\imgui\backends\imgui_impl_opengl3.cpp" />
     <ClCompile Include="LuxBase.cpp" />
     <ClCompile Include="LuxConfigHandler.cpp" />
     <ClCompile Include="LuxEnemy_ManPig.cpp" />
@@ -269,6 +281,13 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="LuxAchievementHandler.h" />
+    <ClInclude Include="LuxMultiplayer.h" />
+    <ClInclude Include="LuxMultiplayerContent.h" />
+    <ClInclude Include="LuxMultiplayerScript.h" />
+    <ClInclude Include="LuxMultiplayerProtocol.h" />
+    <ClInclude Include="LuxMultiplayerUI.h" />
+    <ClInclude Include="LuxMultiplayerWorld.h" />
+    <ClInclude Include="LuxMultiplayerWorldProtocol.h" />
     <ClInclude Include="LuxBase.h" />
     <ClInclude Include="LuxBasePersonal.h" />
     <ClInclude Include="LuxConfigHandler.h" />
@@ -390,6 +409,7 @@
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="..\..\..\HPL2\dependencies\steamworks\Deploy.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>

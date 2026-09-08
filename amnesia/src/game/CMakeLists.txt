@@ -12,6 +12,18 @@ file(GLOB serial_source RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
 )
 list(REMOVE_ITEM all_sources ${serial_source})
 
+if(USE_SDL2)
+    set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../HPL2/dependencies/sources/imgui)
+    list(APPEND all_sources
+        ${IMGUI_DIR}/imgui.cpp
+        ${IMGUI_DIR}/imgui_draw.cpp
+        ${IMGUI_DIR}/imgui_tables.cpp
+        ${IMGUI_DIR}/imgui_widgets.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp)
+    include_directories(${IMGUI_DIR} ${SDL2_INCLUDE_DIRS})
+endif()
+
 if (APPLE)
     set(mac_assets
         Lux.icns
@@ -70,6 +82,10 @@ add_executable(AmnesiaDemo MACOSX_BUNDLE EXCLUDE_FROM_ALL
     ${all_sources}
 )
 target_link_libraries(AmnesiaDemo HPL2)
+if(HPL_USE_STEAMWORKS)
+    hpl_deploy_steamworks(Amnesia)
+    hpl_deploy_steamworks(AmnesiaDemo)
+endif()
 set_target_properties(AmnesiaDemo PROPERTIES
 	COMPILE_DEFINITIONS "${demo_compile_defs}"
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Game-Info.plist"

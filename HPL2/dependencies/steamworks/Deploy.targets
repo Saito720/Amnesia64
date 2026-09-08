@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Target Name="RecordHplNetworkingBackend" AfterTargets="Build">
+    <WriteLinesToFile File="$(TargetDir)hpl-networking-backend.txt" Lines="$(HplUseSteamworks)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
+  <!-- Deploy only beside this project's executable. Never copy to the retail asset directory. -->
+  <Target Name="DeployHplSteamworksRuntime" AfterTargets="Build" Condition="'$(HplUseSteamworks)'=='true'">
+    <Copy SourceFiles="$(HplSteamRuntimeDirectory)$(HplSteamApiName).dll" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)..\..\..\steam_appid.txt" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" Condition="'$(HplDeploySteamAppId)'=='true' and Exists('$(MSBuildThisFileDirectory)..\..\..\steam_appid.txt')" />
+  </Target>
+</Project>

@@ -21,6 +21,7 @@
 #include "LuxBase.h"
 #include "LuxInputHandler.h"
 #include "LuxDebugHandler.h"
+#include "LuxMultiplayer.h"
 
 //-----------------------------------------------------------------------
 
@@ -32,7 +33,7 @@
 
 cLuxMainMenu_StartGame::cLuxMainMenu_StartGame(cGuiSet *apGuiSet, cGuiSkin *apGuiSkin) : iLuxMainMenuWindow(apGuiSet, apGuiSkin)
 {
-	mvWindowSize = cVector2f(400, 220);
+	mvWindowSize = cVector2f(400, 258);
 #if MAC_OS || LINUX
 	mpStartButton = 0;
 #else
@@ -114,8 +115,15 @@ void cLuxMainMenu_StartGame::CreateGui()
 	mpHardModeButton->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(PressHardMode));
 	mpHardModeButton->AddCallback(eGuiMessage_UIButtonPress, this, kGuiCallback(UIPressHardmode));
 	mpHardModeButton->SetDefaultFontColor(cColor(1.f, 1.0f));
+	mpHardModeButton->SetEnabled(gpBase->mbAllowHardmode);
 
 	vButtons.push_back(mpHardModeButton);
+
+	vButtonPosition.y += 35 + fButtonSepp;
+	pButton = mpGuiSet->CreateWidgetButton(vButtonPosition, cVector2f(fButtonWidth, 30), _W("Multiplayer"), mpWindow);
+	pButton->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(PressMultiplayer));
+	pButton->AddCallback(eGuiMessage_UIButtonPress, this, kGuiCallback(UIPressMultiplayer));
+	vButtons.push_back(pButton);
 
 	vButtonPosition.y += 50 + fButtonSepp;
 
@@ -126,17 +134,20 @@ void cLuxMainMenu_StartGame::CreateGui()
 	// 1 = Cancel
 	// 2 = Normal
 	// 3 = Hardmode 
+	// 4 = Multiplayer
 
-	vButtons[0]->SetFocusNavigation(eUIArrow_Up, vButtons[3]);
+	vButtons[0]->SetFocusNavigation(eUIArrow_Up, vButtons[4]);
 	vButtons[0]->SetFocusNavigation(eUIArrow_Left, vButtons[1]);
 
-	vButtons[1]->SetFocusNavigation(eUIArrow_Up, vButtons[3]);
+	vButtons[1]->SetFocusNavigation(eUIArrow_Up, vButtons[4]);
 	vButtons[1]->SetFocusNavigation(eUIArrow_Right, vButtons[0]);
 
-	vButtons[2]->SetFocusNavigation(eUIArrow_Down, vButtons[3]);
+	vButtons[2]->SetFocusNavigation(eUIArrow_Down, vButtons[gpBase->mbAllowHardmode ? 3 : 4]);
 	
 	vButtons[3]->SetFocusNavigation(eUIArrow_Up, vButtons[2]);
-	vButtons[3]->SetFocusNavigation(eUIArrow_Down, vButtons[0]);
+	vButtons[3]->SetFocusNavigation(eUIArrow_Down, vButtons[4]);
+	vButtons[4]->SetFocusNavigation(eUIArrow_Up, vButtons[gpBase->mbAllowHardmode ? 3 : 2]);
+	vButtons[4]->SetFocusNavigation(eUIArrow_Down, vButtons[0]);
 
 
 	vPos.x = 0;
@@ -180,6 +191,7 @@ void cLuxMainMenu_StartGame::OnSetActive(bool abX)
 {
 	if (abX)
 	{
+		PressNormalMode(NULL, cGuiMessageData(0));
 		mpGuiSet->SetDefaultFocusNavWidget(mpStartButton);
 		mpGuiSet->SetFocusedWidget(mpStartButton);
 	}
@@ -254,6 +266,21 @@ bool cLuxMainMenu_StartGame::PressCancel(iWidget* apWidget, const cGuiMessageDat
 	return true; 
 }
 kGuiCallbackDeclaredFuncEnd(cLuxMainMenu_StartGame, PressCancel);
+
+bool cLuxMainMenu_StartGame::PressMultiplayer(iWidget* apWidget, const cGuiMessageData& aData)
+{
+	if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->ShowWindow(true);
+	return true;
+}
+kGuiCallbackDeclaredFuncEnd(cLuxMainMenu_StartGame, PressMultiplayer);
+
+bool cLuxMainMenu_StartGame::UIPressMultiplayer(iWidget* apWidget, const cGuiMessageData& aData)
+{
+	if(aData.mlVal == eUIButton_Primary) return PressMultiplayer(apWidget, aData);
+	if(aData.mlVal == eUIButton_Secondary) return PressCancel(apWidget, aData);
+	return false;
+}
+kGuiCallbackDeclaredFuncEnd(cLuxMainMenu_StartGame, UIPressMultiplayer);
 
 //-----------------------------------------------------------------------
 

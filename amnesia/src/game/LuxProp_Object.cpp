@@ -18,6 +18,7 @@
  */
 
 #include "LuxProp_Object.h"
+#include "LuxMultiplayer.h"
 
 #include "LuxPlayer.h"
 #include "LuxPlayerState.h"
@@ -715,6 +716,8 @@ void  cLuxProp_Object::SetStuckState(int alState)
 
 void cLuxProp_Object::Break()
 {
+	if(mbBroken) return;
+	if(gpBase->mpMultiplayer && !gpBase->mpMultiplayer->AllowObjectBreak(msName)) return;
 	mbBroken = true;
 	mpMap->DestroyEntity(this);
 }

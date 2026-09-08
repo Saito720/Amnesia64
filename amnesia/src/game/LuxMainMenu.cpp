@@ -18,6 +18,7 @@
  */
 
 #include "LuxMainMenu.h"
+#include "LuxMultiplayer.h"
 
 #include "LuxMap.h"
 #include "LuxMapHandler.h"
@@ -1205,7 +1206,8 @@ void cLuxMainMenu::CreateTopMenuGui()
 		pLabel = mpGuiSet->CreateWidgetLabel(vPos,0,kTranslate("MainMenu","ExitToMainMenu"));
 		pLabel->AddCallback(eGuiMessage_MouseDown,this, kGuiCallback(PressExitToMainMenu));
 
-		if(gpBase->mbPTestActivated==false && gpBase->mpPlayer->IsDead()==false && gpBase->mbHardMode == false)
+		if(gpBase->mbPTestActivated==false && gpBase->mpPlayer->IsDead()==false && gpBase->mbHardMode == false &&
+			(!gpBase->mpMultiplayer || !gpBase->mpMultiplayer->ShouldSuppressOfflineSaves()))
 		{
 			// Set up label right above
 			SetupTopMenuLabel(pLabel);
@@ -1542,7 +1544,8 @@ bool cLuxMainMenu::PressStartGame(iWidget* apWidget, const cGuiMessageData& aDat
 	/////////////
 	//HARDMODE
 
-    if (gpBase->mbAllowHardmode == true && gpBase->mpCustomStory == 0)
+    // Campaign mode selection also contains the multiplayer entry point.
+    if (gpBase->mpCustomStory == 0)
 	{
 		SetWindowActive(eLuxMainMenuWindow_StartGame);
 		gpBase->mbHardMode = false;

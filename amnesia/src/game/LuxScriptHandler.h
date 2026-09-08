@@ -28,8 +28,11 @@
 
 using namespace std;
 
+namespace luxnet { struct Reader; }
+
 class cLuxScriptHandler : public iLuxUpdateable
 {
+friend bool LuxApplyMultiplayerScriptEffect(luxnet::Reader& r, std::string& error);
 public:	
 	cLuxScriptHandler();
 	~cLuxScriptHandler();

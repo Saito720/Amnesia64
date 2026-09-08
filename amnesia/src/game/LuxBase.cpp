@@ -18,6 +18,8 @@
  */
 
 #include "LuxBase.h"
+#include "LuxMultiplayer.h"
+#include "LuxSteamLaunch.h"
 
 #include "LuxInputHandler.h"
 
@@ -352,6 +354,7 @@ static unsigned char gv_start_pos_str[18] = {0x78, 0x49, 0xCE, 0xBA, 0x4, 0x55, 
 
 cLuxBase::cLuxBase()
 {
+	mpMultiplayer = NULL;
 	///////////////////////////////
 	// Init pointers
 	mpEngine = NULL;
@@ -390,6 +393,7 @@ cLuxBase::cLuxBase()
 cLuxBase::~cLuxBase()
 {
 	ExitEngine();
+	hpl::cNetworkTransport::ShutdownSteam();
 
 	if(mpCustomStory)
 		hplDelete(mpCustomStory);
@@ -408,6 +412,10 @@ bool cLuxBase::Init(const tString &asCommandline)
 	/////////////////////////////
 	// Parse the command line
 	if(ParseCommandLine(asCommandline)==false) return false;
+	// Initialize before the graphics device so Steam can attach its overlay.
+	// Steam being unavailable must not prevent the offline game from starting.
+	tString steamError;
+	hpl::cNetworkTransport::InitializeSteam(steamError);
 
 	/////////////////////////////
 	// Init basic app and engine stuff
@@ -479,6 +487,15 @@ bool cLuxBase::Init(const tString &asCommandline)
 	//////////////////////////
 	//The init is over
 	InitOver();
+	if(!msSteamConnectLobby.empty())
+	{
+		uint64_t lobby=0;
+		if(luxsteam::ParseLobbyCode(msSteamConnectLobby,lobby))
+		{
+			mpMultiplayer->QueueSteamInvite(lobby);
+			mpMultiplayer->AcceptSteamInvite();
+		}
+	}
 		
 	return true;
 }
@@ -586,6 +603,7 @@ bool cLuxBase::StartGame(const tString& asFile, const tString& asFolder, const t
 	//////////////////
 	//Load map
 	cLuxMap *pMap = mpMapHandler->LoadMap(sMapFile, true);
+	if(!pMap) return false;
 	mpMapHandler->SetCurrentMap(pMap, true, true, sStartPos);
 	
 	///////////////////
@@ -617,9 +635,17 @@ bool cLuxBase::StartCustomStory()
 
 bool cLuxBase::ParseCommandLine(const tString &asCommandline)
 {
+	tString gameCommand;
+	uint64_t lobby=0;
+	if(!luxsteam::ExtractLobbyLaunch(asCommandline,gameCommand,lobby))
+	{
+		msErrorMessage=_W("Invalid Steam lobby launch argument. Expected +connect_lobby followed by a numeric lobby ID.");
+		return false;
+	}
+	msSteamConnectLobby=lobby ? std::to_string(lobby) : "";
 	msDefaultInitConfigFile = _W("config/main_init.cfg");
 
-	if(asCommandline == "ptest")
+	if(gameCommand == "ptest")
 	{
 		mbPTestActivated = true;
 		msInitConfigFile = cString::To16Char(DecryptString((char*)gv_main_init_str)); //_W("config/ptest_main_init.cfg");
@@ -638,7 +664,7 @@ bool cLuxBase::ParseCommandLine(const tString &asCommandline)
 
 	//////////////////////////////////
 	// HARDMODE
-	if(asCommandline == "hardmode")
+	if(gameCommand == "hardmode")
 	{
 		msInitConfigFile = msDefaultInitConfigFile;
 		mbHardMode = true;
@@ -648,7 +674,9 @@ bool cLuxBase::ParseCommandLine(const tString &asCommandline)
 	//////////////////////////////////
 	//Main Init config file
 	// TODO: Parse the command line better?
-	msInitConfigFile = cString::To16Char(asCommandline);
+	if(gameCommand.size()>=2 && gameCommand.front()=='"' && gameCommand.back()=='"')
+		gameCommand=gameCommand.substr(1,gameCommand.size()-2);
+	msInitConfigFile = cString::To16Char(gameCommand);
 	if(msInitConfigFile==_W("")) 
 		msInitConfigFile = msDefaultInitConfigFile;
 
@@ -1253,6 +1281,7 @@ bool cLuxBase::InitGame()
 	mpEngine->GetUpdater()->AddContainer("Journal");
 	mpEngine->GetUpdater()->AddContainer("Credits");
 	mpEngine->GetUpdater()->AddContainer("LoadScreen");
+	mpEngine->GetUpdater()->AddContainer("MultiplayerLoading");
 #ifdef LUX_DEMO_VERSION
 	mpEngine->GetUpdater()->AddContainer("DemoEnd");
 #endif
@@ -1310,6 +1339,7 @@ bool cLuxBase::InitGame()
 
 	//Load screen
 	mpLoadScreenHandler = CreateModule( cLuxLoadScreenHandler, "LoadScreen");
+	mpMultiplayer = CreateGlobalModule( cLuxMultiplayer);
 
 
 	//Make sure all of the modules are reset!
@@ -1382,6 +1412,14 @@ bool cLuxBase::InitGame()
 
 void cLuxBase::ExitGame()
 {
+	// Multiplayer owns callbacks into input/graphics and must leave before those modules.
+	if(mpMultiplayer)
+	{
+		mpMultiplayer->Stop("Game closed.");
+		mvModules.erase(std::remove(mvModules.begin(), mvModules.end(), mpMultiplayer), mvModules.end());
+		hplDelete(mpMultiplayer);
+		mpMultiplayer = NULL;
+	}
 	Log(" Deleting game modules.\n");
 	for(size_t i=0; i<mvModules.size(); ++i)
 	{

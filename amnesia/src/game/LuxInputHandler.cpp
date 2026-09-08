@@ -38,6 +38,7 @@
 #include "LuxLoadScreenHandler.h"
 
 #include "LuxDebugHandler.h"
+#include "LuxMultiplayer.h"
 
 //////////////////////////////////////////////////////////////////////////
 // ACTION LISTS
@@ -341,6 +342,7 @@ cLuxInputHandler::cLuxInputHandler() : iLuxUpdateable("LuxInputHandler")
 	////////////////////////////////////
 	// Variable init
 	mState = eLuxInputState_Game;
+	mbMultiplayerCapturing = false;
 	mfMouseActiveAt = -1;
 }
 
@@ -483,6 +485,28 @@ void cLuxInputHandler::OnStart()
 
 void cLuxInputHandler::Update(float afTimeStep)
 {
+	const bool bCapture = gpBase->mpMultiplayer &&
+		(gpBase->mpMultiplayer->IsWindowVisible() || gpBase->mpMultiplayer->IsSteamOverlayActive() ||
+		 (gpBase->mpMultiplayer->IsClient() && !gpBase->mpMultiplayer->IsReady()));
+	if(bCapture || mbMultiplayerCapturing)
+	{
+		if(bCapture && !mbMultiplayerCapturing && gpBase->mpMapHandler->GetCurrentMap())
+		{
+			// Release held interactions before suppressing input, including ownership.
+			mpPlayer->DoAction(eLuxPlayerAction_Interact, false);
+			mpPlayer->DoAction(eLuxPlayerAction_Attack, false);
+			mpPlayer->DoAction(eLuxPlayerAction_Ignite, false);
+			mpPlayer->Run(false);
+			mpPlayer->Jump(false);
+			mpPlayer->Crouch(false);
+			mpPlayer->SetLean(0);
+		}
+		mbMultiplayerCapturing = bCapture;
+		mpInput->ResetActionsToCurrentState();
+		mpInput->GetMouse()->GetRelPosition();
+		ResetSmoothMousePos();
+		return;
+	}
 	///////////////////////////////////
 	// Update input for current state
 	UpdateGlobalInput();
@@ -910,24 +934,26 @@ bool cLuxInputHandler::UpdateGamepadUIInput()
 
 void cLuxInputHandler::UpdateGameInput()
 {
+	const bool bMultiplayer = gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive();
+	const bool bClient = bMultiplayer && gpBase->mpMultiplayer->IsClient();
 	/////////////////
 	// Debug
-	if(mpInput->BecameTriggerd(eLuxAction_OpenDebug))
+	if(mpInput->BecameTriggerd(eLuxAction_OpenDebug) && !bClient)
 	{
 		gpBase->mpDebugHandler->SetDebugWindowActive(true);
 	}
-	if(mpInput->BecameTriggerd(eLuxAction_ReloadMap) && gpBase->mpConfigHandler->mbLoadDebugMenu)
+	if(mpInput->BecameTriggerd(eLuxAction_ReloadMap) && gpBase->mpConfigHandler->mbLoadDebugMenu && !bClient)
 	{
 		gpBase->mpDebugHandler->QuickReloadMap();
 	}
-	if(mpInput->BecameTriggerd(eLuxAction_FastForward) && gpBase->mpConfigHandler->mbLoadDebugMenu)
+	if(mpInput->BecameTriggerd(eLuxAction_FastForward) && gpBase->mpConfigHandler->mbLoadDebugMenu && !bMultiplayer)
 	{
 		bool bActivate = !gpBase->mpDebugHandler->GetFastForward();
 
 		gpBase->mpDebugHandler->SetFastForward(bActivate);
 	}
 
-	if(mpPlayer->IsDead()==false && gpBase->mpDebugHandler->GetAllowQuickSave() && gpBase->mbPTestActivated==false)
+	if(!bMultiplayer && mpPlayer->IsDead()==false && gpBase->mpDebugHandler->GetAllowQuickSave() && gpBase->mbPTestActivated==false)
 	{
 		if(mpInput->BecameTriggerd(eLuxAction_QuickSave))
 		{

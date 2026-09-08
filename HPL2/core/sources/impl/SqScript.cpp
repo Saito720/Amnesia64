@@ -28,6 +28,7 @@
 #include "resources/Resources.h"
 
 namespace hpl {
+	bool IsScriptExecuting() { return asGetActiveContext() != NULL; }
 
 	//////////////////////////////////////////////////////////////////////////
 	// PUBLIC DATA

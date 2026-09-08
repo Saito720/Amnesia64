@@ -31,6 +31,8 @@
 #endif
 
 namespace hpl {
+	// True only while the local scripting VM is executing a script context.
+	bool IsScriptExecuting();
 
 	class iScript : public iResourceBase
 	{

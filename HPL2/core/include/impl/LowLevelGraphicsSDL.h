@@ -179,6 +179,11 @@ namespace hpl {
 		void WaitAndFinishRendering();
 		void FlushRendering();
 		void SwapBuffers();
+
+		// A final overlay pass shared by game, menus, and loading screens.
+		typedef void (*tOverlayCallback)(void*);
+		void SetOverlayCallback(tOverlayCallback apCallback, void* apUserData)
+		{ mpOverlayCallback = apCallback; mpOverlayCallbackData = apUserData; }
 		
 		void SetCurrentFrameBuffer(iFrameBuffer* apFrameBuffer, const cVector2l &avPos = 0, const cVector2l& avSize = -1);
 		iFrameBuffer* GetCurrentFrameBuffer() { return mpFrameBuffer; }
@@ -412,6 +417,8 @@ namespace hpl {
 		//////////////////////////////////////
 		//Double sided stencil
 		bool mbDoubleSidedStencilIsSet;
+		tOverlayCallback mpOverlayCallback;
+		void* mpOverlayCallbackData;
 
 #ifdef WITH_CG
 		//////////////////////////////////////

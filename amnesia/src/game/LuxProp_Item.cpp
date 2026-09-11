@@ -23,6 +23,7 @@
 #include "LuxMap.h"
 #include "LuxHelpFuncs.h"
 #include "LuxInventory.h"
+#include "LuxMultiplayer.h"
 #include "LuxItemType.h"
 #include "LuxMessageHandler.h"
 #include "LuxEffectRenderer.h"
@@ -151,6 +152,7 @@ bool cLuxProp_Item::CanInteract(iPhysicsBody *apBody)
 
 bool cLuxProp_Item::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 {
+	if(gpBase->mpMultiplayer && !gpBase->mpMultiplayer->BeginNativeInteraction(this)) return true;
 	////////////////////
 	//Picked up item
 	bool bRemoveProp=true;	
@@ -170,7 +172,7 @@ bool cLuxProp_Item::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 			gpBase->mpMessageHandler->SetMessage(kTranslate("Inventory", "PickedUp")+_W(" ")+kTranslate("Inventory",sEntry), 0);
 		}
 
-		RunCallbackFunc("OnPickup");
+		if(!gpBase->mpMultiplayer || !gpBase->mpMultiplayer->IsActive()) RunCallbackFunc("OnPickup");
 	}
 	/////////////////////
 	//Item is NOT picked up
@@ -179,6 +181,7 @@ bool cLuxProp_Item::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 	}
 
 	
+	if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->CompleteNativeInteraction(this,bRemoveProp);
 	return true;
 }
 

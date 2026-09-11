@@ -18,6 +18,7 @@
  */
 
 #include "LuxInventory.h"
+#include "LuxMultiplayer.h"
 
 #include "LuxPlayer.h"
 #include "LuxInputHandler.h"
@@ -842,7 +843,7 @@ void cLuxInventory::OnLeaveContainer(const tString& asNewContainer)
 {
 	///////////////////////////
 	//Pause voices and turn down volume on world sounds
-	if(mbExitToJournal == false)
+	if(mbExitToJournal == false || asNewContainer != "Journal")
 	{
 		gpBase->mpEffectHandler->GetPlayVoice()->UnpauseCurrentVoices();
 
@@ -878,6 +879,9 @@ void cLuxInventory::OnDraw(float afFrameTime)
 {
 	////////////////////////
 	//Draw background
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive())
+		mpGuiSet->DrawGfx(mpWhiteGfx,mvGuiSetStartPos,mvGuiSetSize,cColor(0,0.65f*mfAlpha));
+
 	if(mpScreenGfx && mfAlpha<1) 
 		mpGuiSet->DrawGfx(mpScreenGfx,mvGuiSetStartPos+cVector3f(0,0,0),mvGuiSetSize);
 
@@ -1533,6 +1537,7 @@ bool cLuxInventory::CheckSpecialCombineAction(cLuxInventory_Item *apItemA, cLuxI
 
 void cLuxInventory::CreateBackground()
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()) return;
 	CreateScreenTextures();
 	RenderBackgroundImage();
 }

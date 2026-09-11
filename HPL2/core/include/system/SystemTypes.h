@@ -74,6 +74,7 @@ namespace hpl {
 	enum eSystemPath
 	{
 		eSystemPath_Personal,
+		eSystemPath_Cache,
 		eSystemPath_LastEnum
 	};
 

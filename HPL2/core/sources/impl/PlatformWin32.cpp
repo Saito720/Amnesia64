@@ -184,7 +184,8 @@ namespace hpl {
 	tWString cPlatform::GetFullFilePath(const tWString& asFilePath)
 	{
 		wchar_t sOutFilePath[2048];
-		int x = GetFullPathNameW(asFilePath.c_str(),2048,sOutFilePath,NULL);
+		const DWORD length = GetFullPathNameW(asFilePath.c_str(),2048,sOutFilePath,NULL);
+		if(length==0 || length>=2048) return _W("");
 		
 		return sOutFilePath;
 	}
@@ -535,6 +536,8 @@ namespace hpl {
 		switch(aPathType)
 		{
 		case eSystemPath_Personal:	type = CSIDL_PERSONAL;
+			break;
+		case eSystemPath_Cache:		type = CSIDL_LOCAL_APPDATA;
 			break;
 		default: return _W("");
 		}

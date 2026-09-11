@@ -126,7 +126,7 @@ namespace hpl {
 
 		mpNodeList = apWorld->GetAINodeList(mpParams->msNodeType);
 
-		if(mpWorld->GetFilePath() != _W(""))
+		if(mpWorld->GetMapCacheEnabled() && mpWorld->GetFilePath() != _W(""))
 		{
 			tWString sPath = mpWorld->GetFilePath();
 			tWString sSaveFile = cString::SetFileExtW(sPath,_W("ainodes"));
@@ -282,7 +282,7 @@ namespace hpl {
 
 	void cAINodeGenerator::SaveToFile()
 	{
-		if(mpWorld->GetFilePath() == _W("")) return;
+		if(!mpWorld->GetMapCacheEnabled() || mpWorld->GetFilePath() == _W("")) return;
 
 		cSystem *pSystem = mpWorld->GetSystem();
 		cResources *pResources = mpWorld->GetResources();
@@ -324,7 +324,7 @@ namespace hpl {
 
 	void cAINodeGenerator::LoadFromFile()
 	{
-		if(mpWorld->GetFilePath() == _W("")) return;
+		if(!mpWorld->GetMapCacheEnabled() || mpWorld->GetFilePath() == _W("")) return;
 
 		cSystem *pSystem = mpWorld->GetSystem();
 		cResources *pResources = mpWorld->GetResources();

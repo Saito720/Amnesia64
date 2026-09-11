@@ -211,7 +211,8 @@ namespace hpl {
 
 		///////////////////////
 		//Save to compressed
-		if(cResources::GetCreateAndLoadCompressedMaps() && bLoadedFromNormalFile)
+		if(cResources::GetCreateAndLoadCompressedMaps() && bLoadedFromNormalFile &&
+			(mlCurrentFlags & eWorldLoadFlag_NoMapCache)==0)
 		{
 			tWString sCompFile = cString::SetFileExtW(asFile,_W("cmap"));
 
@@ -265,6 +266,7 @@ namespace hpl {
 		///////////////////////
 		//Create world and set up physics world with default values
 		mpCurrentWorld = mpScene->CreateWorld(cString::To8Char(cString::GetFileNameW(asFile)));
+		mpCurrentWorld->SetMapCacheEnabled((mlCurrentFlags & eWorldLoadFlag_NoMapCache)==0);
 		mpCurrentWorld->SetFilePath(asFile);
 
 		mpCurrentPhysicsWorld = mpPhysics->CreateWorld(true);
@@ -436,6 +438,7 @@ namespace hpl {
 
 	void cWorldLoaderHplMap::LoadCacheFile(const tWString& asFile)
 	{
+		if(mlCurrentFlags & eWorldLoadFlag_NoMapCache) return;
 #if (defined(__PPC__) || defined(__ppc__))
 		return;
 #endif
@@ -694,6 +697,7 @@ namespace hpl {
 
 	void cWorldLoaderHplMap::SaveCacheFile(const tWString& asFile)
 	{
+		if(mlCurrentFlags & eWorldLoadFlag_NoMapCache) return;
 #if (defined(__PPC__) || defined(__ppc__))
 		return;
 #endif

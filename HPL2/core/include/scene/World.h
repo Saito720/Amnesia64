@@ -160,6 +160,9 @@ namespace hpl {
 
 		void SetFilePath(const tWString& asFile){ msFilePath = asFile;}
 		const tWString& GetFilePath(){ return msFilePath;}
+		// Disk caches derived from the map (including AI nodes) are optional.
+		void SetMapCacheEnabled(bool abX){ mbMapCacheEnabled = abX;}
+		bool GetMapCacheEnabled() const { return mbMapCacheEnabled;}
 
 		void SetActive(bool abX) {mbActive = abX;}
 		inline bool IsActive()  const { return mbActive;}
@@ -367,6 +370,7 @@ namespace hpl {
 		tString msName;
 		tWString msFilePath;
 		bool mbActive;
+		bool mbMapCacheEnabled;
 
 		cGraphics *mpGraphics;
 		cSound* mpSound;

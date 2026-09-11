@@ -23,6 +23,7 @@
 //----------------------------------------------
 
 #include "LuxBase.h"
+#include <cstdint>
 
 //----------------------------------------------
 
@@ -149,6 +150,8 @@ public:
 	
 	const tString& GetName()const{ return msName;}
 	int GetID(){ return mlID;}
+	// Local lifetime identity; authored IDs may be reused after destruction.
+	uint64_t GetRuntimeID() const { return mlRuntimeID; }
 
 	void SetActive(bool abX);
 	bool IsActive(){ return mbActive;}
@@ -229,6 +232,7 @@ protected:
 	bool mbActive;
 	bool mbIsSaved;
 	int mlID;
+	uint64_t mlRuntimeID;
 
 	bool mbInteractionDisabled;
 

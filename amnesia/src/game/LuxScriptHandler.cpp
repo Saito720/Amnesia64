@@ -1022,6 +1022,7 @@ void __stdcall cLuxScriptHandler::AutoSave()
 
 void __stdcall cLuxScriptHandler::CheckPoint(string& asName,string& asStartPos ,string& asCallback, string &asDeathHintCat, string &asDeathHintEntry)
 {
+    cLuxMultiplayerScriptScope networkEffect(167, asName, asStartPos, asCallback, asDeathHintCat, asDeathHintEntry);
 	gpBase->mpMapHandler->GetCurrentMap()->SetCheckPoint(asName, asStartPos, asCallback);
 	gpBase->mpPlayer->GetHelperDeath()->SetHint(asDeathHintCat, asDeathHintEntry);
 }
@@ -1354,10 +1355,12 @@ void __stdcall cLuxScriptHandler::UnlockAchievement(string& asName)
 void __stdcall cLuxScriptHandler::PlayGuiSound(string& asSoundEntFile, float afVolume)
 {
     cLuxMultiplayerScriptScope networkEffect(29, asSoundEntFile, afVolume);
-	tString sExt = cString::GetFileExt(asSoundEntFile);
+	tString sExt = cString::ToLowerCase(cString::GetFileExt(asSoundEntFile));
+	const bool bSoundEntity = sExt == "snt" || (sExt.empty() &&
+		!gpBase->mpEngine->GetResources()->GetFileSearcher()->GetFilePath(cString::SetFileExt(asSoundEntFile, "snt")).empty());
 
-	//Sound entity!
-	if(sExt == "" || sExt == "snt")
+	// Existing extensionless entities retain their random sample selection.
+	if(bSoundEntity)
 	{
 		gpBase->mpHelpFuncs->PlayGuiSoundData(asSoundEntFile, eSoundEntryType_Gui, afVolume);
 	}
@@ -1796,6 +1799,7 @@ void __stdcall cLuxScriptHandler::AddDiary(string& asNameAndTextEntry, string& a
 void __stdcall cLuxScriptHandler::ReturnOpenJournal(bool abOpenJournal)
 {
     cLuxMultiplayerScriptScope networkEffect(69, abOpenJournal);
+	if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->RecordNativeDiaryDecision(abOpenJournal);
 	cLuxItemType_Diary::mbShowJournalOnPickup = abOpenJournal;
 }
 
@@ -2730,6 +2734,7 @@ void __stdcall cLuxScriptHandler::RotatePropToSpeed(string& asName, float afAcc,
 
 void __stdcall  cLuxScriptHandler::StopPropMovement(string& asName)
 {
+    cLuxMultiplayerScriptScope networkEffect(166, asName);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Prop,-1)
 
 		iLuxProp *pProp = ToProp(pEntity);

@@ -22,6 +22,8 @@
 #include "LuxMap.h"
 #include "LuxPlayer.h"
 #include "LuxInteractConnections.h"
+#include "LuxMultiplayer.h"
+#include "LuxMultiplayerWorld.h"
 
 
 
@@ -585,6 +587,13 @@ void iLuxProp::SetDisableCollisionUntilOutSidePlayer(bool abX)
 	}
 }
 
+bool iLuxProp::IsPlayerCollisionTemporarilyDisabled(iPhysicsBody* apBody) const
+{
+    // UpdateCheckIfOutsidePlayer restores each body separately as it clears the
+    // local player. A network snapshot must not end that local drop safeguard.
+    return mbCheckOutsidePlayer && apBody && !apBody->GetCollideCharacter();
+}
+
 //-------------------------------------------------------------------
 
 void iLuxProp::MoveLinearTo(const cVector3f& avGoal, float afAcc, float afMaxSpeed, float afSlowdownDist, bool abResetSpeed)
@@ -668,6 +677,11 @@ void iLuxProp::RotateAtSpeed(	float afAcc, float afGoalSpeed, const cVector3f& a
 }
 
 //-------------------------------------------------------------------
+
+bool iLuxProp::IsInteractedWith()
+{
+    return mbIsInteractedWith || (gpBase->mpMultiplayer && gpBase->mpMultiplayer->GetWorld()->IsEntityLeased(this));
+}
 
 void iLuxProp::StopMove()
 {
@@ -916,7 +930,7 @@ void iLuxProp::InteractConnectionLimit(int alState)
 	{
 		iLuxInteractConnection *pConnection = mvInteractConnections[i];
         
-		if(pConnection->GetInteractionOnly() && mbIsInteractedWith==false) continue;
+		if(pConnection->GetInteractionOnly() && IsInteractedWith()==false) continue;
 
 		mvInteractConnections[i]->OnLimit(alState);	
 	}
@@ -932,7 +946,7 @@ void iLuxProp::InteractConnectionTurn(float afAngle, float afPrevAngle, float af
 	{
 		iLuxInteractConnection *pConnection = mvInteractConnections[i];
 
-		if(pConnection->GetInteractionOnly() && mbIsInteractedWith==false) continue;
+		if(pConnection->GetInteractionOnly() && IsInteractedWith()==false) continue;
 
 		pConnection->OnTurn(afAngle - afPrevAngle, fT);	
 	}
@@ -1337,8 +1351,13 @@ void iLuxProp::UpdateMoving(float afTimeStep)
 
 	///////////////////////////
 	// Update movement matrix
-    UpdateLinearMoving(afTimeStep);    
-	UpdateAngularMoving(afTimeStep);
+    // The host owns map motors and their collision/stop callbacks. Clients
+    // render synchronized transforms, while keeping the move sound updates.
+    if (GetPropType() != eLuxPropType_MoveObject || !gpBase->mpMultiplayer || !gpBase->mpMultiplayer->IsClient())
+    {
+        UpdateLinearMoving(afTimeStep);
+        UpdateAngularMoving(afTimeStep);
+    }
 
 	///////////////////////////
 	// Stop movement

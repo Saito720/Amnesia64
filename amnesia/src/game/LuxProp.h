@@ -230,6 +230,7 @@ typedef iLuxEntity super_class;
 friend class cLuxSavedGameEntity;
 friend class iLuxPropLoader;
 friend class cLuxProp_WorldCollisionCallback;
+friend class cLuxMultiplayerEntities;
 public:	
 	iLuxProp(const tString &asName, int alID, cLuxMap *apMap, eLuxPropType aPropType);
 	virtual ~iLuxProp();
@@ -251,6 +252,7 @@ public:
 	void GiveDamage(float afAmount, int alStrength);
 
 	void SetDisableCollisionUntilOutSidePlayer(bool abX);
+	bool IsPlayerCollisionTemporarilyDisabled(iPhysicsBody* apBody) const;
 
 	void MoveLinearTo(const cVector3f& avGoal, float afAcc, float afMaxSpeed, float afSlowdownDist, bool abResetSpeed);
 	void MoveAngularTo(	const cMatrixf& a_mtxGoal, float afAcc, float afMaxSpeed, float afSlowdownDist, bool abResetSpeed, bool abUseOffset,
@@ -280,7 +282,7 @@ public:
 	float GetEffectsAlpha(){ return mfEffectsAlpha;}
 
 	void SetIsInteractedWith(bool abX){  mbIsInteractedWith = abX;}
-	bool IsInteractedWith(){  return mbIsInteractedWith;}
+	bool IsInteractedWith();
 
 	bool IsMoving(){ return mbMoving; }
 	

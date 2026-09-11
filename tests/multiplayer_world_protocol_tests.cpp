@@ -12,7 +12,7 @@ static Body Sample(uint64_t id = 123)
     body.matrix[0] = body.matrix[5] = body.matrix[10] = 1;
     body.matrix[3] = 4; body.matrix[7] = -2; body.matrix[11] = 1;
     body.linear[0] = 2.5f; body.angular[2] = -0.25f;
-    body.flags = Awake | Active | Gravity;
+    body.flags = Awake | Active | Gravity | Collide | CollideCharacter;
     return body;
 }
 
@@ -34,6 +34,15 @@ int main()
 {
     assert(BodyId("Player") == 3692324345213718176ull);
     assert(BodyId("crate_1") != BodyId("crate_2"));
+    assert(BodyId("cabinet_Body", -1) == BodyId("cabinet_Body"));
+    assert(BodyId("cabinet_Body", 0) != BodyId("cabinet_Body", -1));
+    for (int id : {17, 32, 33, 34})
+    {
+        assert(BodyId("cabinet_Body", id) != BodyId("other_cabinet_Body", id));
+        assert(BodyId("cabinet_Body", id) != BodyId("cabinet_Body" + std::to_string(id)));
+        for (int other : {17, 32, 33, 34})
+            if (id != other) assert(BodyId("cabinet_Body", id) != BodyId("cabinet_Body", other));
+    }
     assert(Newer(0, 0xffffffff));
     assert(!Newer(0xffffffff, 0));
     assert(!Newer(42, 42));
@@ -43,6 +52,7 @@ int main()
     assert(bytes[1] == 0x78 && bytes[2] == 0x56 && bytes[3] == 0x34 && bytes[4] == 0x12);
     assert(Decode(bytes, bodies) && bodies.size() == 1);
     assert(bodies[0].id == 123 && bodies[0].matrix[7] == -2 && bodies[0].linear[0] == 2.5f);
+    assert(bodies[0].flags == (Awake | Active | Gravity | Collide | CollideCharacter));
     for (size_t length = 0; length < bytes.size(); ++length)
         assert(!Decode(std::vector<uint8_t>(bytes.begin(), bytes.begin() + length), bodies));
     std::vector<uint8_t> trailing = bytes; trailing.push_back(0);

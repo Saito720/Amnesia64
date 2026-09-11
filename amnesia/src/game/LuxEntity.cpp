@@ -19,6 +19,7 @@
 
 #include "LuxEntity.h"
 #include "LuxMultiplayer.h"
+#include "LuxProp.h"
 
 #include "LuxMap.h"
 #include "LuxPlayer.h"
@@ -36,6 +37,10 @@ iLuxEntity::iLuxEntity(const tString &asName, int alID, cLuxMap *apMap, eLuxEnti
 	mpMap = apMap;
 	mEntityType = aEntityType;
 	mlID = alID;
+	// Entity creation and destruction run on the game thread. This identity is
+	// deliberately not saved or sent: network claims refer to one local instance.
+	static uint64_t nextRuntimeID = 0;
+	mlRuntimeID = ++nextRuntimeID;
 	mbActive = true;
 	mbFullGameSave = false;
 
@@ -132,6 +137,7 @@ void iLuxEntity::RunCallbackFunc(const tString& asType)
 
 void iLuxEntity::RunInteractCallbackFunc()
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->DeferNativeInteractionCallback(this)) return;
 	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient())
 	{
 		if(GetBodyNum()>0) gpBase->mpMultiplayer->RequestEntityInteraction(this,GetBody(0),cVector3f(0));
@@ -329,6 +335,15 @@ void iLuxEntity::ConnectionStateChange(int alState)
 			if(alState != pConn->GetStateUsed()) continue;
 		}
 
+		// These targets receive authoritative native state or mover transforms.
+		// Delayed client joint limits must not re-lock a door or relight a lamp
+		// after a correct host snapshot has already arrived.
+		if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient() &&
+		   pConn->GetEntity()->GetEntityType()==eLuxEntityType_Prop)
+		{
+			eLuxPropType type=static_cast<iLuxProp*>(pConn->GetEntity())->GetPropType();
+			if(type==eLuxPropType_Lamp || type==eLuxPropType_SwingDoor || type==eLuxPropType_MoveObject) continue;
+		}
 		//Get state sent to child, invert if set so.
 		int lState = pConn->GetInvertStateSent() ? -alState : alState;
 

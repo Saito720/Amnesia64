@@ -66,6 +66,7 @@ public:
 	//////////////////////
 	//Properties
 	const tString& GetStringVal(){ return msVal; }
+	const tString& GetExtraStringVal(){ return msExtraVal; }
 
 	eLuxItemType GetItemType(){ return mItemType;}
 

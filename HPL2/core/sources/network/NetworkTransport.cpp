@@ -301,6 +301,14 @@ namespace hpl
             static_cast<uint32_t>(data.size()), flags, nullptr) == k_EResultOK;
     }
 
+    void cNetworkTransport::Flush(uint32_t peer)
+    {
+        if(!mpImpl->active) return;
+        const auto found = mpImpl->peers.find(peer);
+        if(found == mpImpl->peers.end() || found->second == k_HSteamNetConnection_Invalid) return;
+        if(ISteamNetworkingSockets* api = SteamNetworkingSockets()) api->FlushMessagesOnConnection(found->second);
+    }
+
     void cNetworkTransport::Disconnect(uint32_t peer, const std::string& reason)
     {
         const auto found = mpImpl->peers.find(peer);

@@ -27,6 +27,7 @@
 enum eLuxLoadScreenState
 {
 	eLuxLoadScreenState_Game,
+	eLuxLoadScreenState_Multiplayer,
 	eLuxLoadScreenState_LastEnum
 };
 
@@ -58,6 +59,8 @@ public:
 	
 	void DrawGameScreen();
 	void DrawMenuScreen();
+	// Present immediately before a synchronous multiplayer map load.
+	void DrawMultiplayerScreen();
 	void DrawBlankScreen();
 
 	void ExitPressed();
@@ -82,6 +85,7 @@ private:
 	void UpdateGameState(float afTimeStep);
 	void DrawGameState(float afFrameTime);
 	void DrawGameScreen(cGuiSet *apSet);
+	void DrawMultiplayerScreen(cGuiSet *apSet);
 	
 	//////////////////
 	// Data

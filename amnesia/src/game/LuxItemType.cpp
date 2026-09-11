@@ -20,6 +20,7 @@
 #include "LuxItemType.h"
 
 #include "LuxInventory.h"
+#include "LuxMultiplayer.h"
 #include "LuxPlayer.h"
 #include "LuxPlayerHelpers.h"
 #include "LuxPlayerState.h"
@@ -201,8 +202,14 @@ bool cLuxItemType_Diary::BeforeAddItem(cLuxInventory_Item *apItem)
 	int lDiaryIdx;
 	cLuxDiary *pDiary = gpBase->mpJournal->AddDiary(apItem->GetStringVal(), apItem->GetImageName(), lDiaryIdx);
 	if(pDiary==NULL) return true;
+	if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->RecordNativeDiaryIndex(apItem->GetName(),lDiaryIdx);
 
 	ProgLog(eLuxProgressLogLevel_Medium, "Picked up diary "+ apItem->GetStringVal());
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->DeferNativeDiaryPresentation(apItem->GetName(),pDiary))
+	{
+		AddCompletionAmount(gpBase->mpCompletionCountHandler->mlDiaryCompletionValue);
+		return true;
+	}
 
 	mbShowJournalOnPickup = true;
 	const tString &sCallbackFunc = apItem->GetExtraStringVal();

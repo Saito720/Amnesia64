@@ -22,6 +22,7 @@
 #include "LuxPlayer.h"
 #include "LuxPlayerState.h"
 #include "LuxHintHandler.h"
+#include "LuxMultiplayer.h"
 
 #include "LuxMap.h"
 
@@ -353,7 +354,8 @@ void cLuxProp_SwingDoor::UpdatePropSpecific(float afTimeStep)
 
 	////////////////////////////////
 	// If the door is close to 0 angle, then close it
-	if(mbClosed==false && IsInteractedWith()==false && mbDisableAutoClose == false && mvJoints.size()==1)
+	if((!gpBase->mpMultiplayer || !gpBase->mpMultiplayer->IsClient()) &&
+       mbClosed==false && IsInteractedWith()==false && mbDisableAutoClose == false && mvJoints.size()==1)
 	{
 		for(size_t i=0; i<mvJointData.size(); ++i)
 		{

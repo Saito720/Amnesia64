@@ -162,7 +162,9 @@
   <ItemGroup>
     <ClCompile Include="LuxAchievementHandler.cpp" />
     <ClCompile Include="LuxMultiplayer.cpp" />
+    <ClCompile Include="LuxMultiplayerCache.cpp" />
     <ClCompile Include="LuxMultiplayerContent.cpp" />
+    <ClCompile Include="LuxMultiplayerEntities.cpp" />
     <ClCompile Include="LuxMultiplayerScript.cpp" />
     <ClCompile Include="LuxMultiplayerUI.cpp" />
     <ClCompile Include="LuxMultiplayerWorld.cpp" />
@@ -282,7 +284,11 @@
   <ItemGroup>
     <ClInclude Include="LuxAchievementHandler.h" />
     <ClInclude Include="LuxMultiplayer.h" />
+    <ClInclude Include="LuxMultiplayerCache.h" />
+    <ClInclude Include="LuxMultiplayerMapHash.h" />
     <ClInclude Include="LuxMultiplayerContent.h" />
+    <ClInclude Include="LuxMultiplayerEntities.h" />
+    <ClInclude Include="LuxMultiplayerEntityProtocol.h" />
     <ClInclude Include="LuxMultiplayerScript.h" />
     <ClInclude Include="LuxMultiplayerProtocol.h" />
     <ClInclude Include="LuxMultiplayerUI.h" />

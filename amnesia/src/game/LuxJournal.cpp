@@ -18,6 +18,7 @@
  */
 
 #include "LuxJournal.h"
+#include "LuxMultiplayer.h"
 
 #include "LuxMapHandler.h"
 #include "LuxInputHandler.h"
@@ -559,7 +560,7 @@ void cLuxJournal::OnLeaveContainer(const tString& asNewContainer)
 {
 	///////////////////////////
 	//Pause voices and turn down volume on world sounds
-	if(mbOpenedFromInventory == false)
+	if(mbOpenedFromInventory == false || asNewContainer != "Inventory")
 	{
 		gpBase->mpEffectHandler->GetPlayVoice()->UnpauseCurrentVoices();
 
@@ -587,6 +588,9 @@ void cLuxJournal::OnDraw(float afFrameTime)
 {
 	////////////////////////
 	//Draw background
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive())
+		mpGuiSet->DrawGfx(mpWhiteGfx,mvGuiSetStartPos,mvGuiSetSize,cColor(0,0.65f*mfAlpha));
+
 	if(mpScreenGfx && mfAlpha<1) 
 		mpGuiSet->DrawGfx(mpScreenGfx,mvGuiSetStartPos,mvGuiSetSize);
 
@@ -1835,6 +1839,7 @@ void cLuxJournal::CreateOpenNoteGui()
 
 void cLuxJournal::CreateBackground()
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()) return;
 	CreateScreenTextures();
 	RenderBackgroundImage();
 }

@@ -3,6 +3,7 @@
 #define LUX_MULTIPLAYER_UI_H
 
 #include "LuxTypes.h"
+#include "LuxMultiplayerCache.h"
 #include <cstdint>
 
 class cLuxMultiplayer;
@@ -50,11 +51,17 @@ private:
     int mlMaxPlayers;
     bool mbAllowClientMapChanges;
     bool mbAllPlayersTriggerScripts;
+    bool mbPlayerCollision;
     bool mbUseSteam;
     bool mbPublicLobby;
     bool mbSearchedSteamLobbies;
     uint64_t mlSelectedSteamLobby;
     bool mbRestoreGuiMouse;
+    cLuxMultiplayerMapCacheStats mCacheStats;
+    bool mbCacheSectionOpen=false;
+    bool mbCacheStatsKnown=false;
+    bool mbCacheStatsDirty=true;
+    float mfCacheRefreshTime=0;
     tString msCapturedGuiSet;
     char msMap[512];
     char msStartPos[128];

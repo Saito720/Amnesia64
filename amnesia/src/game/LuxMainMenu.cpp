@@ -458,7 +458,14 @@ void cLuxMainMenu::OnDraw(float afFrameTime)
 {
 	/////////////////////////////////
 	//Screen background
-	if(mpScreenGfx)
+	const bool bLiveWorld = gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive() && gpBase->mpMapHandler->MapIsLoaded();
+	if(bLiveWorld)
+	{
+		mpGuiSet->DrawGfx(mpBlackFade,cVector3f(0,0,0),mvScreenSize,cColor(1,0.6f*mfTopMenuAlpha));
+		if(mfMenuFadeAlpha > 0 && mbExiting && mExitMessage != eLuxMainMenuExit_ReturnToGame)
+			mpGuiSet->DrawGfx(mpBlackFade,cVector3f(0,0,50),mvScreenSize,cColor(1,mfMenuFadeAlpha));
+	}
+	else if(mpScreenGfx)
 	{
 		if(mpScreenGfx && mfMenuFadeAlpha>0) 
 			mpGuiSet->DrawGfx(mpScreenGfx,cVector3f(0,0,0),mvScreenSize);
@@ -1250,6 +1257,7 @@ void cLuxMainMenu::CreateBackground()
 	// A map is loaded, use a screen shot as background.
 	if(gpBase->mpMapHandler->MapIsLoaded())
 	{
+		if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()) return;
 		CreateScreenTextures();
 		RenderBlurTexture();
 	}

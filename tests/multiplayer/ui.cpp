@@ -3,11 +3,21 @@
 #include "impl/LowLevelGraphicsSDL.h"
 #include "impl/LowLevelInputSDL.h"
 #include "network/NetworkTransport.h"
+#include "LuxMultiplayerCache.h"
 #include <SDL2/SDL.h>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #undef main
+
+// Metadata calls are isolated from the real user's downloaded maps. The
+// production UI still chooses when to query and renders the actual label.
+static cLuxMultiplayerMapCacheStats cacheStats={2621440,3};
+static unsigned cacheQueries=0;
+hpl::tWString LuxMultiplayerCacheRoot() { return _W(""); }
+cLuxMultiplayerMapCacheStats LuxGetMultiplayerMapCacheStats(const hpl::tWString&) {
+    ++cacheQueries;return cacheStats;
+}
 
 // Exercise production UI and real SDL/HPL2/OpenGL integration without launching
 // a campaign or opening network sockets. Only coordinator/application methods
@@ -22,6 +32,7 @@ struct cLuxMultiplayerSettings {
     unsigned maxPlayers = 4;
     bool allowClientMapChanges = false;
     bool allPlayersTriggerScripts = true;
+    bool playerCollision = false;
     bool useSteam = true;
     bool publicLobby = false;
 };
@@ -30,7 +41,7 @@ struct cLuxMultiplayer {
     bool IsWindowVisible() const;
     bool active = false, host = false;
     bool ready = true;
-    int hosts = 0, joins = 0, stops = 0;
+    int hosts = 0, joins = 0, stops = 0, cacheClears = 0;
     bool steamAvailable = false, steamSession = false, steamSearchPending = false;
     bool steamOverlayActive = false;
     uint64_t lobbyID = 0, pendingInvite = 0;
@@ -50,6 +61,7 @@ struct cLuxMultiplayer {
     }
     bool Join(const tString& address) { ++joins; lastAddress=address; active=true; host=false; steamSession=false; return true; }
     void Stop(const tString&) { ++stops; active=false; steamSession=false; lobbyID=0; status="No multiplayer session."; }
+    void ClearMapCache() { ++cacheClears;cacheStats=cLuxMultiplayerMapCacheStats(); }
     bool JoinSteamLobby(const tString& code) {
         ++steamJoins; lastLobbyCode=code; active=steamSession=true; host=false; return true;
     }
@@ -199,6 +211,7 @@ int main(int argc,char** argv) {
         require(!base.mpEngine->GetInput()->GetKeyboard()->KeyIsDown(eKey_W),"observer preserves releases while captured");
         for(int i=0;i<3;++i) draw(ui);
         require(ImGui::GetDrawData()->TotalVtxCount>200,"advanced window rendered real geometry");
+        require(cacheQueries==0,"collapsed downloaded-map controls never enumerate the cache");
         screenshot("advanced.png");
         require(ui.mbUseSteam && !ui.mbPublicLobby,"advanced defaults to Steam friends-only");
         require(session.hosts==0 && session.joins==0,"Steam unavailable rendering never falls back to direct IP");
@@ -221,7 +234,7 @@ int main(int argc,char** argv) {
         require(ui.mbCampaign,"main menu entry uses campaign defaults");
         // Coordinator action dispatch is deliberately tested separately from rendering:
         // an action queued in a render pass must not load a map before the next tick.
-        ui.mlPort=31234; ui.mlMaxPlayers=12; ui.mbUseSteam=false; ui.mbPublicLobby=true;
+        ui.mlPort=31234; ui.mlMaxPlayers=12; ui.mbUseSteam=false; ui.mbPublicLobby=true; ui.mbPlayerCollision=true;
         std::strcpy(ui.msMap,"ignored-by-campaign.map");
         ui.mlPendingAction=10; ui.Draw();
         require(session.steamRetries==0 && !session.steamAvailable,"render does not retry Steam initialization");
@@ -231,9 +244,39 @@ int main(int argc,char** argv) {
         ui.Draw();
         require(session.hosts==0,"render does not execute host/map operations");
         ui.Update(1.0f/60);
-        require(session.hosts==1 && session.lastSettings.map.empty() && session.lastSettings.port==27015 && session.lastSettings.maxPlayers==4 && session.lastSettings.useSteam && !session.lastSettings.publicLobby,"campaign ignores advanced settings and uses Steam friends-only");
+        require(session.hosts==1 && session.lastSettings.map.empty() && session.lastSettings.port==27015 && session.lastSettings.maxPlayers==4 && session.lastSettings.useSteam && !session.lastSettings.publicLobby && !session.lastSettings.playerCollision,"campaign ignores advanced settings and uses Steam friends-only");
         for(int i=0;i<3;++i) draw(ui);
         screenshot("steam-host.png");
+        ImGuiWindow* cacheWindow=ImGui::FindWindowByName("Multiplayer");
+        require(cacheWindow!=NULL,"active multiplayer window exists for downloaded-map settings");
+        cacheWindow->StateStorage.SetInt(cacheWindow->GetID("Downloaded maps"),1);
+        ui.Draw();
+        require(cacheQueries==0,"expanding downloaded-map controls defers metadata enumeration from rendering");
+        for(int i=0;i<3;++i) draw(ui);
+        require(cacheQueries==1 && ui.mCacheStats.maps==3 && ui.mCacheStats.bytes==2621440 && ui.mbCacheStatsKnown,
+            "expanded cache displays the stored map count and total byte size");
+        screenshot("downloaded-maps.png");
+        for(int i=0;i<20;++i) ui.Update(0.1f);
+        require(cacheQueries==1,"visible cache metadata is throttled instead of scanned every frame");
+        cacheStats={3145728,4};
+        ui.Update(5.0f);
+        require(cacheQueries==2 && ui.mCacheStats.bytes==3145728 && ui.mCacheStats.maps==4,
+            "periodic refresh notices completed downloads and other cache changes");
+        cacheWindow->StateStorage.SetInt(cacheWindow->GetID("Downloaded maps"),0);ui.Draw();
+        ui.Update(10.0f);
+        require(cacheQueries==2,"collapsed cache section does not poll metadata");
+        cacheWindow->StateStorage.SetInt(cacheWindow->GetID("Downloaded maps"),1);ui.Draw();
+        require(cacheQueries==2,"reopening section never scans during rendering");
+        ui.Update(1.0f/60);
+        require(cacheQueries==3,"reopened section immediately refreshes metadata on the next update");
+        ui.mlPendingAction=11; ui.Draw();
+        require(session.cacheClears==0,"cache deletion never runs while rendering the multiplayer window");
+        ui.Update(1.0f/60);
+        require(session.cacheClears==1 && session.active,"cache deletion is deferred and preserves an active session");
+        require(cacheQueries==4 && ui.mCacheStats.bytes==0 && ui.mCacheStats.maps==0,
+            "deleting downloaded maps immediately refreshes displayed size to zero");
+        for(int i=0;i<3;++i) draw(ui);
+        screenshot("downloaded-maps-empty.png");
         ui.mlPendingAction=6;
         ui.Draw();
         require(session.steamInvites==0,"render does not open the Steam overlay");
@@ -258,6 +301,8 @@ int main(int argc,char** argv) {
         ui.Update(1.0f/60);
         require(session.steamAccepts==1,"explicit Join invited session action dispatched");
         ui.mlPendingAction=3; ui.Update(1.0f/60);
+        ui.mlPendingAction=11; ui.Update(1.0f/60);
+        require(session.cacheClears==2 && !session.active,"downloaded maps can also be deleted while disconnected");
         ui.Toggle(); input.state=eLuxInputState_Game;
         map.loaded=true;
         event(SDL_KEYDOWN,SDL_SCANCODE_GRAVE,SDLK_BACKQUOTE);
@@ -267,7 +312,7 @@ int main(int argc,char** argv) {
         require(input.gameUpdates==0 && player.releases==3 && player.stopRun==1,"production input releases held interactions once and suppresses game updates");
         event(SDL_KEYUP,SDL_SCANCODE_GRAVE,SDLK_BACKQUOTE);
         ui.mlPendingAction=1; ui.Update(1.0f/60);
-        require(session.hosts==2 && session.lastSettings.map=="ignored-by-campaign.map" && session.lastSettings.port==31234 && session.lastSettings.maxPlayers==12 && !session.lastSettings.useSteam,"advanced direct-IP settings passed to coordinator");
+        require(session.hosts==2 && session.lastSettings.map=="ignored-by-campaign.map" && session.lastSettings.port==31234 && session.lastSettings.maxPlayers==12 && !session.lastSettings.useSteam && session.lastSettings.playerCollision,"advanced direct-IP and player-collision settings passed to coordinator");
         ui.mlPendingAction=3; ui.Update(1.0f/60);
         ui.mbUseSteam=true;
         ui.mlPendingAction=1; ui.Update(1.0f/60);
@@ -343,7 +388,7 @@ int main(int argc,char** argv) {
     event(SDL_KEYUP,SDL_SCANCODE_W,SDLK_w);
     base.mpEngine->GetGui()->DestroySet(menuSet);
     DestroyHPLEngine(base.mpEngine);
-    std::printf("PASS: real ImGui rendering; tilde/escape; global pre-swap/event hooks; key releases; Steam unavailable/hosting/searching/join/invitation; Steam overlay input capture; campaign defaults; deferred actions; direct IP; teardown.\n");
+    std::printf("PASS: real ImGui rendering; tilde/escape; global pre-swap/event hooks; key releases; Steam unavailable/hosting/searching/join/invitation; Steam overlay input capture; campaign defaults; deferred actions including cache deletion while connected/disconnected; direct IP; teardown.\n");
     return 0;
 }
 int hplMain(const tString&) { return main(0,NULL); }

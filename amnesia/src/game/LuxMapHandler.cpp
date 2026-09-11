@@ -279,6 +279,11 @@ void cLuxMapHandler::Reset()
 	cSound *pSound = gpBase->mpEngine->GetSound();
 	pSound->GetSoundHandler()->StopAll(eSoundEntryType_All);
 
+	// The gameplay viewport can remain visible behind a multiplayer menu.
+	// Detach it before deleting the world so a return to the title menu cannot
+	// render stale world/physics pointers on the next frame.
+	mpViewport->SetWorld(NULL);
+	mRenderCallback.mpPhysicsWorld = NULL;
 	STLDeleteAll(mlstMaps);
 	mpCurrentMap = NULL;
 
@@ -388,8 +393,10 @@ void cLuxMapHandler::OnEnterContainer(const tString& asOldContainer)
 
 void cLuxMapHandler::OnLeaveContainer(const tString& asNewContainer)
 {
-	mpViewport->SetActive(false);
-	mpViewport->SetVisible(false);
+	const bool bLiveMenu = gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive() &&
+		(asNewContainer == "MainMenu" || asNewContainer == "Inventory" || asNewContainer == "Journal");
+	mpViewport->SetActive(bLiveMenu);
+	mpViewport->SetVisible(bLiveMenu);
 
 	if(mpCurrentMap) mpCurrentMap->GetWorld()->SetActive(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive());
 }
@@ -400,10 +407,23 @@ void cLuxMapHandler::OnLeaveContainer(const tString& asNewContainer)
 void cLuxMapHandler::ChangeMap(const tString& asMapName, const tString& asStartPos, const tString& asStartSound, const tString& asEndSound)
 {
 	if(gpBase->mpMultiplayer && !gpBase->mpMultiplayer->RequestMapChange(asMapName,asStartPos,asStartSound,asEndSound)) return;
+    const bool bPendingDifferentMap = mMapChangeData.mbActive && mpCurrentMap &&
+        FileToMapName(mMapChangeData.msMapFile) != FileToMapName(mpCurrentMap->GetName());
 	mMapChangeData.mbActive = true;
 	mMapChangeData.msMapFile = cString::SetFileExt(asMapName, "map");
 	mMapChangeData.msStartPos = asStartPos;
     mMapChangeData.msSound = asEndSound;
+
+    if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsHost())
+    {
+        // Let clients leave gameplay before the host's fade/save/load blocks
+        // further network updates. A same-map start-position change needs no
+        // new map and must leave the other players running normally.
+        if(!mpCurrentMap || FileToMapName(mMapChangeData.msMapFile) != FileToMapName(mpCurrentMap->GetName()))
+            gpBase->mpMultiplayer->NotifyHostMapChange(mMapChangeData.msMapFile);
+        else if(bPendingDifferentMap)
+            gpBase->mpMultiplayer->CancelHostMapChange("Map change replaced by a start-position change in the current map.");
+    }
 
     gpBase->mpHelpFuncs->PlayGuiSoundData(asStartSound, eSoundEntryType_Gui);
 
@@ -655,6 +675,8 @@ void cLuxMapHandler::CheckMapChange(float afTimeStep)
 		{
 			Error("Could not load map '%s'!\n", mMapChangeData.msMapFile.c_str());
 			mpSavedGameMutex->Unlock();
+			if(gpBase->mpMultiplayer)
+				gpBase->mpMultiplayer->CancelHostMapChange("Host could not load map '"+mMapChangeData.msMapFile+"'.");
 			return;
 		}
 		

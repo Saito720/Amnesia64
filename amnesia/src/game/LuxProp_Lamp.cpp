@@ -20,6 +20,7 @@
 #include "LuxProp_Lamp.h"
 
 #include "LuxPlayer.h"
+#include "LuxMultiplayer.h"
 #include "LuxPlayerState.h"
 #include "LuxMap.h"
 #include "LuxInventory.h"
@@ -212,6 +213,7 @@ bool cLuxProp_Lamp::CanInteract(iPhysicsBody *apBody)
 
 bool cLuxProp_Lamp::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 {
+	if(gpBase->mpMultiplayer && !gpBase->mpMultiplayer->BeginNativeInteraction(this)) return true;
 	//////////////////////
 	//Turn off
 	if(mbLit)
@@ -228,6 +230,7 @@ bool cLuxProp_Lamp::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 		if(gpBase->mpPlayer->GetTinderboxes()<=0)
 		{
 			gpBase->mpMessageHandler->SetMessage(kTranslate("Game","NoMoreTinderboxes"), 0);
+			if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->CompleteNativeInteraction(this,false);
 			return false;
 		}
 
@@ -245,11 +248,12 @@ bool cLuxProp_Lamp::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 		
 		gpBase->mpHelpFuncs->PlayGuiSoundData("ui_use_tinderbox", eSoundEntryType_Gui);
 
-		RunCallbackFunc("OnIgnite");
+		if(!gpBase->mpMultiplayer || !gpBase->mpMultiplayer->IsActive()) RunCallbackFunc("OnIgnite");
 		
 		SetLit(true, true);
 	}
 
+	if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->CompleteNativeInteraction(this,mbLit);
 	return true;
 }
 

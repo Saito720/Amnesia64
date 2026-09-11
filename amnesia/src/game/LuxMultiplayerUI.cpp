@@ -20,7 +20,7 @@ cLuxMultiplayerUI::cLuxMultiplayerUI(cLuxMultiplayer* apMultiplayer)
       mbRestoreRelativeMouse(false), mbRestoreWindowGrab(false),
       mlRestoreCursor(0), mlPreviousInputState(0), mlPendingAction(0),
       mlPort(27015), mlMaxPlayers(4), mbAllowClientMapChanges(false),
-      mbAllPlayersTriggerScripts(true), mbUseSteam(true), mbPublicLobby(false),
+      mbAllPlayersTriggerScripts(true), mbPlayerCollision(false), mbUseSteam(true), mbPublicLobby(false),
       mbSearchedSteamLobbies(false), mlSelectedSteamLobby(0), mbRestoreGuiMouse(false)
 {
     msMap[0] = msStartPos[0] = msLobbyCode[0] = '\0';
@@ -141,6 +141,7 @@ void cLuxMultiplayerUI::Show(bool abCampaign)
 {
     mbCampaign = abCampaign;
     mbFocusWindow = true;
+    mbCacheStatsDirty = true;
     SetVisible(true);
 }
 
@@ -165,6 +166,7 @@ void cLuxMultiplayerUI::Update(float afTimeStep)
             settings.maxPlayers = static_cast<unsigned>(mlMaxPlayers);
             settings.allowClientMapChanges = mbAllowClientMapChanges;
             settings.allPlayersTriggerScripts = mbAllPlayersTriggerScripts;
+            settings.playerCollision = mbPlayerCollision;
             settings.useSteam = mbUseSteam;
             settings.publicLobby = mbPublicLobby;
         }
@@ -183,6 +185,23 @@ void cLuxMultiplayerUI::Update(float afTimeStep)
     else if(lAction == 7) mpMultiplayer->AcceptSteamInvite();
     else if(lAction == 8) mpMultiplayer->DismissSteamInvite();
     else if(lAction == 10) mpMultiplayer->RetrySteam();
+    else if(lAction == 11) {
+        mpMultiplayer->ClearMapCache();
+        mbCacheStatsDirty = true;
+    }
+
+    // Disk enumeration belongs to Update, never rendering. An expanded section
+    // notices completed downloads or other instances' changes within five
+    // seconds; hidden/collapsed controls do not scan the cache.
+    if(mbVisible && mbCacheSectionOpen) {
+        mfCacheRefreshTime -= afTimeStep;
+        if(mbCacheStatsDirty || mfCacheRefreshTime <= 0) {
+            mCacheStats = LuxGetMultiplayerMapCacheStats();
+            mbCacheStatsKnown = true;
+            mbCacheStatsDirty = false;
+            mfCacheRefreshTime = 5.0f;
+        }
+    }
 
 #if USE_SDL2
     if(lAction == 9 && mpMultiplayer->GetSteamLobbyID())
@@ -410,6 +429,7 @@ void cLuxMultiplayerUI::DrawControls()
                         if(mlMaxPlayers < 2) mlMaxPlayers = 2;
                         if(mlMaxPlayers > 16) mlMaxPlayers = 16;
                         ImGui::Checkbox("Allow clients to trigger map changes", &mbAllowClientMapChanges);
+                        ImGui::Checkbox("Players collide with each other", &mbPlayerCollision);
                         ImGui::Checkbox("Every player can trigger Player scripts", &mbAllPlayersTriggerScripts);
                         ImGui::TextWrapped(mbAllPlayersTriggerScripts ?
                             "Player triggers accept any connected player." :
@@ -439,6 +459,19 @@ void cLuxMultiplayerUI::DrawControls()
                 }
                 ImGui::EndTabBar();
             }
+        }
+        ImGui::Separator();
+        const bool bCacheSectionOpen = ImGui::CollapsingHeader("Downloaded maps");
+        if(bCacheSectionOpen && !mbCacheSectionOpen) mbCacheStatsDirty = true;
+        mbCacheSectionOpen = bCacheSectionOpen;
+        if(bCacheSectionOpen)
+        {
+            if(mbCacheStatsKnown)
+                ImGui::Text("Stored maps: %.2f MiB (%llu %s)",static_cast<double>(mCacheStats.bytes)/(1024.0*1024.0),
+                    static_cast<unsigned long long>(mCacheStats.maps),mCacheStats.maps==1?"map":"maps");
+            else ImGui::TextDisabled("Stored maps: checking...");
+            ImGui::TextWrapped("Downloaded maps are saved for faster joins. Deleted maps can be downloaded again. Maps currently in use are kept.");
+            if(ImGui::Button("Delete downloaded maps")) mlPendingAction = 11;
         }
         ImGui::Separator();
         if(ImGui::Button("Close")) bOpen = false;

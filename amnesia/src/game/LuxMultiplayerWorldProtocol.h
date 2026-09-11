@@ -12,7 +12,7 @@
 namespace LuxWorldWire
 {
     enum Type : uint8_t { Pose = 64, Bodies, LeaseRequest, LeaseGrant, LeaseRelease, LeaseDenied, PeerGone };
-    enum BodyFlags : uint8_t { Awake = 1, Active = 2, Gravity = 4 };
+    enum BodyFlags : uint8_t { Awake = 1, Active = 2, Gravity = 4, Collide = 8, CollideCharacter = 16 };
     const size_t MaxBodiesPerPacket = 12;
     const size_t MaxLeaseBodies = 64;
     const size_t MaxPacketBytes = 1200;
@@ -24,6 +24,22 @@ namespace LuxWorldWire
     {
         uint64_t hash = 14695981039346656037ull;
         for (size_t i = 0; i < name.size(); ++i) { hash ^= uint8_t(name[i]); hash *= 1099511628211ull; }
+        return hash;
+    }
+
+    inline uint64_t BodyId(const std::string& name, int32_t authoredId)
+    {
+        if (authoredId < 0) return BodyId(name); // Procedural bodies without an XML ID.
+        uint64_t hash = BodyId(name);
+        // Runtime names already include the entity instance name. A NUL domain
+        // separator and fixed-width ID distinguish repeated names inside an .ent
+        // without depending on allocation order, position or mutable body mass.
+        hash *= 1099511628211ull;
+        for (unsigned i = 0; i < 4; ++i)
+        {
+            hash ^= uint8_t(uint32_t(authoredId) >> (i * 8));
+            hash *= 1099511628211ull;
+        }
         return hash;
     }
 
@@ -79,7 +95,7 @@ namespace LuxWorldWire
         for (int i = 0; i < 3; ++i) body.linear[i] = reader.F32(150.0f);
         for (int i = 0; i < 3; ++i) body.angular[i] = reader.F32(150.0f);
         body.flags = reader.U8();
-        if (body.flags & ~(Awake | Active | Gravity)) reader.valid = false;
+        if (body.flags & ~(Awake | Active | Gravity | Collide | CollideCharacter)) reader.valid = false;
         // Reject scaled, singular or reflected matrices before Newton sees them.
         for (int row = 0; row < 3; ++row)
         {

@@ -23,6 +23,7 @@
 #include "LuxPlayerState.h"
 #include "LuxMap.h"
 #include "LuxArea.h"
+#include "LuxMultiplayer.h"
 
 //////////////////////////////////////////////////////////////////////////
 // LOADER
@@ -324,6 +325,7 @@ void cLuxProp_MoveObject::OnConnectionStateChange(iLuxEntity *apEntity, int alSt
 
 void cLuxProp_MoveObject::UpdateAutoMove(float afTimeStep)
 {
+    if (gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return;
 	///////////////////////
 	//Skip update if update is off, the entity is moving or the goal is reached.
 	if(mbAutoMove==false || mbMoving || mbAutoMoveReachedGoal) return;

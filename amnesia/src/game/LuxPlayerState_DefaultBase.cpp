@@ -25,6 +25,8 @@
 #include "LuxMoveState.h"
 #include "LuxEffectRenderer.h"
 #include "LuxPlayerHands.h"
+#include "LuxMultiplayer.h"
+#include "LuxMultiplayerWorld.h"
 
 
 
@@ -177,6 +179,8 @@ bool iLuxPlayerState_DefaultBase::OnDoAction(eLuxPlayerAction aAction,bool abPre
 
 cGuiGfxElement* iLuxPlayerState_DefaultBase::GetCrosshair()
 { 
+    if (gpBase->mpMultiplayer && gpBase->mpMultiplayer->GetWorld()->IsInteractionOwnedByOther(mpBodyInFocus))
+        return mpDefaultCrosshairGfx;
 	if(mpEntityInFocus && mfFocusDistance < mpEntityInFocus->GetMaxFocusDistance())
 	{
 		eLuxFocusCrosshair crossHair = mpEntityInFocus->GetFocusCrosshair(mpBodyInFocus, mvFocusPos);
@@ -235,6 +239,8 @@ bool iLuxPlayerState_DefaultBase::ShowOutlineOnEntity(iLuxEntity *apEntity, iPhy
 
 bool iLuxPlayerState_DefaultBase::CanInteractWithEntity()
 {
+    if (gpBase->mpMultiplayer && gpBase->mpMultiplayer->GetWorld()->IsInteractionOwnedByOther(mpBodyInFocus))
+        return false;
 	if(	mpEntityInFocus && mfFocusDistance < mpEntityInFocus->GetMaxFocusDistance() && 
 		mpEntityInFocus->CanInteract(mpBodyInFocus) && mpEntityInFocus->GetInteractionDisabled()==false)
 	{
@@ -259,6 +265,7 @@ void iLuxPlayerState_DefaultBase::AddOutlineObjects(iPhysicsBody *apBody, iLuxEn
 {
 	gpBase->mpEffectRenderer->ClearOutlineObjects();
 	if(	apEntity==NULL || 
+		(gpBase->mpMultiplayer && gpBase->mpMultiplayer->GetWorld()->IsInteractionOwnedByOther(apBody)) ||
 		apEntity->GetEntityType()!= eLuxEntityType_Prop || 
 		mfFocusDistance > apEntity->GetMaxFocusDistance() || 
 		ShowOutlineOnEntity(apEntity, apBody, avFocusPos)==false)

@@ -8,7 +8,7 @@
 namespace hpl { namespace steam_detail {
     // Metadata is untrusted even though Steam supplies authenticated identities.
     // Keep this contract independent of the SDK so malformed listings can be tested.
-    static const char* const Protocol = "amnesia-hpl2-1";
+    static const char* const Protocol = "amnesia-hpl2-5";
     inline bool ParseId(const std::string& text, uint64_t& value)
     {
         value = 0;

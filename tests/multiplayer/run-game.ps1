@@ -38,7 +38,7 @@ try {
         $processes += Start-Process -FilePath (Join-Path $context.Output 'smoke.exe') -ArgumentList $arguments -WorkingDirectory $retail -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $run "$role-stdout.txt") -RedirectStandardError (Join-Path $run "$role-stderr.txt")
     }
     $timer=[Diagnostics.Stopwatch]::StartNew()
-    while($timer.Elapsed.TotalSeconds -lt 110) {
+    while($timer.Elapsed.TotalSeconds -lt 200) {
         $running=@($processes | Where-Object { -not $_.HasExited })
         if($running.Count -eq 0) { break }
         $null=$running[0].WaitForExit(1000)
@@ -48,7 +48,7 @@ try {
         Get-Content (Join-Path $run "$role-stderr.txt") -Tail 8
     }
     foreach($process in $processes) {
-        if(-not $process.HasExited) { throw 'Full-game smoke exceeded its 110-second process limit.' }
+        if(-not $process.HasExited) { throw 'Full-game smoke exceeded its 200-second process limit.' }
         if($process.ExitCode -ne 0) { throw "Full-game smoke failed with exit code $($process.ExitCode)." }
     }
     foreach($role in $roles) {

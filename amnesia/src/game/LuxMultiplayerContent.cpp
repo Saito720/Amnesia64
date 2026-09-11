@@ -86,6 +86,15 @@ namespace
         return true;
     }
 
+    bool HasAssetFileName(const tString& name)
+    {
+        // Some editor versions serialize an unset optional texture as the
+        // relative directory back to the resource root. Neither separator
+        // spelling, nor the directory components themselves, names a file.
+        const tString file = cString::GetFileName(name);
+        return !file.empty() && file != "." && file != "..";
+    }
+
     bool ValidateIndices(cXmlElement* contents, tString& error)
     {
         const char* indexNames[] = {"FileIndex_StaticObjects", "FileIndex_Entities", "FileIndex_Decals"};
@@ -166,8 +175,19 @@ namespace
         {
             if(name.empty() || missing.size() >= 16) return;
             if(name.size() > 1024) { missing.insert("(asset path longer than 1024 bytes)"); return; }
+            if(defaultExt == "gui_sound")
+            {
+                // PlayGuiSound accepts a sound entity or a raw sample. Prefer
+                // an existing entity for extensionless names, but accept the
+                // raw-sample names used by retail scripts (e.g. react_scare6).
+                const tString ext = cString::ToLowerCase(cString::GetFileExt(name));
+                const bool entity = ext == "snt" || (ext.empty() && !Resolve(name, "snt").empty());
+                Reference(name, entity ? "snt" : "audio");
+                return;
+            }
             if(defaultExt == "cubemap")
             {
+                if(!HasAssetFileName(name)) return;
                 // TextureManager loads DDS directly, otherwise it appends all
                 // six face suffixes and searches its supported bitmap formats.
                 if(cString::ToLowerCase(cString::GetFileExt(name)) == "dds") Reference(name, "texture");
@@ -199,7 +219,11 @@ namespace
                     else if(key == "Filename" || key == "MeshFilename") Reference(value);
                     else if(key == "SoundEntityFile") Reference(value, "snt");
                     else if(key == "MaterialFile") Reference(value, "mat");
-                    else if(key == "SkyBoxTexture" || key == "SpotFalloffMap" || key == "FalloffMap" || key == "Gobo") Reference(value, "texture");
+                    else if(key == "SkyBoxTexture") Reference(value, "cubemap");
+                    else if(key == "SpotFalloffMap" || key == "FalloffMap" || key == "Gobo")
+                    {
+                        if(HasAssetFileName(value)) Reference(value, "texture");
+                    }
                     else if(key == "Material" && tag != "Body" && tag != "Shape")
                     {
                         int count = 1;

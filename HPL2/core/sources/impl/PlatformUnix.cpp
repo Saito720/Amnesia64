@@ -26,6 +26,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <sys/param.h>
+#include <stdlib.h>
 #include <fstream>
 
 #if USE_SDL2
@@ -166,7 +167,7 @@ namespace hpl {
 	tWString cPlatform::GetFullFilePath(const tWString& asFilePath)
 	{
 		char rpath[PATH_MAX];
-		realpath(cString::To8Char(asFilePath).c_str(), rpath);
+		if(!realpath(cString::To8Char(asFilePath).c_str(), rpath)) return _W("");
 		tWString ret = cString::To16Char(tString(rpath)); 
 		return ret;
 	}
@@ -475,6 +476,23 @@ namespace hpl {
 					sDir += _W("/");
 				}
 				return sDir;
+			}
+			case eSystemPath_Cache: {
+#if !defined(__APPLE__)
+				// The XDG specification requires an absolute path. Ignore an
+				// empty/relative override rather than writing into the game cwd.
+				const char *cache = getenv("XDG_CACHE_HOME");
+				if (cache && cache[0] == '/')
+					return cString::AddSlashAtEndW(cString::To16Char(tString(cache)), _W('/'));
+#endif
+				const char *home = getenv("HOME");
+				if (!home || home[0] != '/') return _W("");
+				tWString sDir = cString::AddSlashAtEndW(cString::To16Char(tString(home)), _W('/'));
+#if defined(__APPLE__)
+				return sDir + _W("Library/Caches/");
+#else
+				return sDir + _W(".cache/");
+#endif
 			}
 			default:
 				return _W("");

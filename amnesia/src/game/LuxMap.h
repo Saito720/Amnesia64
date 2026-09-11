@@ -97,6 +97,7 @@ public:
 	iPhysicsWorld* GetPhysicsWorld(){ return mpPhysicsWorld; }
 
 	void PlacePlayerAtStartPos(const tString& asPosName);
+	const tString& GetCheckPointStartPos() const { return msCheckPointStartPos; }
 
 	void CreateEntity(const tString& asName, const tString& asFile, const cMatrixf& a_mtxTransform, const cVector3f& avScale);
 

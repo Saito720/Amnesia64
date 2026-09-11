@@ -9,6 +9,7 @@
 
 class cLuxMultiplayer;
 class cLuxMap;
+class iLuxProp;
 
 struct cLuxMultiplayerRemotePlayer
 {
@@ -38,6 +39,9 @@ public:
     bool RequestInteraction(iPhysicsBody* apBody, eLuxPlayerState aState, const cVector3f& avFocus);
     void ReleaseInteraction();
     bool OwnsInteraction(iPhysicsBody* apBody) const;
+    bool IsInteractionOwnedByOther(iPhysicsBody* apBody) const;
+    bool IsInteractionOwnedByOther(iPhysicsBody* apBody, uint32_t alPeer) const;
+    bool IsEntityLeased(iLuxProp* apProp) const;
     static bool IsInteractionState(eLuxPlayerState aState);
     const std::map<uint32_t, cLuxMultiplayerRemotePlayer>& GetRemotePlayers() const { return mPlayers; }
 
@@ -58,10 +62,13 @@ private:
         float remaining;
         std::vector<uint64_t> bodies;
         std::map<uint64_t, bool> originalGravity;
+        std::map<uint64_t, bool> originalCollide, originalCollideCharacter;
         Lease() : owner(0), token(0), remaining(0) {}
     };
 
     void RefreshBodies();
+    void UpdatePlayerColliders();
+    void RemovePlayerCollider(uint32_t alPeer);
     iPhysicsBody* FindBody(uint64_t alId) const;
     LuxWorldWire::Body CaptureBody(uint64_t alId, iPhysicsBody* apBody) const;
     void SendBodyBatch(uint32_t alPeer, bool abBroadcast, const std::vector<LuxWorldWire::Body>& avBodies,
@@ -80,6 +87,7 @@ private:
     cLuxMap* mpMap;
     std::map<uint64_t, BodyTrack> mBodies;
     std::map<uint32_t, cLuxMultiplayerRemotePlayer> mPlayers;
+    std::map<uint32_t, iCharacterBody*> mPlayerColliders;
     std::map<uint32_t, Lease> mLeases;
     std::map<uint64_t, uint32_t> mBodyLeases;
     std::set<uint64_t> mAmbiguousBodies;

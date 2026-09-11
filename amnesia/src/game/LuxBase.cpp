@@ -1339,6 +1339,7 @@ bool cLuxBase::InitGame()
 
 	//Load screen
 	mpLoadScreenHandler = CreateModule( cLuxLoadScreenHandler, "LoadScreen");
+	mpEngine->GetUpdater()->AddUpdate("MultiplayerLoading", mpLoadScreenHandler);
 	mpMultiplayer = CreateGlobalModule( cLuxMultiplayer);
 
 

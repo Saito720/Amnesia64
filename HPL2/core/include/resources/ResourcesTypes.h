@@ -40,6 +40,7 @@ namespace hpl {
 	#define eWorldLoadFlag_FastPhysicsLoad			(0x00000010)
 	#define eWorldLoadFlag_FastStaticLoad			(0x00000020)
 	#define eWorldLoadFlag_FastEntityLoad			(0x00000040)
+	#define eWorldLoadFlag_NoMapCache				(0x00000080)
 
 	typedef tFlag tMeshLoadFlag;
 

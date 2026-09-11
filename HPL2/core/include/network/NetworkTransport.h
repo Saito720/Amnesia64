@@ -60,6 +60,9 @@ namespace hpl
         void Stop();
         void Poll(std::vector<cNetworkEvent>& events);
         bool Send(uint32_t peer, const std::vector<uint8_t>& data, bool reliable);
+        // Promptly packetize queued traffic before a blocking map load. This
+        // does not wait for delivery or change reliable ordering.
+        void Flush(uint32_t peer);
         void Disconnect(uint32_t peer, const std::string& reason);
         bool IsHost() const;
         bool IsActive() const;

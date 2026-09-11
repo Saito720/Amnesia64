@@ -148,6 +148,9 @@ bool cLuxMap::LoadFromFile(const tString & asFile, bool abLoadEntities)
 	if(gpBase->mpConfigHandler->mbFastPhysicsLoad) lFlags |= eWorldLoadFlag_FastPhysicsLoad;
 	if(gpBase->mpConfigHandler->mbFastStaticLoad) lFlags |= eWorldLoadFlag_FastStaticLoad;
 	if(gpBase->mpConfigHandler->mbFastEntityLoad) lFlags |= eWorldLoadFlag_FastEntityLoad;
+	// Every peer builds from the verified XML, including the host. A stale
+	// compiled cache can otherwise describe geometry absent from that XML.
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()) lFlags |= eWorldLoadFlag_NoMapCache;
 
 	//Script file
 	bool bScriptExists = false;

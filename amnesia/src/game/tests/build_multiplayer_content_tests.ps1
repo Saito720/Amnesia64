@@ -1,4 +1,4 @@
-param([string]$RetailDirectory = '', [switch]$Run)
+param([string]$RetailDirectory = '', [switch]$Run, [switch]$CacheOnly)
 $ErrorActionPreference = 'Stop'
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../..'))
 $output = Join-Path $repository 'bld/multiplayer-content-tests'
@@ -15,11 +15,16 @@ $libraries = @('HPL2','Newton','AngelScript','DevIL','freealut','GLEW','jpeg','o
 $options = @('/nologo','/EHsc','/std:c++17','/MDd','/Od','/Zi','/D_DEBUG','/DMEMORY_MANAGER_ACTIVE','/DUSE_SDL2','/DUSE_GAMEPAD','/DGLEW_STATIC','/D_NEWTON_USE_LIB','/DIL_STATIC_LIB','/DHAVE_LIBC','/DAL_LIBTYPE_STATIC',"/I$repository/HPL2/core/include","/I$repository/HPL2/dependencies/include","/I$repository/amnesia/src/game",(Join-Path $PSScriptRoot 'multiplayer_content_tests.cpp'),"/Fo$output/","/Fd$output/harness.pdb","/Fe$output/multiplayer-content-tests.exe")
 & "$toolset/bin/Hostx64/x64/cl.exe" @options @libraries /link /SUBSYSTEM:CONSOLE /INCREMENTAL:NO opengl32.lib dbghelp.lib winmm.lib setupapi.lib Imm32.lib Version.lib Avrt.lib user32.lib gdi32.lib shell32.lib ole32.lib oleaut32.lib advapi32.lib uuid.lib
 if ($LASTEXITCODE -ne 0) { throw 'Map content test build failed. Build Amnesia Debug x64 first.' }
-if ($Run) {
-    if (!$RetailDirectory) { $RetailDirectory = [Environment]::GetEnvironmentVariable('ATDD_DIR','User') }
-    if (!(Test-Path (Join-Path $RetailDirectory 'resources.cfg'))) { throw 'Provide the retail Amnesia directory.' }
+if ($Run -or $CacheOnly) {
+    if($CacheOnly) { $RetailDirectory=$output }
+    else {
+        if (!$RetailDirectory) { $RetailDirectory = [Environment]::GetEnvironmentVariable('ATDD_DIR','User') }
+        if (!(Test-Path (Join-Path $RetailDirectory 'resources.cfg'))) { throw 'Provide the retail Amnesia directory.' }
+    }
     $log = Join-Path $output 'hpl.log'
-    $process = Start-Process -FilePath (Join-Path $output 'multiplayer-content-tests.exe') -ArgumentList ('"'+$log+'"') -WorkingDirectory $RetailDirectory -WindowStyle Hidden -RedirectStandardOutput (Join-Path $output 'stdout.log') -RedirectStandardError (Join-Path $output 'stderr.log') -PassThru
+    $arguments='"'+$log+'"'
+    if($CacheOnly) { $arguments+=' --cache-only' }
+    $process = Start-Process -FilePath (Join-Path $output 'multiplayer-content-tests.exe') -ArgumentList $arguments -WorkingDirectory $RetailDirectory -WindowStyle Hidden -RedirectStandardOutput (Join-Path $output 'stdout.log') -RedirectStandardError (Join-Path $output 'stderr.log') -PassThru
     if (!$process.WaitForExit(60000)) { Stop-Process -Id $process.Id; throw 'Map content tests timed out.' }
     Get-Content (Join-Path $output 'stdout.log')
     Get-Content (Join-Path $output 'stderr.log')

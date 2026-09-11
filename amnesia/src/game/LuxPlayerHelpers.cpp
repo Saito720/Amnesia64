@@ -42,6 +42,7 @@
 #include "LuxPlayerState.h"
 #include "LuxLoadScreenHandler.h"
 #include "LuxMainMenu.h"
+#include "LuxMultiplayer.h"
 
 
 //-----------------------------------------------------------------------
@@ -1951,6 +1952,16 @@ void cLuxPlayerDeath::Start()
 
 	mbActive = true;
 
+	// Multiplayer keeps simulating behind menus. Death must leave their updater
+	// container as well as changing input, otherwise the dead player is trapped
+	// behind a menu that no longer receives menu input.
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive())
+	{
+		if(gpBase->mpMultiplayer->IsWindowVisible()) gpBase->mpMultiplayer->ToggleWindow();
+		gpBase->mpEngine->GetUpdater()->SetContainer("Default");
+		gpBase->mpEngine->GetGui()->SetFocus(NULL);
+	}
+
 	//////////////////////////////////
 	//Progress log
 	gpBase->mpProgressLogHandler->AddLog(eLuxProgressLogLevel_High, "Player died!");
@@ -2313,7 +2324,16 @@ void cLuxPlayerDeath::ResetGame()
 
 	//////////////////////////////////
 	//Check point
-	gpBase->mpMapHandler->GetCurrentMap()->LoadCheckPoint();	
+	cLuxMap* pMap = gpBase->mpMapHandler->GetCurrentMap();
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive())
+	{
+		// A local death must not reset every enemy or replay global checkpoint
+		// scripts in a world that the other players are still using.
+		pMap->PlacePlayerAtStartPos(pMap->GetCheckPointStartPos());
+		mpPlayer->ClearTerrorEnemies();
+		gpBase->mpEffectHandler->GetFade()->FadeIn(0.2f);
+	}
+	else pMap->LoadCheckPoint();
 }
 
 //-----------------------------------------------------------------------

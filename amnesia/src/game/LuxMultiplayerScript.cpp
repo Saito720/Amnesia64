@@ -187,8 +187,7 @@ bool LuxApplyMultiplayerScriptEffect(luxnet::Reader& r, std::string& error) {
         std::string asSoundEntFile = r.String(4096);
         float afVolume = r.Float();
         if(!r.Done()) return false;
-        tString extension=cString::ToLowerCase(cString::GetFileExt(asSoundEntFile));
-        if(!LuxValidateMultiplayerAsset(asSoundEntFile,extension.empty() || extension=="snt" ? "snt" : "audio",error)) return false;
+        if(!LuxValidateMultiplayerAsset(asSoundEntFile,"gui_sound",error)) return false;
         cLuxScriptHandler::PlayGuiSound(asSoundEntFile, afVolume);return true;
     }
     case 30: { // SetPlayerActive
@@ -497,7 +496,15 @@ bool LuxApplyMultiplayerScriptEffect(luxnet::Reader& r, std::string& error) {
     case 84: { // PreloadSound
         std::string asSoundFile = r.String(4096);
         if(!r.Done()) return false;
-        if(!LuxValidateMultiplayerAsset(asSoundFile,"snt",error)) return false;
+        // PreloadSound is an optional cache warm-up, not a requirement to play
+        // this sound. Retail scripts contain raw samples, obsolete names and
+        // typos here; the native preloader only warns when it cannot load them.
+        // Keep the validation before touching XML, but skip unusable hints
+        // without failing the session. Actual playback is still validated.
+        if(!LuxValidateMultiplayerAsset(asSoundFile,"snt",error)) {
+            hpl::Warning("Skipping optional multiplayer sound preload '%s': %s\n",asSoundFile.c_str(),error.c_str());
+            error.clear();return true;
+        }
         cLuxScriptHandler::PreloadSound(asSoundFile);return true;
     }
     case 85: { // CreateParticleSystemAtEntity
@@ -1089,6 +1096,19 @@ bool LuxApplyMultiplayerScriptEffect(luxnet::Reader& r, std::string& error) {
         std::string name=r.String(4096),callback=r.String(4096);bool remove=r.U8()!=0;
         if(!r.Done()) return false;
         cLuxScriptHandler::SetEntityPlayerInteractCallback(name,callback,remove);return true;
+    }
+    case 166: { // StopPropMovement: collision-limited bridge/ladder motion stops on every peer.
+        std::string name=r.String(4096);
+        if(!r.Done()) return false;
+        cLuxScriptHandler::StopPropMovement(name);return true;
+    }
+    case 167: { // CheckPoint: clients retain the host's local respawn position and death hint.
+        std::string name=r.String(4096),start=r.String(4096),callback=r.String(4096);
+        std::string hintCategory=r.String(4096),hintEntry=r.String(4096);
+        if(!r.Done()) return false;
+        // Client map scripts never run; retain only local respawn metadata.
+        callback.clear();
+        cLuxScriptHandler::CheckPoint(name,start,callback,hintCategory,hintEntry);return true;
     }
     default: return false;
     }

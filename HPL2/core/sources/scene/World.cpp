@@ -115,6 +115,7 @@ namespace hpl {
 		msName=asName;
 
 		mbActive = true;
+		mbMapCacheEnabled = true;
 
 		mAmbientColor=cColor(0,0);
 
@@ -1163,7 +1164,7 @@ namespace hpl {
 			}
 			
 			bool bLoadedFromFile=false;
-			if(cPlatform::FileExists(sAiFileName))
+			if(mbMapCacheEnabled && cPlatform::FileExists(sAiFileName))
 			{
 				cDate dateMapFile = cPlatform::FileModifiedDate(sMapPath);
 				cDate dateAIFile = cPlatform::FileModifiedDate(sAiFileName);
@@ -1177,13 +1178,13 @@ namespace hpl {
 			
 			if(bLoadedFromFile==false)
 			{
-				Log("Rebuilding node connections and saving to '%s'\n",cString::To8Char(sAiFileName).c_str());
+				Log("Rebuilding node connections for '%s'\n", asName.c_str());
 
 				//Compile
 				pContainer->Compile();
 
 				//Save to disk
-				if(cResources::GetForceCacheLoadingAndSkipSaving()==false)
+				if(mbMapCacheEnabled && cResources::GetForceCacheLoadingAndSkipSaving()==false)
 				{
 					pContainer->SaveToFile(sAiFileName);
 				}

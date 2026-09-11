@@ -18,6 +18,7 @@
  */
 
 #include "LuxLoadScreenHandler.h"
+#include "LuxMultiplayer.h"
 
 #include "LuxHelpFuncs.h"
 #include "LuxInputHandler.h"
@@ -151,6 +152,8 @@ void cLuxLoadScreenHandler::Update(float afTimeStep)
 
 void cLuxLoadScreenHandler::OnEnterContainer(const tString& asOldContainer)
 {
+	if(gpBase->mpEngine->GetUpdater()->GetCurrentContainerName() == "MultiplayerLoading")
+		mState = eLuxLoadScreenState_Multiplayer;
 	gpBase->mpInputHandler->ChangeState(eLuxInputState_LoadScreen);
 
 	mpViewport->SetActive(true);
@@ -172,6 +175,7 @@ void cLuxLoadScreenHandler::OnDraw(float afFrameTime)
 	switch(mState)
 	{
 	case eLuxLoadScreenState_Game: DrawGameState(afFrameTime); break;
+	case eLuxLoadScreenState_Multiplayer: DrawMultiplayerScreen(mpGuiSet); break;
 	}
 }
 
@@ -275,6 +279,64 @@ void cLuxLoadScreenHandler::DrawBlankScreen()
 
 }
 
+void cLuxLoadScreenHandler::DrawMultiplayerScreen()
+{
+	DrawMultiplayerScreen(gpBase->mpHelpFuncs->GetSet());
+	gpBase->mpHelpFuncs->DrawSetToScreen();
+}
+
+void cLuxLoadScreenHandler::DrawMultiplayerScreen(cGuiSet* apSet)
+{
+	// Clear the complete viewport on every waiting frame. An empty container
+	// otherwise preserves old ImGui pixels as its window is moved around.
+	apSet->DrawGfx(mpWhiteGfx,mvGuiSetStartPos+cVector3f(0,0,-1),mvGuiSetSize,cColor(0,1));
+	LoadCurrentImage("menu_loading_screen.jpg");
+	if(mpCurrentImage)
+	{
+		const cVector2f vImageSize = mpCurrentImage->GetImageSize();
+		apSet->DrawGfx(mpCurrentImage,cVector3f(400-vImageSize.x*0.5f,300-vImageSize.y*0.5f,0));
+	}
+	cLuxMultiplayer* pMultiplayer = gpBase->mpMultiplayer;
+	const eLuxMultiplayerLoadPhase phase = pMultiplayer ? pMultiplayer->GetLoadPhase() : eLuxMultiplayerLoadPhase_None;
+	tWString title = kTranslate("General","Loading");
+	switch(phase)
+	{
+	case eLuxMultiplayerLoadPhase_Connecting: title = _W("Connecting"); break;
+	case eLuxMultiplayerLoadPhase_Preparing: title = _W("Preparing map"); break;
+	case eLuxMultiplayerLoadPhase_Checking: title = _W("Checking map"); break;
+	case eLuxMultiplayerLoadPhase_Downloading: title = _W("Downloading map"); break;
+	default: break;
+	}
+	const bool downloading = phase == eLuxMultiplayerLoadPhase_Downloading;
+	apSet->DrawFont(title,mpFontDefault,cVector3f(400,downloading?470.0f:510.0f,1),cVector2f(20),cColor(1,1),eFontAlign_Center);
+	if(downloading)
+	{
+		const uint32_t total = pMultiplayer->GetDownloadTotalBytes();
+		const uint32_t reported = pMultiplayer->GetDownloadReceivedBytes();
+		const uint32_t received = reported < total ? reported : total;
+		const float progress = total ? float(received)/float(total) : 0.0f;
+		const unsigned percent = total ? static_cast<unsigned>(uint64_t(received)*100/total) : 0;
+		const bool useMiB = total >= 1024*1024;
+		const float divisor = useMiB ? 1024.0f*1024.0f : 1024.0f;
+		const int decimals = useMiB ? 2 : 1;
+		const tString amount = cString::ToString(percent)+"%  ("+
+			cString::ToString(float(received)/divisor,decimals)+" / "+
+			cString::ToString(float(total)/divisor,decimals)+(useMiB?" MiB)":" KiB)");
+		apSet->DrawFont(cString::To16Char(amount),mpFontDefault,cVector3f(400,500,1),cVector2f(16),cColor(0.9f,1),eFontAlign_Center);
+		apSet->DrawGfx(mpWhiteGfx,cVector3f(140,528,1),cVector2f(520,10),cColor(0.45f,1));
+		apSet->DrawGfx(mpWhiteGfx,cVector3f(141,529,2),cVector2f(518,8),cColor(0.08f,1));
+		if(received)
+			apSet->DrawGfx(mpWhiteGfx,cVector3f(141,529,3),cVector2f(518*progress,8),cColor(0.67f,0.74f,0.8f,1));
+	}
+	if(pMultiplayer)
+	{
+		tWStringVec rows;
+		mpFontDefault->GetWordWrapRows(720,18,cVector2f(16),cString::To16Char(pMultiplayer->GetLoadScreenStatus()),&rows);
+		for(size_t i=0; i<rows.size() && i<3; ++i)
+			apSet->DrawFont(rows[i],mpFontDefault,cVector3f(400,544+18*static_cast<float>(i),1),cVector2f(16),cColor(0.8f,1),eFontAlign_Center);
+	}
+}
+
 //-----------------------------------------------------------------------
 
 void cLuxLoadScreenHandler::ExitPressed()
@@ -355,6 +417,7 @@ void cLuxLoadScreenHandler::LoadCurrentImage(const tString &asImage)
 {
 	if(mpCurrentImage && msCurrentImage == asImage) return;
 
+	if(mpCurrentImage) mpGui->DestroyGfx(mpCurrentImage);
 	msCurrentImage = asImage;
 	mpCurrentImage = mpGui->CreateGfxTexture(asImage, eGuiMaterial_Alpha, eTextureType_Rect);
 }

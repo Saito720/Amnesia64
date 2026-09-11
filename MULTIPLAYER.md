@@ -13,13 +13,13 @@ Windows Debug and Release x64 are the primary build targets for this checkout.
   overrides. Use **Invite friends** or **Copy code** after the lobby has opened.
 - **Grave / tilde (`~`)** opens the ImGui window from the main menu or gameplay.
   Its Host tab accepts a map, start position, player limit, client map-change permission,
-  and Player-trigger policy. Choose Steam friends-only/public hosting or direct IP.
+  Player-trigger policy, and player collision. Choose Steam friends-only/public hosting or direct IP.
   Join through a Steam invitation, paste a numeric lobby code, or refresh the public
   session list. Friends-only lobbies do not appear in public discovery. The advanced
   direct-IP option accepts an IP address or hostname and optional port; IPv6 literals
   are supported. Escape closes the window.
 - Defaults: **Steam, friends-only**, **4 players including the host**, client map
-  changes **off**, every player may trigger Player callbacks **on**. The supported
+  changes **off**, every player may trigger Player callbacks **on**, player collision **off**. The supported
   player limit is 2–16. Direct-IP hosting uses UDP **27015** by default.
 - Both computers require the retail game assets and matching multiplayer builds.
   Steam play additionally requires separate signed-in Steam accounts with access to
@@ -78,6 +78,19 @@ Valve references: [Steam Datagram Relay](https://partner.steamgames.com/doc/feat
 
 The pause menu, inventory, journal, tilde window, and loss of application focus do not
 suspend session/world updates. Voice completion callbacks also continue through menus.
+The scene continues rendering behind the pause menu, inventory and journal. Death
+closes these local menus and respawns that player at the shared checkpoint without
+resetting the other players' world or enemies. Clients immediately show a connection
+screen when joining. A host map change notifies connected clients before the host's
+fade/save/load, so they show a preparation screen throughout that wait. Clients then
+show local map verification, download progress (percentage and received/total bytes)
+when needed, and the existing loading image while the map loads. Matching installed
+or cached maps skip the download phase. Every waiting frame clears the viewport;
+blocking verification and loading also present their screen before starting work.
+Cancelled or failed host map changes return clients to the previous map, preserving
+in-flight world events. Same-map start-position changes do not put clients into a
+map-loading state. This transition handshake uses protocol **5**; all players need
+the updated build.
 The client cannot open the game debug menu; F3/fast-forward is disabled for everyone
 in a session. Host debug map loads/reloads use a queued session-preserving path.
 Offline save/load and autosave rotation are suppressed for multiplayer worlds; session
@@ -89,14 +102,18 @@ The host assigns connection IDs; clients cannot choose another player's identity
 Peer 0 denotes the host. Map epochs invalidate delayed packets from previous maps.
 The network update runs globally, while gameplay modules receive their normal updates
 when local menus have switched away from the gameplay container. Joining/changing-map
-clients enter a waiting container until their downloaded map has loaded.
+clients enter a waiting container until their verified map has loaded.
 
 Remote players render as solid, depth-tested cylinders using the standing/crouching
-character dimensions. Positions interpolate for rendering. These are visual proxies,
-not additional Newton characters with collision against other players.
+character dimensions. Positions interpolate for rendering. The host can enable
+character collision in the advanced window; the matching Newton character proxies
+do not push shared dynamic objects. Their collision surfaces also participate in
+NPC character sweeps. Stale, disconnected and previous-map proxies are removed.
 
-Dynamic body IDs derive from stable body names; duplicate names are excluded rather
-than assigned ambiguous IDs. Clients receive a reliable initial body burst. Awake
+Dynamic body IDs combine the entity-qualified body name with its authored XML body
+ID. Repeated names inside retail entities, including `chest_of_drawers_nice.ent`,
+remain distinct. Procedural bodies without authored IDs use their stable names;
+truly ambiguous identities are excluded. Clients receive a reliable initial body burst. Awake
 bodies are sampled at 20 Hz, sleeping transitions are sent reliably, and periodic
 ground-truth snapshots correct drift. Newton keeps simulating contacts locally;
 normal corrections bias linear/angular velocity. Initial sync, large errors, sleep,
@@ -111,24 +128,68 @@ sequence numbers, and lease tokens. Leases release on exit, cancellation, timeou
 disconnect, or map teardown. Physical throws preserve the owner's final velocity.
 Common breakable-object events run through the host and invoke the usual client
 break path, including its broken representation and local effects.
+Objects owned by someone else no longer offer an interaction crosshair or outline.
+Granting a door lease opens its host-side hinge limits and restores native auto-close
+behavior. Only the host decides when to close it automatically.
+Releasing a held prop preserves the native collision
+safeguard until it clears the local player's body.
+
+Item pickups and lamp ignition use exclusive host-approved transactions. The
+collector alone receives the item or spends a tinderbox; successful pickup removes
+the world item for everyone, including late joiners. Failed pickups leave it in the
+world. Claims and removal history distinguish replacement objects from earlier
+instances with the same authored ID, so stale approvals cannot collect a replacement.
+Native pickup/ignition/interaction callbacks run once on the host according
+to the Player-trigger policy. A client's diary pickup waits for its host callback's
+decision before opening the journal, including `ReturnOpenJournal(false)` for
+scripted visions; a delayed response cannot reopen the journal during death or loading.
+Native entity snapshots carry active/interaction/effect
+flags, lamp lighting, door lock/closed states, and hinge/slider limits. Changed states
+are sent reliably, with periodic corrections. Static MoveObject transforms also
+synchronize; their motors and collision-triggered stops remain host controlled.
 
 ## Maps and scripts
 
-The host transfers the entire XML `.map`, in reliable 32 KiB chunks, with a 16 MiB
-limit and CRC32 check. Clients write it to a generated session cache below their save
-directory and load that exact file. Retail maps/scripts are not overwritten. Old
-downloaded map files are removed when replaced or disconnected; generated empty cache
-directories may remain. Compressed-only `.cmap` hosting is not supported.
+The host first sends the XML `.map` size, CRC32 and SHA-256 hash. Clients hash their
+installed map and then check a persistent download cache. An exact match skips the
+map download; otherwise the host sends reliable 32 KiB chunks, up to 16 MiB. Size,
+CRC32 and SHA-256 are checked before loading. Cache files are rehashed on every use,
+so changed host maps or damaged cache entries require a fresh download.
+
+The Windows cache is `%LOCALAPPDATA%/HPL2/Amnesia/MultiplayerCache/`. Linux uses
+`$XDG_CACHE_HOME` (or `~/.cache`), and macOS uses `~/Library/Caches`, with the same
+`HPL2/Amnesia/MultiplayerCache` suffix. Persistent maps live in `objects/<sha256>.map`.
+Installed maps load directly without a cache copy. Downloaded/cached maps load from
+private working copies, removed on replacement or disconnect. The multiplayer
+window's **Downloaded maps > Delete downloaded maps** button removes persistent
+entries without touching active working copies, installed content or profiles.
+The section also shows the total size and count of stored map objects, including
+damaged entries that still occupy space. It refreshes on opening or deleting and
+every five seconds while expanded; temporary active copies are excluded.
+A crash can leave a working copy. Neither build lists this cache as a profile.
+
+Multiplayer worlds use the verified XML rather than potentially stale compiled map
+or AI caches, and do not write derived caches beside retail maps. Offline cache
+behavior is unchanged. An old `multiplayer_cache` folder under the profile root can
+be removed manually; the build does not migrate or clean up legacy profile folders.
+Compressed-only `.cmap` hosting is not supported.
 
 Validation checks XML nesting/size, required map structure, file indices, duplicate
 object IDs, direct resources, and local `.ent`, `.mat`, `.ps`, and `.snt` dependency
 graphs. It follows engine conventions for author-machine paths, compiled meshes,
 material suffixes, localized/numbered audio, textures and cube maps. Missing assets
 produce a descriptive disconnection message. Scripted resource creation/effects also
-validate their file arguments. Opaque mesh internals and every deferred engine asset
-lookup are not yet covered by a universal missing-resource collector.
+validate their file arguments. Sound preloading is an optional warm-up hint:
+unusable `PreloadSound` requests are logged and skipped, matching the native
+engine's tolerance for the retail scripts' raw sample names, obsolete references,
+and typos. They do not disconnect clients. Actual sound playback and required
+map dependencies retain their validation. Opaque mesh internals and every deferred
+engine asset lookup are not yet covered by a universal missing-resource collector.
+Extensionless GUI sounds prefer an existing sound entity and otherwise resolve raw
+audio (including the retail Archives `react_scare6.ogg`). Directory-only optional
+skybox/light texture references are treated as unset; actual missing files still fail.
 
-Only the host loads and runs map/global scripts. A fixed registry broadcasts **165
+Only the host loads and runs map/global scripts. A fixed registry broadcasts **167
 typed native script effects**, including item grants, presentation, lighting, entity
 properties and common creation/replacement operations. Clients do not compile script
 text from the connection. Nested native helper calls are suppressed to avoid duplicate
@@ -147,10 +208,12 @@ and other indirect script execution do not yet retain the originating player's i
 
 ## Remaining integration work
 
-- Complete replication of native non-script gameplay: pickups, inventory use and
-  combinations, enemy AI/health, death/respawn, puzzle state, journals and quest progress.
+- Complete replication of native non-script gameplay: inventory use and
+  combinations, enemy AI/health, all puzzle state, journals and quest progress.
   Players can currently diverge in these systems. Shared script item grants are supported,
   and each client's inventory survives ordinary map transitions.
+- Campaign death scripts that require global checkpoint callbacks need an explicit
+  shared policy; local multiplayer respawn deliberately does not replay those callbacks.
 - Serialize authoritative saved-map/entity state for revisits and late joins. Replaying
   current-map effects plus physics is insufficient to reconstruct every native property
   restored from the host's saved-map collection.
@@ -158,12 +221,15 @@ and other indirect script execution do not yet retain the originating player's i
   procedural object. Body replication requires the corresponding body to exist locally.
 - Precise per-player trigger enter/leave semantics, remote look-at/use-item callbacks,
   deferred trigger attribution, and full coverage of all script APIs.
-- Internet playtests with sustained latency, jitter and disconnects, co-op save/resume,
+- Further Internet playtests with sustained latency, jitter and disconnects, co-op save/resume,
   content-version manifests, and runtime missing-resource reporting for all asset managers.
 
 ## Verification
 
 The implementation has been exercised with:
+
+- User-reported multiplayer playtests using different Steam accounts/machines. The
+  regressions below remain controlled local tests and do not replace another friend playtest.
 
 - Actual GameNetworkingSockets loopback sessions in Debug and Release x64: reliable
   fragmentation, unreliable messages, session-full rejection, disconnect reasons, restart.
@@ -182,9 +248,21 @@ The implementation has been exercised with:
   snapshot loss, jointed-body contention, canceled/delayed grants, expiry, final throw
   velocity, and gravity restoration. One convergence run ended at about 3.3 cm error
   after 1.5 seconds; this is a controlled test, not an Internet latency guarantee.
+- Newton regressions for closed-door leases, collision flags, standing/crouching
+  player collision, proxy cleanup, static mover rotation/translation, slow motion,
+  recovery after losing a final movement update, and collision restoration after
+  releasing a prop overlapping the player.
 - All 33 retail campaign maps passing content preflight, plus malformed maps and
   missing-asset regressions.
 - Real SDL/OpenGL/ImGui rendering and input capture, both advanced and campaign controls.
+- Full-game recovery from death with pause, inventory and journal open on both peers;
+  actual world render callbacks continue behind all three menus.
+- Two-instance native regressions: exclusive host/client pickups, host callbacks,
+  no-fuel ignition rejection, one tinderbox cost per ignition, already-lit lamp
+  callbacks, shared door states, the Old Archives bookshelf's complete transform
+  and stop, late-join entity baseline restoration, same-ID replacement pickups,
+  stale claim rejection, diary callback presentation decisions, and rendering after
+  disconnect. Host/client drawer and grab-release trials use unchanged retail assets.
 - Steam UI discovery/invitation/retry states and input suppression under the Steam
   overlay, including suppression of the underlying ImGui controls. Steam callbacks
   were stubbed for these UI assertions; no invitations were sent by the tests.
@@ -202,6 +280,7 @@ protocol and Newton suites from the repository root:
 ./tests/RunMultiplayerProtocolTests.ps1
 ./tests/RunMultiplayerWorldTests.ps1
 ./amnesia/src/game/tests/build_multiplayer_content_tests.ps1 -Run -RetailDirectory 'D:/path/to/Amnesia'
+./amnesia/src/game/tests/build_multiplayer_content_tests.ps1 -CacheOnly
 ./tests/multiplayer/run-ui.ps1 -RetailDirectory 'D:/path/to/Amnesia'
 ./tests/multiplayer/run-game.ps1 -RetailDirectory 'D:/path/to/Amnesia'
 # Steam SDK validation and live lobby/relay initialization (one licensed account):
@@ -213,10 +292,12 @@ protocol and Newton suites from the repository root:
 The networking dependency README contains the standalone transport test commands.
 The default UI/full-game regressions build the standalone backend. Rebuild normally
 after those tests to restore the Steam-enabled game. The one-account Steam smoke
-does not establish a relayed gameplay connection to a second player; a two-account,
-two-machine Steam playtest remains required to verify that path end to end.
+does not establish a relayed gameplay connection to a second player. User playtests
+have exercised that path; each new build still needs a two-account playtest for
+latency, disconnects and campaign behavior beyond the controlled regression suite.
 Full-game smoke tests use isolated test configurations/profiles and a bounded run;
 they must not share a live player's configuration or overwrite retail assets.
+The current session/lobby protocol is version **5**; all testers must use the new build.
 See `tests/multiplayer/README.md` for profile cleanup, output paths and runner options.
 
 ## Source layout
@@ -225,7 +306,9 @@ See `tests/multiplayer/README.md` for profile cleanup, output paths and runner o
 - `HPL2/dependencies/networking`: pinned dependency build, provenance and licenses.
 - `LuxMultiplayer`: session lifecycle, transfer, map/trigger policy and global updates.
 - `LuxMultiplayerWorld`: physics, poses, rendering and interaction leases.
+- `LuxMultiplayerEntities`: approved pickups/ignition, removal history and native entity state.
 - `LuxMultiplayerProtocol` / `LuxMultiplayerWorldProtocol`: explicit wire codecs.
+- `LuxMultiplayerCache` / `LuxMultiplayerMapHash`: verified persistent map storage and SHA-256 identities.
 - `LuxMultiplayerContent`: map/dependency validation.
 - `LuxMultiplayerScript`: typed script-effect dispatch and nested-call protection.
 - `LuxMultiplayerUI`: ImGui host/join controls and global SDL input/render integration.

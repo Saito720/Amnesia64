@@ -387,6 +387,8 @@ void cLuxEnemyMover::UpdateStepEffects(float afTimeStep)
 
 	//Create sounda and ps for effect	
 	cWorld *pWorld = mpEnemy->GetMap()->GetWorld();
+	// The local animation already produces its own water footsteps.
+	cWorldEffectLocalScope localEffects(pWorld);
 
 	if(pImpact->GetPSName() != "")
 	{

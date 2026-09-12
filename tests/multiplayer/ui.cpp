@@ -41,7 +41,8 @@ struct cLuxMultiplayer {
     bool IsWindowVisible() const;
     bool active = false, host = false;
     bool ready = true;
-    int hosts = 0, joins = 0, stops = 0, cacheClears = 0;
+    int hosts = 0, currentHosts = 0, joins = 0, stops = 0, cacheClears = 0;
+    bool currentMapAvailable = false;
     bool steamAvailable = false, steamSession = false, steamSearchPending = false;
     bool steamOverlayActive = false;
     uint64_t lobbyID = 0, pendingInvite = 0;
@@ -58,6 +59,14 @@ struct cLuxMultiplayer {
     bool Host(const cLuxMultiplayerSettings& settings) {
         ++hosts; lastSettings=settings; host=active=true; steamSession=settings.useSteam;
         lobbyID=steamSession ? 109775244398475112ull : 0; status="Hosting test session."; return true;
+    }
+    bool GetCurrentMapForHosting(tString& map, tString& reason) const {
+        map=currentMapAvailable?"maps/main/ch01/00_rainy_hall.map":"";
+        reason=currentMapAvailable?"":"Load a game or map first to host it without restarting.";
+        return currentMapAvailable;
+    }
+    bool HostCurrentMap(const cLuxMultiplayerSettings& settings) {
+        ++currentHosts;lastSettings=settings;host=active=true;return true;
     }
     bool Join(const tString& address) { ++joins; lastAddress=address; active=true; host=false; steamSession=false; return true; }
     void Stop(const tString&) { ++stops; active=false; steamSession=false; lobbyID=0; status="No multiplayer session."; }
@@ -119,6 +128,7 @@ struct cLuxBase {
     cLuxInputHandler* mpInputHandler;
     TestMapHandler* mpMapHandler;
     cLuxMultiplayer* mpMultiplayer;
+    tString msStartMapFile="00_rainy_hall.map", msStartMapFolder="maps/main/ch01/";
 };
 static cLuxBase base;
 static tString outputDirectory;
@@ -127,6 +137,7 @@ cLuxBase* gpBase = &base;
 #include "LuxMultiplayerUI.h"
 #undef private
 #include "LuxMultiplayerUI.cpp"
+#include "LuxMultiplayerContent.cpp"
 #include "generated_update.cpp"
 #include "imgui_internal.h"
 bool cLuxMultiplayer::IsWindowVisible() const { return ui && ui->IsVisible(); }
@@ -318,6 +329,91 @@ int main(int argc,char** argv) {
         ui.mlPendingAction=1; ui.Update(1.0f/60);
         require(session.hosts==3 && session.lastSettings.useSteam && session.lastSettings.publicLobby && session.lastSettings.map=="ignored-by-campaign.map","advanced Steam visibility and map settings passed to coordinator");
         ui.mlPendingAction=3; ui.Update(1.0f/60);
+        ui.mbHostCurrentMap=true;
+        ui.Update(1.1f);
+        for(int i=0;i<3;++i) draw(ui);
+        require(!ui.mbCanHostCurrentMap && !ui.mbHostCurrentMap && !ui.msCurrentMapReason.empty(),"menu/background availability hides and clears current-map hosting");
+        ui.mlPendingAction=12;ui.Update(1.0f/60);
+        require(session.currentHosts==0 && !session.active,"stale current-map action cannot host an unavailable or menu background world");
+        screenshot("host-current-unavailable.png");
+        session.currentMapAvailable=true;ui.Update(1.1f);
+        require(ui.mbCanHostCurrentMap && ui.msCurrentMap=="maps/main/ch01/00_rainy_hall.map","current-map availability refreshes outside rendering");
+        ui.mbHostCurrentMap=true;
+        for(int i=0;i<3;++i) draw(ui);
+        screenshot("host-current.png");
+        ui.mlPendingAction=12;ui.Draw();
+        require(session.currentHosts==0,"render does not start hosting the current world");
+        ui.Update(1.0f/60);
+        require(session.currentHosts==1 && session.hosts==3 && session.lastSettings.maxPlayers==12 && session.lastSettings.playerCollision,
+            "current-map hosting uses the preserving coordinator path and advanced settings");
+        ui.mlPendingAction=3;ui.Update(1.0f/60);ui.mbHostCurrentMap=false;
+        const tWString browserFixture=cString::To16Char(outputDirectory)+_W("/map-browser");
+        require(cPlatform::CreateFolder(browserFixture),"create isolated map-browser fixture");
+        require(cPlatform::CreateFolder(browserFixture+_W("/subfolder")),"create nested map-browser folder");
+        for(const wchar_t* name:{L"selected.map",L"uppercase.MAP",L"ignored.hps"}) {
+            FILE* file=cPlatform::OpenFile(browserFixture+_W('/')+name,_W("wb"));
+            require(file!=NULL,"create map-browser fixture file");
+            std::fputs(std::wcscmp(name,L"selected.map")==0 ?
+                "<Level><MapData><MapContents><Entities><Area Name=\"Z_Start\" AreaType=\"PlayerStart\" Active=\"false\"/>"
+                "<Area Name=\"A_Start\" AreaType=\"PlayerStart\"/><Area Name=\"Z_Start\" AreaType=\"PlayerStart\"/>"
+                "<Area Name=\"Trigger\" AreaType=\"Script\"/><Entity Name=\"NotAStart\" AreaType=\"PlayerStart\"/>"
+                "</Entities></MapContents></MapData></Level>" : "<Level><MapData><MapContents><Entities/></MapContents></MapData></Level>",file);
+            std::fclose(file);
+        }
+        ui.msMapBrowserDirectory=browserFixture;ui.mlPendingAction=13;ui.Draw();
+        require(!ui.mbMapBrowserOpen && ui.mlstMapBrowserFiles.empty(),"browser opening and directory enumeration are deferred from rendering");
+        ui.Update(1.0f/60);
+        require(ui.mbMapBrowserOpen && ui.mlstMapBrowserFiles.size()==2 && ui.mlstMapBrowserFolders.size()==1,
+            "browser includes only XML map extensions and navigable folders");
+        for(int i=0;i<3;++i) draw(ui);
+        screenshot("map-browser.png");
+        const tWString originalBrowserDirectory=ui.msMapBrowserDirectory;
+        ui.msPendingMapBrowserDirectory=browserFixture+_W("/missing");ui.Update(1.0f/60);
+        require(!ui.msMapBrowserError.empty() && ui.msMapBrowserDirectory==originalBrowserDirectory && ui.mlstMapBrowserFiles.size()==2,
+            "failed folder navigation preserves the previous listing and reports an error");
+        ui.msPendingMapBrowserDirectory=browserFixture+_W("/subfolder");ui.Draw();
+        require(ui.mlstMapBrowserFiles.size()==2,"folder navigation does no filesystem work while rendering");
+        ui.Update(1.0f/60);
+        require(ui.mlstMapBrowserFiles.empty() && ui.msMapBrowserError.empty(),"folder navigation refreshes the listing in Update");
+        ui.QueueMapBrowserParent();ui.Draw();
+        require(ui.mlstMapBrowserFiles.empty(),"Up directory navigation is deferred from rendering");
+        ui.Update(1.0f/60);
+        require(ui.msMapBrowserDirectory==originalBrowserDirectory && ui.mlstMapBrowserFiles.size()==2,
+            "Up correctly leaves an extensionless directory and restores its parent's listing");
+        ui.msSelectedMap=ui.msMapBrowserDirectory+_W("selected.map");ui.mlPendingAction=14;
+        const tString previousMap=ui.msMap;ui.Draw();
+        require(ui.msMap==previousMap,"map selection acceptance waits for Update");
+        ui.Update(1.0f/60);ui.Draw();
+        require(!ui.mbMapBrowserOpen && ui.msMap==cString::To8Char(ui.msSelectedMap) && session.hosts==3,
+            "browser fills the selected map without starting or restarting a session");
+        require(ui.mvStartPositions.empty() && ui.mbStartPositionsDirty,"map acceptance clears stale start positions and defers map parsing");
+        ui.Draw();require(ui.mvStartPositions.empty(),"rendering never parses a selected map");
+        ui.Update(0.3f);
+        require(ui.msStartPositionError.empty() && ui.mvStartPositions==std::vector<tString>({"Z_Start","A_Start"}),
+            "start dropdown uses authored PlayerStart area order, includes inactive starts, and excludes other entity types and duplicate names");
+        std::strcpy(ui.msStartPos,"A_Start");ui.mlPendingAction=1;ui.Update(1.0f/60);
+        require(session.lastSettings.startPos=="A_Start","chosen start position reaches hosting settings");
+        ui.mlPendingAction=3;ui.Update(1.0f/60);
+        std::strcpy(ui.msMap,cString::To8Char(browserFixture+_W("/uppercase.MAP")).c_str());
+        ui.Update(0.1f);
+        require(ui.msStartPos[0]=='\0' && ui.mvStartPositions.empty() && ui.mbStartPositionsDirty,
+            "changing a typed map clears the previous selection before the debounce or a host action");
+        ui.Update(0.3f);
+        require(ui.mvStartPositions.empty() && ui.msStartPositionError.empty() && !ui.mbStartPositionsDirty,
+            "a valid map without starts offers only the map default");
+        std::strcpy(ui.msMap,cString::To8Char(browserFixture+_W("/missing.map")).c_str());ui.Update(0.3f);
+        require(ui.mvStartPositions.empty() && !ui.msStartPositionError.empty(),"an unavailable map reports a read error without retaining stale starts");
+        const tString broken="<Level><MapData><MapContents>";
+        std::vector<tString> parsedStarts; tString parseError;
+        require(!LuxCollectMultiplayerStartPositions(std::vector<uint8_t>(broken.begin(),broken.end()),parsedStarts,parseError),
+            "malformed XML is rejected by the bounded start-position parser");
+        ui.mlPendingAction=13;ui.Update(1.0f/60);ui.Draw();
+        event(SDL_KEYDOWN,SDL_SCANCODE_ESCAPE,SDLK_ESCAPE);ui.Draw();
+        require(!ui.mbMapBrowserOpen && ui.IsVisible(),"Escape closes the file browser while keeping multiplayer controls open");
+        event(SDL_KEYUP,SDL_SCANCODE_ESCAPE,SDLK_ESCAPE);
+        for(const wchar_t* name:{L"selected.map",L"uppercase.MAP",L"ignored.hps"}) cPlatform::RemoveFile(browserFixture+_W('/')+name);
+        require(cPlatform::RemoveFolder(browserFixture+_W("/subfolder"),false,false) && cPlatform::RemoveFolder(browserFixture,false,false),
+            "clean only isolated browser fixture files and empty directories");
         for(int i=0;i<3;++i) draw(ui);
         selectTab("Join");
         for(int i=0;i<3;++i) draw(ui);
@@ -388,7 +484,7 @@ int main(int argc,char** argv) {
     event(SDL_KEYUP,SDL_SCANCODE_W,SDLK_w);
     base.mpEngine->GetGui()->DestroySet(menuSet);
     DestroyHPLEngine(base.mpEngine);
-    std::printf("PASS: real ImGui rendering; tilde/escape; global pre-swap/event hooks; key releases; Steam unavailable/hosting/searching/join/invitation; Steam overlay input capture; campaign defaults; deferred actions including cache deletion while connected/disconnected; direct IP; teardown.\n");
+    std::printf("PASS: real ImGui rendering; tilde/escape; global pre-swap/event hooks; key releases; Steam unavailable/hosting/searching/join/invitation; Steam overlay input capture; campaign defaults; current-map background guard; deferred map browser and start-position dropdown; stale/missing/invalid map handling; cache deletion while connected/disconnected; direct IP; teardown.\n");
     return 0;
 }
 int hplMain(const tString&) { return main(0,NULL); }

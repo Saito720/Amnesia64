@@ -32,7 +32,7 @@ namespace luxnet { struct Reader; }
 
 class cLuxScriptHandler : public iLuxUpdateable
 {
-friend bool LuxApplyMultiplayerScriptEffect(luxnet::Reader& r, std::string& error);
+friend struct cScriptResourceValidation;
 public:	
 	cLuxScriptHandler();
 	~cLuxScriptHandler();

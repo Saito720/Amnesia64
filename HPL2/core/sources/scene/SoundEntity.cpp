@@ -91,6 +91,7 @@ namespace hpl {
 		mfSleepCount = 0;
 
 		mbForcePlayAsGUISound = false;
+		mbPresentationSuppressed = false;
 
 		mpSoundCallback = hplNew( cSoundEntityChannelCallback, () );
 		mpSoundCallback->mpEntity = this;
@@ -248,6 +249,18 @@ namespace hpl {
 	}
 
 	//-----------------------------------------------------------------------
+	void cSoundEntity::SetPresentationSuppressed(bool abSuppressed)
+	{
+		mbPresentationSuppressed = abSuppressed;
+		for(int i=0; i<3; ++i)
+		{
+			if(mpSoundHandler->IsValid(mvSoundEntries[i], mvSoundEntryID[i]))
+				mvSoundEntries[i]->SetPresentationSuppressed(abSuppressed);
+		}
+	}
+
+	//-----------------------------------------------------------------------
+
 	void cSoundEntity::Play(bool abPlayStart)
 	{
 		if(mpSoundHandler->GetSilent())	return;
@@ -476,12 +489,14 @@ namespace hpl {
 					mbStarted = true;
 					mbPrioRemove = false;
 
-					//Call the callbacks that the sound has started.
-					tSoundEntityGlobalCallbackListIt it = mlstGobalCallbacks.begin();
-					for(; it != mlstGobalCallbacks.end(); ++it)
+					// Suppressed presentation must not produce duplicate AI sound events.
+					if(mbPresentationSuppressed==false)
 					{
-						iSoundEntityGlobalCallback *pCallback = *it;
-						pCallback->OnStart(this);
+						for(tSoundEntityGlobalCallbackListIt it = mlstGobalCallbacks.begin();
+							it != mlstGobalCallbacks.end(); ++it)
+						{
+							(*it)->OnStart(this);
+						}
 					}
 				}
 				//If sound is not started because of priority. Sleep before trying to start it again.
@@ -657,6 +672,7 @@ namespace hpl {
 			//if(mbLog) Log("	-Setting up sound\n");
 
 			mvSoundEntryID[aType] = mvSoundEntries[aType]->GetId();
+			mvSoundEntries[aType]->SetPresentationSuppressed(mbPresentationSuppressed);
 
 			iSoundChannel *pChannel = mvSoundEntries[aType]->GetChannel();
 			pChannel->SetBlockable(mpData->GetBlockable());

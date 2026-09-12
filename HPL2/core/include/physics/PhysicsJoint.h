@@ -21,6 +21,7 @@
 #define HPL_PHYSICS_JOINT_H
 
 #include <map>
+#include <vector>
 #include "system/SystemTypes.h"
 #include "math/MathTypes.h"
 
@@ -90,6 +91,17 @@ namespace hpl {
 
 	//-----------------------------------
 
+	class iPhysicsJointDestroyCallback
+	{
+	public:
+		virtual ~iPhysicsJointDestroyCallback(){}
+		// A simulation owner may defer a physical break until it is authorized.
+		// Called with a live backend; never destroy the joint from this callback.
+		virtual bool AllowPhysicsJointBreak(iPhysicsJoint *apJoint) { return true; }
+		// The backend has already been destroyed; do not call joint methods here.
+		virtual void OnPhysicsJointDestroyed(iPhysicsJoint *apJoint)=0;
+	};
+
 	class iPhysicsJoint
 	{
 	#ifdef __GNUC__
@@ -99,6 +111,8 @@ namespace hpl {
 		iPhysicsJoint(	const tString &asName, iPhysicsBody *apParentBody, iPhysicsBody *apChildBody,
 						iPhysicsWorld *apWorld,const cVector3f &avPivotPoint, const cVector3f &avPinDir);
 		virtual ~iPhysicsJoint();
+		void AddDestroyCallback(iPhysicsJointDestroyCallback *apCallback);
+		void RemoveDestroyCallback(iPhysicsJointDestroyCallback *apCallback);
 
 		const tString& GetName(){ return msName;}
 
@@ -255,6 +269,7 @@ namespace hpl {
 		int mlLimitStepCount;
 
 		void *mpUserData;
+		std::vector<iPhysicsJointDestroyCallback*> mvDestroyCallbacks;
 
 		static void CheckLimitAutoSleep(iPhysicsJoint *apJoint, const float afMin, const float afMax,
 										const float afDist);

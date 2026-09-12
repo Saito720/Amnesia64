@@ -1,5 +1,6 @@
 #include "../amnesia/src/game/LuxMultiplayerProtocol.h"
 #include "../amnesia/src/game/LuxMultiplayerEntityProtocol.h"
+#include "../amnesia/src/game/LuxMultiplayerEffectsProtocol.h"
 #include "../amnesia/src/game/LuxMultiplayerTriggerPolicy.h"
 #include "../amnesia/src/game/LuxMultiplayerMapHash.h"
 #include <cassert>
@@ -19,6 +20,53 @@ static bool DecodeNative(const std::vector<uint8_t>& bytes) {
     Reader reader(bytes);NativeState result;
     return ReadNativeState(reader,result);
 }
+static void CheckWorldEffects() {
+    using namespace luxfx;
+    Effect base;base.epoch=42;base.id=1;base.name="native-effect";base.asset="sounds/example.snt";
+    auto valid=[](const std::vector<uint8_t>& data) {Reader r(data);Effect value;return Read(r,value);};
+    for(uint8_t kind=Sound;kind<=PlayerSound;++kind) for(uint8_t op=Create;op<=DeclareSound;++op) {
+        if(kind==PlayerSound && op!=Create) continue;
+        if(op==DeclareSound && kind!=Sound) continue;
+        for(uint32_t peer:{0u,17u}) {
+            Effect effect=base;effect.kind=kind;effect.operation=op;effect.peer=peer;
+            effect.origin=kind==PlayerSound || peer?Player:World;
+            const auto packet=luxfx::Packet(effect);assert(valid(packet));
+            for(size_t n=0;n<packet.size();++n) assert(!valid({packet.begin(),packet.begin()+n}));
+            auto trailing=packet;trailing.push_back(0);assert(!valid(trailing));
+            Reader r(packet);Effect read;assert(Read(r,read));
+            assert(read.kind==kind && read.operation==op && read.epoch==42 && read.peer==peer && read.id==1);
+            if(op==Create || op==DeclareSound) assert(read.asset==effect.asset && read.name==effect.name);
+        }
+    }
+    auto rejects=[&](Effect effect) {assert(!valid(luxfx::Packet(effect)));};
+    Effect bad=base;bad.id=0;rejects(bad);
+    bad=base;bad.operation=0;rejects(bad);bad.operation=DeclareSound+1;rejects(bad);
+    bad=base;bad.operation=DeclareSound;bad.kind=Particle;rejects(bad);
+    bad=base;bad.kind=0;rejects(bad);bad.kind=PlayerSound+1;rejects(bad);
+    bad=base;bad.origin=Player+1;rejects(bad);
+    bad=base;bad.kind=Particle;bad.flags=64;rejects(bad);
+    bad=base;bad.flags=SoundStart;assert(valid(luxfx::Packet(bad)));
+    bad.flags=SoundEnd|Stopped;assert(valid(luxfx::Packet(bad)));
+    bad.flags=SoundStart|SoundEnd;rejects(bad);
+    bad.flags=SoundEnd;rejects(bad);
+    bad=base;bad.kind=PlayerSound;rejects(bad);
+    bad.origin=Player;bad.operation=State;rejects(bad);bad.operation=Remove;rejects(bad);
+    for(const std::string& asset:{std::string(),std::string("../escape.ogg"),std::string("C:/file.ogg"),
+        std::string("asset\0hidden",12),std::string(513,'x')}) {bad=base;bad.asset=asset;rejects(bad);}
+    bad=base;bad.name=std::string(257,'x');rejects(bad);
+    for(float f:{std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()}) {
+        for(int i=0;i<12;++i) {bad=base;bad.matrix[i]=f;rejects(bad);}
+        for(int i=0;i<3;++i) {bad=base;bad.size[i]=f;rejects(bad);}
+        for(int i=0;i<4;++i) {bad=base;bad.color[i]=f;rejects(bad);}
+        bad=base;bad.volume=f;rejects(bad);bad=base;bad.minimum=f;rejects(bad);bad=base;bad.maximum=f;rejects(bad);
+    }
+    bad=base;bad.matrix[3]=100001;rejects(bad);
+    bad=base;bad.matrix[0]=101;rejects(bad);
+    bad=base;bad.size[0]=0;rejects(bad);bad.size[0]=1001;rejects(bad);
+    bad=base;bad.color[0]=-0.1f;rejects(bad);bad.color[0]=17;rejects(bad);
+    bad=base;bad.volume=-0.1f;rejects(bad);bad.volume=17;rejects(bad);
+    bad=base;bad.minimum=-1;rejects(bad);bad=base;bad.maximum=0.5f;rejects(bad);bad.maximum=10001;rejects(bad);
+}
 static void CheckNativeEntityStates() {
     NativeState basic={42,"bookshelf",PropState,EntityActive|EffectsActive,0,{}};
     assert(DecodeNative(NativePacket(basic)));
@@ -35,6 +83,17 @@ static void CheckNativeEntityStates() {
     assert(ReadNativeState(roundTrip,decoded) && roundTrip.Done());
     assert(decoded.epoch==42 && decoded.name=="bookshelf" && decoded.joints.size()==2);
     assert(decoded.joints[1].index==3 && decoded.joints[1].max==100000);
+    NativeState deleted=jointed;deleted.joints[0]={0,0,0,0,0};
+    auto deletion=NativePacket(deleted);Reader deletionReader(deletion);NativeState deletionState;
+    assert(ReadNativeState(deletionReader,deletionState) && deletionState.joints[0].kind==0 && deletionState.joints[1].index==3);
+    for(size_t n=0;n<deletion.size();++n) assert(!DecodeNative({deletion.begin(),deletion.begin()+n}));
+    for(unsigned field=0;field<3;++field) {
+        auto malformed=deleted;
+        if(field==0) malformed.joints[0].flags=1;
+        if(field==1) malformed.joints[0].min=1;
+        if(field==2) malformed.joints[0].max=1;
+        assert(!DecodeNative(NativePacket(malformed)));
+    }
     // A reliable state must be complete before any of its discrete settings apply.
     for(size_t n=0;n<valid.size();++n)
         assert(!DecodeNative(std::vector<uint8_t>(valid.begin(),valid.begin()+n)));
@@ -84,6 +143,42 @@ static void CheckNativeEntityStates() {
             }
         }
         assert(reader.pos<=bytes.size());
+    }
+}
+static void CheckJointBreakRequests() {
+    const JointBreakState base={42,0,17,0x0123456789abcdefULL,"painting03_dynamic_2"};
+    auto valid=[](const std::vector<uint8_t>& bytes) {Reader r(bytes);JointBreakState state;return ReadJointBreak(r,state);};
+    const auto packet=WriteJointBreak(base);assert(packet.front()==JointBreakRequest);
+    Reader reader(packet);JointBreakState decoded;
+    assert(ReadJointBreak(reader,decoded) && reader.Done());
+    assert(decoded.epoch==base.epoch && decoded.index==base.index && decoded.token==base.token &&
+           decoded.body==base.body && decoded.name==base.name);
+    for(size_t n=0;n<packet.size();++n) assert(!valid({packet.begin(),packet.begin()+n}));
+    auto trailing=packet;trailing.push_back(0);assert(!valid(trailing));
+    trailing=packet;trailing.resize(513);assert(!valid(trailing));
+    for(uint32_t index:{0u,127u}) for(uint32_t token:{1u,0xffffffffu})
+        for(uint64_t body:{uint64_t(0),uint64_t(0xffffffffu),uint64_t(0x100000000ULL),uint64_t(0xffffffffffffffffULL)}) {
+            auto state=base;state.index=index;state.token=token;state.body=body;state.name=std::string(256,'x');
+            auto bytes=WriteJointBreak(state);Reader r(bytes);JointBreakState result;
+            assert(ReadJointBreak(r,result) && result.body==body && result.index==index && result.token==token && result.name==state.name);
+        }
+    auto invalid=base;invalid.token=0;assert(!valid(WriteJointBreak(invalid)));
+    for(uint32_t index:{128u,0xffffffffu}) {invalid=base;invalid.index=index;assert(!valid(WriteJointBreak(invalid)));}
+    for(const std::string& name:{std::string(),std::string(257,'x'),std::string("joint\0hidden",12)}) {
+        invalid=base;invalid.name=name;assert(!valid(WriteJointBreak(invalid)));
+    }
+    auto length=packet;for(size_t i=5;i<9;++i) length[i]=0xff;assert(!valid(length));
+    uint32_t random=541;
+    for(unsigned i=0;i<5000;++i) {
+        auto bytes=packet;
+        random=1664525*random+1013904223;const size_t at=1+random%(bytes.size()-1);
+        random=1664525*random+1013904223;bytes[at]=uint8_t(random>>24);
+        Reader r(bytes);JointBreakState state;
+        if(ReadJointBreak(r,state)) {
+            assert(r.Done() && state.index<128 && state.token && !state.name.empty() && state.name.size()<=256);
+            assert(WriteJointBreak(state)==bytes);
+        }
+        assert(r.pos<=bytes.size());
     }
 }
 static void CheckPlayerTriggerOrigins() {
@@ -147,6 +242,8 @@ int main() {
     CheckMapHashes();
     CheckPlayerTriggerOrigins();
     CheckNativeEntityStates();
+    CheckJointBreakRequests();
+    CheckWorldEffects();
     Writer w(MapBegin);w.U32(ProtocolVersion);w.String("00_rainy_hall.map");w.Float(3.5f);w.U8(1);
     Reader r(w.data);assert(r.U32()==ProtocolVersion);assert(r.String()=="00_rainy_hall.map");
     assert(r.Float()==3.5f && r.U8()==1 && r.Done());
@@ -175,5 +272,5 @@ int main() {
         Reader fuzz(bytes);fuzz.U32();fuzz.String(512);fuzz.Float();fuzz.U8();
         assert(fuzz.pos<=bytes.size());
     }
-    std::cout<<"Session protocol: SHA-256 known vectors, Player trigger attribution, native entity/joint states (10000 mutations), bounds, truncation, strings, finite floats, paths, CRC and 30000 malformed packets passed.\n";
+    std::cout<<"Session protocol: SHA-256 known vectors, Player trigger attribution, native entity/joint states (10000 mutations), joint break requests (5000 mutations), world effect lifecycle, bounds, truncation, strings, finite floats, paths, CRC and 30000 malformed packets passed.\n";
 }

@@ -24,6 +24,8 @@
 #include "LuxMap.h"
 #include "LuxHelpFuncs.h"
 #include "LuxPlayerHelpers.h"
+#include "LuxMultiplayer.h"
+#include "LuxMultiplayerWorld.h"
 
 //////////////////////////////////////////////////////////////////////////
 // CHARACTER CALLBACK
@@ -53,6 +55,11 @@ void cLuxMoveState_Normal_Callback::OnGravityCollide(iCharacterBody *apCharBody,
 			mpMoveState->FallDamage(apCharBody->GetForceVelocity().y);
 		}
 	}
+}
+
+bool cLuxMoveState_Normal_Callback::AllowBodyPush(iCharacterBody *apCharBody, iPhysicsBody *apBody)
+{
+	return !gpBase->mpMultiplayer || gpBase->mpMultiplayer->GetWorld()->AllowPlayerContact(apBody);
 }
 
 //-----------------------------------------------------------------------

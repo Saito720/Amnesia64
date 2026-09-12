@@ -629,6 +629,9 @@ void iLuxEnemy::OnUpdate(float afTimeStep)
 	{
 		return;
 	}
+	// Effects from this locally simulated enemy retain its source throughout
+	// subclass updates; explicit player effects can override the nested scope.
+	cWorldEffectSourceScope effectSource(mpMap->GetWorld(), mpCharBody->GetCurrentBody());
 
 	//////////////////////
 	// Helpers
@@ -973,6 +976,8 @@ float iLuxEnemy::ConvertAnimToAbsoluteTime(float afRelativeTimePostion)
 cSoundEntity* iLuxEnemy::PlaySound(const tString &asName)
 {
 	if(asName=="") return NULL;
+	// Enemy presentation follows the locally running enemy state and position.
+	cWorldEffectLocalScope localEffects(mpMap->GetWorld());
 
 	cSoundEntity *pSound = mpMap->GetWorld()->CreateSoundEntity("EnemySound", asName, true);
 	if(pSound)
@@ -1217,6 +1222,7 @@ tString iLuxEnemy::GetCurrentPoseSuffix()
 
 bool iLuxEnemy::StateEvent(int alState, eLuxEnemyStateEvent aEvent, cLuxStateMessage *apMessage)
 {
+	cWorldEffectSourceScope effectSource(mpMap->GetWorld(), mpCharBody ? mpCharBody->GetCurrentBody() : NULL);
 	bool bRet = StateEventImplement(alState, aEvent, apMessage);
 	if(bRet==false)
 		bRet = StateEventImplement(-1, aEvent, apMessage);
@@ -1782,6 +1788,7 @@ bool iLuxEnemy::TriggersDisabled()
 
 bool iLuxEnemy::Attack(const cEnemyAttackSizeData &aSizeData, const cEnemyAttackDamageData &aDamageData, float afDamageMul)
 {
+	cWorldEffectSourceScope effectSource(mpMap->GetWorld(), mpCharBody->GetCurrentBody());
 	bool bHitPlayer = false;
 	bool bHit = gpBase->mpMapHelper->ShapeDamage(GetAttackShape(aSizeData.mlShapeIdx), GetDamageShapeMatrix(aSizeData.mvOffset), mpCharBody->GetPosition(),
 												aDamageData.mfMinDamage*afDamageMul, aDamageData.mfMaxDamage*afDamageMul, 

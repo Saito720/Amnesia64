@@ -287,6 +287,7 @@ public:
 	cLuxPlayerInsanityCollapse* GetInsanityCollapse(){ return mpInsanityCollapse;}
 
 	cLuxPlayerHands* GetHands(){ return mpHands;}
+	iLight* GetVisibleLanternLight() const;
 
 	void RunHelperMessage(eUpdateableMessage aMessage, float afX);
 	void RunHelperLuxMessage(eLuxUpdateableMessage aMessage, void *apData);

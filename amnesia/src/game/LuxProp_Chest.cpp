@@ -207,6 +207,17 @@ void cLuxProp_Chest::UpdatePropSpecific(float afTimeStep)
 
 //-----------------------------------------------------------------------
 
+void cLuxProp_Chest::OnPropJointDestroyed(iPhysicsJoint *apJoint)
+{
+	for(size_t i=0; i<mvJointData.size();)
+	{
+		if(mvJointData[i].mpHingeJoint==apJoint) mvJointData.erase(mvJointData.begin()+i);
+		else ++i;
+	}
+}
+
+//-----------------------------------------------------------------------
+
 void cLuxProp_Chest::BeforePropDestruction()
 {
 

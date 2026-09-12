@@ -5,7 +5,6 @@
 #include "LuxInventory.h"
 #include "LuxJournal.h"
 #include "LuxPlayer.h"
-#include "LuxPlayerHelpers.h"
 #include "LuxSaveHandler.h"
 #include <map>
 #include <set>
@@ -13,9 +12,12 @@
 #include <deque>
 #include <filesystem>
 #define private public
+#include "LuxPlayerHelpers.h"
+#include "LuxEffectHandler.h"
 #include "LuxMapHandler.h"
 #include "LuxMultiplayer.h"
 #include "LuxMultiplayerWorld.h"
+#include "LuxMultiplayerEffects.h"
 #include "LuxMultiplayerUI.h"
 #undef private
 #include <SDL2/SDL.h>
@@ -43,8 +45,13 @@ static void printStatus(const char* message) {
 #include "NativeRegression.h"
 #include "DrawerRegression.h"
 #include "SoundRegression.h"
+#include "IncidentalEffectsRegression.h"
+#include "NativeEffectsRegression.h"
+#include "LanternRegression.h"
+#include "JointLifecycleRegression.h"
 #include "LoadingRegression.h"
 #include "MapCacheRegression.h"
+#include "HostingRegression.h"
 class cGameSmoke : public iUpdateable, public iRendererCallback {
     int state=0;
     Uint32 started=0, readyAt=0, statusAt=0;
@@ -61,15 +68,31 @@ class cGameSmoke : public iUpdateable, public iRendererCallback {
     cNativeRegression nativeRegression;
     cDrawerRegression drawerRegression;
     cSoundRegression soundRegression;
+    cIncidentalEffectsRegression incidentalRegression;
+    cNativeEffectsRegression nativeEffectsRegression;
+    cLanternRegression lanternRegression;
+    cJointLifecycleRegression jointRegression;
+    bool genericEffectsDone=false;
     cMapCacheRegression mapCacheRegression;
     cLoadingPhaseObserver loadObserver;
     cLoadingRegression loadingRegression;
     bool heldNormalMapChange=false;
     unsigned normalPreparingFrames=0;
     Uint32 normalPreparationStarted=0;
-    bool nativeOnly=std::getenv("CODEX_MP_NATIVE_ONLY")!=NULL;
+    bool incidentalOnly=std::getenv("CODEX_MP_INCIDENTAL_ONLY")!=NULL;
+    bool lifecycleOnly=std::getenv("CODEX_MP_LIFECYCLE_ONLY")!=NULL;
+    bool nativeOnly=std::getenv("CODEX_MP_NATIVE_ONLY")!=NULL || incidentalOnly || lifecycleOnly;
     tWString initialInstalledMap, currentCacheMap;
     tString initialInstalledHash;
+
+    int updateEffects(tString& error,float dt) {
+        if(!genericEffectsDone) {
+            const int result=incidentalRegression.Update(error,dt);
+            if(result<=0) return result;
+            genericEffectsDone=true;
+        }
+        return nativeEffectsRegression.Update(error,dt);
+    }
 
     static tWString normalizedPath(const tWString& path) {
         std::error_code error;
@@ -143,6 +166,7 @@ public:
         packet.U32(0);packet.U32(oldSequence+100000);
         packet.F32(12345);packet.F32(0);packet.F32(0);
         packet.F32(0.6f);packet.F32(1.8f);packet.F32(0.6f);packet.F32(0);
+        LuxWorldWire::WriteLantern(packet,LuxWorldWire::Lantern());
         for(const auto& peer:gpBase->mpMultiplayer->mPeers) gpBase->mpMultiplayer->Send(peer.first,packet.bytes,false);
     }
     void Update(float dt) {
@@ -169,7 +193,8 @@ public:
                 if(mp->IsWindowVisible()) mp->ToggleWindow();
                 cLuxMultiplayerSettings settings;settings.useSteam=false;settings.port=port;settings.maxPlayers=2;
                 if(nativeOnly) settings.map="maps/main/ch01/01_old_archives.map";
-                if(!mp->Host(settings)) {fail("Host failed: "+mp->GetStatus());return;}
+                tString hostingError;
+                if(!StartCurrentMapHost(settings,hostingError)) {fail("Host current map failed: "+hostingError);return;}
                 mark("host-listening.txt",mp->GetStatus());
                 printStatus("campaign loaded and listening");
             }
@@ -199,6 +224,9 @@ public:
                 ready=ready && received>0;
             }
             if(!ready) return;
+            const int currentPickup=VerifyCurrentMapHostPickup(loadingError);
+            if(currentPickup<0) {fail(loadingError);return;}
+            if(currentPickup==0) return;
             if(!cachePathIsValid()) return;
             if(gpBase->mpSaveHandler->AutoSave()) {fail("offline autosave was accepted during an active multiplayer session");return;}
             uint64_t bodyHash=0;
@@ -208,7 +236,7 @@ public:
                 " epoch="+cString::ToString(static_cast<int>(mp->GetMapEpoch()));
             std::printf("%s READY %s body_hash=%llu\n",role.c_str(),info.c_str(),static_cast<unsigned long long>(bodyHash));std::fflush(stdout);
             mark(role+"-ready.txt",info);
-            if(nativeOnly) {state=40;return;}
+            if(nativeOnly) {state=lifecycleOnly?48:incidentalOnly?46:40;return;}
             gpBase->mpEngine->GetUpdater()->SetContainer("MainMenu");
             mp->ShowWindow();
             sequence=mp->GetWorld()->mlSequence;
@@ -355,9 +383,50 @@ public:
             if(sounds>0) {
                 mark(role+"-sounds-passed.txt","PASS: real host optional sound preloads remain nonfatal; malformed preloads and missing playback stay rejected.");
                 printStatus("PASS: optional sound preloads, reliable script barrier, and strict actual playback");
-                state=43;
+                state=45;
             }
             return;
+        }
+        if(state==45) {
+            if(!exists("host-sounds-passed.txt") || !exists("client-sounds-passed.txt")) return;
+            tString error;const int effects=updateEffects(error,dt);
+            if(effects<0) {fail(error);return;}
+            if(effects>0) {
+                mark(role+"-incidental-passed.txt","PASS: shared native sound/particle lifecycle, player presentation, and echo guards.");
+                printStatus("PASS: shared native sound/particle lifecycle and echo guards");state=48;
+            }
+            return;
+        }
+        if(state==48) return; // Presentation is checked after the native PostUpdate.
+        if(state==49) {
+            if(!exists("host-lantern-finished.txt") || !exists("client-lantern-finished.txt")) return;
+            tString error;const int joints=jointRegression.Update(error,dt);
+            if(joints<0) {fail(error);return;}
+            if(joints>0) {
+                printStatus("PASS: native joint destruction, retained references, save/baseline and pending interaction lifecycle");state=lifecycleOnly?50:43;
+            }
+            return;
+        }
+        if(state==50) {
+            if(!exists("host-joint-passed.txt") || !exists("client-joint-passed.txt")) return;
+            mp->Stop("Player and joint lifecycle regression complete.");
+            mark(role+"-passed.txt","PASS: remote lantern, menu player updates and joint destruction lifecycle.");
+            result=0;gpBase->mpEngine->Exit();state=99;return;
+        }
+        if(state==46) {
+            tString error;const int effects=updateEffects(error,dt);
+            if(effects<0) {fail(error);return;}
+            if(effects>0) {
+                mark(role+"-incidental-passed.txt","PASS: focused shared native sound/particle lifecycle and echo guards.");
+                printStatus("PASS: focused shared native sound/particle lifecycle and echo guards");state=47;
+            }
+            return;
+        }
+        if(state==47) {
+            if(!exists("host-incidental-passed.txt") || !exists("client-incidental-passed.txt")) return;
+            mp->Stop("Incidental effects regression complete.");
+            mark(role+"-passed.txt","PASS: shared native sound/particle lifecycle, player presentation, and echo guards.");
+            result=0;gpBase->mpEngine->Exit();state=99;return;
         }
         if(state==43) {
             if(!exists("host-sounds-passed.txt") || !exists("client-sounds-passed.txt")) return;
@@ -457,6 +526,15 @@ public:
             mark(role+"-passed.txt","PASS: real Steam campaign lobby, continuous menu updates, map transition with same lobby, clean disconnect.");
             printStatus("PASS: Steam campaign hosting, menu updates, map transition, and lobby teardown");
             result=0;state=99;gpBase->mpEngine->Exit();
+        }
+    }
+    void PostUpdate(float dt) {
+        if(state!=48 || role=="steam-host") return;
+        if(!lifecycleOnly && (!exists("host-incidental-passed.txt") || !exists("client-incidental-passed.txt"))) return;
+        tString error;const int lantern=lanternRegression.Update(error,dt);
+        if(lantern<0) {fail(error);return;}
+        if(lantern>0) {
+            printStatus("PASS: remote lantern main light, holster/oil lifecycle, and native player updates in menus");state=49;
         }
     }
     void OnPostRender(float dt) {

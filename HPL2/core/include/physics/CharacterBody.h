@@ -40,6 +40,9 @@ namespace hpl {
 	public:
 		virtual void OnGravityCollide(iCharacterBody *apCharBody, iPhysicsBody *apBody, cCollideData *apCollideData)=0;
 		virtual void OnHitGround(iCharacterBody *apCharBody,const cVector3f &avVel)=0;
+		// Keep collision response, but allow the application to gate forces on a
+		// dynamic body (for example until network simulation ownership arrives).
+		virtual bool AllowBodyPush(iCharacterBody *apCharBody, iPhysicsBody *apBody) { return true; }
 	};
 
 	//------------------------------------------------
@@ -339,6 +342,7 @@ namespace hpl {
 		void* GetUserData(){ return mpUserData;}
 		
 		void SetCallback(iCharacterBodyCallback *apCallback){ mpCallback = apCallback;}
+		bool AllowBodyPush(iPhysicsBody *apBody) { return !mpCallback || mpCallback->AllowBodyPush(this, apBody); }
 		
 		///////////////////////////////////////
 		//Debug:

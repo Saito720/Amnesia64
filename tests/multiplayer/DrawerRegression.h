@@ -25,6 +25,7 @@ class cDrawerRegression {
     cVector3f originalPlayerPosition;
     bool originalGravity=true;
     cVector3f initialDrawerPosition;
+    cVector3f contactStart,contactPrevious;
     bool attempted=false;
     void next() { ++phase;entered=SDL_GetTicks();attempted=false; }
     tString marker(const char* suffix) {
@@ -42,6 +43,14 @@ class cDrawerRegression {
     void hold(bool value) {
         input->held=value;
         gpBase->mpEngine->GetInput()->GetAction(eLuxAction_Interact)->ResetToCurrentState();
+    }
+    void stopMovement() {
+        auto* player=gpBase->mpPlayer->GetCharacterBody();
+        const float forward=player->GetMoveAcc(eCharDir_Forward),right=player->GetMoveAcc(eCharDir_Right);
+        // HPL's StopMovement also clears the configured acceleration. Preserve
+        // it so the following trial still uses the normal movement controller.
+        player->StopMovement();
+        player->SetMoveAcc(eCharDir_Forward,forward);player->SetMoveAcc(eCharDir_Right,right);
     }
     int UpdateDrops(tString& error,cLuxMap* map,bool actor,Uint32 age) {
         cLuxMultiplayerWorld* world=gpBase->mpMultiplayer->GetWorld();
@@ -108,10 +117,100 @@ class cDrawerRegression {
             mark(role+"-"+marker("drop-passed.txt"),"passed");
             if(!both(marker("drop-passed.txt"))) return 0;
             if(trial==0) {trial=1;phase=6;entered=SDL_GetTicks();return 0;}
-            hold(false);
-            gpBase->mpPlayer->GetCharacterBody()->SetPosition(originalPlayerPosition);
-            gpBase->mpPlayer->GetCharacterBody()->SetGravityActive(originalGravity);
-            return 1;
+            hold(false);phase=10;entered=SDL_GetTicks();return 0;
+        }
+        return 0;
+    }
+    int UpdateContact(tString& error,cLuxMap* map,bool host,Uint32 age) {
+        auto* mp=gpBase->mpMultiplayer;auto* world=mp->GetWorld();
+        auto* player=gpBase->mpPlayer->GetCharacterBody();
+        auto* prop=static_cast<cLuxProp_Object*>(map->GetEntityByName("codex_contact_box",eLuxEntityType_Prop,eLuxPropType_Object));
+        if(phase==10) {
+            cMatrixf matrix=cMatrixf::Identity;matrix.SetTranslation(cVector3f(6,40,-3));
+            map->CreateEntity("codex_contact_box","entities/container/wood_box01/wood_box01.ent",matrix,1);
+            prop=static_cast<cLuxProp_Object*>(map->GetEntityByName("codex_contact_box",eLuxEntityType_Prop,eLuxPropType_Object));
+            if(!prop || prop->GetBodyNum()!=1) return fail(error,"retail contact fixture did not load");
+            auto* body=prop->GetBody(0);body->SetGravity(false);body->SetLinearDamping(0.8f);body->SetAngularDamping(0.8f);
+            // Exercise a push supported by the unchanged retail asset mass
+            // and the native character's configured limit.
+            if(body->GetMass()<=0 || body->GetMass()>player->GetMaxPushMass())
+                return fail(error,"retail contact fixture exceeds native walking push mass");
+            contactStart=contactPrevious=body->GetWorldPosition();
+            const cVector3f halfSize=(body->GetBoundingVolume()->GetMax()-body->GetBoundingVolume()->GetMin())*0.5f;
+            const float clearance=player->GetSize().x*0.5f+0.15f;
+            stopMovement();player->SetPosition(contactStart+cVector3f(host?halfSize.x+clearance:0,0,host?0:halfSize.z+clearance));
+            player->SetYaw(0);gpBase->mpPlayer->GetCamera()->SetYaw(0);
+            mark(role+"-contact-ready.txt","retail box and native character ready");next();return 0;
+        }
+        if(!prop) return fail(error,"retail contact fixture disappeared");
+        auto* body=prop->GetBody(0);
+        const uint64_t id=LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID());
+        if(SDL_GetTicks()-diagnosticAt>1500) {
+            diagnosticAt=SDL_GetTicks();const cVector3f position=player->GetPosition(),box=body->GetWorldPosition();
+            std::printf("%s contact phase=%u player=(%.4g %.4g %.4g) box=(%.4g %.4g %.4g) acc=%.4g speed=%.4g contacts=%u owned=%d\n",
+                role.c_str(),phase,position.x,position.y,position.z,box.x,box.y,box.z,
+                player->GetMoveAcc(eCharDir_Forward),player->GetMoveSpeed(eCharDir_Forward),unsigned(world->mContactAges.count(id)),int(world->OwnsSimulation(body)));
+            std::fflush(stdout);
+        }
+        if(phase==11) {
+            if(!both("contact-ready.txt") || age<700) return 0;
+            auto track=world->mBodies.find(id);
+            if(track==world->mBodies.end() || (!host && !track->second.received)) return 0;
+            // Guarantee a short waiting interval even on loopback. The host is
+            // nearby but not touching; its passive lease expires naturally.
+            if(host && !world->AllowPlayerContact(body)) return fail(error,"contact waiting fixture lease refused");
+            if(host) mark("host-contact-wait.txt","short passive ownership guard");
+            contactPrevious=body->GetWorldPosition();next();return 0;
+        }
+        if((body->GetWorldPosition()-contactPrevious).Length()>0.6f) return fail(error,"contact body jumped during ownership handoff");
+        contactPrevious=body->GetWorldPosition();
+        if(phase==12) {
+            if(!exists("host-contact-wait.txt")) return 0;
+            if(!host) {
+                gpBase->mpPlayer->Move(eCharDir_Forward,1);
+                if(world->mContactAges.count(id) && !world->OwnsSimulation(body)) {
+                    if((body->GetWorldPosition()-contactStart).Length()>0.02f)
+                        return fail(error,"unowned native character contact moved the client box");
+                    mark("client-contact-blocked.txt","native collision remained solid while ownership was pending");
+                }
+                if(!world->OwnsSimulation(body)) return 0;
+                if(!exists("client-contact-blocked.txt") || world->OwnsInteraction(body) ||
+                   gpBase->mpPlayer->GetCurrentState()!=eLuxPlayerState_Normal)
+                    return fail(error,"native contact failed to acquire independent simulation ownership");
+                mark("client-contact-owned.txt","native character callback acquired passive ownership");
+            }
+            if(!exists("client-contact-owned.txt")) return 0;
+            next();return 0;
+        }
+        if(phase==13) {
+            if(!host) {
+                gpBase->mpPlayer->Move(eCharDir_Forward,1);
+                if((body->GetWorldPosition()-contactStart).Length()<0.25f) return 0;
+                if(!world->OwnsSimulation(body)) return fail(error,"contact ownership expired while native player was pushing");
+                stopMovement();player->SetPosition(body->GetWorldPosition()+cVector3f(3,0,0));
+                mark("client-contact-pushed.txt","retail box moved at least 25 cm through native character forces");
+            }
+            if(!exists("client-contact-pushed.txt")) return 0;
+            next();return 0;
+        }
+        if(phase==14) {
+            if(age<200) return 0;
+            if(!host && !world->OwnsSimulation(body)) return fail(error,"contact ownership vanished immediately after separation");
+            mark(role+"-contact-grace.txt","brief separation retains passive ownership");next();return 0;
+        }
+        if(phase==15) {
+            if(age<1600 || world->mBodyLeases.count(id) || body->GetLinearVelocity().Length()>0.03f) return 0;
+            if(host && !exists("host-contact-target.txt")) {
+                const cVector3f position=body->GetWorldPosition();
+                mark("host-contact-target.txt",cString::ToString(position.x)+" "+cString::ToString(position.y)+" "+cString::ToString(position.z));
+            }
+            FILE* file=NULL;fopen_s(&file,(outputDir+"/host-contact-target.txt").c_str(),"rb");if(!file) return 0;
+            cVector3f target;const bool complete=std::fscanf(file,"%f %f %f",&target.x,&target.y,&target.z)==3;std::fclose(file);
+            if(!complete || (body->GetWorldPosition()-target).Length()>0.08f) return 0;
+            if((body->GetWorldPosition()-contactStart).Length()<0.25f) return fail(error,"contact-pushed box returned to its original position");
+            mark(role+"-contact-passed.txt","native contact force gate, ownership grace, release and replicated displacement passed");
+            if(!both("contact-passed.txt")) return 0;
+            stopMovement();player->SetPosition(originalPlayerPosition);player->SetGravityActive(originalGravity);return 1;
         }
         return 0;
     }
@@ -123,6 +222,7 @@ public:
         const bool host=role=="host",actor=host==(trial==0);
         const Uint32 age=SDL_GetTicks()-entered;
         if(phase && age>10000) return fail(error,"timed out waiting for drawer interaction/replication");
+        if(phase>=10) return UpdateContact(error,map,host,age);
         if(phase>=6) return UpdateDrops(error,map,actor,age);
         if(phase==0) {
             originalPlayerPosition=gpBase->mpPlayer->GetCharacterBody()->GetPosition();

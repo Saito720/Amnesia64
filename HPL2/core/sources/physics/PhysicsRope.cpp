@@ -409,6 +409,7 @@ namespace hpl {
 		if(mpMotorSoundEntity==NULL && fVel==0) return;
 
 		cWorld *pNormalWorld = mpWorld->GetWorld();
+		cWorldEffectLocalScope localEffects(pNormalWorld);
 		cSoundHandler *pSoundHandler = pNormalWorld->GetSound()->GetSoundHandler();
 		if(pSoundHandler->GetSilent()) return;
 

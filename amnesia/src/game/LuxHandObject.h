@@ -87,6 +87,7 @@ public:
 	const tString& GetName(){ return msName;}
 	
 	cMeshEntity *GetMeshEntity(){ return mpMeshEntity; }
+	const std::vector<iLight*>& GetLights() const { return mvLights; }
 	
 	const tString& GetAttachBoneName(){ return msAttachBoneName; }
 

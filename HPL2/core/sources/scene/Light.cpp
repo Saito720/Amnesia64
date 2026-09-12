@@ -191,7 +191,9 @@ namespace hpl {
 		/////////////////////////////////////////////
 		// Flickering
 		if(mbFlickering && mfFadeTime<=0)
-		{	
+		{
+			// Presentation follows this light's locally simulated flicker timing.
+			cWorldEffectLocalScope localEffects(mpWorld);
 			//////////////////////
 			//On
 			if(mbFlickerOn)

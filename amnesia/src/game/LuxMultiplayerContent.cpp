@@ -3,9 +3,11 @@
 #include "LuxBase.h"
 #include "resources/LowLevelResources.h"
 #include "resources/XmlDocument.h"
+#include "scene/World.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 #include <set>
 
 using namespace hpl;
@@ -307,6 +309,102 @@ bool LuxValidateMultiplayerMap(const std::vector<uint8_t>& bytes, tString& error
     Validator validator(resources, error);
     validator.Scan(map, "map");
     return validator.Dependencies();
+}
+
+bool LuxValidateMultiplayerCurrentMapSource(cWorld* world,const std::vector<uint8_t>& bytes,tString& error,cResources* resources)
+{
+    error.clear();
+    if(!world || !world->HasVerifiedMapSource()) {
+        error="This world was loaded with cached or partial geometry and cannot be shared without restarting. Select its XML map with Browse to start a verified multiplayer session.";
+        return false;
+    }
+    if(!resources) resources=gpBase->mpEngine->GetResources();
+    Document document(resources);
+    if(!document.Parse(bytes)) {error="Cannot verify the loaded world's XML source.";return false;}
+    tString source;document.xml->SaveToString(&source);
+    if(!world->MatchesVerifiedMapSource(source)) {
+        error="The map XML has changed since this world was loaded. Reload it, or select it with Browse to start a fresh multiplayer session.";
+        return false;
+    }
+    return true;
+}
+
+bool LuxCollectMultiplayerStartPositions(const std::vector<uint8_t>& bytes,std::vector<tString>& starts,tString& error,cResources* resources)
+{
+    if(!resources) resources=gpBase->mpEngine->GetResources();
+    starts.clear();error.clear();
+    Document document(resources);
+    if(!document.Parse(bytes)) {error="Start positions could not be read: invalid or oversized XML map.";return false;}
+    cXmlElement* map=document.xml->GetFirstElement("MapData");
+    cXmlElement* contents=map?map->GetFirstElement("MapContents"):NULL;
+    if(!contents) {error="Start positions require a Level/MapData/MapContents map.";return false;}
+    cXmlElement* entities=contents->GetFirstElement("Entities");
+    if(!entities) return true;
+    std::set<tString> seen;
+    cXmlNodeListIterator it=entities->GetChildIterator();
+    while(it.HasNext()) {
+        cXmlElement* area=it.Next()->ToElement();
+        if(!area || area->GetValue()!="Area" || area->GetAttributeString("AreaType")!="PlayerStart") continue;
+        const tString name=area->GetAttributeString("Name");
+        if(name.empty() || !seen.insert(name).second) continue;
+        if(name.size()>=128 || starts.size()>=4096) {
+            starts.clear();error="Map start positions exceed the supported name or count limit.";return false;
+        }
+        // Match the debug menu's authored node order, including inactive areas.
+        starts.push_back(name);
+    }
+    return true;
+}
+
+bool LuxCollectMultiplayerMapItems(const std::vector<uint8_t>& bytes,std::vector<tString>& items,tString& error,cResources* resources)
+{
+    if(!resources) resources=gpBase->mpEngine->GetResources();
+    items.clear();error.clear();
+    Document document(resources);
+    if(!document.Parse(bytes)) {error="Cannot inspect the current map's original items: invalid XML.";return false;}
+    cXmlElement* map=document.xml->GetFirstElement("MapData");
+    cXmlElement* contents=map?map->GetFirstElement("MapContents"):NULL;
+    if(!contents) {error="Current map is missing Level/MapData/MapContents.";return false;}
+    if(!ValidateIndices(contents,error)) return false;
+    std::map<int,tString> index;
+    if(cXmlElement* files=contents->GetFirstElement("FileIndex_Entities")) {
+        cXmlNodeListIterator it=files->GetChildIterator();
+        while(it.HasNext()) {
+            cXmlElement* file=it.Next()->ToElement();
+            index[file->GetAttributeInt("Id")]=file->GetAttributeString("Path");
+        }
+    }
+    cXmlElement* entities=contents->GetFirstElement("Entities");
+    if(!entities) return true;
+    std::map<tWString,bool> types;
+    size_t totalBytes=0;
+    cXmlNodeListIterator it=entities->GetChildIterator();
+    while(it.HasNext()) {
+        cXmlElement* entity=it.Next()->ToElement();
+        if(!entity || entity->GetValue()!="Entity") continue;
+        const int id=entity->GetAttributeInt("FileIndex",-1);
+        const tString file=id<0?entity->GetAttributeString("Filename"):index[id];
+        const tString name=entity->GetAttributeString("Name");
+        if(name.empty()) continue;
+        const tWString path=resources->GetFileSearcher()->GetFilePath(cString::SetFileExt(file,"ent"));
+        if(path.empty()) {error="Cannot inspect the current map's item definition: "+file;return false;}
+        if(!types.count(path)) {
+            std::vector<uint8_t> definition;
+            if(types.size()>=4096 || !LuxReadMultiplayerMap(path,definition) ||
+               definition.size()>64*1024*1024-totalBytes) {
+                error="Current-map item definitions exceed the supported dependency budget or cannot be read.";return false;
+            }
+            totalBytes+=definition.size();
+            Document model(resources);
+            if(!model.Parse(definition)) {error="Current-map item definition is invalid XML: "+file;return false;}
+            cXmlElement* variables=model.xml->GetFirstElement("UserDefinedVariables");
+            // The same loader type used by LuxBase; do not infer item status
+            // from file names, directories, or whether a model has disappeared.
+            types[path]=variables && variables->GetAttributeString("EntityType")=="Item";
+        }
+        if(types[path]) items.push_back(name);
+    }
+    return true;
 }
 
 bool LuxValidateMultiplayerAsset(const tString& name, const tString& defaultExt, tString& error, cResources* resources)

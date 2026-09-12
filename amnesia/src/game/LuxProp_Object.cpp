@@ -311,6 +311,7 @@ cLuxProp_Object::~cLuxProp_Object()
 
 bool cLuxProp_Object::CanInteract(iPhysicsBody *apBody)
 {
+	if(mObjectType==eLuxObjectType_Slide && (mpMainBody?mpMainBody:apBody)->GetJointNum()==0) return false;
 	if(mObjectType == eLuxObjectType_Grab && mbGrabSkipNonOuterBodies && apBody->GetJointNum()>=2)
 	{
 		return false;
@@ -330,6 +331,7 @@ bool cLuxProp_Object::CanInteract(iPhysicsBody *apBody)
 bool cLuxProp_Object::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 {
 	iPhysicsBody *pBody = mpMainBody ? mpMainBody : apBody;
+	if(mObjectType==eLuxObjectType_Slide && pBody->GetJointNum()==0) return false;
 
 	mpMap->DetachBodyFromStickyArea(apBody);
 
@@ -482,6 +484,8 @@ void cLuxProp_Object::BeforePropDestruction()
 	}
 
 	cWorld *pWorld = mpMap->GetWorld();
+	// The replicated break event also runs this deferred destruction on peers.
+	cWorldEffectLocalScope localEffects(pWorld);
 	cMatrixf mtxCenterTransform = cMatrixf::Identity;
 
 	////////////////////////////////
@@ -507,6 +511,10 @@ void cLuxProp_Object::BeforePropDestruction()
 		//Iterate and destroy joints
 		for(size_t i=0; i<mvJoints.size(); ++i)
 		{
+			if(!mvJoints[i]) continue;
+			// The pieces outlive this prop; their pending joint deletion must not
+			// notify the prop after its destruction.
+			mvJoints[i]->RemoveDestroyCallback(this);
 			mvJoints[i]->Break();
 			mvJoints[i] = NULL;
 		}
@@ -691,6 +699,7 @@ void  cLuxProp_Object::SetStuckState(int alState)
 	{
 		iPhysicsJoint *pJoint = mvJoints[i];
 		cLuxProp_Object_JointData *pJointData = &mvJointData[i];
+		if(!pJoint) continue;
 
 		if(mlStuckState ==0)
 		{
@@ -870,6 +879,7 @@ void cLuxProp_Object::SetInsanityVisionVisability(bool abX)
 void cLuxProp_Object::SetJointMinMax(int alIdx, float afMin, float afMax)
 {
 	iPhysicsJoint *pJoint = mvJoints[alIdx];
+	if(!pJoint) return;
 	cLuxProp_Object_JointData *pJointData = &mvJointData[alIdx];
 
 	if(pJoint->GetType() == ePhysicsJointType_Hinge)

@@ -63,6 +63,7 @@ public:
 	void UpdatePropSpecific(float afTimeStep);
 	
 	void BeforePropDestruction();
+	void OnPropJointDestroyed(iPhysicsJoint *apJoint);
 
 	eLuxFocusCrosshair GetFocusCrosshair(iPhysicsBody *apBody, const cVector3f &avPos);
 

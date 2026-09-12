@@ -97,6 +97,7 @@ namespace hpl {
 		mbStopAfterFadeOut = false;
 		
 		mbStopDisabled = false;
+		mbPresentationSuppressed = false;
 
 		mfNormalSpeed = 1;
 
@@ -214,7 +215,8 @@ namespace hpl {
 		// Update Non-3D Specifics
 		else
 		{
-			float fFinalVolume = mfNormalVolume * mfVolumeMul * mpSoundHandler->GetGlobalVolume(mType);
+			float fFinalVolume = mbPresentationSuppressed ? 0 :
+				mfNormalVolume * mfVolumeMul * mpSoundHandler->GetGlobalVolume(mType);
 			if(mpSound->GetVolume() != fFinalVolume)
 			{
 				mpSound->SetVolume(fFinalVolume);
@@ -370,8 +372,17 @@ namespace hpl {
 		float fBlock = mpSound->GetBlockVolumeMul() + mfBlockMul * (1 - mpSound->GetBlockVolumeMul());
 		
 		//Multiply all factors to get the final volume.
-		mpSound->SetVolume(	mfNormalVolume * mfVolumeMul * fBlock * fDistVolumeMul  * 
+		mpSound->SetVolume(mbPresentationSuppressed ? 0 :
+							mfNormalVolume * mfVolumeMul * fBlock * fDistVolumeMul *
 							mpSoundHandler->GetGlobalVolume(mType));
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cSoundEntry::SetPresentationSuppressed(bool abSuppressed)
+	{
+		mbPresentationSuppressed = abSuppressed;
+		if(abSuppressed) mpSound->SetVolume(0);
 	}
 
 	//-----------------------------------------------------------------------

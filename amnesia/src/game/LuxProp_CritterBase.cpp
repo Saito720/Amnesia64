@@ -277,6 +277,7 @@ void iLuxProp_CritterBase::OnHealthChange()
 	if(mfHealth <=0) 
 	{
 		cWorld *pWorld = mpMap->GetWorld();
+		cWorldEffectSourceScope effectSource(pWorld, mpBody);
 
 		if(msDeathSound != "")
 			PlaySound("CritterDeath",msDeathSound, true, true);
@@ -378,6 +379,7 @@ cMatrixf iLuxProp_CritterBase::GetAttackMatrix(const cVector3f& avDir)
 bool iLuxProp_CritterBase::Attack(const cVector3f& avDir)
 {
 	if(mpDamageShape==NULL) return false;
+	cWorldEffectSourceScope effectSource(mpMap->GetWorld(), mpBody);
 
 	bool bHit = gpBase->mpMapHelper->ShapeDamage(mpDamageShape, GetAttackMatrix(avDir), mpBody->GetLocalPosition(),
 												mvAttackDamageMinMax.x, mvAttackDamageMinMax.y, 

@@ -32,6 +32,29 @@ static bool Decode(const std::vector<uint8_t>& bytes, std::vector<Body>& bodies)
 
 int main()
 {
+    const auto encodeLantern=[](const Lantern& light) {
+        Writer writer(Pose,7);WriteLantern(writer,light);return writer.bytes;
+    };
+    const auto decodeLantern=[](const std::vector<uint8_t>& bytes,Lantern& light) {
+        Reader reader(bytes);if(reader.U8()!=Pose || reader.U32()!=7) return false;
+        light=ReadLantern(reader);return reader.Done();
+    };
+    Lantern lantern, decoded;
+    assert(decodeLantern(encodeLantern(lantern),decoded) && !decoded.active);
+    lantern.active=true;lantern.offset[1]=0.75f;lantern.color[0]=0.845f;
+    lantern.color[1]=0.69f;lantern.color[2]=0.155f;lantern.color[3]=0.689f;lantern.radius=10;
+    auto lanternBytes=encodeLantern(lantern);
+    assert(decodeLantern(lanternBytes,decoded) && decoded.active && decoded.radius==10 && decoded.color[0]==lantern.color[0]);
+    for(size_t n=0;n<lanternBytes.size();++n)
+        assert(!decodeLantern(std::vector<uint8_t>(lanternBytes.begin(),lanternBytes.begin()+n),decoded));
+    auto extraLantern=lanternBytes;extraLantern.push_back(0);assert(!decodeLantern(extraLantern,decoded));
+    extraLantern=lanternBytes;extraLantern[5]=2;assert(!decodeLantern(extraLantern,decoded));
+    Lantern invalidLight=lantern;invalidLight.radius=0;assert(!decodeLantern(encodeLantern(invalidLight),decoded));
+    invalidLight=lantern;invalidLight.radius=65;assert(!decodeLantern(encodeLantern(invalidLight),decoded));
+    invalidLight=lantern;invalidLight.color[1]=-0.01f;assert(!decodeLantern(encodeLantern(invalidLight),decoded));
+    invalidLight=lantern;invalidLight.offset[0]=4;invalidLight.offset[1]=4;assert(!decodeLantern(encodeLantern(invalidLight),decoded));
+    invalidLight=lantern;invalidLight.color[0]=std::numeric_limits<float>::quiet_NaN();assert(!decodeLantern(encodeLantern(invalidLight),decoded));
+
     assert(BodyId("Player") == 3692324345213718176ull);
     assert(BodyId("crate_1") != BodyId("crate_2"));
     assert(BodyId("cabinet_Body", -1) == BodyId("cabinet_Body"));

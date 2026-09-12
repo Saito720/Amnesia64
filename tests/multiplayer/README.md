@@ -20,6 +20,7 @@ running Steam client with access to the configured AppID. The UI harness stubs
 Steam services and never sends invitations. Build and run with the same backend.
 Switching a test to Standalone changes the normal Debug game build too; rebuild
 the game without `/p:HplUseSteamworks=false` to return to Steam afterward.
+The current session/lobby protocol is **8**; all instances must use matching builds.
 
 To separate builds from execution:
 
@@ -30,6 +31,24 @@ To separate builds from execution:
 ./tests/multiplayer/run-game.ps1 -SkipBuild -Port 27843
 ```
 
+For a focused shared-effects regression, start directly in Old Archives and
+skip the unrelated campaign, inventory, and drawer phases:
+
+```powershell
+$env:CODEX_MP_INCIDENTAL_ONLY='1'
+try { ./tests/multiplayer/run-game.ps1 -Backend Steamworks -SkipBuild }
+finally { Remove-Item Env:CODEX_MP_INCIDENTAL_ONLY -ErrorAction SilentlyContinue }
+```
+
+This still uses two real instances, the normal transport, replicated player
+poses, native sound entities and particle systems, and the player sound helper.
+The normal full run includes these same cases.
+
+For the remote lantern, menu updates, and broken-joint lifecycle cases alone,
+use `CODEX_MP_LIFECYCLE_ONLY` in place of `CODEX_MP_INCIDENTAL_ONLY` above. This
+also starts in Old Archives and runs both peers through the native lantern
+inventory/hand-object paths and the unchanged retail painting and drawer assets.
+
 The UI test links real HPL2, SDL2, OpenGL, and Dear ImGui. It includes the
 production overlay source and extracts the unchanged production input update
 method; only application/coordinator services are stubbed. It verifies tilde,
@@ -38,10 +57,22 @@ cursor restoration, the global render hook, campaign defaults, advanced
 settings, deferred actions, and teardown. PNG screenshots are saved for review.
 The downloaded-map controls also verify lazy/throttled cache-size queries,
 refresh after reopening/deleting, and populated/empty size-and-count displays.
+Advanced-host tests cover current-map selection for a playable world, hiding the
+option for a title-menu background, stale-action rejection, and XML-only file
+browsing with selection/cancellation and navigation through extensionless folders.
+Start-position cases parse authored PlayerStart areas, preserve their ordering,
+ignore duplicate/empty names, and retain inactive starts to match the debug menu.
+They check deferred parsing after browser or typed-path changes, stale-selection
+clearing, the map-default choice, no-start maps, and malformed/missing map feedback.
 
 The full-game test links the current game objects except the normal entry
 point. Two hidden game instances run on loopback. It loads the retail campaign,
-verifies matching installed-map reuse, initial dynamic bodies and remote player poses, leaves
+starts hosting an already loaded offline world while preserving its player state,
+and verifies an offline-collected authored item does not return for a joining client.
+The offline fixture loads an isolated XML/script copy, verifies its loaded-source
+fingerprint rejects semantic edits but accepts formatting changes, and retains
+Hard Mode until both peers confirm the joined difficulty.
+It then verifies matching installed-map reuse, initial dynamic bodies and remote player poses, leaves
 pause and ImGui menus open while the network world advances, verifies real world
 rendering and local death recovery from pause, inventory, and journal, changes the host
 map to the Old Archives, and verifies inventory persistence and rejection of
@@ -71,11 +102,19 @@ and opens a drawer through the real slide controller first as host and then as
 client. It checks exclusive ownership across each cabinet's three drawers,
 replicated movement, and lease release. Host/client grab trials preserve collision
 suppression on an overlapping drop until the native player-clearance check restores it.
+A native movement trial pushes a retail wooden box: collision must stay solid while
+ownership is pending, client contact must acquire simulation authority, and a short
+separation must retain ownership before release and host/client convergence.
 The sound regression sends all ten reported retail `PreloadSound` hints, two
 trailing-space variants, and a valid sound entity through the host's actual
-script entry point. A following reliable effect confirms the client processed
-them and stayed connected. Direct decoder checks keep malformed preload packets
-and missing actual playback sounds rejected while optional missing hints succeed.
+script entry point. A following reliable effect checks that the client processed
+them and stayed connected. Additional script-resource cases target unavailable
+host sounds/particles and commands with multiple resource arguments: the host's
+per-resource mask must preserve native optional fallback and non-resource behavior,
+while a different resource that is valid on the host remains strict on clients.
+Decoder cases also reject malformed masks and unflagged missing playback resources.
+Shared native world effects check origin-side resource validation so an unavailable
+sample is not published as a required client asset.
 Client phase observation verifies the waiting container, input state, inactive
 old world and gameplay viewport, nonempty status, and monotonic bounded download progress. Screenshots
 capture connecting, preparation, and actual intermediate download progress.
@@ -86,6 +125,38 @@ map changes from inventory, journal, and pause restore the original map,
 epoch, gameplay viewport, and input. Synchronous
 checking/loading draws occur inside packet handling; normal frame callbacks
 cannot sample those short phases reliably.
+Incidental-effect checks use common native sound/particle creation to verify
+host world presentation and both players' effects arrive once with finalized
+transforms, volume, attenuation, and particle color. Client native shadows stay
+alive and muted while the authoritative instance presents. Native local and
+physics scopes remain audible and uncaptured. State changes, sound stop, particle
+kill, and destruction propagate. The actual player sound helper preserves its
+selected sample and attenuation; GUI and typed script effects avoid duplicate
+capture. Runtime effects never enter script history.
+Native checks also exercise the real door latch and silent state correction,
+water-step sample/gain/attenuation without an actor echo, and initial-state replay
+of an active looping sound and particle system after clearing only those fixture
+replicas through the production decoder.
+Retained stopped loops and reusable one-shots receive silent late-join declarations;
+later restarts must play without an actor echo. An already-playing reusable one-shot
+must remain silent through ordinary updates until its next stop/start cycle.
+The lantern fixture targets the actual visible hand asset's `PointLight_1`, with
+one remote point light and no remote lantern mesh or helper fill light. It checks
+source color/radius/position, continued oil consumption and corrected hands/camera
+attachment while pause, inventory and journal are open, and light removal after
+holstering or oil depletion. Native PreUpdate/PostUpdate forwarding
+must preserve menu input control and avoid a second scene/physics update.
+Joint lifecycle cases use an unchanged retail painting constraint and authored
+drawer joints. They target destruction notification, stable broken save slots,
+host deletion tombstones, repeated baseline application, and a delayed lease grant
+after its required joint disappears. Released bodies
+must remain usable without accessing the deleted joint or reviving its constraint.
+Client-owned painting trials suppress host/follower threshold breaks and verify
+owner requests produce host-approved removal even below the host's force threshold.
+Invalid ownership, body IDs, tokens and nonbreakable joints cannot authorize removal.
+The independent Newton suite replaces a leased body under the same authored ID
+before the next update, checking stale owner-state rejection, reliable revocation
+and unchanged replacement physics. Runtime-identity changes also cover address reuse.
 After the drawer trials, the host writes a uniquely named copy of Old Archives
 inside the test output directory, adding a unique XML comment. Four synchronized
 loads check the cold download, a subsequent zero-byte persistent cache hit,
@@ -97,11 +168,18 @@ not enter the download phase. Disconnect
 removes the final working copy. Once both sessions stop, the fixture deletes
 only the persistent entries identified by this run's unique hashes; it never
 uses the global cache-clear operation or changes retail assets.
+The first cache transition uses a native level change and checks persistent effects
+and player settings, plus final old-map script cleanup received after preparation.
+Subsequent debug transitions must perform the native full reset on both peers.
 Offline autosaves must be rejected both during the session and after a local
 disconnect while the multiplayer world is still loaded. The title menu must
 continue rendering after disconnect/reset without retaining a deleted world.
 The test checks networking and simulation state; it does not measure latency
 or prove all campaign scripts and physics interactions work correctly.
+The reviewed protocol-8 Steam-enabled Debug and Release builds pass without compiler
+warnings or errors. Full two-instance run `0b402d98b1dd` and UI run `c0367b4967cd` pass,
+along with the protocol/Newton suites and content checks for all 33 retail maps.
+These are controlled local regressions; cross-account relay playtesting remains separate.
 
 For focused native-interaction debugging, set `CODEX_MP_NATIVE_ONLY=1` in the
 runner's environment. The same two-instance harness starts in Old Archives and

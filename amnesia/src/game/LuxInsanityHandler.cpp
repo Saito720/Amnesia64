@@ -69,6 +69,10 @@ void iLuxInstanityEvent::Start()
 	gpBase->mpDebugHandler->AddMessage(	_W("Starting Insanity event: '")+cString::To16Char(msName)+_W("'")+
 										_W("set: '")+cString::To16Char(msSet)+_W("'") , false);
 
+	// Hallucinations are presented relative to this player's view, including
+	// when the event was started by a replicated script.
+	cLuxMap* pMap = gpBase->mpMapHandler->GetCurrentMap();
+	cWorldEffectLocalScope localEffects(pMap ? pMap->GetWorld() : NULL);
 	OnStart();
 }
 
@@ -736,6 +740,9 @@ void cLuxInsanityHandler::Update(float afTimeStep)
 	// Update current event
 	if(mlCurrentEvent>=0)
 	{
+		// Delayed sounds and particles keep the event's local presentation.
+		cLuxMap* pMap = gpBase->mpMapHandler->GetCurrentMap();
+		cWorldEffectLocalScope localEffects(pMap ? pMap->GetWorld() : NULL);
 		mvEvents[mlCurrentEvent]->Update(afTimeStep);
 		if(mvEvents[mlCurrentEvent]->IsOver())
 		{

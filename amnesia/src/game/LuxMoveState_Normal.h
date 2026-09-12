@@ -35,6 +35,7 @@ public:
 
 	void OnGravityCollide(iCharacterBody *apCharBody, iPhysicsBody *apBody, cCollideData *apCollideData);
 	void OnHitGround(iCharacterBody *apCharBody,const cVector3f &avVel){}
+	bool AllowBodyPush(iCharacterBody *apCharBody, iPhysicsBody *apBody);
 
 
 private:

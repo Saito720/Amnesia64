@@ -48,8 +48,10 @@ public:
 	cLuxPlayerState_InteractSlide(cLuxPlayer *apPlayer);
 	virtual ~cLuxPlayerState_InteractSlide();
 
+	bool CanEnterState() const;
 	void OnEnterState(eLuxPlayerState aPrevState);
 	void OnLeaveState(eLuxPlayerState aNewState);
+	void OnPhysicsJointDestroyed(iPhysicsJoint *apJoint);
 
 	void Update(float afTimeStep);
 	void PostUpdate(float afTimeStep);

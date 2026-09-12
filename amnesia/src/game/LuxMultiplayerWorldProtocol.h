@@ -11,7 +11,7 @@
 
 namespace LuxWorldWire
 {
-    enum Type : uint8_t { Pose = 64, Bodies, LeaseRequest, LeaseGrant, LeaseRelease, LeaseDenied, PeerGone };
+    enum Type : uint8_t { Pose = 64, Bodies, LeaseRequest, LeaseGrant, LeaseRelease, LeaseDenied, PeerGone, ContactRequest };
     enum BodyFlags : uint8_t { Awake = 1, Active = 2, Gravity = 4, Collide = 8, CollideCharacter = 16 };
     const size_t MaxBodiesPerPacket = 12;
     const size_t MaxLeaseBodies = 64;
@@ -70,6 +70,35 @@ namespace LuxWorldWire
         }
         bool Done() const { return valid && offset == bytes.size(); }
     };
+
+    // Presentation sampled from the drawn hand light, relative to its player.
+    struct Lantern
+    {
+        bool active = false;
+        float offset[3] = {}, color[4] = {}, radius = 0;
+    };
+    inline void WriteLantern(Writer& writer, const Lantern& light)
+    {
+        writer.U8(light.active ? 1 : 0);
+        if(!light.active) return;
+        for(float value : light.offset) writer.F32(value);
+        for(float value : light.color) writer.F32(value);
+        writer.F32(light.radius);
+    }
+    inline Lantern ReadLantern(Reader& reader)
+    {
+        Lantern light;
+        const uint8_t active = reader.U8();
+        if(active > 1) reader.valid = false;
+        light.active = active == 1;
+        if(!light.active) return light;
+        float distanceSquared = 0;
+        for(float& value : light.offset) { value = reader.F32(4); distanceSquared += value * value; }
+        for(float& value : light.color) { value = reader.F32(16); if(value < 0) reader.valid = false; }
+        light.radius = reader.F32(64);
+        if(distanceSquared > 16 || light.radius <= 0) reader.valid = false;
+        return light;
+    }
 
     struct Body
     {

@@ -144,6 +144,7 @@ cLuxProp_SwingDoor::~cLuxProp_SwingDoor()
 
 bool cLuxProp_SwingDoor::CanInteract(iPhysicsBody *apBody)
 {
+	if(mvJointData.empty()) return false;
 	if(	apBody->GetMass()==0 && mbCanInteractWithStaticBody==false && mpMap->BodyIsInDetachableStickyArea(apBody)==false) 
 	{
 		return false;
@@ -173,7 +174,7 @@ bool cLuxProp_SwingDoor::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos
 	///////////////////////////////
 	//Get special swing door data
 	cLuxSwingDoorJointData *pData = GetJointDataFromBody(apBody);
-	if(pData==NULL) Error("Could not find swing door data for body '%s'\n", apBody->GetName().c_str());
+	if(pData==NULL) return false;
 
 	mpMap->DetachBodyFromStickyArea(apBody);
 
@@ -364,6 +365,17 @@ void cLuxProp_SwingDoor::UpdatePropSpecific(float afTimeStep)
 				SetClosed(true, true);
 			}
 		}
+	}
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxProp_SwingDoor::OnPropJointDestroyed(iPhysicsJoint *apJoint)
+{
+	for(size_t i=0; i<mvJointData.size();)
+	{
+		if(mvJointData[i].mpHingeJoint==apJoint) mvJointData.erase(mvJointData.begin()+i);
+		else ++i;
 	}
 }
 

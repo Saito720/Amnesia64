@@ -18,6 +18,7 @@
  */
 
 #include "physics/PhysicsJoint.h"
+#include <algorithm>
 
 #include "physics/CollideShape.h"
 #include "physics/PhysicsWorld.h"
@@ -133,6 +134,12 @@ namespace hpl {
 		if(mpChildBody) mpChildBody->RemoveJoint(this);
 		if(mpParentBody) mpParentBody->RemoveJoint(this);
 
+		// Remove adjacency first: invalidating a retained interaction can query
+		// the remaining body connections. Never expose this destroyed backend.
+		std::vector<iPhysicsJointDestroyCallback*> callbacks;
+		callbacks.swap(mvDestroyCallbacks);
+		for(size_t i=0; i<callbacks.size(); ++i) callbacks[i]->OnPhysicsJointDestroyed(this);
+
 		if(mpSound) mpWorld->GetWorld()->DestroySoundEntity(mpSound);
 
 		//Log("Deleted joint '%s'\n",msName.c_str());
@@ -145,6 +152,17 @@ namespace hpl {
 	//////////////////////////////////////////////////////////////////////////
 
 	//-----------------------------------------------------------------------
+
+	void iPhysicsJoint::AddDestroyCallback(iPhysicsJointDestroyCallback *apCallback)
+	{
+		if(apCallback && std::find(mvDestroyCallbacks.begin(),mvDestroyCallbacks.end(),apCallback)==mvDestroyCallbacks.end())
+			mvDestroyCallbacks.push_back(apCallback);
+	}
+
+	void iPhysicsJoint::RemoveDestroyCallback(iPhysicsJointDestroyCallback *apCallback)
+	{
+		mvDestroyCallbacks.erase(std::remove(mvDestroyCallbacks.begin(),mvDestroyCallbacks.end(),apCallback),mvDestroyCallbacks.end());
+	}
 	
 	/**
 	 * This should only be used by PhysicsBody.
@@ -367,6 +385,7 @@ namespace hpl {
 				
 		cWorld *pWorld = mpWorld->GetWorld();
 		if(pWorld == NULL) return true;
+		cWorldEffectLocalScope localEffects(pWorld);
 		if(msMoveSound == "") return true;
 
 		if(mpWorld->GetWorld()->GetSound()->GetSoundHandler()->GetSilent()) return true;
@@ -514,6 +533,7 @@ namespace hpl {
 	void iPhysicsJoint::LimitEffect(cJointLimitEffect *pEffect)
 	{
 		cWorld *pWorld = mpWorld->GetWorld();
+		cWorldEffectLocalScope localEffects(pWorld);
 
 		if(pWorld && pEffect->msSound!="")
 		{
@@ -570,9 +590,12 @@ namespace hpl {
 		
 		if(fForcesSize >= mfBreakForce || mbBroken)
 		{
+			for(size_t i=0; i<mvDestroyCallbacks.size(); ++i)
+				if(!mvDestroyCallbacks[i]->AllowPhysicsJointBreak(this)) return false;
 			if(msBreakSound != "")
 			{
 				cWorld *pWorld = mpWorld->GetWorld();
+				cWorldEffectLocalScope localEffects(pWorld);
 				cSoundEntity *pSound = pWorld->CreateSoundEntity("BreakSound", msBreakSound,true);
 				if(pSound)
 				{

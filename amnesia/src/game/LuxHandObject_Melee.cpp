@@ -20,6 +20,7 @@
 #include "LuxHandObject_Melee.h"
 
 #include "LuxMap.h"
+#include "LuxMapHandler.h"
 #include "LuxPlayer.h"
 #include "LuxPlayerHands.h"
 #include "LuxMapHelper.h"
@@ -237,6 +238,8 @@ void cLuxHandObject_Melee::UpdateCheckDamageEvent(float afTimeStep)
 {
 	if(mpHands->CheckAnimationEvent(mfRelativeDamageTime))
 	{
+		cWorldEffectSourceScope effectSource(gpBase->mpMapHandler->GetCurrentMap()->GetWorld(),
+			gpBase->mpPlayer->GetCharacterBody()->GetCurrentBody());
 		cCamera *pCam = gpBase->mpPlayer->GetCamera();
 
 		cVector3f vRotation(pCam->GetPitch(), pCam->GetYaw(), pCam->GetRoll());

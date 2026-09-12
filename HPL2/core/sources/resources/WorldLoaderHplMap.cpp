@@ -281,6 +281,16 @@ namespace hpl {
 		////////////////////////////////////
 		// Try loading cache
 		LoadCacheFile(asFile);
+		// Cache headers validate only version and timestamps, not the XML
+		// used to build their geometry. Preserve offline cache behavior, but
+		// only certify complete XML loads for attaching a network session.
+		if(bLoadedFromNormalFile && !mbLoadedCache &&
+			(mlCurrentFlags & ~eWorldLoadFlag_NoMapCache)==0)
+		{
+			tString source;
+			pDoc->SaveToString(&source);
+			mpCurrentWorld->SetVerifiedMapSource(source);
+		}
 
 
 		////////////////////////////////////

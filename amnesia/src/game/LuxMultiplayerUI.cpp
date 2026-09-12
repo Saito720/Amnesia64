@@ -3,6 +3,7 @@
 #include "LuxMultiplayer.h"
 #include "LuxBase.h"
 #include "LuxInputHandler.h"
+#include "LuxMultiplayerContent.h"
 
 #if USE_SDL2
 #include "impl/LowLevelGraphicsSDL.h"
@@ -12,6 +13,7 @@
 #include "backends/imgui_impl_opengl3.h"
 #endif
 
+#include <algorithm>
 #include <cstring>
 
 cLuxMultiplayerUI::cLuxMultiplayerUI(cLuxMultiplayer* apMultiplayer)
@@ -23,7 +25,7 @@ cLuxMultiplayerUI::cLuxMultiplayerUI(cLuxMultiplayer* apMultiplayer)
       mbAllPlayersTriggerScripts(true), mbPlayerCollision(false), mbUseSteam(true), mbPublicLobby(false),
       mbSearchedSteamLobbies(false), mlSelectedSteamLobby(0), mbRestoreGuiMouse(false)
 {
-    msMap[0] = msStartPos[0] = msLobbyCode[0] = '\0';
+    msMap[0] = msStartPos[0] = msLobbyCode[0] = msMapBrowserPath[0] = '\0';
     std::strcpy(msAddress, "127.0.0.1:27015");
 #if USE_SDL2
     static_cast<cLowLevelInputSDL*>(gpBase->mpEngine->GetInput()->GetLowLevel())
@@ -102,6 +104,7 @@ void cLuxMultiplayerUI::SetVisible(bool abVisible)
     }
     else if(mpWindow)
     {
+        if(mbMapBrowserOpen) mbCloseMapBrowser = true;
         RestoreGuiMouse();
         // Starting or joining may switch from a menu to the game while this is open.
         const bool bSameState = mlPreviousInputState == gpBase->mpInputHandler->GetState();
@@ -142,6 +145,9 @@ void cLuxMultiplayerUI::Show(bool abCampaign)
     mbCampaign = abCampaign;
     mbFocusWindow = true;
     mbCacheStatsDirty = true;
+    mfCurrentMapRefresh = 0;
+    mbStartPositionsDirty=true;
+    mfStartPositionDelay=0;
     SetVisible(true);
 }
 
@@ -153,9 +159,10 @@ void cLuxMultiplayerUI::Toggle()
 
 void cLuxMultiplayerUI::Update(float afTimeStep)
 {
+    UpdateStartPositions(afTimeStep);
     const int lAction = mlPendingAction;
     mlPendingAction = 0;
-    if(lAction == 1)
+    if(lAction == 1 || lAction == 12)
     {
         cLuxMultiplayerSettings settings;
         if(!mbCampaign)
@@ -170,7 +177,12 @@ void cLuxMultiplayerUI::Update(float afTimeStep)
             settings.useSteam = mbUseSteam;
             settings.publicLobby = mbPublicLobby;
         }
-        mpMultiplayer->Host(settings);
+        if(lAction == 12 && !mbCampaign) {
+            mbCanHostCurrentMap=mpMultiplayer->GetCurrentMapForHosting(msCurrentMap,msCurrentMapReason);
+            if(mbCanHostCurrentMap) mpMultiplayer->HostCurrentMap(settings);
+            else mbHostCurrentMap=false;
+        }
+        else mpMultiplayer->Host(settings);
     }
     else if(lAction == 2) mpMultiplayer->Join(msAddress);
     else if(lAction == 3) mpMultiplayer->Stop("Session ended locally.");
@@ -188,6 +200,29 @@ void cLuxMultiplayerUI::Update(float afTimeStep)
     else if(lAction == 11) {
         mpMultiplayer->ClearMapCache();
         mbCacheStatsDirty = true;
+    }
+    else if(lAction == 13) OpenMapBrowser();
+    else if(lAction == 14 && !msSelectedMap.empty()) {
+        const tString selected=cString::To8Char(msSelectedMap);
+        if(selected.size()<sizeof(msMap) && cPlatform::FileExists(msSelectedMap)) {
+            std::strcpy(msMap,selected.c_str());mbHostCurrentMap=false;mbCloseMapBrowser=true;
+            UpdateStartPositions(0);
+        }
+        else msMapBrowserError="The selected map is no longer available.";
+    }
+
+    if(!msPendingMapBrowserDirectory.empty()) {
+        const tWString directory=msPendingMapBrowserDirectory;
+        msPendingMapBrowserDirectory.clear();
+        LoadMapBrowserDirectory(directory);
+    }
+    if(mbVisible && !mbCampaign && !mpMultiplayer->IsActive()) {
+        mfCurrentMapRefresh-=afTimeStep;
+        if(mfCurrentMapRefresh<=0) {
+            mbCanHostCurrentMap=mpMultiplayer->GetCurrentMapForHosting(msCurrentMap,msCurrentMapReason);
+            if(!mbCanHostCurrentMap) mbHostCurrentMap=false;
+            mfCurrentMapRefresh=1.0f;
+        }
     }
 
     // Disk enumeration belongs to Update, never rendering. An expanded section
@@ -236,8 +271,10 @@ void cLuxMultiplayerUI::EventCallback(void* apUserData, const SDL_Event& aEvent)
            (std::strcmp(aEvent.text.text, "~") == 0 || std::strcmp(aEvent.text.text, "`") == 0)) return;
         // Keep key/button releases flowing to both input systems, avoiding stuck keys.
         ImGui_ImplSDL2_ProcessEvent(&aEvent);
-        if(pUI->mbVisible && aEvent.type == SDL_KEYDOWN && aEvent.key.keysym.sym == SDLK_ESCAPE)
-            pUI->SetVisible(false);
+        if(pUI->mbVisible && aEvent.type == SDL_KEYDOWN && aEvent.key.keysym.sym == SDLK_ESCAPE) {
+            if(pUI->mbMapBrowserOpen) pUI->mbCloseMapBrowser=true;
+            else pUI->SetVisible(false);
+        }
     }
 #endif
 }
@@ -263,6 +300,7 @@ void cLuxMultiplayerUI::Draw()
     }
     ImGui::NewFrame();
     if(mbVisible) DrawControls();
+    if(mbVisible || mbCloseMapBrowser) DrawMapBrowser();
     ImGui::Render();
     if(ImGui::GetDrawData()->CmdListsCount)
     {
@@ -272,6 +310,153 @@ void cLuxMultiplayerUI::Draw()
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         if(bAlphaTest) glEnable(GL_ALPHA_TEST);
     }
+#endif
+}
+
+void cLuxMultiplayerUI::UpdateStartPositions(float afTimeStep)
+{
+    if(!mbVisible || mbCampaign || mpMultiplayer->IsActive()) return;
+    if(msStartPositionMap!=msMap) {
+        msStartPositionMap=msMap;msStartPos[0]='\0';mvStartPositions.clear();msStartPositionError.clear();
+        mbStartPositionsDirty=true;mfStartPositionDelay=0.25f;
+    }
+    if(mbHostCurrentMap || !mbStartPositionsDirty) return;
+    mfStartPositionDelay-=afTimeStep;
+    if(mfStartPositionDelay>0) return;
+    mbStartPositionsDirty=false;mvStartPositions.clear();msStartPositionError.clear();
+    tString map=msStartPositionMap.empty()?gpBase->msStartMapFile:msStartPositionMap;
+    tString folder=msStartPositionMap.empty()?gpBase->msStartMapFolder:cString::GetFilePath(map);
+    if(!msStartPositionMap.empty()) {
+        map=cString::GetFileName(map);
+        if(folder.empty()) folder=gpBase->msStartMapFolder;
+    }
+    tWString path=cString::To16Char(folder+map);
+    if(!cPlatform::FileExists(path)) path=gpBase->mpEngine->GetResources()->GetFileSearcher()->GetFilePath(folder+map);
+    std::vector<uint8_t> bytes;
+    if(!LuxReadMultiplayerMap(path,bytes)) msStartPositionError="Choose an available XML map to list its start positions.";
+    else LuxCollectMultiplayerStartPositions(bytes,mvStartPositions,msStartPositionError);
+    if(msStartPos[0] && std::find(mvStartPositions.begin(),mvStartPositions.end(),msStartPos)==mvStartPositions.end())
+        msStartPos[0]='\0';
+}
+
+void cLuxMultiplayerUI::DrawStartPositions()
+{
+#if USE_SDL2
+    const char* preview=msStartPos[0]?msStartPos:"Map default";
+    if(ImGui::BeginCombo("Start position",preview)) {
+        if(ImGui::Selectable("Map default",msStartPos[0]=='\0')) msStartPos[0]='\0';
+        for(const tString& start:mvStartPositions)
+            if(ImGui::Selectable(start.c_str(),start==msStartPos)) std::strcpy(msStartPos,start.c_str());
+        ImGui::EndCombo();
+    }
+    if(mbStartPositionsDirty) ImGui::TextDisabled("Reading start positions...");
+    else if(!msStartPositionError.empty()) ImGui::TextWrapped("%s",msStartPositionError.c_str());
+    else if(mvStartPositions.empty()) ImGui::TextDisabled("This map has no named player starts.");
+    if(ImGui::SmallButton("Refresh start positions")) {mbStartPositionsDirty=true;mfStartPositionDelay=0;}
+#endif
+}
+
+void cLuxMultiplayerUI::OpenMapBrowser()
+{
+    tWString directory=msMapBrowserDirectory;
+    if(directory.empty()) {
+        directory=cString::GetFilePathW(cString::To16Char(msMap));
+        if(directory.empty() && !msCurrentMap.empty())
+            directory=cString::GetFilePathW(cString::To16Char(msCurrentMap));
+        if(directory.empty()) {
+            directory=cPlatform::GetWorkingDir();
+            if(cPlatform::FolderExists(directory+_W("/maps"))) directory+=_W("/maps");
+        }
+    }
+    LoadMapBrowserDirectory(directory);
+    mbMapBrowserOpen=true;mbFocusMapBrowser=true;mbCloseMapBrowser=false;
+}
+
+void cLuxMultiplayerUI::LoadMapBrowserDirectory(const tWString& directory)
+{
+    // Directory I/O is performed only in Update, never from the GL overlay.
+    const tWString full=cPlatform::FolderExists(directory)?cPlatform::GetFullFilePath(directory):_W("");
+    if(full.empty()) {msMapBrowserError="That folder could not be opened.";return;}
+    const tString display=cString::To8Char(full);
+    if(display.size()>=sizeof(msMapBrowserPath)) {msMapBrowserError="That folder path is too long.";return;}
+    msMapBrowserDirectory=cString::ReplaceCharToW(full,_W("\\"),_W("/"));
+    if(msMapBrowserDirectory.back()!=_W('/')) msMapBrowserDirectory+=_W('/');
+    std::strcpy(msMapBrowserPath,display.c_str());
+    msSelectedMap.clear();msMapBrowserError.clear();
+    mlstMapBrowserFolders.clear();mlstMapBrowserFiles.clear();
+    cPlatform::FindFoldersInDir(mlstMapBrowserFolders,msMapBrowserDirectory,false,false);
+    tWStringList files;
+    cPlatform::FindFilesInDir(files,msMapBrowserDirectory,_W("*"),false);
+    for(const tWString& file:files)
+        if(cString::ToLowerCaseW(cString::GetFileExtW(file))==_W("map")) mlstMapBrowserFiles.push_back(file);
+    mlstMapBrowserFolders.sort();mlstMapBrowserFiles.sort();
+}
+
+void cLuxMultiplayerUI::QueueMapBrowserParent()
+{
+    tWString path=msMapBrowserDirectory;
+    if(path.size()>1 && path.back()==_W('/') && !(path.size()==3 && path[1]==_W(':'))) path.pop_back();
+    // GetFilePathW treats extensionless input as a directory and returns it
+    // unchanged, so parent navigation must split the actual separator.
+    const size_t separator=path.find_last_of(_W('/'));
+    if(separator!=tWString::npos) msPendingMapBrowserDirectory=path.substr(0,separator+1);
+}
+
+void cLuxMultiplayerUI::DrawMapBrowser()
+{
+#if USE_SDL2
+    if(!mbMapBrowserOpen && !mbCloseMapBrowser) return;
+    const char* title="Select a map";
+    if(mbFocusMapBrowser) {ImGui::OpenPopup(title);mbFocusMapBrowser=false;}
+    const ImVec2 screen=ImGui::GetIO().DisplaySize;
+    ImGui::SetNextWindowPos(ImVec2(screen.x*0.5f,screen.y*0.5f),ImGuiCond_Appearing,ImVec2(0.5f,0.5f));
+    ImGui::SetNextWindowSize(ImVec2((std::min)(680.0f,screen.x-24),(std::min)(470.0f,screen.y-24)),ImGuiCond_Appearing);
+    if(ImGui::BeginPopupModal(title,&mbMapBrowserOpen,ImGuiWindowFlags_NoCollapse)) {
+        if(mbCloseMapBrowser) {ImGui::CloseCurrentPopup();mbMapBrowserOpen=false;}
+        else {
+            ImGui::TextUnformatted("Choose an XML map (.map)");
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x-50);
+            if(ImGui::InputText("##MapDirectory",msMapBrowserPath,sizeof(msMapBrowserPath),ImGuiInputTextFlags_EnterReturnsTrue))
+                msPendingMapBrowserDirectory=cString::To16Char(msMapBrowserPath);
+            ImGui::SameLine();
+            if(ImGui::Button("Go")) msPendingMapBrowserDirectory=cString::To16Char(msMapBrowserPath);
+            if(ImGui::Button("Up")) QueueMapBrowserParent();
+            ImGui::SameLine();
+            if(ImGui::Button("Refresh")) msPendingMapBrowserDirectory=msMapBrowserDirectory;
+            ImGui::SameLine();ImGui::TextDisabled("Double-click a folder to open it");
+            const float reserve=110.0f;
+            ImGui::BeginChild("MapFiles",ImVec2(0,(std::max)(80.0f,ImGui::GetContentRegionAvail().y-reserve)),true);
+            for(const tWString& folder:mlstMapBrowserFolders) {
+                const tString name="[Folder] "+cString::To8Char(folder);
+                if(ImGui::Selectable(name.c_str(),false,ImGuiSelectableFlags_AllowDoubleClick) && ImGui::IsMouseDoubleClicked(0))
+                    msPendingMapBrowserDirectory=msMapBrowserDirectory+folder;
+            }
+            for(const tWString& file:mlstMapBrowserFiles) {
+                const tWString path=msMapBrowserDirectory+file;
+                const tString name=cString::To8Char(file);
+                if(ImGui::Selectable(name.c_str(),msSelectedMap==path,ImGuiSelectableFlags_AllowDoubleClick)) {
+                    if(cString::To8Char(path).size()>=sizeof(msMap)) {
+                        msSelectedMap.clear();msMapBrowserError="That map path is too long to host.";
+                    }
+                    else {
+                        msSelectedMap=path;msMapBrowserError.clear();
+                        if(ImGui::IsMouseDoubleClicked(0)) mlPendingAction=14;
+                    }
+                }
+            }
+            if(mlstMapBrowserFiles.empty() && mlstMapBrowserFolders.empty()) ImGui::TextDisabled("This folder contains no maps or subfolders.");
+            ImGui::EndChild();
+            ImGui::TextWrapped("Selected: %s",msSelectedMap.empty()?"None":cString::To8Char(cString::GetFileNameW(msSelectedMap)).c_str());
+            if(!msMapBrowserError.empty()) ImGui::TextWrapped("%s",msMapBrowserError.c_str());
+            ImGui::BeginDisabled(msSelectedMap.empty());
+            if(ImGui::Button("Use selected map")) mlPendingAction=14;
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            if(ImGui::Button("Cancel")) {mbMapBrowserOpen=false;ImGui::CloseCurrentPopup();}
+        }
+        ImGui::EndPopup();
+    }
+    mbCloseMapBrowser=false;
 #endif
 }
 
@@ -410,8 +595,23 @@ void cLuxMultiplayerUI::DrawControls()
                 {
                     if(!mbCampaign)
                     {
-                        ImGui::InputTextWithHint("Map", "Blank starts the campaign", msMap, sizeof(msMap));
-                        ImGui::InputTextWithHint("Start position", "Map default", msStartPos, sizeof(msStartPos));
+                        if(mbCanHostCurrentMap) ImGui::Checkbox("Host currently loaded map", &mbHostCurrentMap);
+                        else if(!msCurrentMap.empty() && !msCurrentMapReason.empty())
+                            ImGui::TextWrapped("%s",msCurrentMapReason.c_str());
+                        if(mbHostCurrentMap) {
+                            if(mbCanHostCurrentMap) {
+                                ImGui::TextWrapped("Current map: %s", cString::GetFileName(msCurrentMap).c_str());
+                                ImGui::TextWrapped("Keeps your current world and player position. Earlier scripted scenes and spawned objects are not replayed for joining players.");
+                            }
+                            else ImGui::TextWrapped("%s",msCurrentMapReason.c_str());
+                        }
+                        else {
+                            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x-80);
+                            ImGui::InputTextWithHint("##HostMap", "Blank starts the campaign", msMap, sizeof(msMap));
+                            ImGui::SameLine();
+                            if(ImGui::Button("Browse...")) mlPendingAction=13;
+                            DrawStartPositions();
+                        }
                         if(bSteam)
                         {
                             ImGui::Checkbox("Public session", &mbPublicLobby);
@@ -435,8 +635,10 @@ void cLuxMultiplayerUI::DrawControls()
                             "Player triggers accept any connected player." :
                             "Only the host activates Player-specific script triggers.");
                     }
-                    ImGui::BeginDisabled(bSteam && !mpMultiplayer->IsSteamAvailable());
-                    if(ImGui::Button(mbCampaign ? "Host campaign" : "Host session")) mlPendingAction = 1;
+                    ImGui::BeginDisabled((bSteam && !mpMultiplayer->IsSteamAvailable()) ||
+                        (!mbCampaign && mbHostCurrentMap && !mbCanHostCurrentMap));
+                    if(ImGui::Button(mbCampaign ? "Host campaign" : "Host session"))
+                        mlPendingAction = !mbCampaign && mbHostCurrentMap ? 12 : 1;
                     ImGui::EndDisabled();
                     if(bSteam)
                         ImGui::TextWrapped("Invite friends through Steam or share your lobby code after hosting.");

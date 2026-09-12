@@ -21,6 +21,7 @@
 #define HPL_PARTICLE_SYSTEM_H
 
 #include "system/SystemTypes.h"
+#include <cstdint>
 
 #include "scene/Entity3D.h"
 #include "resources/ResourceBase.h"
@@ -80,9 +81,12 @@ namespace hpl {
 		cParticleSystem(	const tString asName,cParticleSystemData *apData, 
 							cResources *apResources, cGraphics *apGraphics);
 		~cParticleSystem();
+		uint64_t GetCreationID() const { return mlCreationID; }
 
 		bool IsVisible(){ return mbIsVisible;}
 		void SetVisible(bool abVisible);
+		void SetPresentationSuppressed(bool abSuppressed);
+		bool GetPresentationSuppressed() const { return mbPresentationSuppressed; }
 
 		void UpdateLogic(float afTimeStep);
 
@@ -138,6 +142,7 @@ namespace hpl {
 		bool mbRemoveWhenDead;
 
 		bool mbIsVisible;
+		bool mbPresentationSuppressed;
 
 		cColor mColor;
 		bool mbFadeAtDistance;
@@ -150,6 +155,7 @@ namespace hpl {
 		cVector3f mvDataSize;
 
 		bool mbFirstUpdate;
+		uint64_t mlCreationID;
 	};
 
 };

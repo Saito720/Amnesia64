@@ -25,6 +25,8 @@
 #include "LuxMap.h"
 #include "LuxEntity.h"
 #include "LuxInputHandler.h"
+#include "LuxMultiplayer.h"
+#include "LuxMultiplayerEffects.h"
 
 //-----------------------------------------------------------------------
 
@@ -168,6 +170,11 @@ bool cLuxHelpFuncs::PlayGuiSoundData(const tString& asName,eSoundEntryType aDest
 	
 	tString sSoundName = pSoundData->GetRandomSoundName(aSoundType, abSkipPreviousRandom);
 	cSoundEntry *pSound = pSoundHandler->PlayGui(sSoundName, false, pSoundData->GetVolume()*afVolMul,cVector3f(0,0,1),aDestType);
+	// Physical player sounds keep their native first-person mix. Other players
+	// hear the same selected clip spatially at its character's location.
+	if(pSound && aDestType==eSoundEntryType_World && gpBase->mpMultiplayer)
+		gpBase->mpMultiplayer->GetEffects()->EmitPlayerSound(sSoundName,pSoundData->GetVolume()*afVolMul,
+			pSoundData->GetMinDistance(),pSoundData->GetMaxDistance());
 
 	if(apOutputData)
 	{

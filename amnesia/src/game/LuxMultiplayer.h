@@ -10,7 +10,9 @@
 class cLuxMultiplayerUI;
 class cLuxMultiplayerWorld;
 class cLuxMultiplayerEntities;
+class cLuxMultiplayerEffects;
 class iLuxEntity;
+class iLuxProp;
 class cLuxDiary;
 
 enum eLuxMultiplayerLoadPhase {
@@ -33,9 +35,11 @@ struct cLuxMultiplayerSettings {
 // Global module: transport and world progression survive local menu containers.
 class cLuxMultiplayer : public iLuxUpdateable {
     friend class cLuxMultiplayerEntities;
+    friend class cLuxMultiplayerEffects;
 public:
     cLuxMultiplayer();
     ~cLuxMultiplayer();
+    void PreUpdate(float afTimeStep);
     void Update(float afTimeStep);
     void PostUpdate(float afTimeStep);
     void Reset();
@@ -43,6 +47,8 @@ public:
     void OnMapLeave(cLuxMap* apMap);
     void OnMapLoaded(cLuxMap* apMap, const tString& asStartPos);
     bool Host(const cLuxMultiplayerSettings& settings);
+    bool HostCurrentMap(const cLuxMultiplayerSettings& settings);
+    bool GetCurrentMapForHosting(tString& map, tString& reason) const;
     bool Join(const tString& address);
     bool JoinSteamLobby(const tString& code);
     bool IsSteamAvailable() const { return hpl::cNetworkTransport::SteamAvailable(); }
@@ -75,6 +81,8 @@ public:
     uint32_t GetLocalPeerId() const { return mlLocalPeer; }
     uint32_t GetMapEpoch() const { return mlMapEpoch; }
     cLuxMultiplayerWorld* GetWorld() { return mpWorld; }
+    cLuxMultiplayerEntities* GetEntities() { return mpEntities; }
+    cLuxMultiplayerEffects* GetEffects() { return mpEffects; }
     bool Send(uint32_t peer, const std::vector<uint8_t>& data, bool reliable);
     void Broadcast(const std::vector<uint8_t>& data, bool reliable);
     void ShowWindow(bool campaign=false);
@@ -88,6 +96,7 @@ public:
     bool RequestEntityInteraction(iLuxEntity* entity, iPhysicsBody* body, const cVector3f& pos);
     void BroadcastScriptEffect(const std::vector<uint8_t>& effect);
     bool AllowObjectBreak(const tString& name);
+    bool AllowPhysicsJointBreak(iLuxProp* prop, iPhysicsJoint* joint);
     bool BeginNativeInteraction(iLuxEntity* entity);
     void CompleteNativeInteraction(iLuxEntity* entity, bool succeeded);
     bool DeferNativeInteractionCallback(iLuxEntity* entity) const;
@@ -106,7 +115,7 @@ private:
     void HandleEvent(const hpl::cNetworkEvent& event);
     void HandlePacket(uint32_t peer,const std::vector<uint8_t>& data);
     void SendMap(uint32_t peer,Peer& state);
-    bool CaptureMap(cLuxMap* map,const tString& start);
+    bool CaptureMap(cLuxMap* map,const tString& start,const std::vector<uint8_t>* verifiedSource=NULL);
     bool LoadReceivedMap();
     bool FindMatchingMap();
     void RejectPeer(uint32_t peer,const tString& reason);
@@ -115,13 +124,14 @@ private:
     void EnterClientLoading();
     void SetLoadPhase(eLuxMultiplayerLoadPhase phase,const tString& status,bool present=false);
     void SendMapPreparation(uint32_t peer,Peer& state);
-    void UpdateBackgroundWorld(float dt);
+    void UpdateBackgroundWorld(eUpdateableMessage phase, float dt);
     void ProcessHostMapChange();
     void RemoveReceivedMapFiles();
     hpl::cNetworkTransport mTransport;
     cLuxMultiplayerUI* mpUI;
     cLuxMultiplayerWorld* mpWorld;
     cLuxMultiplayerEntities* mpEntities;
+    cLuxMultiplayerEffects* mpEffects;
     cLuxMultiplayerSettings mSettings;
     std::map<uint32_t,Peer> mPeers;
     std::vector<uint8_t> mvMapBytes;
@@ -133,6 +143,10 @@ private:
     tString msStatus, msMapName, msStartPos, msReceivedMapPath;
     tString msMapHash, msExistingMapPath, msLoadedMapPath;
     bool mbReusingMap=false;
+    // Debug loads start a fresh game; ordinary level doors retain the native
+    // map-to-map player/effect state. Sent with each map manifest.
+    bool mbMapResetsGame=true;
+    bool mbMapHardMode=false;
     eLuxMultiplayerLoadPhase mLoadPhase=eLuxMultiplayerLoadPhase_None;
     eLuxMultiplayerLoadPhase mResumeLoadPhase=eLuxMultiplayerLoadPhase_None;
     tString msLoadScreenStatus, msResumeLoadStatus, msPreparingMap;

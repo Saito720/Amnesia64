@@ -5,6 +5,7 @@
 #include "LuxTypes.h"
 #include "LuxMultiplayerCache.h"
 #include <cstdint>
+#include <vector>
 
 class cLuxMultiplayer;
 struct ImGuiContext;
@@ -33,6 +34,12 @@ private:
     void RestoreGuiMouse();
     void DrawControls();
     void DrawSteamJoinControls();
+    void OpenMapBrowser();
+    void LoadMapBrowserDirectory(const tWString& directory);
+    void QueueMapBrowserParent();
+    void DrawMapBrowser();
+    void UpdateStartPositions(float afTimeStep);
+    void DrawStartPositions();
     static void DrawCallback(void* apUserData);
     static void EventCallback(void* apUserData, const SDL_Event& aEvent);
 
@@ -57,6 +64,17 @@ private:
     bool mbSearchedSteamLobbies;
     uint64_t mlSelectedSteamLobby;
     bool mbRestoreGuiMouse;
+    bool mbHostCurrentMap=false;
+    bool mbCanHostCurrentMap=false;
+    float mfCurrentMapRefresh=0;
+    tString msCurrentMap, msCurrentMapReason;
+    bool mbMapBrowserOpen=false;
+    bool mbFocusMapBrowser=false;
+    bool mbCloseMapBrowser=false;
+    tWString msMapBrowserDirectory, msPendingMapBrowserDirectory, msSelectedMap;
+    tString msMapBrowserError;
+    tWStringList mlstMapBrowserFolders, mlstMapBrowserFiles;
+    char msMapBrowserPath[1024];
     cLuxMultiplayerMapCacheStats mCacheStats;
     bool mbCacheSectionOpen=false;
     bool mbCacheStatsKnown=false;
@@ -65,6 +83,10 @@ private:
     tString msCapturedGuiSet;
     char msMap[512];
     char msStartPos[128];
+    tString msStartPositionMap, msStartPositionError;
+    std::vector<tString> mvStartPositions;
+    float mfStartPositionDelay=0;
+    bool mbStartPositionsDirty=true;
     char msAddress[256];
     char msLobbyCode[32];
 };

@@ -94,9 +94,13 @@ namespace hpl {
 		void SetPaused(bool abX);
 
 		void SetDefaultVolume(float afVolume);
+		float GetDefaultVolume() const { return mfNormalVolume; }
 		void SetDefaultSpeed(float afSpeed);
+		void SetPresentationSuppressed(bool abSuppressed);
+		bool GetPresentationSuppressed() const { return mbPresentationSuppressed; }
 
 		void SetVolumeMul(float afMul);
+		float GetVolumeMul() const { return mfVolumeMul; }
 		void SetSpeedMul(float afMul);
 
 		void FadeVolumeMulTo(float afDestMul, float afSpeed);
@@ -145,6 +149,7 @@ namespace hpl {
 
 		bool mbStream;
 		bool mbStopDisabled;
+		bool mbPresentationSuppressed;
 
 		iSoundEntryCallback *mpCallback;
 	};

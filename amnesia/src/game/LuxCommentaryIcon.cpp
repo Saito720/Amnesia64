@@ -226,6 +226,7 @@ tWString cLuxCommentaryIcon::GetFocusText()
 void cLuxCommentaryIcon::SetPlayingSound(bool abX)
 {
 	if(mbPlayingSound ==abX) return;
+	cWorldEffectLocalScope localEffects(mpMap->GetWorld());
 
 	mbPlayingSound = abX;
 

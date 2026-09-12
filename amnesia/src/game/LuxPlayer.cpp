@@ -29,6 +29,7 @@
 
 #include "LuxPlayerState_Normal.h"
 #include "LuxPlayerState_HandObject.h"
+#include "LuxHandObject.h"
 #include "LuxPlayerState_UseItem.h"
 #include "LuxPlayerState_InteractGrab.h"
 #include "LuxPlayerState_InteractPush.h"
@@ -784,6 +785,9 @@ void cLuxPlayer::Crouch(bool abPressed)
 void cLuxPlayer::ChangeState(eLuxPlayerState aState)
 {
 	if(mState == aState) return;
+	// A constraint may disappear while a multiplayer lease is in flight.
+	// Check state prerequisites before leaving the previous state or taking a lease.
+	if(!mvStates[aState]->CanEnterState()) return;
 
 	// Wait for an exclusive host lease before an interaction state changes
 	// masses, disables gravity or starts applying its PID forces.
@@ -992,6 +996,19 @@ void cLuxPlayer::AddCoins(int alX)
 }
 
 //-----------------------------------------------------------------------
+
+iLight* cLuxPlayer::GetVisibleLanternLight() const
+{
+	// The outgoing object remains visible during its native holster fade.
+	iLuxHandObject* hand = mpHands->FindLoadedHandObject("lantern");
+	if(!hand || hand->GetName() != "lantern" || !hand->GetMeshEntity() ||
+		!hand->GetMeshEntity()->IsActive() || !hand->GetMeshEntity()->IsVisible()) return NULL;
+	const tString name = hand->GetMeshEntity()->GetName() + "_PointLight_1";
+	for(iLight* light : hand->GetLights())
+		if(light->GetName() == name && light->GetLightType() == eLightType_Point &&
+			light->IsActive() && light->IsVisible()) return light;
+	return NULL;
+}
 
 void cLuxPlayer::SetCurrentHandObjectDrawn(bool abX)
 {

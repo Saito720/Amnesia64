@@ -18,6 +18,20 @@ Windows Debug and Release x64 are the primary build targets for this checkout.
   session list. Friends-only lobbies do not appear in public discovery. The advanced
   direct-IP option accepts an IP address or hostname and optional port; IPv6 literals
   are supported. Escape closes the window.
+- The advanced Host tab can host the **currently loaded map** without restarting
+  the host's world, or **Browse...** for an XML map using folder navigation and
+  selection. Current-map hosting preserves position, inventory and story mode,
+  and shares removal of authored items already collected offline. Earlier scripted
+  scenes and spawned objects cannot yet be reconstructed for joining players.
+  The world must have been fully loaded from XML, and its parsed source must still
+  match the file. Cached/partial worlds and edited sources require a fresh map load
+  through Browse; offline cache loading remains unchanged. Clients inherit the
+  host's current difficulty before loading.
+  This option appears only for a loaded playable world, including a paused game;
+  the title menu's background world cannot be hosted. The **Start position** list
+  reads PlayerStart areas from the selected or entered XML map, with **Map default**
+  available. Changing the map clears stale start selections. File reads are deferred
+  until editing settles, and the list can be refreshed after editing a map externally.
 - Defaults: **Steam, friends-only**, **4 players including the host**, client map
   changes **off**, every player may trigger Player callbacks **on**, player collision **off**. The supported
   player limit is 2–16. Direct-IP hosting uses UDP **27015** by default.
@@ -89,10 +103,14 @@ or cached maps skip the download phase. Every waiting frame clears the viewport;
 blocking verification and loading also present their screen before starting work.
 Cancelled or failed host map changes return clients to the previous map, preserving
 in-flight world events. Same-map start-position changes do not put clients into a
-map-loading state. This transition handshake uses protocol **5**; all players need
+map-loading state. This transition handshake uses protocol **8**; all players need
 the updated build.
 The client cannot open the game debug menu; F3/fast-forward is disabled for everyone
 in a session. Host debug map loads/reloads use a queued session-preserving path.
+Debug loads now perform the original game's full new-game reset on every peer.
+Ordinary level changes instead retain the original game's persistent state,
+including flashbacks, and apply the host's final old-map script cleanup before
+loading the next map. Native fade-in and player reactivation also run on clients.
 Offline save/load and autosave rotation are suppressed for multiplayer worlds; session
 persistence and resuming a co-op campaign are not implemented.
 
@@ -100,8 +118,11 @@ persistence and resuming a co-op campaign are not implemented.
 
 The host assigns connection IDs; clients cannot choose another player's identity.
 Peer 0 denotes the host. Map epochs invalidate delayed packets from previous maps.
-The network update runs globally, while gameplay modules receive their normal updates
-when local menus have switched away from the gameplay container. Joining/changing-map
+The network update runs globally, while gameplay modules receive their normal
+PreUpdate, Update and PostUpdate phases when local menus have switched away from the
+gameplay container. Hands and attached lights continue following the live camera;
+menus retain input control, and the global scene/physics update is not repeated.
+Joining/changing-map
 clients enter a waiting container until their verified map has loaded.
 
 Remote players render as solid, depth-tested cylinders using the standing/crouching
@@ -109,6 +130,12 @@ character dimensions. Positions interpolate for rendering. The host can enable
 character collision in the advanced window; the matching Newton character proxies
 do not push shared dynamic objects. Their collision surfaces also participate in
 NPC character sweeps. Stale, disconnected and previous-map proxies are removed.
+An equipped, visibly drawn lantern also contributes one remote point light, sampled
+from the hand asset's `PointLight_1`. Its position, current color and radius follow
+the native light, including flicker and the holster fade. The secondary hand light,
+player helper fill light and lantern mesh are not replicated. Remote lights are
+removed when the source disappears, its pose becomes stale, the peer disconnects,
+or the map is replaced.
 
 Dynamic body IDs combine the entity-qualified body name with its authored XML body
 ID. Repeated names inside retail entities, including `chest_of_drawers_nice.ent`,
@@ -117,7 +144,10 @@ truly ambiguous identities are excluded. Clients receive a reliable initial body
 bodies are sampled at 20 Hz, sleeping transitions are sent reliably, and periodic
 ground-truth snapshots correct drift. Newton keeps simulating contacts locally;
 normal corrections bias linear/angular velocity. Initial sync, large errors, sleep,
-and periodic ground truth can set the full transform. Send queues and retained initial
+and ownership handoffs can set the full transform. Routine reliable corrections
+converge without a forced position jump; displaced sleeping followers wake and
+settle toward their resting pose. Rotation prediction follows angular velocity.
+Send queues and retained initial
 snapshots are bounded. Slow clients are disconnected if reliable shared state cannot
 be delivered, rather than silently losing it.
 
@@ -126,6 +156,9 @@ exclusive host lease for the connected body assembly. Only its owner may submit 
 assembly's state. The host checks reach, bounded/finite transforms and velocities,
 sequence numbers, and lease tokens. Leases release on exit, cancellation, timeout,
 disconnect, or map teardown. Physical throws preserve the owner's final velocity.
+Leases also bind to each body's runtime instance. Scripted replacements cannot
+inherit an old token or receive the former body's final transforms and flags,
+even when their authored identity or allocated address is reused.
 Common breakable-object events run through the host and invoke the usual client
 break path, including its broken representation and local effects.
 Objects owned by someone else no longer offer an interaction crosshair or outline.
@@ -133,6 +166,16 @@ Granting a door lease opens its host-side hinge limits and restores native auto-
 behavior. Only the host decides when to close it automatically.
 Releasing a held prop preserves the native collision
 safeguard until it clears the local player's body.
+
+Player contact also obtains an exclusive simulation lease, held for one second
+after the last contact. Each player may influence up to four separate assemblies;
+contact requests are throttled and validated against recent player/body bounds.
+Until granted, character collision still blocks the player while forces on the
+object wait. This prevents a client from tipping an unowned chair locally and
+walking through it. Deliberate interactions take priority over passive contact,
+and contact never starts an interaction controller or disables door auto-close.
+Accepted owner snapshots relay directly to observers rather than taking another
+smoothing pass through the host's follower. Final state transfers reliably on release.
 
 Item pickups and lamp ignition use exclusive host-approved transactions. The
 collector alone receives the item or spends a tinderbox; successful pickup removes
@@ -147,6 +190,34 @@ Native entity snapshots carry active/interaction/effect
 flags, lamp lighting, door lock/closed states, and hinge/slider limits. Changed states
 are sent reliably, with periodic corrections. Static MoveObject transforms also
 synchronize; their motors and collision-triggered stops remain host controlled.
+Destroyed joints leave stable authored slots in save data and native snapshots.
+Only the simulation owner can initiate a force-driven joint break. Client owners
+request host approval using the current body lease and token, retaining the joint
+until the host confirms its removal. Nonowners cannot break constraints from their
+local corrective forces; explicit host script breaks remain authoritative.
+Host deletion tombstones remove the matching client constraints, including during
+late-join initialization. Engine destruction observers clear prop aliases and end
+an active joint interaction before another update can use it. Entry validation also
+rejects a pending interaction if its required joint disappeared before the lease
+arrived. Detached break pieces unregister their former prop before deferred cleanup.
+Native sounds and particles use shared world creation hooks rather than per-entity
+effect messages. Physical player sounds also pass through the common playback
+helper, retaining the game's own footsteps, landing, ladder, and water timing.
+Character-origin scopes identify player-produced effects, including native liquid
+splashes. The host validates client-origin effects and relays them without an echo
+to their creator. Newton contacts, scraping, rolling, and joint effects remain local:
+every peer already simulates them. Enemy, hazard, animation, light-flicker, and
+personal camera/commentary presentation retain their local simulation. Source
+attribution is independent of physics ownership. Existing replicated effects
+remain on their established paths to avoid duplicate playback.
+Shared sound/particle sources validate their resources before publishing an effect.
+An unavailable native source does not make clients disconnect for presentation the
+origin could not fully load; ordinary local fallback remains in control. Resources
+published by a valid source remain required on the receiving peer.
+Late joiners receive active loops and particles plus silent declarations for
+retained sound handles. Stopped or already-playing reusable one-shots are not
+replayed at join, but later stop/start cycles work normally. The source controls
+replica lifetime through removal or map/session teardown.
 
 ## Maps and scripts
 
@@ -179,11 +250,16 @@ object IDs, direct resources, and local `.ent`, `.mat`, `.ps`, and `.snt` depend
 graphs. It follows engine conventions for author-machine paths, compiled meshes,
 material suffixes, localized/numbered audio, textures and cube maps. Missing assets
 produce a descriptive disconnection message. Scripted resource creation/effects also
-validate their file arguments. Sound preloading is an optional warm-up hint:
+validate their file arguments. The host records which individual resources in a
+typed script effect are unavailable locally. Clients allow native fallback for only
+those arguments while still executing the command's other behavior, such as subtitles
+or credits. Every resource that validated on the host remains required on clients,
+including other resources in the same command. The packet's resource mask is bounded
+and must refer to actual resource arguments. Sound preloading is an optional warm-up hint:
 unusable `PreloadSound` requests are logged and skipped, matching the native
 engine's tolerance for the retail scripts' raw sample names, obsolete references,
-and typos. They do not disconnect clients. Actual sound playback and required
-map dependencies retain their validation. Opaque mesh internals and every deferred
+and typos. They do not disconnect clients. Actual sound playback uses the host's
+per-resource rule; required map dependencies retain strict validation. Opaque mesh internals and every deferred
 engine asset lookup are not yet covered by a universal missing-resource collector.
 Extensionless GUI sounds prefer an existing sound entity and otherwise resolve raw
 audio (including the retail Archives `react_scare6.ogg`). Directory-only optional
@@ -226,7 +302,7 @@ and other indirect script execution do not yet retain the originating player's i
 
 ## Verification
 
-The implementation has been exercised with:
+Completed verification from earlier runs includes:
 
 - User-reported multiplayer playtests using different Steam accounts/machines. The
   regressions below remain controlled local tests and do not replace another friend playtest.
@@ -252,6 +328,14 @@ The implementation has been exercised with:
   player collision, proxy cleanup, static mover rotation/translation, slow motion,
   recovery after losing a final movement update, and collision restoration after
   releasing a prop overlapping the player.
+- Newton contact regressions cover force gating, exclusive ownership, contact grace,
+  explicit interaction priority, direct owner-state relaying, stale-packet rejection,
+  and smooth convergence from a single sleeping-body position/rotation update.
+- Two-instance effects regressions cover finalized sound/particle settings, local
+  physics exclusions, loop/particle lifetime, native latch edges and silent state
+  corrections, selected water-footstep samples without actor echoes, and live
+  sound/particle baselines. These test the native water sound helper and generic
+  body-source capture; they do not automate traversal through a liquid volume.
 - All 33 retail campaign maps passing content preflight, plus malformed maps and
   missing-asset regressions.
 - Real SDL/OpenGL/ImGui rendering and input capture, both advanced and campaign controls.
@@ -272,6 +356,20 @@ The implementation has been exercised with:
   This regression passed with both standalone and Steam SDK direct-IP transports.
 - One actual game instance hosting a live friends-only Steam campaign lobby, advancing
   through menus, changing to Old Archives while retaining its lobby, and leaving cleanly.
+
+The latest Steam-enabled Debug and Release builds complete without compiler warnings
+or errors. Protocol/Newton suites and content validation of all 33 retail maps pass.
+The UI run `c0367b4967cd` passes playable-world hosting controls and deferred map-start
+selection. Full two-instance run `0b402d98b1dd` passes per-resource script fallback,
+native menu hand/light updates, remote lantern lifetime, retail painting joint
+destruction, stable save/baseline state, and deletion during a pending drawer grant,
+alongside the existing campaign, native interaction, effect, map transition and cache
+regressions. It also verifies loaded XML provenance, joined Hard Mode, owner-approved
+joint breaks with follower suppression, and silent sound baselines followed by restarts.
+The Newton suite verifies same-ID replacement and reused-address lease invalidation.
+Artifacts are under `bld/multiplayer-tests/`. These game tests use the
+Steam SDK's direct-IP loopback transport; they do not replace cross-account relay
+playtests. Test coverage is described in `tests/multiplayer/README.md`.
 
 Build the solution's Debug x64 game before engine-backed tests. Run the independent
 protocol and Newton suites from the repository root:
@@ -297,7 +395,7 @@ have exercised that path; each new build still needs a two-account playtest for
 latency, disconnects and campaign behavior beyond the controlled regression suite.
 Full-game smoke tests use isolated test configurations/profiles and a bounded run;
 they must not share a live player's configuration or overwrite retail assets.
-The current session/lobby protocol is version **5**; all testers must use the new build.
+The current session/lobby protocol is version **8**; all testers must use the new build.
 See `tests/multiplayer/README.md` for profile cleanup, output paths and runner options.
 
 ## Source layout
@@ -307,6 +405,8 @@ See `tests/multiplayer/README.md` for profile cleanup, output paths and runner o
 - `LuxMultiplayer`: session lifecycle, transfer, map/trigger policy and global updates.
 - `LuxMultiplayerWorld`: physics, poses, rendering and interaction leases.
 - `LuxMultiplayerEntities`: approved pickups/ignition, removal history and native entity state.
+- `LuxMultiplayerEffects`: shared native world/player presentation and effect lifecycle;
+  locally simulated physics and already replicated/local presentation are excluded.
 - `LuxMultiplayerProtocol` / `LuxMultiplayerWorldProtocol`: explicit wire codecs.
 - `LuxMultiplayerCache` / `LuxMultiplayerMapHash`: verified persistent map storage and SHA-256 identities.
 - `LuxMultiplayerContent`: map/dependency validation.

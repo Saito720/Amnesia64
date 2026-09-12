@@ -1,4 +1,5 @@
 #include "LuxMultiplayerEntities.h"
+#include "LuxMultiplayerContent.h"
 #include "LuxMultiplayerEntityProtocol.h"
 #include "LuxMultiplayer.h"
 #include "LuxMultiplayerWorld.h"
@@ -17,11 +18,47 @@ using namespace luxnet;
 
 cLuxMultiplayerEntities::cLuxMultiplayerEntities(cLuxMultiplayer* session):mpSession(session) { Reset(); }
 void cLuxMultiplayerEntities::Reset() {
-    mClaims.clear();mLastStates.clear();mRemovedItems.clear();mInitial.clear();
+    mClaims.clear();mLastStates.clear();mRemovedItems.clear();mInitial.clear();mJointBreakRequests.clear();
     mPendingDiaries.clear();mpDiaryDecision=NULL;
     msPending.clear();msGranted.clear();mlToken=mlGrantedToken=0;
     mlPendingRuntimeID=0;
     mfSnapshotTime=mfPendingTime=mfGroundTruthTime=0;mbCallback=false;mlDiaryIndex=-1;
+}
+bool cLuxMultiplayerEntities::SeedCurrentMapItems(const std::vector<uint8_t>& mapBytes,std::string& error) {
+    std::vector<tString> items;
+    if(!LuxCollectMultiplayerMapItems(mapBytes,items,error)) return false;
+    cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();
+    if(!map) {error="The current map is no longer loaded.";return false;}
+    for(const tString& name:items) {
+        iLuxEntity* entity=map->GetEntityByName(name,eLuxEntityType_LastEnum);
+        if(!entity || entity->GetDestroyMe()) mRemovedItems[name]=entity?entity->GetRuntimeID():0;
+    }
+    return true;
+}
+bool cLuxMultiplayerEntities::AllowPhysicsJointBreak(iLuxProp* prop,iPhysicsJoint* joint) {
+    if(!mpSession->IsActive()) return true;
+    // Explicit host script/native Break() remains authoritative even while a
+    // client owns the physical simulation of the connected assembly.
+    if(mpSession->IsHost() && joint->IsBroken()) return true;
+    iPhysicsBody* body=joint->GetChildBody();
+    if(!body || body->GetMass()<=0 || body->GetUserData()!=prop) body=joint->GetParentBody();
+    if(!body || body->GetMass()<=0 || body->GetUserData()!=prop) return mpSession->IsHost();
+    uint32_t owner=0,token=0;
+    mpSession->GetWorld()->GetSimulationLease(body,owner,token);
+    if(mpSession->IsHost()) return owner==mpSession->GetLocalPeerId();
+    if(!mpSession->IsReady() || !token || owner!=mpSession->GetLocalPeerId()) return false;
+    for(uint32_t slot=0;slot<prop->mvJoints.size() && slot<128;++slot) if(prop->mvJoints[slot]==joint) {
+        const auto key=std::make_pair(prop->GetRuntimeID(),slot);
+        const auto previous=mJointBreakRequests.find(key);
+        if(previous!=mJointBreakRequests.end() && previous->second==token) return false;
+        if(previous==mJointBreakRequests.end() && mJointBreakRequests.size()>=8192) return false;
+        JointBreakState request;request.epoch=mpSession->GetMapEpoch();request.name=prop->GetName();
+        request.index=slot;request.body=LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID());request.token=token;
+        if(mpSession->Send(0,WriteJointBreak(request),true)) mJointBreakRequests[key]=token;
+        break;
+    }
+    // Keep the constraint alive until the host's reliable deletion arrives.
+    return false;
 }
 bool cLuxMultiplayerEntities::IsNative(iLuxEntity* entity) const {
     if(!entity || entity->GetEntityType()!=eLuxEntityType_Prop) return false;
@@ -133,8 +170,10 @@ std::vector<uint8_t> cLuxMultiplayerEntities::Capture(iLuxProp* prop) {
     std::vector<JointState> joints;
     for(size_t i=0;i<prop->mvJoints.size() && i<128;++i) {
         iPhysicsJoint* joint=prop->mvJoints[i];
-        if(!joint || joint->IsBroken()) continue;
         JointState j;j.index=static_cast<uint32_t>(i);
+        if(!joint || joint->IsBroken()) {
+            j.kind=0;j.flags=0;j.min=0;j.max=0;joints.push_back(j);continue;
+        }
         j.flags=(joint->GetStickyMinLimit()?1:0)|(joint->GetStickyMaxLimit()?2:0)|(joint->GetCollideBodies()?4:0);
         if(joint->GetType()==ePhysicsJointType_Hinge) {
             auto* hinge=static_cast<iPhysicsJointHinge*>(joint);j.kind=1;j.min=hinge->GetMinAngle();j.max=hinge->GetMaxAngle();
@@ -167,8 +206,14 @@ bool cLuxMultiplayerEntities::Apply(const std::vector<uint8_t>& data) {
     for(const auto& j:state.joints) {
         if(j.index>=prop->mvJoints.size()) return false;
         auto* joint=prop->mvJoints[j.index];
-        if(!joint || (j.kind==1 && joint->GetType()!=ePhysicsJointType_Hinge) ||
-           (j.kind==2 && joint->GetType()!=ePhysicsJointType_Slider)) return false;
+        // A local break can precede the host's matching deletion. Never revive
+        // that slot, or reject a preceding live snapshot for the missing joint.
+        if(joint && ((j.kind==1 && joint->GetType()!=ePhysicsJointType_Hinge) ||
+           (j.kind==2 && joint->GetType()!=ePhysicsJointType_Slider))) return false;
+    }
+    for(const auto& j:state.joints) {
+        if(j.kind==0) mJointBreakRequests.erase(std::make_pair(prop->GetRuntimeID(),j.index));
+        if(j.kind==0 && prop->mvJoints[j.index]) map->GetPhysicsWorld()->DestroyJoint(prop->mvJoints[j.index]);
     }
     prop->SetActive((state.flags&EntityActive)!=0);
     prop->SetInteractionDisabled((state.flags&InteractionDisabled)!=0);
@@ -184,6 +229,7 @@ bool cLuxMultiplayerEntities::Apply(const std::vector<uint8_t>& data) {
     }
     for(const auto& j:state.joints) {
         auto* joint=prop->mvJoints[j.index];
+        if(!joint || j.kind==0) continue;
         if(j.kind==1) {
             auto* hinge=static_cast<iPhysicsJointHinge*>(joint);hinge->SetMinAngle(j.min);hinge->SetMaxAngle(j.max);
         } else {
@@ -254,9 +300,32 @@ void cLuxMultiplayerEntities::Update(float dt) {
     }
 }
 bool cLuxMultiplayerEntities::HandleMessage(uint32_t peer,const std::vector<uint8_t>& data) {
+    if(data.empty()) return false;
     Reader r(data);const uint8_t type=data[0];uint32_t epoch=r.U32();
     if(!r.valid) return false;
     if(epoch!=mpSession->GetMapEpoch()) return true;
+    if(type==JointBreakRequest) {
+        Reader requestReader(data);JointBreakState request;
+        if(!mpSession->IsHost() || !ReadJointBreak(requestReader,request)) return false;
+        cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();
+        auto* prop=map?static_cast<iLuxProp*>(map->GetEntityByName(request.name,eLuxEntityType_Prop)):NULL;
+        if(!prop || prop->GetName()!=request.name || prop->GetDestroyMe() || request.index>=prop->mvJoints.size()) return true;
+        iPhysicsJoint* joint=prop->mvJoints[request.index];
+        if(!joint || !joint->IsBreakable()) return true;
+        iPhysicsBody* body=NULL;
+        iPhysicsBody* endpoints[]={joint->GetChildBody(),joint->GetParentBody()};
+        for(auto* endpoint:endpoints)
+            if(endpoint && endpoint->GetUserData()==prop && endpoint->GetMass()>0 &&
+               LuxWorldWire::BodyId(endpoint->GetName(),endpoint->GetUniqueID())==request.body) body=endpoint;
+        uint32_t owner=0,token=0;
+        if(!body || !mpSession->GetWorld()->GetSimulationLease(body,owner,token) || owner!=peer || token!=request.token) return true;
+        // Packet handling occurs outside Newton's joint traversal. Preserve the
+        // host's native break presentation, then publish the permanent slot deletion.
+        joint->Break();
+        if(!joint->CheckBreakage()) return true;
+        map->GetPhysicsWorld()->DestroyJoint(joint);
+        BroadcastState(prop);return true;
+    }
     if(mpSession->IsClient() && type==EntityState) return Apply(data);
     tString name=r.String(256);if(!r.valid || name.empty()) return false;
     cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();

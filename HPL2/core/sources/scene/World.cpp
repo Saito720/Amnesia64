@@ -23,6 +23,7 @@
 
 #include "system/Script.h"
 #include "system/String.h"
+#include "system/SHA1.h"
 #include "system/LowLevelSystem.h"
 
 #include "math/Math.h"
@@ -90,6 +91,21 @@
 #include "haptic/LowLevelHaptic.h"
 
 namespace hpl {
+	void cWorld::SetVerifiedMapSource(const tString& asCanonicalXml)
+	{
+		SHA1 fingerprint;
+		fingerprint.Input(asCanonicalXml);
+		fingerprint.Result(msMapSourceFingerprint);
+	}
+
+	bool cWorld::MatchesVerifiedMapSource(const tString& asCanonicalXml) const
+	{
+		if(!HasVerifiedMapSource()) return false;
+		SHA1 fingerprint;
+		fingerprint.Input(asCanonicalXml);
+		tString current;
+		return fingerprint.Result(current) && current == msMapSourceFingerprint;
+	}
 
 	//////////////////////////////////////////////////////////////////////////
 	// CONSTRUCTORS
@@ -116,6 +132,9 @@ namespace hpl {
 
 		mbActive = true;
 		mbMapCacheEnabled = true;
+		mpEffectCallback = NULL;
+		mpEffectSourceBody = NULL;
+		mbEffectLocalPresentation = false;
 
 		mAmbientColor=cColor(0,0);
 
@@ -741,6 +760,8 @@ namespace hpl {
 		}
 
 		mlstParticleSystems.push_back(pPS);
+		if(mpEffectCallback)
+			mpEffectCallback->OnParticleCreated(this, pPS, asType, avSize, mpEffectSourceBody);
 
 		//Log("Created particle system '%s'\n",asType.c_str());
 
@@ -985,6 +1006,8 @@ namespace hpl {
 		}*/
 
 		mlstSoundEntities.push_back(pSound);
+		if(mpEffectCallback)
+			mpEffectCallback->OnSoundCreated(this, pSound, mpEffectSourceBody);
 
 		return pSound;
 	}

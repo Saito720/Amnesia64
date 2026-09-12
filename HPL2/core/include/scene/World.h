@@ -30,6 +30,7 @@ class TiXmlElement;
 
 namespace hpl {
 
+	class cWorld;
 	class cGraphics;
 	class cResources;
 	class cSound;
@@ -74,7 +75,17 @@ namespace hpl {
 	class cXmlElement;
 	class cEntFile;
 	class cDummyRenderable;
-	
+
+	// Observes registered effects before callers apply their final presentation settings.
+	// Callbacks must not destroy the supplied entity or retain unvalidated entity pointers.
+	class iWorldEffectCallback
+	{
+	public:
+		virtual ~iWorldEffectCallback() {}
+		virtual void OnSoundCreated(cWorld* apWorld, cSoundEntity* apSound, iPhysicsBody* apSourceBody) = 0;
+		virtual void OnParticleCreated(cWorld* apWorld, cParticleSystem* apParticles,
+			const tString& asAsset, const cVector3f& avSize, iPhysicsBody* apSourceBody) = 0;
+	};
 
 	//-------------------------------------------------------------------
 	
@@ -146,6 +157,8 @@ namespace hpl {
 
 	class cWorld
 	{
+		friend class cWorldEffectSourceScope;
+		friend class cWorldEffectLocalScope;
 	public:
 		cWorld(tString asName,cGraphics *apGraphics,cResources *apResources,cSound* apSound,
 					cPhysics *apPhysics, cScene *apScene,cSystem *apSystem, cAI *apAI,
@@ -160,9 +173,20 @@ namespace hpl {
 
 		void SetFilePath(const tWString& asFile){ msFilePath = asFile;}
 		const tWString& GetFilePath(){ return msFilePath;}
+		// Provenance of a complete world built from this parsed XML, without
+		// unverified compiled geometry or fast/partial loading shortcuts.
+		void SetVerifiedMapSource(const tString& asCanonicalXml);
+		bool HasVerifiedMapSource() const { return !msMapSourceFingerprint.empty(); }
+		bool MatchesVerifiedMapSource(const tString& asCanonicalXml) const;
 		// Disk caches derived from the map (including AI nodes) are optional.
 		void SetMapCacheEnabled(bool abX){ mbMapCacheEnabled = abX;}
 		bool GetMapCacheEnabled() const { return mbMapCacheEnabled;}
+
+		// The callback is owned by the caller and must be detached before it is destroyed.
+		void SetEffectCallback(iWorldEffectCallback* apCallback) { mpEffectCallback = apCallback; }
+		iWorldEffectCallback* GetEffectCallback() const { return mpEffectCallback; }
+		iPhysicsBody* GetEffectSourceBody() const { return mpEffectSourceBody; }
+		bool GetEffectLocalPresentation() const { return mbEffectLocalPresentation; }
 
 		void SetActive(bool abX) {mbActive = abX;}
 		inline bool IsActive()  const { return mbActive;}
@@ -369,8 +393,12 @@ namespace hpl {
 
 		tString msName;
 		tWString msFilePath;
+		tString msMapSourceFingerprint;
 		bool mbActive;
 		bool mbMapCacheEnabled;
+		iWorldEffectCallback* mpEffectCallback;
+		iPhysicsBody* mpEffectSourceBody;
+		bool mbEffectLocalPresentation;
 
 		cGraphics *mpGraphics;
 		cSound* mpSound;
@@ -431,6 +459,45 @@ namespace hpl {
 
 		tString msMapName;
 		cColor mAmbientColor;
+	};
+
+	// Attribution scopes nest without changing the effect's normal creation API.
+	class cWorldEffectSourceScope
+	{
+	public:
+		cWorldEffectSourceScope(cWorld* apWorld, iPhysicsBody* apBody)
+			: mpWorld(apWorld), mpPreviousBody(apWorld ? apWorld->mpEffectSourceBody : NULL)
+		{
+			if(mpWorld) mpWorld->mpEffectSourceBody = apBody;
+		}
+		~cWorldEffectSourceScope()
+		{
+			if(mpWorld) mpWorld->mpEffectSourceBody = mpPreviousBody;
+		}
+	private:
+		cWorldEffectSourceScope(const cWorldEffectSourceScope&) = delete;
+		cWorldEffectSourceScope& operator=(const cWorldEffectSourceScope&) = delete;
+		cWorld* mpWorld;
+		iPhysicsBody* mpPreviousBody;
+	};
+
+	class cWorldEffectLocalScope
+	{
+	public:
+		explicit cWorldEffectLocalScope(cWorld* apWorld)
+			: mpWorld(apWorld), mbPreviousLocal(apWorld ? apWorld->mbEffectLocalPresentation : false)
+		{
+			if(mpWorld) mpWorld->mbEffectLocalPresentation = true;
+		}
+		~cWorldEffectLocalScope()
+		{
+			if(mpWorld) mpWorld->mbEffectLocalPresentation = mbPreviousLocal;
+		}
+	private:
+		cWorldEffectLocalScope(const cWorldEffectLocalScope&) = delete;
+		cWorldEffectLocalScope& operator=(const cWorldEffectLocalScope&) = delete;
+		cWorld* mpWorld;
+		bool mbPreviousLocal;
 	};
 
 };

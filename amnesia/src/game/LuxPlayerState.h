@@ -82,6 +82,7 @@ public:
 	iLuxPlayerState(cLuxPlayer *apPlayer, eLuxPlayerState aType);
 	virtual ~iLuxPlayerState();
 
+	virtual bool CanEnterState() const {return true;}
 	virtual void OnEnterState(eLuxPlayerState aPrevState)=0;
 	virtual void OnLeaveState(eLuxPlayerState aNewState)=0;
 
@@ -111,6 +112,7 @@ public:
 	virtual void OnSaveBody(iPhysicsBody *apBody, float &afMass, bool &abCollideCharacter)=0;
 	virtual bool AllowBuoyancy(iPhysicsBody *apBody){ return true;}
 	virtual void OnDestroyEntity(iLuxEntity *apEntity){}
+	virtual void OnPhysicsJointDestroyed(iPhysicsJoint *apJoint){}
 	virtual void OnAttachBodyToStickyArea(iPhysicsBody *apBody){}
 
 	virtual float DrawDebug(cGuiSet *apSet,iFontData *apFont,float afStartY)=0;

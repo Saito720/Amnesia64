@@ -128,6 +128,7 @@ void cLuxPropLoader_Wheel::LoadInstanceVariables(iLuxProp *apProp, cResourceVars
 
 cLuxProp_Wheel::cLuxProp_Wheel(const tString &asName, int alID, cLuxMap *apMap) : iLuxProp(asName,alID,apMap, eLuxPropType_Wheel)
 {
+	mpHingeJoint=NULL;
 	mlCurrentState  = 0; //-1 = min, 1=max, 0= middle
 	mlStuckState = 0;//-1 = min, 1=max, 0= not stuck
 	mfAngle =0;
@@ -169,6 +170,7 @@ cLuxProp_Wheel::~cLuxProp_Wheel()
 
 bool cLuxProp_Wheel::CanInteract(iPhysicsBody *apBody)
 {
+	if(!mpHingeJoint) return false;
 	if(apBody->GetMass()==0 && mbCanInteractWithStaticBody==false) return false;
 
 	return true;
@@ -178,6 +180,7 @@ bool cLuxProp_Wheel::CanInteract(iPhysicsBody *apBody)
 
 bool cLuxProp_Wheel::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 {
+	if(!mpHingeJoint) return false;
 	if(apBody->GetMass()==0 && mbCanInteractWithStaticBody)
 	{
 		apBody = mpWheelBody;
@@ -238,11 +241,19 @@ void cLuxProp_Wheel::OnSetupAfterLoad(cWorld *apWorld)
 
 void cLuxProp_Wheel::UpdatePropSpecific(float afTimeStep)
 {
+	if(!mpHingeJoint) return;
 	if(mfStuckSoundTimer >0) mfStuckSoundTimer-=afTimeStep; 
 
 	UpdateAngle(afTimeStep);
 	UpdateCheckLimit(afTimeStep);
 	UpdateAutoRotation(afTimeStep);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxProp_Wheel::OnPropJointDestroyed(iPhysicsJoint *apJoint)
+{
+	if(mpHingeJoint==apJoint) mpHingeJoint=NULL;
 }
 
 //-----------------------------------------------------------------------
@@ -276,6 +287,7 @@ float cLuxProp_Wheel::OnInteractDebugDraw(cGuiSet *apSet,iFontData *apFont, floa
 
 void cLuxProp_Wheel::SetStuckState(int alState, bool abEffects)
 {
+	if(!mpHingeJoint) return;
 	if(mlStuckState == alState) return;
 
 	mlStuckState = alState;
@@ -326,6 +338,7 @@ void cLuxProp_Wheel::SetStuckState(int alState, bool abEffects)
 
 void cLuxProp_Wheel::SetAngle(float afX, bool abAutoMoveToAngle)
 {
+	if(!mpHingeJoint) return;
 	if(afX == mfAngle) return;
 	
 	float fWantedAngle = afX;
@@ -525,6 +538,7 @@ void cLuxProp_Wheel::UpdateAutoRotation(float afTimeStep)
 
 void cLuxProp_Wheel::SetMaxJointAngle(float afMaxAngle)
 {
+	if(!mpHingeJoint) return;
 	float fDistToMax = afMaxAngle - mfAngle;
 
 	if(fDistToMax > kPif){//TOo far away, no need to set limit.
@@ -554,6 +568,7 @@ void cLuxProp_Wheel::SetMaxJointAngle(float afMaxAngle)
 
 void cLuxProp_Wheel::SetMinJointAngle(float afMinAngle)
 {
+	if(!mpHingeJoint) return;
 	float fDistToMax = mfAngle - afMinAngle;
 
 	if(fDistToMax > kPif){//TOo far away, no need to set limit.
@@ -583,6 +598,7 @@ void cLuxProp_Wheel::SetMinJointAngle(float afMinAngle)
 
 void cLuxProp_Wheel::ChangeState(int alState, bool abEffects)
 {
+	if(!mpHingeJoint) return;
 	if(mlCurrentState == alState) return;
 	if(mbSkipMiddleState && alState==0) return;
 

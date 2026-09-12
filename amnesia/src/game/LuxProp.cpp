@@ -21,6 +21,7 @@
 
 #include "LuxMap.h"
 #include "LuxPlayer.h"
+#include "LuxPlayerState.h"
 #include "LuxInteractConnections.h"
 #include "LuxMultiplayer.h"
 #include "LuxMultiplayerWorld.h"
@@ -65,6 +66,8 @@ void iLuxPropLoader::AfterLoad(cXmlElement *apRootElem, const cMatrixf &a_mtxTra
 
 	pProp->mvBodies = mvBodies;
 	pProp->mvJoints = mvJoints;
+	for(size_t i=0; i<pProp->mvJoints.size(); ++i)
+		if(pProp->mvJoints[i]) pProp->mvJoints[i]->AddDestroyCallback(pProp);
 
 	pProp->mvBodyExtraData = mvBodyExtraData;
 
@@ -240,6 +243,9 @@ iLuxProp::~iLuxProp()
 {
 	cWorld *pWorld = mpWorld;
 	iPhysicsWorld *pPhysicsWorld = pWorld->GetPhysicsWorld();
+	// Derived joint caches are already gone during the base destructor.
+	for(size_t i=0; i<mvJoints.size(); ++i)
+		if(mvJoints[i]) mvJoints[i]->RemoveDestroyCallback(this);
 
 	////////////////////
 	// Attachment
@@ -431,9 +437,25 @@ void iLuxProp::OnRenderSolid(cRendererCallbackFunctions* apFunctions)
 
 //-----------------------------------------------------------------------
 
+bool iLuxProp::AllowPhysicsJointBreak(iPhysicsJoint *apJoint)
+{
+	return !gpBase->mpMultiplayer || gpBase->mpMultiplayer->AllowPhysicsJointBreak(this,apJoint);
+}
+
+void iLuxProp::OnPhysicsJointDestroyed(iPhysicsJoint *apJoint)
+{
+	// Preserve authored indices for save data and replicated deletion state.
+	for(size_t i=0; i<mvJoints.size(); ++i)
+		if(mvJoints[i]==apJoint) mvJoints[i]=NULL;
+	OnPropJointDestroyed(apJoint);
+	if(gpBase->mpPlayer) gpBase->mpPlayer->GetCurrentStateData()->OnPhysicsJointDestroyed(apJoint);
+}
+
 void iLuxProp::SetEffectsActive(bool abActive, bool abFadeAndPlaySounds)
 {
 	if(abActive == mbEffectsActive) return;
+	// Each peer presents these effects from the replicated prop state.
+	cWorldEffectLocalScope localEffects(mpWorld);
 
 	mbEffectsActive = abActive;
 
@@ -1968,7 +1990,7 @@ void iLuxProp::LoadFromSaveData(iLuxEntity_SaveData* apSaveData)
 		}
 		else
 		{
-			pData->mvJoints[i].ToJoint(mvJoints[i]);
+			if(mvJoints[i]) pData->mvJoints[i].ToJoint(mvJoints[i]);
 		}
 	}
 

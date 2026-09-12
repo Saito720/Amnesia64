@@ -18,6 +18,7 @@
  */
 
 #include "scene/ParticleSystem.h"
+#include <atomic>
 
 #include "impl/tinyXML/tinyxml.h"
 
@@ -36,6 +37,10 @@
 #include "scene/World.h"
 
 namespace hpl {
+
+	namespace {
+		std::atomic<uint64_t> glParticleCreationID(0);
+	}
 
 	//////////////////////////////////////////////////////////////////////////
 	// CREATOR
@@ -178,6 +183,7 @@ namespace hpl {
 										cResources *apResources, cGraphics *apGraphics)
 		: iEntity3D(asName)
 	{
+		mlCreationID = glParticleCreationID.fetch_add(1, std::memory_order_relaxed) + 1;
 		mpResources = apResources;
 		mpGraphics = apGraphics;
 		mpParticleManager = NULL;
@@ -186,6 +192,7 @@ namespace hpl {
 		mbRemoveWhenDead = true;
 
 		mbIsVisible = true;
+		mbPresentationSuppressed = false;
 
 		mbFirstUpdate = true;
 
@@ -224,11 +231,21 @@ namespace hpl {
 		
 		for(size_t i=0; i< mvEmitters.size(); ++i)
 		{
-			mvEmitters[i]->SetVisible(mbIsVisible);
+			mvEmitters[i]->SetVisible(mbIsVisible && !mbPresentationSuppressed);
 		}
 		
 	}
 	
+	//-----------------------------------------------------------------------
+
+	void cParticleSystem::SetPresentationSuppressed(bool abSuppressed)
+	{
+		if(mbPresentationSuppressed == abSuppressed) return;
+		mbPresentationSuppressed = abSuppressed;
+		for(size_t i=0; i<mvEmitters.size(); ++i)
+			mvEmitters[i]->SetVisible(mbIsVisible && !mbPresentationSuppressed);
+	}
+
 	//-----------------------------------------------------------------------
 
 	bool cParticleSystem::IsDead()
@@ -332,6 +349,7 @@ namespace hpl {
 	void cParticleSystem::AddEmitter(iParticleEmitter* apEmitter)
 	{
 		mvEmitters.push_back(apEmitter);
+		apEmitter->SetVisible(mbIsVisible && !mbPresentationSuppressed);
 
 		AddChild(apEmitter);
 	}

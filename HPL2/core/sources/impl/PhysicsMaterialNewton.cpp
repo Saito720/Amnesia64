@@ -22,6 +22,7 @@
 #include "impl/PhysicsWorldNewton.h"
 #include "impl/PhysicsBodyNewton.h"
 #include "physics/SurfaceData.h"
+#include "scene/World.h"
 
 #include "system/LowLevelSystem.h"
 #include <algorithm>
@@ -363,6 +364,9 @@ namespace hpl {
 			pContactBody1->GetUseSurfaceEffects() && pContactBody2->GetUseSurfaceEffects() &&
 			pContactBody1->GetBuoyancyActive()==false && pContactBody2->GetBuoyancyActive()==false)
 		{
+			// Each peer simulates these contacts and already produces their
+			// presentation. Observers must not broadcast a second copy.
+			cWorldEffectLocalScope localEffects(pContactBody1->GetWorld()->GetWorld());
 			pMaterial1->GetSurfaceData()->CreateImpactEffect(contactData.mfMaxContactNormalSpeed,
 																contactData.mvContactPosition,
 																lContactNum,pMaterial2->GetSurfaceData(),

@@ -61,6 +61,14 @@ iLuxPlayerState_InteractRotateBase::~iLuxPlayerState_InteractRotateBase()
 
 //-----------------------------------------------------------------------
 
+bool iLuxPlayerState_InteractRotateBase::CanEnterState() const
+{
+	iPhysicsBody* pBody=cLuxPlayerStateVars::mpInteractBody;
+	return pBody && pBody->GetJointNum()>0 && !pBody->GetJoint(0)->IsBroken();
+}
+
+//-----------------------------------------------------------------------
+
 void iLuxPlayerState_InteractRotateBase::OnEnterState(eLuxPlayerState aPrevState)
 {
 	//Log("---- Interact Start -------\n");
@@ -199,6 +207,15 @@ void iLuxPlayerState_InteractRotateBase::SetupForceAxes()
 		mvForceAxis[1] += mvForceAxis[0]*fFwdRightDot;
 		mvForceAxis[1].Normalize();
 	}
+}
+
+//-----------------------------------------------------------------------
+
+void iLuxPlayerState_InteractRotateBase::OnPhysicsJointDestroyed(iPhysicsJoint *apJoint)
+{
+	if(mpCurrentJoint!=apJoint) return;
+	mpCurrentJoint=NULL;
+	mpPlayer->ChangeState(eLuxPlayerState_Normal);
 }
 
 //-----------------------------------------------------------------------

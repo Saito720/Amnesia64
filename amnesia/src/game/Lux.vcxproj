@@ -165,6 +165,7 @@
     <ClCompile Include="LuxMultiplayerCache.cpp" />
     <ClCompile Include="LuxMultiplayerContent.cpp" />
     <ClCompile Include="LuxMultiplayerEntities.cpp" />
+    <ClCompile Include="LuxMultiplayerEffects.cpp" />
     <ClCompile Include="LuxMultiplayerScript.cpp" />
     <ClCompile Include="LuxMultiplayerUI.cpp" />
     <ClCompile Include="LuxMultiplayerWorld.cpp" />
@@ -288,6 +289,8 @@
     <ClInclude Include="LuxMultiplayerMapHash.h" />
     <ClInclude Include="LuxMultiplayerContent.h" />
     <ClInclude Include="LuxMultiplayerEntities.h" />
+    <ClInclude Include="LuxMultiplayerEffects.h" />
+    <ClInclude Include="LuxMultiplayerEffectsProtocol.h" />
     <ClInclude Include="LuxMultiplayerEntityProtocol.h" />
     <ClInclude Include="LuxMultiplayerScript.h" />
     <ClInclude Include="LuxMultiplayerProtocol.h" />

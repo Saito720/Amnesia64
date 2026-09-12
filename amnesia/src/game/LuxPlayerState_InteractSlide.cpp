@@ -60,6 +60,14 @@ cLuxPlayerState_InteractSlide::~cLuxPlayerState_InteractSlide()
 
 //-----------------------------------------------------------------------
 
+bool cLuxPlayerState_InteractSlide::CanEnterState() const
+{
+	iPhysicsBody* pBody=cLuxPlayerStateVars::mpInteractBody;
+	return pBody && pBody->GetJointNum()>0 && !pBody->GetJoint(0)->IsBroken();
+}
+
+//-----------------------------------------------------------------------
+
 void cLuxPlayerState_InteractSlide::OnEnterState(eLuxPlayerState aPrevState)
 {
 	/////////////////////////////////
@@ -106,6 +114,15 @@ void cLuxPlayerState_InteractSlide::OnLeaveState(eLuxPlayerState aNewState)
 	mpCurrentBody->SetGravity(mbHasGravity);
 
 	ResetInteractVars();
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayerState_InteractSlide::OnPhysicsJointDestroyed(iPhysicsJoint *apJoint)
+{
+	if(mpCurrentJoint!=apJoint) return;
+	mpCurrentJoint=NULL;
+	mpPlayer->ChangeState(eLuxPlayerState_Normal);
 }
 
 //-----------------------------------------------------------------------

@@ -224,7 +224,7 @@ public:
 
 //----------------------------------------------
 
-class iLuxProp : public iLuxEntity
+class iLuxProp : public iLuxEntity, public iPhysicsJointDestroyCallback
 {
 typedef iLuxEntity super_class;
 friend class cLuxSavedGameEntity;
@@ -234,6 +234,8 @@ friend class cLuxMultiplayerEntities;
 public:	
 	iLuxProp(const tString &asName, int alID, cLuxMap *apMap, eLuxPropType aPropType);
 	virtual ~iLuxProp();
+	bool AllowPhysicsJointBreak(iPhysicsJoint *apJoint);
+	void OnPhysicsJointDestroyed(iPhysicsJoint *apJoint);
 
 	//////////////////////
 	//General
@@ -353,6 +355,7 @@ protected:
 	virtual void UpdatePropSpecific(float afTimeStep)=0;
 	virtual void ImplementedOnSetActive(bool abX){}
 	virtual void BeforePropDestruction(){}
+	virtual void OnPropJointDestroyed(iPhysicsJoint *apJoint){}
 
 	virtual void OnStartMove(){}
 

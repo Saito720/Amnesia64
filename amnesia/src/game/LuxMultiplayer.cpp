@@ -6,6 +6,7 @@
 #include "LuxMultiplayerUI.h"
 #include "LuxMultiplayerWorld.h"
 #include "LuxMultiplayerEntities.h"
+#include "LuxMultiplayerEffects.h"
 #include "LuxMultiplayerScript.h"
 #include "LuxSteamLaunch.h"
 #include "LuxMap.h"
@@ -28,6 +29,7 @@
 #include "LuxPostEffects.h"
 #include "LuxCompletionCountHandler.h"
 #include "LuxLoadScreenHandler.h"
+#include "LuxHelpFuncs.h"
 #include <algorithm>
 #include <cstdio>
 
@@ -75,10 +77,11 @@ cLuxMultiplayer::cLuxMultiplayer():iLuxUpdateable("LuxMultiplayer"),mpUI(NULL),m
     mbApplyingScriptEffect(false),mbRemoteScriptTrigger(false),mbHistoryComplete(true),mbRestoreFocusWait(false),mbHasClientMap(false),mbPreserveHostPosition(false),mbSessionWorld(false),mfJoinAge(0) {
     mpWorld=hplNew(cLuxMultiplayerWorld,(this));
     mpEntities=hplNew(cLuxMultiplayerEntities,(this));
+    mpEffects=hplNew(cLuxMultiplayerEffects,(this));
     mpUI=hplNew(cLuxMultiplayerUI,(this));
 }
 cLuxMultiplayer::~cLuxMultiplayer() {
-    mTransport.Stop(); hplDelete(mpUI); hplDelete(mpWorld); hplDelete(mpEntities);
+    mpEffects->Reset();mTransport.Stop(); hplDelete(mpUI); hplDelete(mpWorld); hplDelete(mpEntities);hplDelete(mpEffects);
 }
 void cLuxMultiplayer::EnsureProfile() {
     if(gpBase->mpUserConfig) return;
@@ -126,6 +129,81 @@ bool cLuxMultiplayer::Host(const cLuxMultiplayerSettings& settings) {
     if(!ok) {Stop("Unable to load the hosted map.");return false;}
     mbReady=true;
     msStatus=settings.useSteam ? "Creating Steam lobby..." : "Hosting on UDP port "+cString::ToString(settings.port)+". Waiting for players.";
+    return true;
+}
+bool cLuxMultiplayer::GetCurrentMapForHosting(tString& map,tString& reason) const {
+    map.clear();reason.clear();
+    if(IsActive()) {reason="Disconnect the current session before hosting another.";return false;}
+    cLuxMap* current=gpBase->mpMapHandler->GetCurrentMap();
+    if(!current || !current->GetWorld() || !gpBase->mpPlayer->GetCharacterBody()) {
+        reason="Load a game or map first to host it without restarting.";return false;
+    }
+	// A menu background is a separate scene, not a playable saved game. A real
+	// paused game retains its gameplay viewport and player physics world.
+	if(!gpBase->mpMapHandler->GetViewport() ||
+	   gpBase->mpMapHandler->GetViewport()->GetWorld()!=current->GetWorld() ||
+	   gpBase->mpPlayer->GetCharacterBody()->GetCurrentBody()->GetWorld()!=current->GetPhysicsWorld()) {
+	    reason="Load a playable game or map first; menu backgrounds cannot be hosted.";return false;
+	}
+    const tWString& path=current->GetWorld()->GetFilePath();
+    if(cString::ToLowerCaseW(cString::GetFileExtW(path))!=_W("map")) {
+        reason="The current world has no XML .map file to share.";return false;
+    }
+    if(!cPlatform::FileExists(path)) {
+        reason="The current map's XML file is no longer available on disk.";return false;
+    }
+    const unsigned long size=cPlatform::GetFileSize(path);
+    if(!size || size>16*1024*1024) {
+        reason="The current XML map must be between 1 byte and 16 MiB.";return false;
+    }
+    map=cString::To8Char(path);
+    if(!current->GetWorld()->HasVerifiedMapSource()) {
+        reason="This world was loaded with cached or partial geometry. Select its XML map with Browse to start a verified multiplayer session.";
+        return false;
+    }
+    return true;
+}
+bool cLuxMultiplayer::HostCurrentMap(const cLuxMultiplayerSettings& settings) {
+    tString path;
+    if(!GetCurrentMapForHosting(path,msStatus)) return false;
+    if((!settings.useSteam && settings.port==0) || settings.maxPlayers<2 || settings.maxPlayers>16) {
+        msStatus="Use 2 to 16 players and, for direct IP, a port from 1 to 65535.";return false;
+    }
+    std::vector<uint8_t> preflight;
+    if(!LuxReadMultiplayerMap(cString::To16Char(path),preflight) || !LuxValidateMultiplayerMap(preflight,msStatus)) {
+        if(preflight.empty()) msStatus="Cannot read the current XML .map file (maximum 16 MiB): "+path;
+        return false;
+    }
+    if(!LuxValidateMultiplayerCurrentMapSource(gpBase->mpMapHandler->GetCurrentMap()->GetWorld(),preflight,msStatus)) return false;
+    mpEntities->Reset();
+    if(!mpEntities->SeedCurrentMapItems(preflight,msStatus)) return false;
+    if(settings.useSteam && !hpl::cNetworkTransport::InitializeSteam(msStatus)) return false;
+    // Everything that can reject this choice runs before changing the live game.
+    const bool listening=settings.useSteam ?
+        mTransport.HostSteam(settings.maxPlayers-1,settings.publicLobby,cString::GetFileName(path),msStatus) :
+        mTransport.Host(settings.port,settings.maxPlayers-1,msStatus);
+    if(!listening) return false;
+    mSettings=settings;mSettings.map=path;mSettings.startPos.clear();
+    mlLocalPeer=0;mlMapEpoch=0;mbReturnToMenu=false;
+    cLuxMap* current=gpBase->mpMapHandler->GetCurrentMap();
+    if(!CaptureMap(current,"",&preflight)) {mTransport.Stop();msStatus="Could not read the current map for transfer.";return false;}
+    // The overlay normally releases a held object, but direct callers can
+    // attach while an offline PID is still running without a network lease.
+    if(cLuxMultiplayerWorld::IsInteractionState(gpBase->mpPlayer->GetCurrentState()))
+        gpBase->mpPlayer->ChangeState(eLuxPlayerState_Normal);
+    mpWorld->OnMapLoaded(current);
+    mpEffects->OnMapLoaded(current);
+    mbSessionWorld=true;mbReady=true;
+    mbRestoreFocusWait=gpBase->mpEngine->GetWaitIfAppOutOfFocus();
+    gpBase->mpEngine->SetWaitIfAppOutOfFocus(false);
+    gpBase->mpDebugHandler->SetFastForward(false);
+    gpBase->mpDebugHandler->SetDebugWindowActive(false);
+    // A paused offline menu must return to a running world without StartGame,
+    // resets, player relocation, or changes to the active custom story.
+    gpBase->mpEngine->GetUpdater()->SetContainer("Default");
+    gpBase->mpInputHandler->ChangeState(eLuxInputState_Game);
+    msStatus=settings.useSteam ? "Creating Steam lobby for the current map..." :
+        "Hosting the current map on UDP port "+cString::ToString(settings.port)+". Waiting for players.";
     return true;
 }
 bool cLuxMultiplayer::Join(const tString& address) {
@@ -208,7 +286,7 @@ void cLuxMultiplayer::AcceptSteamInvite() {
 void cLuxMultiplayer::Stop(const tString& reason) {
     bool client=IsClient();
     if(IsActive()) gpBase->mpEngine->SetWaitIfAppOutOfFocus(mbRestoreFocusWait);
-    mpWorld->Shutdown();mpEntities->Reset();mTransport.Stop();mPeers.clear();
+    mpEffects->Reset();mpWorld->Shutdown();mpEntities->Reset();mTransport.Stop();mPeers.clear();
     mvMapBytes.clear();mvScriptHistory.clear();mlScriptHistoryBytes=0;
     msPendingHostMap.clear();
     mbMapPreparing=false;mbResumeReady=false;mlMapTransition=0;
@@ -238,7 +316,7 @@ void cLuxMultiplayer::RemoveReceivedMapFiles() {
     msReceivedMapPath.clear();
 }
 void cLuxMultiplayer::Reset() {
-    mpWorld->Reset();mpEntities->Reset();
+    mpEffects->Reset();mpWorld->Reset();mpEntities->Reset();
     if(!mbLoading && IsActive()) Stop("Session ended.");
     else if(!mbLoading) mbSessionWorld=false;
 }
@@ -246,7 +324,7 @@ bool cLuxMultiplayer::ShouldSuppressOfflineSaves() const {
     return IsActive() || (mbSessionWorld && gpBase->mpMapHandler->GetCurrentMap()!=NULL);
 }
 void cLuxMultiplayer::OnQuit() {Stop("Session ended.");}
-void cLuxMultiplayer::OnMapLeave(cLuxMap*) {mpWorld->Reset();mpEntities->Reset();}
+void cLuxMultiplayer::OnMapLeave(cLuxMap*) {mpEffects->Reset();mpWorld->Reset();mpEntities->Reset();}
 void cLuxMultiplayer::ShowWindow(bool campaign) {mpUI->Show(campaign);}
 void cLuxMultiplayer::ToggleWindow() {mpUI->Toggle();}
 bool cLuxMultiplayer::IsWindowVisible() const {return mpUI->IsVisible();}
@@ -257,8 +335,13 @@ void cLuxMultiplayer::Broadcast(const std::vector<uint8_t>& data,bool reliable) 
     for(auto& peer:mPeers) if(peer.second.ready && !Send(peer.first,data,reliable) && reliable)
         peer.second.reliableSendFailed=true;
 }
-bool cLuxMultiplayer::CaptureMap(cLuxMap* map,const tString& start) {
-    if(!LuxReadMultiplayerMap(map->GetWorld()->GetFilePath(),mvMapBytes)) return false;
+bool cLuxMultiplayer::CaptureMap(cLuxMap* map,const tString& start,const std::vector<uint8_t>* verifiedSource) {
+    // Current-map attachment transfers the exact bytes checked against the
+    // loaded world, even if an editor saves the disk file during setup.
+    if(verifiedSource) mvMapBytes=*verifiedSource;
+    else if(!LuxReadMultiplayerMap(map->GetWorld()->GetFilePath(),mvMapBytes)) return false;
+    mbMapResetsGame=mbLoading;
+    mbMapHardMode=gpBase->mbHardMode;
     ++mlMapEpoch;if(!mlMapEpoch) ++mlMapEpoch;
     msMapName=cString::GetFileName(map->GetFileName());msStartPos=start;
     mTransport.SetSteamMapName(msMapName);
@@ -275,9 +358,10 @@ void cLuxMultiplayer::OnMapLoaded(cLuxMap* map,const tString& start) {
     if(IsHost()) {
         if(!CaptureMap(map,start)) Stop("Could not read the new map for transfer; session stopped.");
     }
+    if(IsActive()) mpEffects->OnMapLoaded(map);
 }
 void cLuxMultiplayer::RejectPeer(uint32_t peer,const tString& reason) {
-    if(IsHost()) {mTransport.Disconnect(peer,reason);mpWorld->OnPeerDisconnected(peer);mpEntities->OnPeerDisconnected(peer);mPeers.erase(peer);}
+    if(IsHost()) {mTransport.Disconnect(peer,reason);mpWorld->OnPeerDisconnected(peer);mpEntities->OnPeerDisconnected(peer);mpEffects->OnPeerDisconnected(peer);mPeers.erase(peer);}
     else {Stop(reason);ShowWindow();}
 }
 void cLuxMultiplayer::HandleEvent(const hpl::cNetworkEvent& event) {
@@ -290,7 +374,7 @@ void cLuxMultiplayer::HandleEvent(const hpl::cNetworkEvent& event) {
         if(IsHost()) {mPeers[event.peer]=Peer();}
         else {Writer w(Hello);w.U32(ProtocolVersion);Send(0,w.data,true);SetLoadPhase(eLuxMultiplayerLoadPhase_Preparing,"Connected. Waiting for the host's map...");}
     } else if(event.type==hpl::eNetworkEventType::Disconnected) {
-        if(IsHost()) {mPeers.erase(event.peer);mpWorld->OnPeerDisconnected(event.peer);mpEntities->OnPeerDisconnected(event.peer);}
+        if(IsHost()) {mPeers.erase(event.peer);mpWorld->OnPeerDisconnected(event.peer);mpEntities->OnPeerDisconnected(event.peer);mpEffects->OnPeerDisconnected(event.peer);}
         else {Stop("Disconnected: "+event.reason);ShowWindow();}
     } else if(event.type==hpl::eNetworkEventType::Message) HandlePacket(event.peer,event.data);
 }
@@ -300,7 +384,7 @@ void cLuxMultiplayer::SendMap(uint32_t peer,Peer& state) {
         Writer w(MapBegin);w.U32(ProtocolVersion);w.U32(peer);w.U32(mlMapEpoch);
         w.U32(static_cast<uint32_t>(mvMapBytes.size()));w.U32(mlMapChecksum);
         w.String(msMapName);w.String(msStartPos);w.U8(mSettings.allowClientMapChanges);w.U8(mSettings.allPlayersTriggerScripts);
-        w.U8(mSettings.playerCollision);
+        w.U8(mSettings.playerCollision);w.U8(mbMapResetsGame);w.U8(mbMapHardMode);
         w.String(msMapHash);
         if(!Send(peer,w.data,true)) return;
         state.beginSent=true;
@@ -354,10 +438,14 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
             for(const auto& effect:mvScriptHistory) if(!Send(peer,effect,true)) {RejectPeer(peer,"Script state exceeded the connection queue.");return;}
             if(!mpEntities->SendInitialState(peer)) {RejectPeer(peer,"World has too many entities for initial synchronization.");return;}
             if(!mpWorld->SendInitialState(peer)) {RejectPeer(peer,"World is too large for initial synchronization (32 MiB limit).");return;}
+            if(!mpEffects->SendInitialState(peer)) {RejectPeer(peer,"Could not initialize active world effects.");return;}
             msStatus="Hosting "+msMapName+". Connected clients: "+cString::ToString(static_cast<int>(mPeers.size()));return;
         }
         if(!state.ready) return;
-        if(type==NativeRequest || type==NativeResult) {
+        if(type==WorldEffect) {
+            tString error;if(!mpEffects->HandleMessage(peer,data,error)) RejectPeer(peer,error.empty()?"Invalid player effect update.":error);return;
+        }
+        if(type==NativeRequest || type==NativeResult || type==JointBreakRequest) {
             if(!mpEntities->HandleMessage(peer,data)) RejectPeer(peer,"Malformed native interaction request.");return;
         }
         if(type==MapChangeRequest) {
@@ -433,19 +521,40 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
     }
     if(type==MapBegin) {
         uint32_t version=r.U32(),id=r.U32(),epoch=r.U32(),size=r.U32(),crc=r.U32();
-        tString name=r.String(256),start=r.String(128);uint8_t changes=r.U8(),triggers=r.U8(),collision=r.U8();
+        tString name=r.String(256),start=r.String(128);uint8_t changes=r.U8(),triggers=r.U8(),collision=r.U8(),resetGame=r.U8(),hardMode=r.U8();
         tString hash=r.String(64);
         if(!r.Done() || version!=ProtocolVersion || id==0 || epoch==0 || size==0 || size>MaxMapBytes ||
-            !SafeRelativePath(name) || cString::GetFileName(name)!=name || cString::ToLowerCase(cString::GetFileExt(name))!="map" || changes>1 || triggers>1 || collision>1 || !ValidMapHash(hash)) {
+            !SafeRelativePath(name) || cString::GetFileName(name)!=name || cString::ToLowerCase(cString::GetFileExt(name))!="map" || changes>1 || triggers>1 || collision>1 || resetGame>1 || hardMode>1 || !ValidMapHash(hash)) {
             RejectPeer(0,"Host sent an invalid map manifest.");return;
+        }
+        if(mbHasClientMap && !resetGame) {
+            // The host's OnLeave script runs after MapPreparing. Its final
+            // player/effect cleanup must reach the old client world before
+            // ordinary map leave callbacks preserve the remaining state.
+            // Debug restarts instead discard that state through StartGame.
+            std::vector<std::vector<uint8_t> > pending;
+            pending.swap(mvPreparingPackets);mlPreparingPacketBytes=0;
+            for(const auto& packet:pending) {
+                if(packet.empty() || packet.front()!=ScriptEffect) continue;
+                Reader effect(packet);
+                if(effect.U32()!=mlMapEpoch) continue;
+                tString error;
+                mbApplyingScriptEffect=true;
+                const bool ok=LuxApplyMultiplayerScriptEffect(effect,error);
+                mbApplyingScriptEffect=false;
+                if(!ok) {RejectPeer(0,error.empty()?"Invalid script effect before map change.":error);return;}
+                if(!IsClient()) return;
+            }
         }
         EnterClientLoading();mbReady=false;
         SetLoadPhase(eLuxMultiplayerLoadPhase_Checking,"Checking installed and downloaded copies of "+name+"...",true);
         mbMapPreparing=false;mvPreparingPackets.clear();mlPreparingPacketBytes=0;
-        mpWorld->Reset();mpEntities->Reset();mlLocalPeer=id;mlMapEpoch=epoch;mlExpectedMapBytes=size;mlMapChecksum=crc;
+        mpEffects->Reset();mpWorld->Reset();mpEntities->Reset();mlLocalPeer=id;mlMapEpoch=epoch;mlExpectedMapBytes=size;mlMapChecksum=crc;
         msMapName=name;msStartPos=start;mSettings.allowClientMapChanges=changes!=0;mSettings.allPlayersTriggerScripts=triggers!=0;
         msMapHash=hash;msExistingMapPath.clear();mbReusingMap=false;mlDownloadedMapBytes=0;
         mSettings.playerCollision=collision!=0;
+        mbMapResetsGame=resetGame!=0;
+        mbMapHardMode=hardMode!=0;
         mvMapBytes.clear();mvMapBytes.reserve(size);mbReceiving=true;mbReady=false;mfJoinAge=0;
         mbReusingMap=FindMatchingMap();
         SetLoadPhase(mbReusingMap?eLuxMultiplayerLoadPhase_Loading:eLuxMultiplayerLoadPhase_Downloading,
@@ -482,6 +591,9 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
         if(!Send(0,w.data,true)) {RejectPeer(0,"Could not acknowledge the loaded host map.");return;}
         mbReady=true;
         SetLoadPhase(eLuxMultiplayerLoadPhase_None,"Joined "+msMapName+". Session remains live while menus are open.");return;
+    }
+    if(type==WorldEffect && mbReady) {
+        tString error;if(!mpEffects->HandleMessage(0,data,error)) RejectPeer(0,error.empty()?"Invalid world effect update.":error);return;
     }
     if((type==NativeGrant || type==NativeDiaryResult || type==EntityState || type==ItemRemoved) && mbReady) {
         if(!mpEntities->HandleMessage(0,data)) RejectPeer(0,"Invalid entity update from host.");return;
@@ -569,12 +681,18 @@ bool cLuxMultiplayer::LoadReceivedMap() {
     Log("Multiplayer map source: %s; SHA-256 %s; XML '%s'\n",
         !ownCopy?"installed":(mbReusingMap?"cache":"download"),msMapHash.c_str(),msLoadedMapPath.c_str());
     mbLoading=true;
-    gpBase->SetCustomStory(NULL);gpBase->mbHardMode=false;
+    gpBase->SetCustomStory(NULL);gpBase->mbHardMode=mbMapHardMode;
     gpBase->mpEngine->GetUpdater()->SetContainer("Default");
     gpBase->mpInputHandler->ChangeState(eLuxInputState_Game);
     bool ok=true;
-    if(!mbHasClientMap) ok=gpBase->StartGame(msMapName,cString::To8Char(dir),msStartPos);
+    if(!mbHasClientMap || mbMapResetsGame) ok=gpBase->StartGame(msMapName,cString::To8Char(dir),msStartPos);
     else {
+        // Match CheckMapChange, without resetting state that native level-door
+        // transitions intentionally retain (including flashbacks and voices).
+        gpBase->mpEffectHandler->GetFade()->FadeIn(2.0f);
+        gpBase->mpPlayer->SetActive(true);
+        gpBase->mpHelpFuncs->CleanupData();
+        gpBase->mpEngine->GetSound()->GetSoundHandler()->FadeOutAll(eSoundEntryType_World,0.5f,true);
         cLuxMapHandler* maps=gpBase->mpMapHandler;
         cLuxMap* previous=maps->GetCurrentMap();
         maps->SetMapFolder(cString::To8Char(dir));
@@ -622,22 +740,29 @@ void cLuxMultiplayer::Update(float dt) {
         mfJoinAge+=dt;
         if(mfJoinAge>120) {RejectPeer(0,"Timed out waiting for the host map.");return;}
     }
-    if(mbReady) UpdateBackgroundWorld(dt);
+    if(mbReady) UpdateBackgroundWorld(eUpdateableMessage_Update,dt);
+}
+void cLuxMultiplayer::PreUpdate(float dt) {
+    if(IsActive() && mbReady) UpdateBackgroundWorld(eUpdateableMessage_PreUpdate,dt);
 }
 void cLuxMultiplayer::PostUpdate(float dt) {
+    if(IsActive() && mbReady) UpdateBackgroundWorld(eUpdateableMessage_PostUpdate,dt);
     if(IsActive() && mbReady) mpEntities->Update(dt);
     if(IsActive() && mbReady) mpWorld->Update(dt);
+    if(IsActive() && mbReady) mpEffects->PostUpdate(dt);
 }
-void cLuxMultiplayer::UpdateBackgroundWorld(float dt) {
+void cLuxMultiplayer::UpdateBackgroundWorld(eUpdateableMessage phase,float dt) {
     if(gpBase->mpEngine->GetUpdater()->GetCurrentContainerName()=="Default" || !gpBase->mpMapHandler->GetCurrentMap()) return;
-    // Scene/physics are already global engine modules; only gameplay modules need the extra tick.
+    // Scene/physics already receive every engine phase globally. Forward the
+    // same phases to gameplay while menus own input; hands/camera attachment
+    // and other PostUpdate work must keep following the live simulation too.
     iLuxUpdateable* modules[]={gpBase->mpMapHandler,gpBase->mpMapHelper,gpBase->mpPlayer,
         gpBase->mpInsanityHandler,gpBase->mpEffectRenderer,gpBase->mpMusicHandler,gpBase->mpMessageHandler,
         gpBase->mpEffectHandler,gpBase->mpCompletionCountHandler,gpBase->mpGlobalDataHandler,
         gpBase->mpHintHandler,gpBase->mpPostEffectHandler};
     tString container=gpBase->mpEngine->GetUpdater()->GetCurrentContainerName();
     for(auto* module:modules) {
-        module->Update(dt);
+        module->RunMessage(phase,dt);
         if(!IsActive() || !gpBase->mpMapHandler->GetCurrentMap() || gpBase->mpEngine->GetUpdater()->GetCurrentContainerName()!=container) break;
     }
 }
@@ -678,6 +803,9 @@ bool cLuxMultiplayer::AllowObjectBreak(const tString& name) {
     if(IsClient()) return mbApplyingScriptEffect;
     if(IsHost()) {Writer w(ObjectBreak);w.U32(mlMapEpoch);w.String(name);BroadcastScriptEffect(w.data);}
     return true;
+}
+bool cLuxMultiplayer::AllowPhysicsJointBreak(iLuxProp* prop,iPhysicsJoint* joint) {
+    return mpEntities->AllowPhysicsJointBreak(prop,joint);
 }
 bool cLuxMultiplayer::BeginNativeInteraction(iLuxEntity* entity) {return mpEntities->BeginInteraction(entity);}
 void cLuxMultiplayer::CompleteNativeInteraction(iLuxEntity* entity,bool succeeded) {mpEntities->CompleteInteraction(entity,succeeded);}
@@ -724,20 +852,22 @@ void cLuxMultiplayer::ProcessHostMapChange() {
         CancelHostMapChange(msStatus);
         ShowWindow();return;
     }
-    cLuxMapHandler* maps=gpBase->mpMapHandler;
-    cLuxMap* previous=maps->GetCurrentMap();
     cVector3f position=gpBase->mpPlayer->GetCharacterBody()->GetPosition();
     cCamera* camera=gpBase->mpPlayer->GetCamera();
-    cVector3f angles(camera->GetPitch(),camera->GetYaw(),camera->GetRoll());
+    cVector3f angles(camera->GetPitch(),camera->GetYaw(),0);
     gpBase->mpEngine->GetResources()->AddResourceDir(cString::GetFilePathW(path),false);
-    tString previousFolder=maps->GetMapFolder();
-    maps->SetMapFolder(cString::To8Char(cString::GetFilePathW(path)));
-    cLuxMap* next=maps->LoadMap(cString::To8Char(cString::GetFileNameW(path)),true);
-    if(!next) {maps->SetMapFolder(previousFolder);msStatus="Failed to load host map.";CancelHostMapChange(msStatus);ShowWindow();return;}
     gpBase->mpEngine->GetUpdater()->SetContainer("Default");
     gpBase->mpInputHandler->ChangeState(eLuxInputState_Game);
-    maps->SetCurrentMap(next,true,true,start);
-    if(previous) maps->DestroyMap(previous,false);
+    // Native debug loads are new games, unlike level-door transitions. Reuse
+    // that reset sequence while keeping the transport alive through Reset().
+    mbLoading=true;
+    const bool loaded=gpBase->StartGame(cString::To8Char(cString::GetFileNameW(path)),
+        cString::To8Char(cString::GetFilePathW(path)),start);
+    mbLoading=false;
+    if(!loaded) {
+        Stop("Failed to load host map after resetting the game.");
+        mbReturnToMenu=true;ShowWindow();return;
+    }
     if(mbPreserveHostPosition) {
         camera=gpBase->mpPlayer->GetCamera();camera->SetPitch(angles.x);camera->SetYaw(angles.y);camera->SetRoll(angles.z);
         gpBase->mpPlayer->GetCharacterBody()->SetPosition(position);

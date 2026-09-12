@@ -95,6 +95,7 @@ public:
 	// Properties
 	void SetActiveHandObject(const tString& asName);
 	iLuxHandObject* GetHandObject(const tString& asName);
+	iLuxHandObject* FindLoadedHandObject(const tString& asName) const;
 
 	void SetCurrentHandObject(iLuxHandObject *apObject);
 	iLuxHandObject* GetCurrentHandObject(){ return mpCurrentHandObject;}

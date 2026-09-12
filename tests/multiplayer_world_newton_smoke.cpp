@@ -23,6 +23,7 @@ class cLuxMap
 public:
     iPhysicsWorld* physics;
     iPhysicsWorld* GetPhysicsWorld() { return physics; }
+    cWorld* GetWorld() { return NULL; }
 };
 class cLuxMapHandler
 {
@@ -36,6 +37,7 @@ public:
     iCharacterBody* character = NULL;
     eLuxPlayerState state = eLuxPlayerState_Normal;
     iCharacterBody* GetCharacterBody() { return character; }
+    iLight* GetVisibleLanternLight() const { return NULL; }
     eLuxPlayerState GetCurrentState() { return state; }
     void ChangeState(eLuxPlayerState value) { state = value; }
 };
@@ -62,8 +64,15 @@ public:
 };
 class iLuxEntity
 {
+    static uint64_t NextRuntimeId() { static uint64_t next=0;return ++next; }
+    uint64_t runtimeId=NextRuntimeId();
 public:
+    uint64_t GetRuntimeID() const { return runtimeId; }
     eLuxEntityType GetEntityType() { return eLuxEntityType_Prop; }
+    bool GetDestroyMe() { return false; }
+    bool IsActive() { return true; }
+    bool GetInteractionDisabled() { return false; }
+    bool CanInteract(iPhysicsBody*) { return true; }
 };
 class iLuxProp : public iLuxEntity
 {
@@ -98,6 +107,7 @@ public:
     std::vector<Packet> sent;
     cLuxMultiplayer(bool isHost, uint32_t id) : host(isHost), peer(id) {}
     bool IsActive() const { return true; }
+    bool IsReady() const { return true; }
     bool IsHost() const { return host; }
     bool IsClient() const { return !host; }
     bool IsWindowVisible() const { return false; }
@@ -115,6 +125,7 @@ public:
 
 struct Fixture
 {
+    iLuxProp bodyProp;
     cPhysicsWorldNewton physics;
     cLuxMap map;
     cLuxMapHandler maps;
@@ -132,6 +143,7 @@ struct Fixture
         physics.SetGravity(0); physics.SetNumberOfThreads(1); physics.SetSaveContactPoints(false);
         iCollideShape* shape = physics.CreateBoxShape(cVector3f(0.5f), NULL);
         body = physics.CreateBody("test_crate", shape); body->SetMass(2); body->SetGravity(false);
+        bodyProp.bodies.push_back(body);body->SetUserData(&bodyProp);
         body->SetLinearDamping(0.001f); body->SetAngularDamping(0); body->SetAutoDisable(false);
         body->SetPosition(cVector3f(0, 0, 0));
         map.physics = &physics; maps.map = &map;
@@ -159,8 +171,11 @@ static std::vector<uint8_t> PosePacket(uint32_t peer, uint32_t sequence, const c
     Writer writer(Pose, 7); writer.U32(peer); writer.U32(sequence);
     writer.F32(position.x); writer.F32(position.y); writer.F32(position.z);
     writer.F32(0.6f); writer.F32(height); writer.F32(0.6f); writer.F32(0);
+    WriteLantern(writer, Lantern());
     return writer.bytes;
 }
+
+#include "multiplayer_contact_newton_tests.h"
 
 static void CheckDropCollisionGuard()
 {
@@ -286,6 +301,8 @@ int main()
     _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
     CheckDropCollisionGuard();
     CheckDuplicateNamedDrawers();
+    CheckContactOwnership();
+    CheckSmoothCorrections();
     Fixture host(true, 0), client(false, 1);
     client.body->SetPosition(cVector3f(20, 0, 0));
     host.Activate(); host.session.blocked = true;
@@ -364,11 +381,11 @@ int main()
     // door remains locked; the host must mirror that for a client's lease.
     door.closed = true; door.locked = true; door.disableAutoClose = true;
     host.session.sent.clear(); assert(host.replication.HandleMessage(2, request2.bytes));
-    assert(host.session.sent.size() == 1 && host.session.sent[0].bytes[0] == LeaseGrant);
+    assert(host.session.sent.size() == 2 && host.session.sent[0].bytes[0] == Bodies && host.session.sent[1].bytes[0] == LeaseGrant);
     assert(door.closed && !door.disableAutoClose);
     host.replication.OnPeerDisconnected(2);
     host.session.sent.clear(); assert(host.replication.HandleMessage(1, request1.bytes));
-    assert(host.session.sent.size() == 1 && host.session.sent[0].bytes[0] == LeaseGrant);
+    assert(host.session.sent.size() == 2 && host.session.sent[0].bytes[0] == Bodies && host.session.sent[1].bytes[0] == LeaseGrant);
     host.replication.Shutdown();
 
     // Pending interaction waits for the host. Cancelling while the grant is in

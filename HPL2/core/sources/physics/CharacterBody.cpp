@@ -74,6 +74,7 @@ namespace hpl {
 		if(mpCharBody->mpCallback) mpCharBody->mpCallback->OnGravityCollide(mpCharBody,apBody,apCollideData);
 
 		if(apBody->GetMass()==0 || apBody->GetPushedByCharacterGravity()==false) return;
+		if(!mpCharBody->AllowBodyPush(apBody)) return;
 
 		//////////////////////////////////////
 		//Go through all of the contact points and check if any is a movement up.
@@ -163,6 +164,7 @@ namespace hpl {
 		{
 				///////////////////////////////////////// 
 			//Go through all of the contact points and find median
+			if(!mpCharBody->AllowBodyPush(apBody)) return;
 			cVector3f vMedianPoint(0,0,0);
 			float fNumPoints=0;
 
@@ -1960,6 +1962,7 @@ namespace hpl {
 			
 			if(bRet)
 			{
+				if(!pBody->IsCharacter() && !AllowBodyPush(pBody)) continue;
 				float fNumOfPoints = (float)collideData.mlNumOfPoints;
 				
 				float fMaxForce = mfMaxContactForcePerMassUnit * pBody->GetMass() / fNumOfPoints;

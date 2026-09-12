@@ -97,6 +97,7 @@ void cLuxPropLoader_MultiSlider::LoadInstanceVariables(iLuxProp *apProp, cResour
 
 cLuxProp_MultiSlider::cLuxProp_MultiSlider(const tString &asName, int alID, cLuxMap *apMap) : iLuxProp(asName,alID,apMap, eLuxPropType_MultiSlider)
 {
+	mpSliderJoint=NULL;
 	mlCurrentState  = -1;
 	mlStuckState = -1;
 	mbInteractionDisablesStuck = false;
@@ -126,6 +127,7 @@ cLuxProp_MultiSlider::~cLuxProp_MultiSlider()
 
 bool cLuxProp_MultiSlider::CanInteract(iPhysicsBody *apBody)
 {
+	if(!mpSliderJoint) return false;
 	if(apBody->GetMass()==0 && mbCanInteractWithStaticBody==false) return false;
 
 	return true;
@@ -135,6 +137,7 @@ bool cLuxProp_MultiSlider::CanInteract(iPhysicsBody *apBody)
 
 bool cLuxProp_MultiSlider::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 {
+	if(!mpSliderJoint) return false;
 	if(apBody->GetMass()==0 && mbCanInteractWithStaticBody)
 	{
 		for(size_t i=0; i<mvBodies.size(); ++i)
@@ -204,11 +207,19 @@ void cLuxProp_MultiSlider::OnResetProperties()
 
 void cLuxProp_MultiSlider::UpdatePropSpecific(float afTimeStep)
 {
+	if(!mpSliderJoint) return;
 	float fDist = mpSliderJoint->GetDistance();
 
 	UpdateCheckStuckSound(afTimeStep);
 	UpdateCheckNewState(fDist, afTimeStep);
 	UpdateAutoMove(fDist, afTimeStep);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxProp_MultiSlider::OnPropJointDestroyed(iPhysicsJoint *apJoint)
+{
+	if(mpSliderJoint==apJoint) mpSliderJoint=NULL;
 }
 
 //-----------------------------------------------------------------------
@@ -231,6 +242,7 @@ eLuxFocusCrosshair cLuxProp_MultiSlider::GetFocusCrosshair(iPhysicsBody *apBody,
 
 void cLuxProp_MultiSlider::SetStuckState(int alState, bool abEffects)
 {
+	if(!mpSliderJoint) return;
 	if(mlStuckState == alState) return;
 
 	mlStuckState = alState;

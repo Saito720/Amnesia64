@@ -375,6 +375,7 @@ namespace hpl {
 		//Update roll sound
 		cWorld *pWorld = apBody->GetWorld()->GetWorld();
 		if(pWorld==NULL) return;
+		cWorldEffectLocalScope localEffects(pWorld);
 
 		cSoundHandler *pSoundHandler = pWorld->GetSound()->GetSoundHandler();
 		if(pSoundHandler->GetSilent()) return;

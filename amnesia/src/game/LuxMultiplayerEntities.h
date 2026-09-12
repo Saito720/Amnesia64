@@ -9,6 +9,7 @@ class cLuxMultiplayer;
 class iLuxEntity;
 class iLuxProp;
 class cLuxDiary;
+namespace hpl { class iPhysicsJoint; }
 
 // Native interactions have one host-approved winner. Entity snapshots carry
 // gameplay flags and joint constraints independently of the physics poses.
@@ -19,7 +20,9 @@ public:
     void Update(float dt);
     void OnPeerDisconnected(uint32_t peer);
     bool SendInitialState(uint32_t peer);
+    bool SeedCurrentMapItems(const std::vector<uint8_t>& mapBytes, std::string& error);
     bool HandleMessage(uint32_t peer, const std::vector<uint8_t>& data);
+    bool AllowPhysicsJointBreak(iLuxProp* prop,hpl::iPhysicsJoint* joint);
     bool BeginInteraction(iLuxEntity* entity);
     void CompleteInteraction(iLuxEntity* entity, bool succeeded);
     bool DeferCallback(iLuxEntity* entity) const;
@@ -39,6 +42,7 @@ private:
     std::map<std::string, Claim> mClaims;
     std::map<std::string, std::vector<uint8_t> > mLastStates;
     std::map<std::string, uint64_t> mRemovedItems;
+    std::map<std::pair<uint64_t,uint32_t>,uint32_t> mJointBreakRequests;
     std::map<uint32_t, std::deque<std::string> > mInitial;
     std::map<uint32_t, PendingDiary> mPendingDiaries;
     bool* mpDiaryDecision;

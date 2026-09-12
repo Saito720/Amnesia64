@@ -576,6 +576,9 @@ void cLuxPlayerSpawnPS::GenerateAllSpawnPos()
 cParticleSystem* cLuxPlayerSpawnPS::CreatePS(cLuxPlayerSpawnPS_SpawnPos *apSpawnPos)
 {
 	cWorld *pWorld = gpBase->mpMapHandler->GetCurrentMap()->GetWorld();
+	// Scripted weather follows each player's camera and is already invoked on
+	// every peer. Its later respawns must remain local presentation as well.
+	cWorldEffectLocalScope localEffect(pWorld);
 	cParticleSystem *pPS = pWorld->CreateParticleSystem("SpawnPS", msParticleSystem, 1);
 	if(pPS)
 	{

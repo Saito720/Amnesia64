@@ -93,6 +93,35 @@ int main(int argc, char** argv)
     Require(resources->LoadResourceDirsFile("resources.cfg"), "load retail resource directories");
     resources->AddResourceDir(_W("lang/eng/voices"), true);
     tString error;
+    {
+        cWorld* world=engine->GetScene()->CreateWorld("map-source-provenance");
+        const auto original=Bytes("<Level><MapData><MapContents><Entities><Area Name=\"Start\" AreaType=\"PlayerStart\" /></Entities></MapContents></MapData></Level>");
+        Require(!LuxValidateMultiplayerCurrentMapSource(world,original,error,resources),"unverified cached/partial world cannot be hosted as XML");
+        Document document(resources);Require(document.Parse(original),"parse loaded source fixture");
+        tString canonical;document.xml->SaveToString(&canonical);world->SetVerifiedMapSource(canonical);
+        Require(LuxValidateMultiplayerCurrentMapSource(world,original,error,resources),"loaded XML source matches its immutable fingerprint");
+        auto formatted=original;formatted.insert(formatted.begin(),'\n');
+        Require(LuxValidateMultiplayerCurrentMapSource(world,formatted,error,resources),"formatting-only source change retains equivalent XML");
+        tString changed(original.begin(),original.end());changed.replace(changed.find("Start\""),5,"Other");
+        Require(!LuxValidateMultiplayerCurrentMapSource(world,Bytes(changed),error,resources) && error.find("changed since")!=tString::npos,
+            "changed authored entity cannot masquerade as the already loaded source");
+        Require(LuxValidateMultiplayerCurrentMapSource(world,original,error,resources),"failed source check cannot replace the immutable fingerprint");
+        Require(!LuxValidateMultiplayerCurrentMapSource(world,Bytes("<Level>"),error,resources),"invalid XML cannot match loaded source");
+        engine->GetScene()->DestroyWorld(world);
+        std::puts("PASS: loaded XML provenance, changed-source rejection, canonical formatting and unverified-world refusal");
+    }
+    std::vector<tString> originalItems;
+    Require(LuxCollectMultiplayerMapItems(Bytes("<Level><MapData><MapContents>"
+        "<FileIndex_Entities NumOfFiles='2'><File Id='0' Path='tinderbox.ent'/><File Id='1' Path='chest_of_drawers_nice.ent'/></FileIndex_Entities>"
+        "<Entities><Entity ID='1' Name='indexed_item' FileIndex='0'/><Entity ID='2' Name='furniture' FileIndex='1'/>"
+        "<Entity ID='3' Name='direct_item' Filename='tinderbox.ent'/><Area ID='4' Name='not_an_item'/></Entities>"
+        "</MapContents></MapData></Level>"),originalItems,error,resources) && originalItems.size()==2 &&
+        originalItems[0]=="indexed_item" && originalItems[1]=="direct_item",
+        "current-map item baseline uses native entity loader type with indexed and direct filenames");
+    Require(!LuxCollectMultiplayerMapItems(Bytes("<Level><MapData><MapContents><Entities>"
+        "<Entity ID='1' Name='unknown' Filename='absent-current-map-item.ent'/></Entities></MapContents></MapData></Level>"),
+        originalItems,error,resources) && originalItems.empty() && !error.empty(),
+        "unknown definitions cannot be guessed as removed items");
     Require(LuxValidateMultiplayerAsset("fb_sfx_00_daniel.ogg", "audio", error, resources), "PlayGuiSound explicit .ogg remains raw audio");
     Require(!LuxValidateMultiplayerAsset("fb_sfx_00_daniel.ogg", "snt", error, resources), "sound entity category must not silently accept raw audio");
     Require(LuxValidateMultiplayerAsset("react_scare6", "gui_sound", error, resources), "Archives PlayGuiSound extensionless raw sample");
@@ -148,7 +177,7 @@ int main(int argc, char** argv)
         {
             std::vector<uint8_t> bytes;
             Require(LuxReadMultiplayerMap(directory + _W("/") + file, bytes), "read retail map");
-            if(LuxValidateMultiplayerMap(bytes, error, resources)) ++passed;
+            if(LuxValidateMultiplayerMap(bytes, error, resources) && LuxCollectMultiplayerMapItems(bytes,originalItems,error,resources)) ++passed;
             else { ++failed; std::fprintf(stderr, "RETAIL %s: %s\n", cString::To8Char(file).c_str(), error.c_str()); }
         }
     }

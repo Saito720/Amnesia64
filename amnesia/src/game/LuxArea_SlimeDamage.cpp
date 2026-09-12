@@ -120,6 +120,8 @@ void cLuxArea_SlimeDamage::OnUpdate(float afTimeStep)
 	// Check collision
 	if(CollidesWithPlayer())
 	{
+		// Hazard presentation follows the area simulated on this peer.
+		cWorldEffectSourceScope effectSource(mpMap->GetWorld(), mpBody);
 		/////////////////////////
 		//Damage player
 		float fDamage = cMath::RandRectf(mfMinAttackDamage, mfMaxAttackDamage);

@@ -377,6 +377,12 @@ void cLuxPlayerHands::SetActiveHandObject(const tString& asName)
 
 iLuxHandObject* cLuxPlayerHands::GetHandObject(const tString& asName)
 {
+	if(iLuxHandObject* object = FindLoadedHandObject(asName)) return object;
+	return LoadHandObject(asName);
+}
+
+iLuxHandObject* cLuxPlayerHands::FindLoadedHandObject(const tString& asName) const
+{
 	//////////////////////////////////////
 	// Search in already loaded objects
 	for(size_t i=0; i<mvHandObjects.size(); ++i)
@@ -386,8 +392,8 @@ iLuxHandObject* cLuxPlayerHands::GetHandObject(const tString& asName)
 	}
 
 	//////////////////////////////////////
-	// If not found try loading
-	return LoadHandObject(asName);
+	// A presentation query must not load an unequipped hand object.
+	return NULL;
 }
 
 

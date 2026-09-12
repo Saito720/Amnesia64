@@ -125,6 +125,7 @@ void cLuxPropLoader_Lever::LoadInstanceVariables(iLuxProp *apProp, cResourceVars
 
 cLuxProp_Lever::cLuxProp_Lever(const tString &asName, int alID, cLuxMap *apMap) : iLuxProp(asName,alID,apMap, eLuxPropType_Lever)
 {
+	mpHingeJoint=NULL;
 	mlCurrentState  = 0; //-1 = min, 1=max, 0= middle
 	mlStuckState = 0;//-1 = min, 1=max, 0= not stuck
 	mbInteractionDisablesStuck = false;
@@ -154,6 +155,7 @@ cLuxProp_Lever::~cLuxProp_Lever()
 
 bool cLuxProp_Lever::CanInteract(iPhysicsBody *apBody)
 {
+	if(!mpHingeJoint) return false;
 	if(apBody->GetMass()==0 && mbCanInteractWithStaticBody==false) return false;
 
 	return true;
@@ -163,6 +165,7 @@ bool cLuxProp_Lever::CanInteract(iPhysicsBody *apBody)
 
 bool cLuxProp_Lever::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 {
+	if(!mpHingeJoint) return false;
 	if(apBody->GetMass()==0 && mbCanInteractWithStaticBody)
 	{
 		for(size_t i=0; i<mvBodies.size(); ++i)
@@ -235,11 +238,19 @@ void cLuxProp_Lever::OnResetProperties()
 
 void cLuxProp_Lever::UpdatePropSpecific(float afTimeStep)
 {
+	if(!mpHingeJoint) return;
 	float fAngle = mpHingeJoint->GetAngle();
 
 	UpdateCheckStuckSound(afTimeStep);
 	UpdateCheckLimit(fAngle, afTimeStep);
 	UpdateAutoMove(fAngle, afTimeStep);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxProp_Lever::OnPropJointDestroyed(iPhysicsJoint *apJoint)
+{
+	if(mpHingeJoint==apJoint) mpHingeJoint=NULL;
 }
 
 //-----------------------------------------------------------------------
@@ -262,6 +273,7 @@ eLuxFocusCrosshair cLuxProp_Lever::GetFocusCrosshair(iPhysicsBody *apBody, const
 
 void cLuxProp_Lever::SetStuckState(int alState, bool abEffects)
 {
+	if(!mpHingeJoint) return;
 	if(mlStuckState == alState) return;
 
 	mlStuckState = alState;
@@ -403,6 +415,7 @@ void cLuxProp_Lever::UpdateAutoMove(float afAngle, float afTimeStep)
 
 void cLuxProp_Lever::ChangeState(int alState, bool abEffects)
 {
+	if(!mpHingeJoint) return;
 	if(mlCurrentState == alState) return;
 
 	mlCurrentState = alState;

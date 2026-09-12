@@ -323,6 +323,7 @@ void cLuxArea_Liquid::SplashEffect(iPhysicsBody *apBody, float afSurfaceY)
 	vEffectPos.y = afSurfaceY+0.01f;
 
 	cWorld *pWorld = mpMap->GetWorld();
+	cWorldEffectSourceScope effectSource(pWorld, apBody);
 
 	if(pImpact->GetPSName() != "")
 	{

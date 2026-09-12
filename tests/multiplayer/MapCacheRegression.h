@@ -17,6 +17,50 @@ class cMapCacheRegression {
     bool cleaned=false;
     unsigned downloadSamplesBefore=0,progressFramesBefore=0;
 
+    static void armMapLifecycle() {
+        cLuxPlayer* player=gpBase->mpPlayer;
+        player->SetActive(false);
+        player->SetJumpDisabled(true);
+        player->SetScriptMoveSpeedMul(0.35f);
+        player->SetScriptRunSpeedMul(0.45f);
+        player->SetScriptJumpForceMul(0.25f);
+        player->SetLookSpeedMul(0.25f);
+        player->SetTinderboxes(13);
+        player->GetCamera()->SetRoll(0.3f);
+        // Keep an active flashback before its audio starts. This isolates its
+        // native lifetime policy from recording duration and download timing.
+        cLuxPlayerFlashback* flashback=player->GetHelperFlashback();
+        flashback->mbActive=true;flashback->mfFlashDelay=0;
+        flashback->mfFlashbackStartCount=1000;
+        cLuxEffectHandler* effects=gpBase->mpEffectHandler;
+        effects->GetFade()->FadeOut(0);
+        effects->GetImageTrail()->FadeTo(0.7f,100);effects->GetImageTrail()->Update(1);
+        effects->GetSepiaColor()->FadeTo(0.8f,100);effects->GetSepiaColor()->Update(1);
+        effects->GetRadialBlur()->FadeTo(0.6f,100);effects->GetRadialBlur()->Update(1);
+    }
+    bool checkMapLifecycle(tString& error) const {
+        cLuxPlayer* player=gpBase->mpPlayer;
+        cLuxEffectHandler* effects=gpBase->mpEffectHandler;
+        const bool normal=trial==0;
+        if(!player->IsActive() || std::fabs(player->GetCamera()->GetRoll())>0.001f ||
+           effects->GetFade()->mfGoalAlpha!=0 || effects->GetSepiaColor()->mfAmountGoal!=0 ||
+           effects->GetRadialBlur()->mfSizeGoal!=0) {
+            error="map transition retained disabled player, camera roll, fade-out or map-local post effects";return false;
+        }
+        if(player->GetScriptJumpForceMul()!=1 || player->GetLookSpeedMul()!=1) {
+            error="map transition lost the host's script cleanup sent after preparation";return false;
+        }
+        if(player->GetJumpDisabled()!=normal || player->GetTinderboxes()!=(normal?13:0) ||
+           std::fabs(player->GetScriptMoveSpeedMul()-(normal?0.35f:1.0f))>0.001f ||
+           std::fabs(player->GetScriptRunSpeedMul()-(normal?0.45f:1.0f))>0.001f ||
+           player->GetHelperFlashback()->IsActive()!=normal ||
+           gpBase->mpMapHandler->GetPostEffect_ImageTrail()->IsActive()!=normal) {
+            error=normal?"ordinary map change cleared native persistent player/flashback/image-trail state":
+                "debug map restart retained player/flashback/image-trail state that native StartGame resets";return false;
+        }
+        return true;
+    }
+
     tString marker(const char* suffix) const {
         return "map-cache-"+cString::ToString(static_cast<int>(trial))+"-"+suffix;
     }
@@ -89,6 +133,7 @@ public:
             entered=SDL_GetTicks();
         }
         if(phase==0) {
+            armMapLifecycle();
             if(host) {
                 if(trial==0) {
                     cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();
@@ -151,7 +196,17 @@ public:
         if(phase==1) {
             if(host) {
                 if(!exists("client-"+marker("armed.txt"))) return 0;
-                if(!mp->HostChangeMap(fixturePath,"PlayerStartArea_1")) return fail(error,"host map change refused");
+                if(trial==0) {
+                    // Cover the native level-door path as well as the debug
+                    // restarts used by the remaining cache-reload trials.
+                    // Native map loads resolve through the host's resource
+                    // index, as retail map folders already do at startup.
+                    gpBase->mpEngine->GetResources()->AddResourceDir(cString::To16Char(outputDir),false);
+                    gpBase->mpMapHandler->SetMapFolder(outputDir+"/");
+                    gpBase->mpMapHandler->ChangeMap(fixtureName,"PlayerStartArea_1","","");
+                    gpBase->mpMapHandler->GetCurrentMap()->RunScript(
+                        "SetPlayerJumpForceMul(1);SetPlayerLookSpeedMul(1);");
+                } else if(!mp->HostChangeMap(fixturePath,"PlayerStartArea_1")) return fail(error,"host map change refused");
             }
             next(2);return 0;
         }
@@ -167,6 +222,8 @@ public:
             }
             if(mp->msMapHash!=expectedHash || mp->mvMapBytes.size()!=expectedSize)
                 return fail(error,"loaded map differs from host fixture bytes");
+            if(mp->mbMapResetsGame!=(trial!=0)) return fail(error,"map manifest changed native transition semantics");
+            if(!checkMapLifecycle(error)) return -1;
             if(!host) {
                 const bool shouldReuse=trial==1;
                 if(mp->mbReusingMap!=shouldReuse || mp->mlDownloadedMapBytes!=(shouldReuse?0:expectedSize))

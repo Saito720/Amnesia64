@@ -45,8 +45,10 @@ public:
 	iLuxPlayerState_InteractRotateBase(cLuxPlayer *apPlayer, eLuxPlayerState aState);
 	virtual ~iLuxPlayerState_InteractRotateBase();
 
+	bool CanEnterState() const;
 	void OnEnterState(eLuxPlayerState aPrevState);
 	void OnLeaveState(eLuxPlayerState aNewState);
+	void OnPhysicsJointDestroyed(iPhysicsJoint *apJoint);
 
 	void Update(float afTimeStep);
 	void PostUpdate(float afTimeStep);

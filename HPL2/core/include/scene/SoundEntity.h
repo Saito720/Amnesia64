@@ -82,6 +82,10 @@ namespace hpl {
 		void SetVolume(float afX){ mfVolume = afX;}
 		float GetVolume(){ return mfVolume;}
 
+		// Keep native playback and controller lifetime while withholding local audio.
+		void SetPresentationSuppressed(bool abSuppressed);
+		bool GetPresentationSuppressed() const { return mbPresentationSuppressed; }
+
 		float GetMinDistance(){ return mfMinDistance;}
 		float GetMaxDistance(){ return mfMaxDistance;}
 		void SetMinDistance(float afX){ mfMinDistance = afX;}
@@ -126,6 +130,7 @@ namespace hpl {
 		int mlCreationID;
 
 		bool mbForcePlayAsGUISound;
+		bool mbPresentationSuppressed;
 
 		float mfMinDistance;
 		float mfMaxDistance;

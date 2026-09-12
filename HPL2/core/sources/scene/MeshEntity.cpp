@@ -1443,6 +1443,8 @@ namespace hpl {
 	void cMeshEntity::HandleAnimationEvent(cAnimationEvent *apEvent)
 	{
 		if(apEvent->msValue == "") return;
+		// Each peer already dispatches events from its own visible animation.
+		cWorldEffectLocalScope localEffects(mpWorld);
 
 		switch(apEvent->mType)
 		{

@@ -136,13 +136,13 @@ void LuxCalcGuiSetOffset(const cVector2f &avVirtualSizeIn, const cVector2f& avSc
 	if(avScreenSize.x <= 0 || avScreenSize.y <= 0 ||
 		avVirtualSizeIn.x <= 0 || avVirtualSizeIn.y <= 0) return;
 
-	// Fit the authored layout with the same pixel scale on both axes. Expand
-	// the canvas along the spare axis, keeping the authored center at the
-	// screen center and allowing full-screen effects to cover the whole view.
+	// Keep the retail GUI's horizontal expansion in widescreen mode: its
+	// artwork and fonts are presented using this mapping. Narrow windows
+	// instead need vertical expansion to avoid squeezing the authored layout.
 	const float fWantedRatio = avVirtualSizeIn.x / avVirtualSizeIn.y;
 	const float fScreenRatio = avScreenSize.x / avScreenSize.y;
 	if(fScreenRatio >= fWantedRatio)
-		avOutSize.x = avVirtualSizeIn.y * fScreenRatio;
+		avOutSize.x += avVirtualSizeIn.x * (fScreenRatio - fWantedRatio);
 	else
 		avOutSize.y = avVirtualSizeIn.x / fScreenRatio;
 	avOutOffset = (avOutSize - avVirtualSizeIn) * 0.5f;

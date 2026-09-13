@@ -559,6 +559,7 @@ public:
         if(resizeTests && renderSize!=resizeValidated) {
             if(!cWindowResizeRegression::ValidateTargets(loadingError)) {fail(loadingError);return;}
             if(!RunGuiAspectRegression(loadingError)) {fail(loadingError);return;}
+            if(!cWindowResizeRegression::CaptureRetailLoadingScreen(loadingError)) {fail(loadingError);return;}
             resizeValidated=renderSize;
         }
         if(!loadObserver.OnPostRender(loadingError)) {fail(loadingError);return;}

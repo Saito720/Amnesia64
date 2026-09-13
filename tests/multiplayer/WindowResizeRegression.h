@@ -3,6 +3,7 @@
 #include "../../HPL2/tests/WindowResize/PopupResizeRegression.h"
 #include "gui/GuiPopUpMessageBox.h"
 #include "graphics/RendererDeferred.h"
+#include "LuxLoadScreenHandler.h"
 #include <thread>
 #include <chrono>
 #if defined(_WIN32)
@@ -51,14 +52,14 @@ public:
             gui->DestroyPopUp(popup);popup=NULL;attention=NULL;
             resize(800,600);initialPhase=4;return 0;
         }
-        if(initialPhase>=4 && initialPhase<=7) {
+        if(initialPhase>=4 && initialPhase<=8) {
             // These go through the same GUI callbacks as the user's window,
             // including the tall portrait shape that exposed stretched text.
-            const cVector2l sizes[]={cVector2l(800,600),cVector2l(338,1000),cVector2l(1920,1080),cVector2l(1920,540)};
+            const cVector2l sizes[]={cVector2l(800,600),cVector2l(338,1000),cVector2l(1600,900),cVector2l(1920,1080),cVector2l(1920,540)};
             const unsigned index=initialPhase-4;
             if(!sizeIs(sizes[index].x,sizes[index].y)) return 0;
             ++initialPhase;
-            const cVector2l next=initialPhase<=7?sizes[index+1]:cVector2l(800,600);
+            const cVector2l next=initialPhase<=8?sizes[index+1]:cVector2l(800,600);
             resize(next.x,next.y);return 0;
         }
         if(!sizeIs(800,600)) return 0;
@@ -113,6 +114,34 @@ public:
         }
         if(!effects->mpFrameBufferColor->CompileAndValidate()) {error="resized game outline framebuffer is incomplete";return false;}
         graphics->GetLowLevel()->SetCurrentFrameBuffer(NULL);
+        return true;
+    }
+    static bool CaptureRetailLoadingScreen(tString& error) {
+        if(!sizeIs(1600,900)) return true;
+        // Capture the production loading-screen draw before its own buffer
+        // swap. This retains the actual artwork, font, and layout for visual
+        // comparison with retail, independently of synthetic shape checks.
+        struct cCapture {
+            cBitmap* bitmap=NULL;
+            cLowLevelGraphicsSDL* low;
+            cCapture():low(static_cast<cLowLevelGraphicsSDL*>(gpBase->mpEngine->GetGraphics()->GetLowLevel())) {
+                low->SetOverlayCallback(BeforeSwap,this);
+            }
+            ~cCapture() {
+                low->SetOverlayCallback([](void* ui) { static_cast<cLuxMultiplayerUI*>(ui)->Draw(); },gpBase->mpMultiplayer->mpUI);
+                if(bitmap) hplDelete(bitmap);
+            }
+            static void BeforeSwap(void* context) {
+                cCapture* capture=static_cast<cCapture*>(context);
+                gpBase->mpMultiplayer->mpUI->Draw();
+                if(!capture->bitmap) capture->bitmap=capture->low->CopyFrameBufferToBitmap();
+            }
+        } capture;
+        gpBase->mpLoadScreenHandler->DrawMenuScreen();
+        if(!capture.bitmap || !gpBase->mpEngine->GetResources()->GetBitmapLoaderHandler()->SaveBitmap(
+            capture.bitmap,cString::To16Char(outputDir+"/"+role+"-retail-loading-1600x900.png"),0)) {
+            error="could not capture the production loading screen for retail comparison";return false;
+        }
         return true;
     }
 };

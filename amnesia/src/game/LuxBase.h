@@ -71,12 +71,13 @@ class cLuxPlayer;
 extern eLuxAxis StringToAxis(const tString &asAxis);
 
 /**
-* Calculates an offset and size based on virtual size that keeps the ratio of the size. Note that the outsize is the size of the ENTIRE screen!
+* Centers the authored GUI canvas within the entire screen. Wide windows retain
+* retail's presentation; narrow windows expand vertically without squeezing the layout.
 */
 extern void LuxCalcGuiSetOffset(const cVector2f &avVirtualSizeIn, const cVector2f& avScreenSize, cVector2f& avOutSize, cVector2f & avOutOffset);
 
 /**
-* Same as CalcGuiSetOffset, but assumes avScreenSize is fromm screen.
+* Same as LuxCalcGuiSetOffset, using the current screen size.
 */
 extern void LuxCalcGuiSetScreenOffset(const cVector2f &avVirtualSizeIn, cVector2f& avOutSize, cVector2f & avOutOffset);
 

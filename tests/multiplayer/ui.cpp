@@ -182,6 +182,19 @@ static void selectTab(const char* name) {
     }
     require(found,"requested session tab exists");
 }
+static void resizeOverlay(cLuxMultiplayerUI& ui,int width,int height) {
+    SDL_SetWindowSize(SDL_GL_GetCurrentWindow(),width,height);
+    base.mpEngine->GetInput()->Update(1.0f/60);
+    auto* low=base.mpEngine->GetGraphics()->GetLowLevel();
+    if(low->UpdateScreenSize()) base.mpEngine->GetUpdater()->BroadcastMessageToAll(eUpdateableMessage_OnScreenResize);
+    for(int i=0;i<4;++i) draw(ui);
+}
+static void requireVisibleWindow(const char* name,int width,int height) {
+    ImGuiWindow* window=ImGui::FindWindowByName(name);
+    require(window && window->Active,"resized overlay remains active");
+    require(window->Pos.x>=0 && window->Pos.y>=0 && window->Pos.x+window->Size.x<=width+1 &&
+        window->Pos.y+window->Size.y<=height+1,"resized overlay including its title and close controls stays inside the viewport");
+}
 int main(int argc,char** argv) {
     if(argc!=4) {std::fprintf(stderr,"Usage: ui width height output-directory\n");return 2;}
     outputDirectory=argv[3];
@@ -478,6 +491,23 @@ int main(int argc,char** argv) {
         require(input.gameUpdates==1,"Steam overlay closing inputs are swallowed for release frame");
         input.Update(1.0f/60);
         require(input.gameUpdates==2,"game input resumes after Steam overlay closes");
+        session.active=false;
+        ui.Show(false);
+        resizeOverlay(ui,960,720);
+        selectTab("Host");
+        resizeOverlay(ui,320,240);
+        requireVisibleWindow("Multiplayer",320,240);
+        screenshot("minimum-window.png");
+        resizeOverlay(ui,960,720);
+        ui.OpenMapBrowser();
+        for(int i=0;i<3;++i) draw(ui);
+        resizeOverlay(ui,320,240);
+        requireVisibleWindow("Select a map",320,240);
+        require(ui.mbMapBrowserOpen,"resizing retains the open map browser");
+        screenshot("minimum-map-browser.png");
+        ui.mbCloseMapBrowser=true;draw(ui);
+        resizeOverlay(ui,800,600);
+        requireVisibleWindow("Multiplayer",800,600);
     }
     base.mpEngine->GetGraphics()->GetLowLevel()->SwapBuffers();
     event(SDL_KEYDOWN,SDL_SCANCODE_W,SDLK_w);

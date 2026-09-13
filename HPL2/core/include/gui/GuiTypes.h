@@ -466,6 +466,10 @@ namespace hpl {
 
 		eGuiMessage_WindowClose,		//nothing
 
+		// Delivered after a set changes its virtual extent. mvPos/mvRel contain
+		// the previous virtual size/offset; the set exposes the new values.
+		eGuiMessage_OnVirtualSizeChange,
+
 		eGuiMessage_LastEnum,
 	};
 

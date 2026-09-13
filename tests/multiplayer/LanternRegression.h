@@ -80,7 +80,12 @@ public:
             hands->GetHandsEntity()->SetMatrix(cMath::MatrixTranslate(camera->GetPosition()+cVector3f(4,0,0)));
             menuOil=player->GetLampOil();
             if(menu==2) {gpBase->mpEngine->GetUpdater()->SetContainer("Inventory");gpBase->mpJournal->SetOpenedFromInventory(true);}
-            gpBase->mpEngine->GetUpdater()->SetContainer(menus[menu]);next(3);return 0;
+            gpBase->mpEngine->GetUpdater()->SetContainer(menus[menu]);
+            if(std::getenv("CODEX_MP_RESIZE")) {
+                const cVector2l sizes[]={cVector2l(960,540),cVector2l(400,700),cVector2l(641,481)};
+                SDL_SetWindowSize(SDL_GL_GetCurrentWindow(),sizes[menu].x,sizes[menu].y);
+            }
+            next(3);return 0;
         }
         if(phase==3) {
             const tString marker="lantern-menu-"+cString::ToString((int)menu)+".txt";

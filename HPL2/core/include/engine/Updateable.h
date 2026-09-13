@@ -33,6 +33,9 @@ namespace hpl {
 
 		virtual void OnPostBufferSwap(){}
 
+		// The low-level screen size has changed; refresh size-dependent resources.
+		virtual void OnScreenResize(){}
+
 		virtual void OnStart(){}
 
 		virtual void OnDraw(float afFrameTime){}
@@ -69,6 +72,8 @@ namespace hpl {
 			{
 				case eUpdateableMessage_OnPostBufferSwap:
 					OnPostBufferSwap(); break;
+				case eUpdateableMessage_OnScreenResize:
+					OnScreenResize(); break;
 				case eUpdateableMessage_OnStart:
 					OnStart(); break;
 				case eUpdateableMessage_OnDraw:

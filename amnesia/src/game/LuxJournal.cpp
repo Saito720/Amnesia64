@@ -586,6 +586,16 @@ void cLuxJournal::OnLeaveContainer(const tString& asNewContainer)
 
 void cLuxJournal::OnDraw(float afFrameTime)
 {
+	// Refresh paused background images after every module has handled the resize.
+	if(mpScreenTexture && (mpScreenTexture->GetWidth() != (int)mvScreenSize.x ||
+		mpScreenTexture->GetHeight() != (int)mvScreenSize.y))
+	{
+		const bool bWasVisible = mpViewport->IsVisible();
+		mpViewport->SetVisible(false);
+		DestroyBackground();
+		CreateBackground();
+		mpViewport->SetVisible(bWasVisible);
+	}
 	////////////////////////
 	//Draw background
 	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive())
@@ -2306,3 +2316,13 @@ kGuiCallbackDeclaredFuncEnd(cLuxJournal, NoteBackUIButtonPress);
 
 //-----------------------------------------------------------------------
 
+
+//-----------------------------------------------------------------------
+
+void cLuxJournal::OnScreenResize()
+{
+	mvScreenSize = gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeFloat();
+	LuxCalcGuiSetScreenOffset(mvGuiSetCenterSize, mvGuiSetSize, mvGuiSetOffset);
+	mvGuiSetStartPos = cVector3f(-mvGuiSetOffset.x, -mvGuiSetOffset.y, 0);
+	mpGuiSet->SetVirtualSize(mvGuiSetSize, -1000, 1000, mvGuiSetOffset);
+}

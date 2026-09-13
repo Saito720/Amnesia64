@@ -42,6 +42,7 @@ public:
 	~cLuxMainMenu_Profile();
 	
 	void CreateGui();
+	void OnScreenResize();
 
 	void ExitPressed();
 	

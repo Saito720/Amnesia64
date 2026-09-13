@@ -116,6 +116,17 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
+	bool cPostEffect_ImageTrail::ResizeScreenBuffers()
+	{
+		const cVector2l vSize = mpLowLevelGraphics->GetScreenSizeInt();
+		if(!mpGraphics->ResizeRenderTexture(mpAccumTexture, vSize)) return false;
+		mpAccumBuffer->SetSize(vSize);
+		Reset();
+		return mpAccumBuffer->CompileAndValidate();
+	}
+
+	//-----------------------------------------------------------------------
+
 	void cPostEffect_ImageTrail::OnSetParams()
 	{
 		

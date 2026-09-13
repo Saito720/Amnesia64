@@ -77,6 +77,7 @@ cLuxDebugHandler::cLuxDebugHandler() : iLuxUpdateable("LuxDebugHandler")
 		mpGuiSkin = NULL;
 
 	mpGuiSet = mpGui->CreateSet("DebugHandler",mpGuiSkin);
+	mpDebugWindow = NULL;
 
 	mpInspectMeshEntity = NULL;
 
@@ -179,6 +180,18 @@ void cLuxDebugHandler::OnStart()
 	//Init the gui
 	gpBase->mpMapHandler->GetViewport()->AddGuiSet(mpGuiSet);
 	mpGuiSet->SetActive(false);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxDebugHandler::OnScreenResize()
+{
+	if(mpDebugWindow == NULL) return;
+
+	cVector3f vPos = mpDebugWindow->GetLocalPosition();
+	vPos.x = mpGuiSet->GetVirtualSize().x - mpDebugWindow->GetSize().x - 10;
+	vPos.y = 10;
+	mpDebugWindow->SetPosition(vPos);
 }
 
 //-----------------------------------------------------------------------

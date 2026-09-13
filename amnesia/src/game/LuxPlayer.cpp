@@ -1493,3 +1493,18 @@ void cLuxPlayer::CreateCharacterBody(iPhysicsWorld *apPhysicsWorld)
 
 
 
+
+//-----------------------------------------------------------------------
+
+void cLuxPlayer::OnScreenResize()
+{
+	const cVector2f vScreenSize = gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeFloat();
+	mfAspect = vScreenSize.x / vScreenSize.y;
+	mpCamera->SetAspect(mfAspect * mfAspectMul);
+
+	LuxCalcGuiSetScreenOffset(gpBase->mvHudVirtualCenterSize,
+		gpBase->mvHudVirtualSize, gpBase->mvHudVirtualOffset);
+	gpBase->mvHudVirtualStartPos = cVector3f(-gpBase->mvHudVirtualOffset.x, -gpBase->mvHudVirtualOffset.y, 0);
+	gpBase->mpGameHudSet->SetVirtualSize(gpBase->mvHudVirtualSize, -1000, 1000, gpBase->mvHudVirtualOffset);
+	gpBase->mpHelpFuncs->GetSet()->SetVirtualSize(gpBase->mvHudVirtualSize, -1000, 1000, gpBase->mvHudVirtualOffset);
+}

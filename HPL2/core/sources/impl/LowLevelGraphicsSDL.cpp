@@ -60,6 +60,9 @@
 
 #ifdef _WIN32
 #include "impl/TaskKeyHook.h"
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+#include "impl/WindowsWindowResize.h"
+#endif
 #endif
 
 #ifndef _WIN32
@@ -95,6 +98,7 @@ namespace hpl {
 		mlMultisampling =0;
         mpScreen = 0;
         mbGrab = false;
+        mbRelativeMouse = false;
 
 		mbDoubleSidedStencilIsSet = false;
 
@@ -222,11 +226,18 @@ namespace hpl {
 #if SDL_VERSION_ATLEAST(2, 0, 0)
         unsigned int mlFlags = SDL_WINDOW_OPENGL;
         if (alWidth == 0 && alHeight == 0) {
-            mvScreenSize = cVector2l(800,600);
-            mlFlags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+            SDL_DisplayMode desktopMode;
+            if (SDL_GetDesktopDisplayMode(mlDisplay, &desktopMode) == 0)
+                mvScreenSize = cVector2l(desktopMode.w, desktopMode.h);
+            else {
+                Warning("Could not get desktop resolution: %s\n", SDL_GetError());
+                mvScreenSize = cVector2l(800,600);
+            }
+            if (abFullscreen) mlFlags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
         } else if (abFullscreen) {
             mlFlags |= SDL_WINDOW_FULLSCREEN;
         }
+        if (!abFullscreen) mlFlags |= SDL_WINDOW_RESIZABLE;
 
 
         Log(" Setting video mode: %d x %d - %d bpp\n",alWidth, alHeight, alBpp);
@@ -260,6 +271,14 @@ namespace hpl {
             mvScreenSize = cVector2l(w, h);
         }
         mGLContext = SDL_GL_CreateContext(mpScreen);
+        if (!abFullscreen) SDL_SetWindowMinimumSize(mpScreen, 320, 240);
+#ifdef _WIN32
+        if(!cWindowsWindowResize::Install(mpScreen))
+        {
+            FatalError("Unable to initialize nonblocking window resizing!\n");
+            return false;
+        }
+#endif
 #else
 		unsigned int mlFlags = SDL_OPENGL;
 
@@ -382,6 +401,32 @@ namespace hpl {
 
 
 		return true;
+	}
+
+	//-----------------------------------------------------------------------
+
+	bool cLowLevelGraphicsSDL::UpdateScreenSize()
+	{
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+        if(!mbInitHasBeenRun) return false;
+#ifdef _WIN32
+        cWindowsWindowResize::UpdateInputState(mpScreen);
+#endif
+		if (mbFullscreen ||
+			(SDL_GetWindowFlags(mpScreen) & SDL_WINDOW_MINIMIZED)) return false;
+
+		int width, height;
+		SDL_GetWindowSize(mpScreen, &width, &height);
+		// A minimized window must never produce zero-sized render targets.
+		if (width <= 0 || height <= 0 || mvScreenSize == cVector2l(width, height)) return false;
+
+		mvScreenSize = cVector2l(width, height);
+		SetCurrentFrameBuffer(NULL);
+		SetScissorRect(0, mvScreenSize);
+		return true;
+#else
+		return false;
+#endif
 	}
 
 	//-----------------------------------------------------------------------
@@ -647,6 +692,9 @@ namespace hpl {
         mbGrab = abX;
 #if SDL_VERSION_ATLEAST(2, 0, 0)
         if (mpScreen) {
+#ifdef _WIN32
+            if(cWindowsWindowResize::DeferWindowGrab(mpScreen, abX ? SDL_TRUE : SDL_FALSE)) return;
+#endif
             SDL_SetWindowGrab(mpScreen, abX ? SDL_TRUE : SDL_FALSE);
         }
 #else
@@ -656,7 +704,11 @@ namespace hpl {
 
 	void cLowLevelGraphicsSDL::SetRelativeMouse(bool abX)
 	{
+        mbRelativeMouse = abX;
 #if SDL_VERSION_ATLEAST(2, 0, 0)
+#ifdef _WIN32
+        if(cWindowsWindowResize::DeferRelativeMouse(mpScreen, abX ? SDL_TRUE : SDL_FALSE)) return;
+#endif
 		SDL_SetRelativeMouseMode(abX ? SDL_TRUE : SDL_FALSE);
 #endif
 	}

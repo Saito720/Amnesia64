@@ -46,6 +46,8 @@ namespace hpl {
 	protected:
 		bool Window_OnClose(iWidget* apWidget, const cGuiMessageData& aData);
 		kGuiCallbackDeclarationEnd(Window_OnClose);
+		bool Window_OnVirtualSizeChange(iWidget* apWidget, const cGuiMessageData& aData);
+		kGuiCallbackDeclarationEnd(Window_OnVirtualSizeChange);
 
 		virtual void OnCloseSpecific() {}
 
@@ -62,6 +64,10 @@ namespace hpl {
 		cGuiSkin *mpSkin;
 
 		cWidgetWindow* mpWindow;
+		bool mbHasResizePlacement;
+		cVector2f mvResizeCenter;
+		cVector2f mvLastResizePosition;
+		cVector2f mvLastResizeSize;
 
 		void* mpDestroyCallbackObject;
 		tGuiCallbackFunc mpDestroyCallback;

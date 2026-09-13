@@ -67,8 +67,12 @@ namespace hpl {
 		virtual void ShowCursor(bool abX)=0;
 
 		virtual void SetWindowGrab(bool abX)=0;
+        // Requested modes remain stable while native window interaction
+        // temporarily releases the physical pointer.
+        virtual bool GetWindowGrab() const=0;
 
 		virtual void SetRelativeMouse(bool abX)=0;
+        virtual bool GetRelativeMouse() const=0;
 
         virtual void SetWindowCaption(const tString& asName)=0;
 
@@ -85,6 +89,9 @@ namespace hpl {
 		 */
 		virtual cVector2f GetScreenSizeFloat()=0;
 		virtual const cVector2l& GetScreenSizeInt()=0;
+
+		// Called between frames. Returns true when the window's render size changes.
+		virtual bool UpdateScreenSize(){ return false; }
 
 		/*
 		* Get fullscreen mode

@@ -186,6 +186,14 @@ namespace hpl {
 	
 	//-----------------------------------------------------------------------
 
+	void cGui::OnScreenResize()
+	{
+		for(tGuiSetMapIt it = m_mapSets.begin(); it != m_mapSets.end(); ++it)
+			it->second->OnScreenResize();
+	}
+
+	//-----------------------------------------------------------------------
+
 	iGuiMaterial* cGui::GetMaterial(eGuiMaterial aType)
 	{
 		return mvMaterials[aType];

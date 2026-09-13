@@ -288,6 +288,23 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
+	void cScene::OnScreenResize()
+	{
+		const cVector2f vSize = mpGraphics->GetLowLevel()->GetScreenSizeFloat();
+		for(tViewportListIt it = mlstViewports.begin(); it != mlstViewports.end(); ++it)
+		{
+			cViewport *pViewport = *it;
+			// Explicitly sized viewports and texture cameras retain their own aspect.
+			if(pViewport->GetFrameBuffer() == NULL && pViewport->GetCamera() &&
+				(pViewport->GetSize().x < 0 || pViewport->GetSize().y < 0))
+			{
+				pViewport->GetCamera()->SetAspect(vSize.x / vSize.y);
+			}
+		}
+	}
+
+	//-----------------------------------------------------------------------
+
 	void cScene::Reset()
 	{
 	}

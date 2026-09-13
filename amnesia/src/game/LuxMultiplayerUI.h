@@ -49,6 +49,8 @@ private:
     bool mbVisible;
     bool mbCampaign;
     bool mbFocusWindow;
+    cVector2f mvLastDisplaySize=0;
+    bool mbDisplaySizeChanged=false;
     bool mbRestoreRelativeMouse;
     bool mbRestoreWindowGrab;
     int mlRestoreCursor;

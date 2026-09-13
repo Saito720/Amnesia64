@@ -172,6 +172,7 @@ private:
 	double mfMouseActiveAt;
 
 	float mfMouseSensitivity;
+	float mfMouseReferenceHeight;
 
 	int mlMaxSmoothMousePos;
 	float mfPrevSmoothMousePosMul;

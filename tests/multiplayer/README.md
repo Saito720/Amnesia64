@@ -49,6 +49,25 @@ use `CODEX_MP_LIFECYCLE_ONLY` in place of `CODEX_MP_INCIDENTAL_ONLY` above. This
 also starts in Old Archives and runs both peers through the native lantern
 inventory/hand-object paths and the unchanged retail painting and drawer assets.
 
+For window-resizing integration coverage, run the complete suite with:
+
+```powershell
+$env:CODEX_MP_RESIZE='1'
+try { ./tests/multiplayer/run-game.ps1 -Backend Steamworks -SkipBuild }
+finally { Remove-Item Env:CODEX_MP_RESIZE -ErrorAction SilentlyContinue }
+```
+
+This adds native GUI popup shrink/restore and nested-focus checks, plus an actual
+main-menu confirmation resized from 1920x1080 to 640x480. On Windows, each peer
+holds a native sizing operation for two seconds while the test checks real game
+updates, outgoing pose sequences, and incoming peer freshness. Pause, inventory,
+and journal also resize during the lantern fixture. The normal engine loop handles
+these window changes; the fixture checks resized outline/depth attachments and
+framebuffer completeness after rendering. The full map-change and teardown checks
+then continue at the resized resolution. The separate
+[engine suite](../../HPL2/tests/WindowResize/README.md) covers all native sizing
+edges, fullscreen/minimize/restore, GPU storage, and rendered pixels.
+
 The UI test links real HPL2, SDL2, OpenGL, and Dear ImGui. It includes the
 production overlay source and extracts the unchanged production input update
 method; only application/coordinator services are stubbed. It verifies tilde,
@@ -64,6 +83,8 @@ Start-position cases parse authored PlayerStart areas, preserve their ordering,
 ignore duplicate/empty names, and retain inactive starts to match the debug menu.
 They check deferred parsing after browser or typed-path changes, stale-selection
 clearing, the map-default choice, no-start maps, and malformed/missing map feedback.
+The overlay and an open map browser also shrink to 320x240 and expand again,
+checking their bounds and saving screenshots at the minimum supported window size.
 
 The full-game test links the current game objects except the normal entry
 point. Two hidden game instances run on loopback. It loads the retail campaign,
@@ -180,6 +201,13 @@ The reviewed protocol-8 Steam-enabled Debug and Release builds pass without comp
 warnings or errors. Full two-instance run `0b402d98b1dd` and UI run `c0367b4967cd` pass,
 along with the protocol/Newton suites and content checks for all 33 retail maps.
 These are controlled local regressions; cross-account relay playtesting remains separate.
+
+The window-resizing integration also passes Steam-enabled Debug and Release builds
+without compiler warnings or errors, combined game run `10fb37920780` with
+`CODEX_MP_RESIZE=1`, UI run `a1774bfadfb4`, and 890 native engine assertions including
+the optional fullscreen and minimize/restore cases. Harness linking emits the
+existing nonincremental-link warning; the UI harness also reports its existing
+compiler option warning. Neither game build emits those harness-only warnings.
 
 For focused native-interaction debugging, set `CODEX_MP_NATIVE_ONLY=1` in the
 runner's environment. The same two-instance harness starts in Old Archives and

@@ -32,6 +32,8 @@ public:
 	cLuxCredits();
 	~cLuxCredits();
 
+	void OnScreenResize();
+
 	void LoadFonts();
 
 	void Reset();

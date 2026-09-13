@@ -116,8 +116,10 @@ namespace hpl {
 		void ShowCursor(bool abX);
 
         void SetWindowGrab(bool abX);
+        bool GetWindowGrab() const { return mbGrab; }
 
         void SetRelativeMouse(bool abX);
+        bool GetRelativeMouse() const { return mbRelativeMouse; }
 
         void SetWindowCaption(const tString &asName);
 
@@ -140,6 +142,7 @@ namespace hpl {
 
 		cVector2f GetScreenSizeFloat();
 		const cVector2l& GetScreenSizeInt();
+		bool UpdateScreenSize();
 		
 		/////////////////////////////////////////////////////
 		/////////////// DATA CREATION //////////////////////
@@ -383,6 +386,7 @@ namespace hpl {
 		SDL_Surface *mpScreen;
 #endif
         bool mbGrab;
+        bool mbRelativeMouse;
 		
 		//////////////////////////////////////
 		//Vertex Array variables

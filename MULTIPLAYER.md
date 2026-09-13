@@ -92,6 +92,10 @@ Valve references: [Steam Datagram Relay](https://partner.steamgames.com/doc/feat
 
 The pause menu, inventory, journal, tilde window, and loss of application focus do not
 suspend session/world updates. Voice completion callbacks also continue through menus.
+Dragging a window border on Windows also keeps the game and session updating.
+Resizing updates rendering and GUI layouts without changing the configured launch
+resolution. Modal dialogs and the multiplayer map browser remain accessible after
+shrinking the window.
 The scene continues rendering behind the pause menu, inventory and journal. Death
 closes these local menus and respawns that player at the shared checkpoint without
 resetting the other players' world or enemies. Clients immediately show a connection

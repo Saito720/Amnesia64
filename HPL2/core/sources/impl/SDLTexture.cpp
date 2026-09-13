@@ -144,6 +144,8 @@ namespace hpl {
 		;
 
 		GenerateHandles(1);
+		// Replacing storage (for example after a window resize) replaces its size too.
+		mlMemorySize = 0;
 
 		mvSize = avSize;
 		mPixelFormat = aPixelFormat;

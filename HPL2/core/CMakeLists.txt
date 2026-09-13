@@ -266,7 +266,9 @@ target_compile_definitions(HPL2
     ${HPL2_DEFINES}
 )
 
-if(LINUX)
+if(WIN32)
+    set(PLATFORM_LIBS comctl32)
+elseif(LINUX)
     set(PLATFORM_LIBS
         binreloc
         pthread

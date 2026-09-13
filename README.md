@@ -3,6 +3,7 @@
 
 ## Key changes:
 - Experimental Steam multiplayer using Steamworks 1.65 lobbies and Steam Datagram Relay, with campaign host/join and a global tilde-key ImGui window. Direct IP remains available. See [multiplayer status, controls and tests](MULTIPLAYER.md).
+- Windowed mode supports resizing and maximizing, with the game rendering at the current window resolution. Resizing never changes the configured launch resolution; `0,0` uses the monitor's desktop resolution and respects the fullscreen setting.
 - Can be compiled in both 32-bit and 64-bit modes using Visual Studio 2026 with the v145 build tools.
 - Single solution file for all projects (main game, HPL2, dependencies and editors). No need to compile the engine separately.
 - Engine dependencies are linked statically. Steam-enabled builds additionally ship Valve's `steam_api64.dll` (`steam_api.dll` for 32-bit builds) beside the executable.
@@ -36,3 +37,5 @@ Dear ImGui and the standalone GameNetworkingSockets/protobuf sources are also
 included. Build with `/p:HplUseSteamworks=false` for the account-free direct-IP
 backend. A build selects one networking backend; the two libraries are not linked
 together. No build-time download is required. See [networking dependency details](HPL2/dependencies/networking/README.md).
+
+See [window resizing verification](HPL2/tests/WindowResize/README.md) for the native rendering tests and game verification steps.

@@ -284,6 +284,7 @@ namespace hpl {
 		mfContextMenuZ = 500;
 
 		mvVirtualSize = mpGraphics->GetLowLevel()->GetScreenSizeFloat();
+		mbVirtualSizeIsScreenSize = true;
 		mfVirtualMinZ = -1000;
 		mfVirtualMaxZ = 1000;
 		mvVirtualSizeOffset = cVector2f(0);
@@ -1269,10 +1270,34 @@ namespace hpl {
 
 	void cGuiSet::SetVirtualSize(const cVector2f& avSize, float afMinZ, float afMaxZ, const cVector2f& avOffset)
 	{
+		const cVector2f vOldSize = mvVirtualSize;
+		const cVector2f vOldOffset = mvVirtualSizeOffset;
+		mbVirtualSizeIsScreenSize = false;
 		mvVirtualSize = avSize;
 		mfVirtualMinZ = afMinZ;
 		mfVirtualMaxZ = afMaxZ;
 		mvVirtualSizeOffset = avOffset;
+
+		if(vOldSize == avSize && vOldOffset == avOffset) return;
+		if(GetRootWidgetClips()) mpWidgetRoot->SetSize(mvVirtualSize);
+
+		// Notify after applying the virtual extent, including sets whose layout
+		// is managed by the game rather than using screen pixels directly.
+		const cGuiMessageData data(vOldSize, vOldOffset);
+		const tWidgetList widgets = mlstWidgets;
+		for(tWidgetList::const_iterator it = widgets.begin(); it != widgets.end(); ++it)
+			if(IsValidWidget(*it)) (*it)->ProcessMessage(eGuiMessage_OnVirtualSizeChange, data, true, true);
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cGuiSet::OnScreenResize()
+	{
+		if(mbVirtualSizeIsScreenSize)
+		{
+			SetVirtualSize(mpGraphics->GetLowLevel()->GetScreenSizeFloat(), mfVirtualMinZ, mfVirtualMaxZ, mvVirtualSizeOffset);
+			mbVirtualSizeIsScreenSize = true;
+		}
 	}
 
 	//-----------------------------------------------------------------------
@@ -1406,13 +1431,15 @@ namespace hpl {
 		cVector3f vPos = apWidget->GetGlobalPosition();
 		const cVector2f& vSize = apWidget->GetSize();
 		const cVector2f& vSetSize = GetVirtualSize();
+		const cVector2f& vOffset = GetVirtualSizeOffset();
 
 		for(int i=0; i<2; ++i)
 		{
-			if(vPos.v[i] < 0)
-				vPos.v[i]=0;
-			if(vPos.v[i]+vSize.v[i] > vSetSize.v[i])
-				vPos.v[i] = vSetSize.v[i]-vSize.v[i];
+			// If a window is larger than the set, keep its title and left edge
+			// reachable instead of clamping to a negative, off-screen position.
+			const float fMin = -vOffset.v[i];
+			const float fMax = fMin + cMath::Max(0.0f, vSetSize.v[i] - vSize.v[i]);
+			vPos.v[i] = cMath::Clamp(vPos.v[i], fMin, fMax);
 		}
 
 		apWidget->SetGlobalPosition(vPos);

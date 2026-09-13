@@ -74,6 +74,7 @@ public:
 	void PostUpdate(float afTimeStep);
 	void Reset();
 	void OnDraw(float afFrameTime);
+	void OnScreenResize();
 
 	void LoadUserConfig();
 	void SaveUserConfig();

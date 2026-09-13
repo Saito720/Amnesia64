@@ -83,6 +83,7 @@ namespace hpl {
 		void Render(float afFrameTime, tFlag alFlags);
 
 		void PostUpdate(float afTimeStep);
+		void OnScreenResize();
 		
 		///// VIEW PORT METHODS ////////////////////
 		

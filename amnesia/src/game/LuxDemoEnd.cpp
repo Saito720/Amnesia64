@@ -425,3 +425,13 @@ kGuiCallbackDeclaredFuncEnd(cLuxDemoEnd, ButtonLabelOnMouseLeave);
 
 //-----------------------------------------------------------------------
 
+
+//-----------------------------------------------------------------------
+
+void cLuxDemoEnd::OnScreenResize()
+{
+	mvScreenSize = gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeFloat();
+	LuxCalcGuiSetScreenOffset(mvGuiSetCenterSize, mvGuiSetSize, mvGuiSetOffset);
+	mvGuiSetStartPos = cVector3f(-mvGuiSetOffset.x, -mvGuiSetOffset.y, 0);
+	mpGuiSet->SetVirtualSize(mvGuiSetSize, -1000, 1000, mvGuiSetOffset);
+}

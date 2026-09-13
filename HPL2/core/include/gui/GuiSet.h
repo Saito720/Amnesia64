@@ -403,6 +403,7 @@ namespace hpl {
 		bool GetRootWidgetClips();
 
 		void SetVirtualSize(const cVector2f& avSize, float afMinZ, float afMaxZ, const cVector2f& avOffset=0);
+		void OnScreenResize();
 		const cVector2f& GetVirtualSize(){return mvVirtualSize;}
 		const cVector2f& GetVirtualSizeOffset(){return mvVirtualSizeOffset;}
 
@@ -549,6 +550,7 @@ namespace hpl {
 		float mfContextMenuZ;
 
 		cVector2f mvVirtualSize;
+		bool mbVirtualSizeIsScreenSize;
 		cVector2f mvVirtualSizeOffset;
 		float mfVirtualMinZ;
 		float mfVirtualMaxZ;

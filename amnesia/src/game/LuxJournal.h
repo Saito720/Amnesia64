@@ -141,6 +141,8 @@ friend class cLuxJournal_SaveData;
 public:	
 	cLuxJournal();
 	~cLuxJournal();
+
+	void OnScreenResize();
 	
 	void OnClearFonts();
 	void LoadFonts();

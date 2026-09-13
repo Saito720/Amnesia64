@@ -309,6 +309,7 @@
     <ClInclude Include="include\impl\GLSLProgram.h" />
     <ClInclude Include="include\impl\GLSLShader.h" />
     <ClInclude Include="include\impl\LowLevelGraphicsSDL.h" />
+    <ClInclude Include="include\impl\WindowsWindowResize.h" />
     <ClInclude Include="include\impl\OcclusionQueryOGL.h" />
     <ClInclude Include="include\impl\PBuffer.h" />
     <ClInclude Include="include\impl\SDLFontData.h" />

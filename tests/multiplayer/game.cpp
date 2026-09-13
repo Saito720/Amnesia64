@@ -13,6 +13,7 @@
 #include <filesystem>
 #define private public
 #include "LuxPlayerHelpers.h"
+#include "LuxEffectRenderer.h"
 #include "LuxEffectHandler.h"
 #include "LuxMapHandler.h"
 #include "LuxMultiplayer.h"
@@ -52,6 +53,7 @@ static void printStatus(const char* message) {
 #include "LoadingRegression.h"
 #include "MapCacheRegression.h"
 #include "HostingRegression.h"
+#include "WindowResizeRegression.h"
 class cGameSmoke : public iUpdateable, public iRendererCallback {
     int state=0;
     Uint32 started=0, readyAt=0, statusAt=0;
@@ -72,6 +74,9 @@ class cGameSmoke : public iUpdateable, public iRendererCallback {
     cNativeEffectsRegression nativeEffectsRegression;
     cLanternRegression lanternRegression;
     cJointLifecycleRegression jointRegression;
+    cWindowResizeRegression resizeRegression;
+    bool resizeTests=std::getenv("CODEX_MP_RESIZE")!=NULL;
+    cVector2l resizeValidated=0;
     bool genericEffectsDone=false;
     cMapCacheRegression mapCacheRegression;
     cLoadingPhaseObserver loadObserver;
@@ -181,6 +186,11 @@ public:
             printStatus(mp->GetStatus().c_str());statusAt=SDL_GetTicks();
         }
         if(state==0) {
+            if(resizeTests) {
+                const int resize=resizeRegression.Initial(loadingError);
+                if(resize<0) {fail(loadingError);return;}
+                if(!resize) return;
+            }
             if(role=="host") {
                 gpBase->mpMainMenu->SetWindowActive(eLuxMainMenuWindow_StartGame);
                 mp->ShowWindow(true);screenshotPending=true;
@@ -227,6 +237,11 @@ public:
             const int currentPickup=VerifyCurrentMapHostPickup(loadingError);
             if(currentPickup<0) {fail(loadingError);return;}
             if(currentPickup==0) return;
+            if(resizeTests) {
+                const int resize=resizeRegression.Session(loadingError);
+                if(resize<0) {fail(loadingError);return;}
+                if(!resize) return;
+            }
             if(!cachePathIsValid()) return;
             if(gpBase->mpSaveHandler->AutoSave()) {fail("offline autosave was accepted during an active multiplayer session");return;}
             uint64_t bodyHash=0;
@@ -539,6 +554,11 @@ public:
     }
     void OnPostRender(float dt) {
         tString loadingError;
+        const cVector2l renderSize=gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeInt();
+        if(resizeTests && renderSize!=resizeValidated) {
+            if(!cWindowResizeRegression::ValidateTargets(loadingError)) {fail(loadingError);return;}
+            resizeValidated=renderSize;
+        }
         if(!loadObserver.OnPostRender(loadingError)) {fail(loadingError);return;}
         if(!loadingScreenshotDone && gpBase->mpEngine->GetUpdater()->GetCurrentContainerName()=="MultiplayerLoading") {
             cBitmap* bitmap=gpBase->mpEngine->GetGraphics()->GetLowLevel()->CopyFrameBufferToBitmap();

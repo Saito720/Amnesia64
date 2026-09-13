@@ -41,6 +41,7 @@ namespace hpl {
 	{
 		mpSet = apSet;
 		mpSkin = mpSet->GetSkin();
+		mbHasResizePlacement = false;
 
 		mpSet->mlPopupCount++;
 
@@ -51,6 +52,7 @@ namespace hpl {
 											 vPos, avPopUpSize, _W(""), NULL);
 		mpWindow->SetCloseButtonDisablesWindow(false);
 		mpWindow->AddCallback(eGuiMessage_WindowClose, this, kGuiCallback(Window_OnClose));
+		mpWindow->AddCallback(eGuiMessage_OnVirtualSizeChange, this, kGuiCallback(Window_OnVirtualSizeChange));
 
 		////////////////////////
 		// Set up Attention and focus
@@ -139,6 +141,40 @@ namespace hpl {
 		return true;
 	}
 	kGuiCallbackDeclaredFuncEnd(iGuiPopUp, Window_OnClose);
+
+	//-----------------------------------------------------------------------
+
+	bool iGuiPopUp::Window_OnVirtualSizeChange(iWidget* apWidget, const cGuiMessageData& aData)
+	{
+		const cVector2f& vOldSize = aData.mvPos;
+		const cVector2f& vOldOffset = aData.mvRel;
+		const cVector2f& vNewSize = mpSet->GetVirtualSize();
+		const cVector2f& vNewOffset = mpSet->GetVirtualSizeOffset();
+		const cVector2f& vSize = mpWindow->GetSize();
+		cVector3f vPos = mpWindow->GetGlobalPosition();
+		const cVector2f vPosition(vPos.x, vPos.y);
+		const bool bMoved = !mbHasResizePlacement || vPosition != mvLastResizePosition || vSize != mvLastResizeSize;
+
+		// Keep centered dialogs centered, and retain the relative placement of
+		// moved windows and pickers without recreating their widgets or focus.
+		for(int i=0; i<2; ++i)
+		{
+			if(bMoved)
+				mvResizeCenter.v[i] = vOldSize.v[i] > 0 ?
+					(vPos.v[i] + vOldOffset.v[i] + vSize.v[i]*0.5f) / vOldSize.v[i] : 0.5f;
+			vPos.v[i] = mvResizeCenter.v[i]*vNewSize.v[i] - vNewOffset.v[i] - vSize.v[i]*0.5f;
+		}
+		mpWindow->SetGlobalPosition(vPos);
+		mpSet->PositionWidgetInsideBounds(mpWindow);
+		// Retain the intended placement through temporary clamping. A later
+		// expansion restores it; an actual drag establishes a new placement.
+		vPos = mpWindow->GetGlobalPosition();
+		mvLastResizePosition = cVector2f(vPos.x, vPos.y);
+		mvLastResizeSize = vSize;
+		mbHasResizePlacement = true;
+		return true;
+	}
+	kGuiCallbackDeclaredFuncEnd(iGuiPopUp, Window_OnVirtualSizeChange);
 
 	//-----------------------------------------------------------------------
 	

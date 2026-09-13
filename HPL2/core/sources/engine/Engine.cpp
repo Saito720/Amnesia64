@@ -521,6 +521,15 @@ namespace hpl {
 
 			//if(GetGameIsDone()) Log("3\n");
 
+			// Resize after presenting the previous frame, before any new drawing.
+			// Only the runtime screen size changes; configuration remains with the game.
+			if(mpGraphics->GetLowLevel()->UpdateScreenSize())
+			{
+				mpUpdater->BroadcastMessageToAll(eUpdateableMessage_OnScreenResize);
+				mpGraphics->GetLowLevel()->SetCurrentFrameBuffer(NULL);
+				bIsUpdated = true;
+			}
+
 			////////////////////////////////////
 			// Render frame
 			if(mbLimitFPS==false || bIsUpdated)

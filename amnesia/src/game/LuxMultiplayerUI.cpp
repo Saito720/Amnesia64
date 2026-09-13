@@ -95,8 +95,8 @@ void cLuxMultiplayerUI::SetVisible(bool abVisible)
     if(abVisible)
     {
         if(!Initialize()) return;
-        mbRestoreRelativeMouse = SDL_GetRelativeMouseMode() == SDL_TRUE;
-        mbRestoreWindowGrab = SDL_GetWindowGrab(mpWindow) == SDL_TRUE;
+        mbRestoreRelativeMouse = gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetRelativeMouse();
+        mbRestoreWindowGrab = gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetWindowGrab();
         mlRestoreCursor = SDL_ShowCursor(SDL_QUERY);
         mlPreviousInputState = gpBase->mpInputHandler->GetState();
         mbFocusWindow = true;
@@ -299,6 +299,10 @@ void cLuxMultiplayerUI::Draw()
         io.ClearInputMouse();
     }
     ImGui::NewFrame();
+    const ImVec2 display=ImGui::GetIO().DisplaySize;
+    const cVector2f displaySize(display.x,display.y);
+    mbDisplaySizeChanged=displaySize!=mvLastDisplaySize;
+    mvLastDisplaySize=displaySize;
     if(mbVisible) DrawControls();
     if(mbVisible || mbCloseMapBrowser) DrawMapBrowser();
     ImGui::Render();
@@ -409,8 +413,11 @@ void cLuxMultiplayerUI::DrawMapBrowser()
     const char* title="Select a map";
     if(mbFocusMapBrowser) {ImGui::OpenPopup(title);mbFocusMapBrowser=false;}
     const ImVec2 screen=ImGui::GetIO().DisplaySize;
-    ImGui::SetNextWindowPos(ImVec2(screen.x*0.5f,screen.y*0.5f),ImGuiCond_Appearing,ImVec2(0.5f,0.5f));
-    ImGui::SetNextWindowSize(ImVec2((std::min)(680.0f,screen.x-24),(std::min)(470.0f,screen.y-24)),ImGuiCond_Appearing);
+    const ImVec2 limit((std::max)(1.0f,screen.x-24),(std::max)(1.0f,screen.y-24));
+    const ImGuiCond layout=mbDisplaySizeChanged?ImGuiCond_Always:ImGuiCond_Appearing;
+    ImGui::SetNextWindowPos(ImVec2(screen.x*0.5f,screen.y*0.5f),layout,ImVec2(0.5f,0.5f));
+    ImGui::SetNextWindowSizeConstraints(ImVec2((std::min)(300.0f,limit.x),(std::min)(120.0f,limit.y)),limit);
+    ImGui::SetNextWindowSize(ImVec2((std::min)(680.0f,limit.x),(std::min)(470.0f,limit.y)),layout);
     if(ImGui::BeginPopupModal(title,&mbMapBrowserOpen,ImGuiWindowFlags_NoCollapse)) {
         if(mbCloseMapBrowser) {ImGui::CloseCurrentPopup();mbMapBrowserOpen=false;}
         else {
@@ -531,9 +538,11 @@ void cLuxMultiplayerUI::DrawControls()
 {
 #if USE_SDL2
     ImGuiIO& io = ImGui::GetIO();
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    const float fWidth = io.DisplaySize.x < 574 ? io.DisplaySize.x - 24 : 550;
-    ImGui::SetNextWindowSizeConstraints(ImVec2(300, 120), ImVec2(fWidth, io.DisplaySize.y - 24));
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f),
+        mbDisplaySizeChanged?ImGuiCond_Always:ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    const float fWidth=(std::max)(1.0f,(std::min)(550.0f,io.DisplaySize.x-24));
+    const float fHeight=(std::max)(1.0f,io.DisplaySize.y-24);
+    ImGui::SetNextWindowSizeConstraints(ImVec2((std::min)(300.0f,fWidth),(std::min)(120.0f,fHeight)),ImVec2(fWidth,fHeight));
     ImGui::SetNextWindowSize(ImVec2(fWidth, 0), ImGuiCond_Always);
     if(mbFocusWindow) { ImGui::SetNextWindowFocus(); mbFocusWindow = false; }
     bool bOpen = true;

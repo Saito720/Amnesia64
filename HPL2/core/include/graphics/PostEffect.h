@@ -110,6 +110,7 @@ namespace hpl {
 		void GetParams(iPostEffectParams *apDestParams);
 
 		virtual void Reset(){}
+		virtual bool ResizeScreenBuffers(){ return true; }
 
 	protected:
 		virtual void OnSetActive(bool abX){}

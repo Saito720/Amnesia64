@@ -260,6 +260,7 @@ namespace hpl {
 
 		virtual bool LoadData()=0;
 		virtual void DestroyData()=0;
+		virtual bool ResizeScreenBuffers() { SetupRenderFunctions(mpLowLevelGraphics); return true; }
 
 		virtual iTexture* GetPostEffectTexture();
 

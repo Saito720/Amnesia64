@@ -450,6 +450,7 @@ public:
 	void OnPressButton();
 
 	float GetFadeAlpha(){ return mfFadeAlpha;}
+	bool IsActive() const { return mbActive; }
 
 	void DisableStartSound(){ mbSkipStartSound = true; }
 

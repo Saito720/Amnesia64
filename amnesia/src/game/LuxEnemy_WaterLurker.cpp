@@ -165,7 +165,7 @@ bool cLuxEnemy_WaterLurker::StateEventImplement(int alState, eLuxEnemyStateEvent
 
 			mvTempPos = pNode->GetPosition();
 			ChangeState(eLuxEnemyState_Search);	
-			gpBase->mpMusicHandler->RemoveEnemy(eLuxEnemyMusic_Attack,this);
+			RemoveTargetMusic(eLuxEnemyMusic_Attack);
 		}
 		else
 		{
@@ -214,7 +214,7 @@ bool cLuxEnemy_WaterLurker::StateEventImplement(int alState, eLuxEnemyStateEvent
 			if(mpMover->GetStuckCounter()>0.9f)
 			{
 				ChangeState(eLuxEnemyState_Idle);
-				gpBase->mpMusicHandler->RemoveEnemy(eLuxEnemyMusic_Attack,this);
+				RemoveTargetMusic(eLuxEnemyMusic_Attack);
 			}
 
 		///////////////////////
@@ -236,7 +236,7 @@ bool cLuxEnemy_WaterLurker::StateEventImplement(int alState, eLuxEnemyStateEvent
 
 		kLuxOnMessage(eLuxEnemyMessage_EndOfPath)
 			ChangeState(eLuxEnemyState_Idle);
-			gpBase->mpMusicHandler->RemoveEnemy(eLuxEnemyMusic_Attack,this);
+			RemoveTargetMusic(eLuxEnemyMusic_Attack);
 	
 	
 	////////////////////////////////
@@ -326,7 +326,7 @@ bool cLuxEnemy_WaterLurker::StateEventImplement(int alState, eLuxEnemyStateEvent
 		//Search for food and eat it!
 		kLuxOnMessage(eLuxEnemyMessage_TimeOut)
 			cLuxProp_Object *pFood = GetClosestFood(3.5f,mfPlayerDetectionHeight);
-			if(pFood)
+			if(pFood && PrepareBodyInfluence(pFood->GetBody(0)))
 			{
 				iPhysicsBody *pFoodBody = pFood->GetBody(0);
 				cVector3f vToFeet(mpCharBody->GetFeetPosition() - pFoodBody->GetLocalPosition());
@@ -390,7 +390,7 @@ bool cLuxEnemy_WaterLurker::StateEventImplement(int alState, eLuxEnemyStateEvent
 				SetMoveSpeed(eLuxEnemyMoveSpeed_Run);
 				SendMessage(eLuxEnemyMessage_TimeOut, 0.1f, true);
 				SendMessage(eLuxEnemyMessage_TimeOut_2, 0.1f, true);
-				gpBase->mpMusicHandler->AddEnemy(eLuxEnemyMusic_Attack,this);
+				AddTargetMusic(eLuxEnemyMusic_Attack);
 				mbCausesSanityDecrease = true;
 			}
 			
@@ -409,7 +409,7 @@ bool cLuxEnemy_WaterLurker::StateEventImplement(int alState, eLuxEnemyStateEvent
 		///////////////////////
 		//Update the player position	
 		kLuxOnMessage(eLuxEnemyMessage_TimeOut)
-			mpPathfinder->MoveTo(gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition());
+			mpPathfinder->MoveTo(GetPlayerFeetPos());
 			SendMessage(eLuxEnemyMessage_TimeOut, 0.4f, true);
 			if(PlayerIsDetected()==false)
 			{
@@ -519,8 +519,8 @@ bool cLuxEnemy_WaterLurker::StateEventImplement(int alState, eLuxEnemyStateEvent
 			mpPathfinder->Stop();
 			//PlayAnim("Dead",false, 0.4f);	
 			//PlayAnim("Dead",false, 0.3f,false,1.0f,false,true,false);	
-			gpBase->mpPlayer->RemoveTerrorEnemy(this);
-			gpBase->mpMusicHandler->RemoveEnemy(eLuxEnemyMusic_Attack,this);
+			SetTargetTerrorSource(false);
+			RemoveTargetMusic(eLuxEnemyMusic_Attack);
 			mpCharBody->SetActive(false);
 
 
@@ -597,6 +597,7 @@ void cLuxEnemy_WaterLurker::SplashWater(eWaterLurkerSplash aType)
 
 bool cLuxEnemy_WaterLurker::PlayerIsDetected()
 {
+	if(HasMultiplayerAI() && !mbEvaluatingPlayerSenses) return mbPlayerDetected;
 	return AbsHeightDistToPlayer() <= mfPlayerDetectionHeight; 
 }
 

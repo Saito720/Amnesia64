@@ -17,13 +17,19 @@
 #define LUX_PROP_H
 #define LUX_PROP_SWING_DOOR_H
 #define LUX_MULTIPLAYER_H
+#define LUX_ENEMY_H
+#define LUX_PLAYER_HELPERS_H
 
 class cLuxMap
 {
 public:
     iPhysicsWorld* physics;
+    tLuxEnemyList enemies;
+    unsigned heard=0;
     iPhysicsWorld* GetPhysicsWorld() { return physics; }
     cWorld* GetWorld() { return NULL; }
+    cLuxEnemyIterator GetEnemyIterator() { return cLuxEnemyIterator(&enemies); }
+    void BroadcastEnemySoundMessage(const cVector3f&,float,float,float) { ++heard; }
 };
 class cLuxMapHandler
 {
@@ -36,10 +42,17 @@ class cLuxPlayer
 public:
     iCharacterBody* character = NULL;
     eLuxPlayerState state = eLuxPlayerState_Normal;
+    float health = 100, terror = 0;
     iCharacterBody* GetCharacterBody() { return character; }
     iLight* GetVisibleLanternLight() const { return NULL; }
     eLuxPlayerState GetCurrentState() { return state; }
     void ChangeState(eLuxPlayerState value) { state = value; }
+    bool IsDead() const { return health<=0; }
+    void GiveDamage(float amount,int,eLuxDamageType,bool,bool) { health-=amount; }
+    float GetTerror() const { return terror; }
+    void SetTerror(float value) { terror=value; }
+    void AddTerrorEnemy(iLuxEnemy*) {}
+    void RemoveTerrorEnemy(iLuxEnemy*) {}
 };
 class cLuxInputHandler
 {
@@ -48,12 +61,14 @@ public:
 };
 struct SmokeInput { bool pressed = true; bool IsTriggerd(int) { return pressed; } };
 struct SmokeEngine { SmokeInput input; SmokeInput* GetInput() { return &input; } };
+struct SmokeConfig { float GetFloat(const tString&,const tString&,float fallback) { return fallback; } };
 struct SmokeBase
 {
     cLuxPlayer* mpPlayer;
     cLuxMapHandler* mpMapHandler;
     cLuxInputHandler* mpInputHandler;
     SmokeEngine* mpEngine;
+    SmokeConfig* mpGameCfg;
 };
 SmokeBase* gpBase;
 int hplMain(const tString&) { return 0; } // HPL's Windows entry point is unused.
@@ -86,6 +101,12 @@ public:
     bool IsPlayerCollisionTemporarilyDisabled(iPhysicsBody* body) const
     { return pendingPlayerClearance && body && !body->GetCollideCharacter(); }
 };
+class iLuxEnemy : public iLuxEntity
+{
+public:
+    bool IsDisabled() const { return false; }
+    float GetHealth() const { return 100; }
+};
 class cLuxProp_SwingDoor : public iLuxProp
 {
 public:
@@ -100,6 +121,8 @@ class cLuxMultiplayer
 {
 public:
     struct Packet { uint32_t peer; std::vector<uint8_t> bytes; bool reliable; };
+    struct Peer { bool reliableSendFailed=false; };
+    std::map<uint32_t,Peer> mPeers;
     bool host, blocked = false;
     uint32_t peer;
     cLuxMultiplayerSettings settings;
@@ -121,6 +144,17 @@ public:
     void Broadcast(const std::vector<uint8_t>& bytes, bool reliable) { Send(UINT32_MAX, bytes, reliable); }
 };
 
+#include "../amnesia/src/game/LuxEnemyPlayer.h"
+cLuxEnemyPlayer cLuxEnemyPlayer::Local(uint32_t peer)
+{
+    cLuxEnemyPlayer sample;sample.peer=peer;sample.body=gpBase->mpPlayer->GetCharacterBody();
+    if(!sample.body) return sample;
+    sample.position=sample.body->GetPosition();sample.feet=sample.body->GetFeetPosition();sample.eyes=sample.position;
+    sample.size=sample.body->GetSize();sample.yaw=sample.body->GetYaw();
+    sample.alive=!gpBase->mpPlayer->IsDead();sample.health=gpBase->mpPlayer->health;
+    sample.terror=gpBase->mpPlayer->GetTerror();
+    return sample;
+}
 #include "../amnesia/src/game/LuxMultiplayerWorld.cpp"
 
 struct Fixture
@@ -132,6 +166,7 @@ struct Fixture
     cLuxPlayer player;
     cLuxInputHandler inputs;
     SmokeEngine engine;
+    SmokeConfig config;
     SmokeBase base;
     cLuxMultiplayer session;
     cLuxMultiplayerWorld replication;
@@ -147,7 +182,7 @@ struct Fixture
         body->SetLinearDamping(0.001f); body->SetAngularDamping(0); body->SetAutoDisable(false);
         body->SetPosition(cVector3f(0, 0, 0));
         map.physics = &physics; maps.map = &map;
-        base = { &player, &maps, &inputs, &engine };
+        base = { &player, &maps, &inputs, &engine, &config };
         Activate(); replication.OnMapLoaded(&map);
     }
     void Activate() { gpBase = &base; }
@@ -162,20 +197,180 @@ static void Deliver(Fixture& from, Fixture& to, bool dropSome = false)
     {
         if (dropSome && !packet.reliable && ++packetNumber % 5 == 0) continue;
         if (packet.peer == UINT32_MAX || packet.peer == to.session.peer || !from.session.host)
-            assert(to.replication.HandleMessage(from.session.peer, packet.bytes));
+            assert(packet.bytes[0]==luxnet::EnemyDamage || packet.bytes[0]==luxnet::EnemyTerror ?
+                to.replication.HandlePlayerEvent(from.session.peer,packet.bytes) :
+                to.replication.HandleMessage(from.session.peer, packet.bytes));
     }
 }
 
-static std::vector<uint8_t> PosePacket(uint32_t peer, uint32_t sequence, const cVector3f& position, float height = 1.8f)
+static std::vector<uint8_t> PosePacket(uint32_t peer, uint32_t sequence, const cVector3f& position, float height = 1.8f, const PlayerState& gameplay = PlayerState())
 {
     Writer writer(Pose, 7); writer.U32(peer); writer.U32(sequence);
     writer.F32(position.x); writer.F32(position.y); writer.F32(position.z);
     writer.F32(0.6f); writer.F32(height); writer.F32(0.6f); writer.F32(0);
     WriteLantern(writer, Lantern());
+    WritePlayerState(writer, gameplay);
     return writer.bytes;
 }
 
 #include "multiplayer_contact_newton_tests.h"
+
+static void CheckEnemyQueriesAndEvents()
+{
+    Fixture host(true,0),client(false,1);
+    host.player.character=host.physics.CreateCharacterBody("host",cVector3f(0.6f,1.8f,0.6f));
+    client.player.character=client.physics.CreateCharacterBody("client",cVector3f(0.6f,1.8f,0.6f));
+    host.player.character->SetPosition(cVector3f(-3,1,0));client.player.character->SetPosition(cVector3f(3,1,0));
+    host.Activate();assert(host.replication.HandleMessage(1,PosePacket(1,1,cVector3f(3,1,0))));
+    auto remote=[&]() {
+        for(const auto& player:host.replication.GetEnemyPlayers()) if(player.peer==1) return player;
+        return cLuxEnemyPlayer();
+    };
+    auto query=remote();
+    assert(query.Eligible() && !query.body->IsActive() && !query.body->GetCurrentBody()->GetCollide());
+    assert(host.player.character->CheckCharacterFits(query.position));
+    assert(host.replication.GetEnemyPlayers().front().peer==0);
+    PlayerState crouched;crouched.flags|=PlayerCrouching;
+    assert(host.replication.HandleMessage(1,PosePacket(1,2,cVector3f(3,0.55f,0),0.9f,crouched)));
+    query=remote();assert(query.crouching && query.body->GetSize().y==0.9f && std::fabs(query.feet.y-0.1f)<0.001f);
+
+    host.session.sent.clear();host.replication.DamageEnemyPlayer(1,13,1,eLuxDamageType_Claws,true,0);
+    assert(host.session.sent.size()==1 && host.session.sent.front().reliable);
+    const auto damage=host.session.sent.front().bytes;Deliver(host,client);
+    assert(client.player.health==87 && host.player.health==100);
+    assert(client.replication.HandlePlayerEvent(0,damage));assert(client.replication.HandlePlayerEvent(0,damage));
+    assert(client.player.health==87 && !client.replication.HandlePlayerEvent(2,damage));
+    for(size_t length=0;length<damage.size();++length)
+        assert(!client.replication.HandlePlayerEvent(0,std::vector<uint8_t>(damage.begin(),damage.begin()+length)));
+    assert(client.player.health==87);
+    host.Activate();host.replication.DamageEnemyPlayer(0,9,1,eLuxDamageType_Claws,true,0);
+    assert(host.player.health==91 && client.player.health==87);
+    host.session.blocked=true;host.replication.DamageEnemyPlayer(1,1,1,eLuxDamageType_Claws,true,0);
+    assert(host.session.mPeers[1].reliableSendFailed);host.session.blocked=false;
+
+    auto sound=[&](uint32_t sequence,cVector3f position,float volume=1,float minimum=1,float maximum=10,uint32_t epoch=7) {
+        luxnet::Writer message(luxnet::EnemyStimulus);message.U32(epoch);message.U32(sequence);
+        message.Float(position.x);message.Float(position.y);message.Float(position.z);
+        message.Float(volume);message.Float(minimum);message.Float(maximum);return message.data;
+    };
+    const cVector3f position=query.position;
+    const auto audible=sound(1,position);
+    assert(host.replication.HandleEnemyStimulus(1,audible) && host.map.heard==1);
+    assert(host.replication.HandleEnemyStimulus(1,audible) && host.map.heard==1);
+    assert(host.replication.HandleEnemyStimulus(1,sound(2,cVector3f(50))) && host.map.heard==1);
+    assert(host.replication.HandleEnemyStimulus(99,sound(3,position)) && host.map.heard==1);
+    assert(host.replication.HandleEnemyStimulus(1,sound(3,position,1,1,10,6)) && host.map.heard==1);
+    assert(!host.replication.HandleEnemyStimulus(1,sound(3,position,std::numeric_limits<float>::quiet_NaN())));
+    assert(!host.replication.HandleEnemyStimulus(1,sound(3,position,1,5,4)));
+    for(size_t length=0;length<audible.size();++length)
+        assert(!host.replication.HandleEnemyStimulus(1,std::vector<uint8_t>(audible.begin(),audible.begin()+length)));
+    for(uint32_t sequence=3;sequence<200;++sequence) assert(host.replication.HandleEnemyStimulus(1,sound(sequence,position)));
+    assert(host.map.heard>1 && host.map.heard<=64);
+    PlayerState dead;dead.flags=0;dead.health=0;
+    assert(host.replication.HandleMessage(1,PosePacket(1,3,position,1.8f,dead)));
+    query=remote();assert(!query.alive && !query.Eligible() && !query.body);
+    const auto heard=host.map.heard;
+    assert(host.replication.HandleEnemyStimulus(1,sound(201,position)) && host.map.heard==heard);
+    host.replication.OnPeerDisconnected(1);assert(host.replication.GetEnemyPlayers().size()==1);
+    client.Activate();const uint32_t oldLife=client.replication.GetLocalPlayerLife();
+    client.replication.OnLocalPlayerRespawn();client.player.health=100;
+    assert(client.replication.GetLocalPlayerLife()!=oldLife);
+    auto delayedDamage=damage;
+    for(int i=0;i<4;++i) delayedDamage[5+i]=uint8_t(200u>>(i*8));
+    assert(client.replication.HandlePlayerEvent(0,delayedDamage) && client.player.health==100);
+    luxnet::Writer oldTerror(luxnet::EnemyTerror);oldTerror.U32(7);oldTerror.U32(200);oldTerror.U32(oldLife);oldTerror.Float(0.9f);
+    assert(client.replication.HandlePlayerEvent(0,oldTerror.data) && client.replication.GetEnemyTerror(1)==0);
+    for(int i=0;i<4;++i) delayedDamage[9+i]=uint8_t(client.replication.GetLocalPlayerLife()>>(i*8));
+    assert(client.replication.HandlePlayerEvent(0,delayedDamage) && client.player.health==87);
+    host.Activate();
+    host.replication.Shutdown();client.Activate();client.replication.Shutdown();
+    std::cout<<"Enemy query proxies: independent collision/crouch/death cleanup, host0/client damage routing and duplicate rejection, bounded near-player hearing passed.\n";
+}
+
+static void CheckEnemyCharacterCollision()
+{
+    for(bool collision : {false,true}) {
+        Fixture host(true,0);host.session.settings.playerCollision=collision;
+        auto* local=host.physics.CreateCharacterBody("collision_local",cVector3f(0.6f,1.8f,0.6f));
+        host.player.character=local;local->SetPosition(cVector3f(-10,1,0));
+        const tFlag reserved=0x40000000u,initial=reserved|0x00000007u;
+        local->SetCollideFlags(initial);
+        auto* enemy=host.physics.CreateCharacterBody("collision_enemy",cVector3f(0.8f,1.8f,0.8f));
+        enemy->SetPosition(cVector3f(-5,1,0));
+        assert(host.replication.HandleMessage(1,PosePacket(1,1,cVector3f(3,1,0))));
+        cLuxEnemyPlayer query;
+        for(const auto& player:host.replication.GetEnemyPlayers()) if(player.peer==1) query=player;
+        assert(query.Eligible() && !query.body->IsActive() && query.body->GetCurrentBody()->GetMass()==0);
+        assert(!query.body->GetCurrentBody()->GetCollide());
+        assert(query.body->GetCurrentBody()->IsActive()!=collision);
+        const cVector3f intersect=query.position+cVector3f(0.1f,0,0);
+        assert(!enemy->CheckCharacterFits(intersect));
+        assert(local->CheckCharacterFits(intersect)==!collision);
+        assert(local->GetCollideFlags()==(collision?initial:(initial&~reserved)));
+
+        // Another fresh pose must move the obstacle immediately even though the
+        // rendered proxy still interpolates from its earlier position.
+        assert(host.replication.HandleMessage(1,PosePacket(1,2,cVector3f(6,1,0))));
+        assert((host.replication.GetRemotePlayers().at(1).renderPosition-cVector3f(6,1,0)).Length()>1);
+        assert(!enemy->CheckCharacterFits(cVector3f(6.1f,1,0)));
+        assert(enemy->CheckCharacterFits(cVector3f(3.1f,1,0)));
+        local->SetCollideFlags(local->GetCollideFlags()^0x00000004u);
+        PlayerState dead;dead.flags=0;dead.health=0;
+        assert(host.replication.HandleMessage(1,PosePacket(1,3,cVector3f(6,1,0),1.8f,dead)));
+        assert(enemy->CheckCharacterFits(cVector3f(6.1f,1,0)));
+        host.replication.Reset();
+        assert(local->GetCollideFlags()==(initial^0x00000004u));
+        host.replication.Shutdown();
+    }
+    std::cout<<"Enemy/player collision: both host modes block native enemy sweeps at raw poses, preserve host pass-through settings and restore masks.\n";
+}
+
+static void CheckEnemyContactOwnership()
+{
+    Fixture host(true,0);
+    host.player.character=host.physics.CreateCharacterBody("enemy_contact_host",cVector3f(0.6f,1.8f,0.6f));
+    host.player.character->SetPosition(cVector3f(10,0,0));
+    auto* procedural=host.physics.CreateBody("enemy_contact_procedural",host.physics.CreateBoxShape(cVector3f(0.1f),NULL));
+    procedural->SetMass(1);procedural->SetGravity(false);
+    // Bodies not yet in replication have no lease to conflict with native AI.
+    assert(host.replication.AllowEnemyContact(procedural));
+    auto* sibling=host.physics.CreateBody("test_crate_sibling",host.physics.CreateBoxShape(cVector3f(0.2f),NULL));
+    sibling->SetMass(1);sibling->SetGravity(false);sibling->SetPosition(cVector3f(0.3f,0,0));
+    sibling->SetUserData(&host.bodyProp);host.bodyProp.bodies.push_back(sibling);
+    uint32_t sequence=0,owner=0,token=0;
+    const auto request=[&](iPhysicsBody* body) {
+        assert(host.replication.HandleMessage(1,PosePacket(1,++sequence,0)));
+        Writer packet(LeaseRequest,7);packet.U32(sequence);packet.U64(BodyId(body->GetName()));
+        assert(host.replication.HandleMessage(1,packet.bytes));
+        return host.replication.GetSimulationLease(body,owner,token);
+    };
+    assert(request(host.body) && owner==1);
+    const uint32_t original=token;
+    host.session.sent.clear();
+    // Native Newton callbacks must only queue the reclaim; changing the lease
+    // or publishing restores while traversing contacts risks invalidating them.
+    assert(!host.replication.AllowEnemyContact(host.body));
+    assert(!host.replication.AllowEnemyContact(host.body));
+    assert(host.replication.GetSimulationLease(host.body,owner,token) && token==original);
+    assert(CountPackets(host,LeaseRelease)==0);
+    host.replication.Update(1.0f/60);
+    assert(!host.replication.GetSimulationLease(host.body,owner,token));
+    assert(CountPackets(host,LeaseRelease)==1);
+    assert(host.replication.AllowEnemyContact(host.body));
+    assert(!request(sibling)); // A sibling cannot bypass the assembly grace.
+    for(int step=0;step<2;++step) host.replication.Update(0.25f);
+    assert(!request(host.body));
+    for(int step=0;step<3;++step) host.replication.Update(0.25f);
+    assert(request(sibling));
+    host.replication.ReclaimEnemyInteraction(host.body);
+    assert(!host.replication.GetSimulationLease(sibling,owner,token));
+    assert(!request(sibling));
+    for(int step=0;step<5;++step) host.replication.Update(0.25f);
+    assert(request(host.body));
+    host.replication.OnPeerDisconnected(1);
+    host.replication.Shutdown();
+    std::cout<<"Enemy contact ownership: deferred single reclaim, assembly grace and deliberate interaction reclaim passed.\n";
+}
 
 static void CheckDropCollisionGuard()
 {
@@ -299,6 +494,9 @@ int main()
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
     _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
     _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+    CheckEnemyQueriesAndEvents();
+    CheckEnemyCharacterCollision();
+    CheckEnemyContactOwnership();
     CheckDropCollisionGuard();
     CheckDuplicateNamedDrawers();
     CheckContactOwnership();

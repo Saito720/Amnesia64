@@ -137,6 +137,7 @@ private:
 
 	void SetTeslaEffectsAmount(float afX);
 	void ResetMindFuckEffects();
+	void ResetLocalTeslaEffects();
 	void UpdateTesla(float afTimeStep);
 		
 	//////////////
@@ -190,6 +191,7 @@ private:
 	float mfTeslaEffectAmount;
 	float mfTeslaSpecialNoticeCount;
 	bool mbTeslaMindFuckActive;
+	bool mbLocalTeslaEffects = false;
 	float mfTeslaMindFuckPulse;
 	float mfTeslaMindFuckPulseAdd;
 	float mfBlackOutCount;

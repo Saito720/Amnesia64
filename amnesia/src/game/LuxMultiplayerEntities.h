@@ -36,7 +36,7 @@ private:
     bool Eligible(iLuxEntity* entity);
     std::vector<uint8_t> Capture(iLuxProp* prop);
     bool Apply(const std::vector<uint8_t>& data);
-    bool Commit(iLuxEntity* entity, bool remote, bool callbackOnly=false, int diaryIndex=-1);
+    bool Commit(iLuxEntity* entity, bool remote, bool callbackOnly=false, int diaryIndex=-1, uint32_t peer=UINT32_MAX);
     void BroadcastState(iLuxEntity* entity);
     cLuxMultiplayer* mpSession;
     std::map<std::string, Claim> mClaims;

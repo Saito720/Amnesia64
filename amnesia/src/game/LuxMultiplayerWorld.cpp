@@ -7,6 +7,9 @@
 #include "LuxInputHandler.h"
 #include "LuxProp.h"
 #include "LuxProp_SwingDoor.h"
+#include "LuxEnemy.h"
+#include "LuxPlayerHelpers.h"
+#include "LuxMultiplayerProtocol.h"
 
 #include <algorithm>
 
@@ -19,6 +22,10 @@ namespace
     const float ContactGrace = 1.0f;
     const float ContactRetry = 0.25f;
     const size_t MaxContactLeases = 4;
+    // Query cylinders remain physical obstacles for authoritative enemies even
+    // when players may walk through one another. Only the local player excludes
+    // this reserved category; all ordinary world collision bits stay intact.
+    const tFlag EnemyPlayerCollisionFlag = 0x40000000u;
 
     uint64_t NetworkBodyId(iPhysicsBody* body) { return BodyId(body->GetName(), body->GetUniqueID()); }
     uint64_t BodyEntityRuntimeId(iPhysicsBody* body)
@@ -82,14 +89,17 @@ cLuxMultiplayerWorld::cLuxMultiplayerWorld(cLuxMultiplayer* apSession) : mpSessi
 
 void cLuxMultiplayerWorld::Reset()
 {
+    RestorePlayerCollisionMask();
     // The current map is still alive during OnMapLeave and a map download. On
     // other reset paths its world may already be gone and owns the colliders.
     if (mpMap && gpBase->mpMapHandler->GetCurrentMap() == mpMap)
     {
         while (!mPlayerColliders.empty()) RemovePlayerCollider(mPlayerColliders.begin()->first);
+        while (!mEnemyPlayerBodies.empty()) RemoveEnemyPlayerBody(mEnemyPlayerBodies.begin()->first);
         while (!mPlayerLights.empty()) RemovePlayerLight(*mPlayerLights.begin());
     }
     mPlayerColliders.clear();
+    mEnemyPlayerBodies.clear(); mEnemyTerror.clear();
     mPlayerLights.clear();
     mPlayerRenderNodes.clear();
     // The map may already have been destroyed; never dereference cached bodies
@@ -97,8 +107,12 @@ void cLuxMultiplayerWorld::Reset()
     mpMap = NULL;
     mBodies.clear(); mPlayers.clear(); mLeases.clear(); mBodyLeases.clear(); mAmbiguousBodies.clear();
     mContactAges.clear(); mContactRequests.clear();
+    mEnemyInfluence.clear(); mEnemyReclaims.clear();
     mInitialPackets.clear(); mlInitialBytes = 0; mbLocalInteractionStarted = false;
     mlSequence = mlLeaseCounter = mlLocalLease = mlRequestCounter = mlPendingRequest = 0;
+    mlDamageSequence = mlLastDamageSequence = mlLastTerrorSequence = 0;
+    mlStimulusSequence=0;mHearingBudgets.clear();
+    mlLocalPlayerLife=1;
     mlPendingBody = 0;
     mPendingState = mPendingPreviousState = eLuxPlayerState_Normal;
     mvPendingFocus = 0;
@@ -271,14 +285,34 @@ void cLuxMultiplayerWorld::SendPose()
         if(!check.Done()) lantern = Lantern();
     }
     WriteLantern(writer, lantern);
+    const cLuxEnemyPlayer sample = cLuxEnemyPlayer::Local(mpSession->GetLocalPeerId());
+    PlayerState gameplay;
+    gameplay.life=mlLocalPlayerLife;
+    gameplay.flags = (sample.alive ? PlayerAlive : 0) | (sample.crouching ? PlayerCrouching : 0) |
+        (sample.lantern ? PlayerLantern : 0) | (sample.protectedFromEnemies ? PlayerProtected : 0);
+    Store(gameplay.eyeOffset, Limit(sample.eyes-position,8));
+    Store(gameplay.forward,sample.forward); Store(gameplay.velocity,Limit(sample.velocity,100));
+    gameplay.pitch=sample.pitch; gameplay.fov=cMath::Clamp(sample.fov,0.05f,3.14f);
+    gameplay.aspect=cMath::Clamp(sample.aspect,0.02f,32.0f);
+    gameplay.speed=cMath::Clamp(sample.speed,0.0f,100.0f);
+    gameplay.light=cMath::Clamp(sample.lightLevel,0.0f,1000.0f);
+    gameplay.health=cMath::Clamp(sample.health,0.0f,10000.0f);
+    WritePlayerState(writer,gameplay);
     if (mpSession->IsHost()) mpSession->Broadcast(writer.bytes, false);
     else mpSession->Send(0, writer.bytes, false);
+    if(mpSession->IsHost()) for(const auto& entry:mPlayers)
+    {
+        luxnet::Writer state(luxnet::EnemyTerror);state.U32(mpSession->GetMapEpoch());state.U32(mlSequence);
+        state.U32(entry.second.gameplay.life);
+        state.Float(GetEnemyTerror(entry.first));mpSession->Send(entry.first,state.data,false);
+    }
 }
 
 void cLuxMultiplayerWorld::Update(float afTimeStep)
 {
     if (!mpSession->IsActive() || !mpMap) return;
     float dt = std::max(0.0f, std::min(afTimeStep, 0.25f));
+    for(auto& entry:mHearingBudgets) entry.second.tokens=std::min(64.0f,entry.second.tokens+dt*64.0f);
     for (std::map<uint32_t, std::deque<std::vector<uint8_t> > >::iterator it = mInitialPackets.begin(); it != mInitialPackets.end(); )
     {
         for (int budget = 0; budget < 8 && !it->second.empty(); ++budget)
@@ -289,6 +323,7 @@ void cLuxMultiplayerWorld::Update(float afTimeStep)
         if (it->second.empty()) it = mInitialPackets.erase(it); else ++it;
     }
     RefreshBodies();
+    UpdateEnemyInfluence(dt);
     for (auto it = mContactAges.begin(); it != mContactAges.end(); )
         if ((it->second += dt) > ContactGrace * 2) it = mContactAges.erase(it); else ++it;
     for (auto it = mContactRequests.begin(); it != mContactRequests.end(); )
@@ -302,7 +337,9 @@ void cLuxMultiplayerWorld::Update(float afTimeStep)
             it->second.renderLanternOffset) * std::min(1.0f, dt * 15);
         mPlayerRenderNodes[it->first]->SetPosition(it->second.renderPosition);
     }
-    UpdatePlayerColliders();
+    if(!mpSession->IsHost()) UpdatePlayerColliders();
+    PrepareEnemyPlayers();
+    UpdateEnemyTerror(dt);
     UpdatePlayerLights();
     if (mlPendingRequest)
     {
@@ -629,6 +666,303 @@ bool cLuxMultiplayerWorld::IsEntityLeased(iLuxProp* apProp) const
     return false;
 }
 
+void cLuxMultiplayerWorld::OnLocalPlayerRespawn()
+{
+    if(++mlLocalPlayerLife==0) ++mlLocalPlayerLife;
+    mEnemyTerror.erase(mpSession->GetLocalPeerId());
+    if(gpBase->mpPlayer) gpBase->mpPlayer->SetTerror(0);
+    // Send the new life on the next tick, before normal snapshot cadence.
+    mfSendTime=SnapshotStep;
+}
+
+void cLuxMultiplayerWorld::DamageEnemyPlayer(uint32_t peer,float amount,int strength,eLuxDamageType type,bool lethal,const cVector3f& force)
+{
+    if(!mpSession->IsHost() || !mpSession->IsReady() || !std::isfinite(amount) || amount<0 ||
+       !std::isfinite(force.x) || !std::isfinite(force.y) || !std::isfinite(force.z) || type<0 || type>=eLuxDamageType_LastEnum) return;
+    amount=std::min(amount,10000.0f);strength=std::max(0,std::min(strength,1000));
+    const cVector3f impulse=Limit(force,1000);
+    if(peer==mpSession->GetLocalPeerId())
+    {
+        if(!cLuxEnemyPlayer::Local(peer).Eligible()) return;
+        gpBase->mpPlayer->GetCharacterBody()->AddForceVelocity(impulse);
+        gpBase->mpPlayer->GiveDamage(amount,strength,type,true,lethal);
+        return;
+    }
+    auto player=mPlayers.find(peer);
+    if(player==mPlayers.end() || player->second.age>1 || !(player->second.gameplay.flags&PlayerAlive) ||
+       (player->second.gameplay.flags&PlayerProtected)) return;
+    luxnet::Writer damage(luxnet::EnemyDamage);
+    damage.U32(mpSession->GetMapEpoch());damage.U32(++mlDamageSequence);damage.U32(player->second.gameplay.life);damage.Float(amount);
+    damage.U32(static_cast<uint32_t>(strength));damage.U8(static_cast<uint8_t>(type));damage.U8(lethal?1:0);
+    damage.Float(impulse.x);damage.Float(impulse.y);damage.Float(impulse.z);
+    if(!mpSession->Send(peer,damage.data,true)) mpSession->mPeers[peer].reliableSendFailed=true;
+}
+
+void cLuxMultiplayerWorld::EmitEnemyStimulus(const cVector3f& position,float volume,float minimum,float maximum)
+{
+    if(!mpMap || !mpSession->IsClient() || !mpSession->IsReady()) return;
+    luxnet::Writer sound(luxnet::EnemyStimulus);sound.U32(mpSession->GetMapEpoch());sound.U32(++mlStimulusSequence);
+    sound.Float(position.x);sound.Float(position.y);sound.Float(position.z);
+    sound.Float(volume);sound.Float(minimum);sound.Float(maximum);
+    // A later footstep supersedes a lost one; hearing never stalls movement.
+    mpSession->Send(0,sound.data,false);
+}
+
+bool cLuxMultiplayerWorld::HandleEnemyStimulus(uint32_t peer,const std::vector<uint8_t>& bytes)
+{
+    if(!mpMap || !mpSession->IsHost() || bytes.empty() || bytes[0]!=luxnet::EnemyStimulus || bytes.size()>64) return false;
+    luxnet::Reader sound(bytes);const uint32_t epoch=sound.U32(),sequence=sound.U32();
+    cVector3f position;position.x=sound.Float();position.y=sound.Float();position.z=sound.Float();
+    const float volume=sound.Float(),minimum=sound.Float(),maximum=sound.Float();
+    if(!sound.Done() || volume<0 || volume>100 || minimum<0 || maximum<minimum || maximum>100000) return false;
+    if(epoch!=mpSession->GetMapEpoch()) return true;
+    auto player=mPlayers.find(peer);
+    if(player==mPlayers.end() || player->second.age>1 || !(player->second.gameplay.flags&PlayerAlive) ||
+       (position-player->second.position).Length()>8) return true;
+    auto& budget=mHearingBudgets[peer];
+    if(!Newer(sequence,budget.sequence)) return true;
+    budget.sequence=sequence;
+    if(budget.tokens<1) return true;
+    budget.tokens-=1;
+    mpMap->BroadcastEnemySoundMessage(position,volume,minimum,maximum);
+    return true;
+}
+
+bool cLuxMultiplayerWorld::HandlePlayerEvent(uint32_t peer,const std::vector<uint8_t>& bytes)
+{
+    if(!mpSession->IsClient() || peer!=0 || bytes.empty() || bytes.size()>64) return false;
+    luxnet::Reader reader(bytes);const uint32_t epoch=reader.U32(),sequence=reader.U32(),life=reader.U32();
+    if(!reader.valid) return false;
+    if(epoch!=mpSession->GetMapEpoch()) return true;
+    const float value=reader.Float();
+    if(bytes[0]==luxnet::EnemyTerror)
+    {
+        if(!reader.Done() || !life || value<0 || value>1) return false;
+        if(life!=mlLocalPlayerLife) return true;
+        if(Newer(sequence,mlLastTerrorSequence)) {mlLastTerrorSequence=sequence;mEnemyTerror[mpSession->GetLocalPeerId()].value=value;}
+        return true;
+    }
+    if(bytes[0]!=luxnet::EnemyDamage) return false;
+    const int strength=static_cast<int32_t>(reader.U32());const uint8_t type=reader.U8(),lethal=reader.U8();
+    cVector3f force;force.x=reader.Float();force.y=reader.Float();force.z=reader.Float();
+    if(!reader.Done() || !life || value<0 || value>10000 || strength<0 || strength>1000 ||
+       type>=eLuxDamageType_LastEnum || lethal>1 || force.Length()>1000) return false;
+    if(life!=mlLocalPlayerLife || !Newer(sequence,mlLastDamageSequence)) return true;
+    mlLastDamageSequence=sequence;
+    if(cLuxEnemyPlayer::Local(mpSession->GetLocalPeerId()).Eligible())
+    {
+        gpBase->mpPlayer->GetCharacterBody()->AddForceVelocity(force);
+        gpBase->mpPlayer->GiveDamage(value,strength,static_cast<eLuxDamageType>(type),true,lethal!=0);
+    }
+    return true;
+}
+
+void cLuxMultiplayerWorld::RemoveEnemyPlayerBody(uint32_t peer)
+{
+    auto it=mEnemyPlayerBodies.find(peer);
+    if(it==mEnemyPlayerBodies.end()) return;
+    mpMap->GetPhysicsWorld()->DestroyCharacterBody(it->second);
+    mEnemyPlayerBodies.erase(it);
+}
+
+void cLuxMultiplayerWorld::RestorePlayerCollisionMask()
+{
+    // A player body may already have been replaced or its map destroyed. Find a
+    // live controller through the world before touching the cached identity.
+    if(mpMaskedPlayer && mpMap && gpBase->mpMapHandler->GetCurrentMap()==mpMap)
+    {
+        auto bodies=mpMap->GetPhysicsWorld()->GetBodyIterator();
+        while(bodies.HasNext())
+        {
+            iPhysicsBody* body=bodies.Next();
+            if(!body->IsCharacter() || body->GetCharacterBody()!=mpMaskedPlayer) continue;
+            iCharacterBody* player=body->GetCharacterBody();
+            player->SetCollideFlags((player->GetCollideFlags() & ~EnemyPlayerCollisionFlag) |
+                                   (mlPlayerCollisionMask & EnemyPlayerCollisionFlag));
+            break;
+        }
+    }
+    mpMaskedPlayer=NULL;
+    mlPlayerCollisionMask=0;
+}
+
+void cLuxMultiplayerWorld::PrepareEnemyPlayers()
+{
+    if(!mpMap || !mpSession->IsHost()) return;
+    // This also runs before native character simulation, so enabled player
+    // colliders follow the same fresh pose as enemy queries in either mode.
+    UpdatePlayerColliders();
+    const bool playerCollision=mpSession->GetSettings().playerCollision;
+    iCharacterBody* localPlayer=gpBase->mpPlayer->GetCharacterBody();
+    if(mpMaskedPlayer!=localPlayer || playerCollision) RestorePlayerCollisionMask();
+    if(localPlayer && !playerCollision)
+    {
+        if(!mpMaskedPlayer)
+        {
+            mpMaskedPlayer=localPlayer;
+            mlPlayerCollisionMask=localPlayer->GetCollideFlags();
+        }
+        localPlayer->SetCollideFlags(localPlayer->GetCollideFlags() & ~EnemyPlayerCollisionFlag);
+    }
+    for(const auto& entry:mPlayers)
+    {
+        const auto& player=entry.second;
+        if(player.age>1 || !(player.gameplay.flags&PlayerAlive)) {RemoveEnemyPlayerBody(entry.first);continue;}
+        auto old=mEnemyPlayerBodies.find(entry.first);
+        if(old!=mEnemyPlayerBodies.end() && old->second->GetSize()!=player.size) RemoveEnemyPlayerBody(entry.first);
+        auto& body=mEnemyPlayerBodies[entry.first];
+        if(!body)
+        {
+            body=mpMap->GetPhysicsWorld()->CreateCharacterBody("MultiplayerEnemyTarget_"+cString::ToString(entry.first),player.size);
+            body->SetActive(false);
+            body->SetMass(1000000);
+            body->SetCollideFlags(EnemyPlayerCollisionFlag);
+            body->GetCurrentBody()->SetCollide(false);
+        }
+        body->SetPosition(player.position);
+        body->SetYaw(player.yaw);
+        // With player collision enabled the ordinary remote cylinder already
+        // supplies this obstacle; never collide twice against the same player.
+        body->GetCurrentBody()->SetCollideCharacter(!playerCollision);
+        body->GetCurrentBody()->SetActive(!playerCollision);
+    }
+}
+
+std::vector<cLuxEnemyPlayer> cLuxMultiplayerWorld::GetEnemyPlayers() const
+{
+    std::vector<cLuxEnemyPlayer> players;
+    if(!mpMap) return players;
+    players.push_back(cLuxEnemyPlayer::Local(mpSession->GetLocalPeerId()));
+    for(const auto& entry:mPlayers)
+    {
+        const auto& remote=entry.second;
+        if(remote.age>1) continue;
+        cLuxEnemyPlayer player;
+        player.peer=entry.first;player.life=remote.gameplay.life;player.position=remote.position;player.size=remote.size;
+        player.feet=remote.position-cVector3f(0,remote.size.y*0.5f,0);
+        player.eyes=remote.position+Vector(remote.gameplay.eyeOffset);
+        player.forward=Vector(remote.gameplay.forward);player.velocity=Vector(remote.gameplay.velocity);
+        player.yaw=remote.yaw;player.pitch=remote.gameplay.pitch;player.fov=remote.gameplay.fov;player.aspect=remote.gameplay.aspect;
+        player.speed=remote.gameplay.speed;player.lightLevel=remote.gameplay.light;player.health=remote.gameplay.health;
+        player.terror=GetEnemyTerror(entry.first);
+        player.alive=(remote.gameplay.flags&PlayerAlive)!=0;player.crouching=(remote.gameplay.flags&PlayerCrouching)!=0;
+        player.lantern=(remote.gameplay.flags&PlayerLantern)!=0;player.protectedFromEnemies=(remote.gameplay.flags&PlayerProtected)!=0;
+        auto body=mEnemyPlayerBodies.find(entry.first);
+        if(body!=mEnemyPlayerBodies.end()) player.body=body->second;
+        players.push_back(player);
+    }
+    return players;
+}
+
+float cLuxMultiplayerWorld::GetEnemyTerror(uint32_t peer) const
+{
+    if(mpSession->IsHost() && peer==mpSession->GetLocalPeerId()) return gpBase->mpPlayer->GetTerror();
+    auto it=mEnemyTerror.find(peer);
+    return it==mEnemyTerror.end()?0:it->second.value;
+}
+
+void cLuxMultiplayerWorld::SetEnemyTerror(uint32_t peer,float amount)
+{
+    if(!mpSession->IsHost()) return;
+    amount=cMath::Clamp(amount,0.0f,1.0f);
+    if(peer==mpSession->GetLocalPeerId()) gpBase->mpPlayer->SetTerror(amount);
+    else if(mPlayers.count(peer)) mEnemyTerror[peer].value=amount;
+}
+
+void cLuxMultiplayerWorld::SetEnemyTerrorSource(uint32_t peer,iLuxEnemy* enemy,bool active)
+{
+    if(!mpSession->IsHost() || !enemy) return;
+    if(peer==mpSession->GetLocalPeerId())
+    {
+        if(active) gpBase->mpPlayer->AddTerrorEnemy(enemy);
+        else gpBase->mpPlayer->RemoveTerrorEnemy(enemy);
+        return;
+    }
+    if(!mPlayers.count(peer)) return;
+    auto& sources=mEnemyTerror[peer].sources;
+    if(active) sources.insert(enemy->GetRuntimeID());
+    else sources.erase(enemy->GetRuntimeID());
+}
+
+void cLuxMultiplayerWorld::UpdateEnemyTerror(float dt)
+{
+    if(!mpSession->IsHost()) return;
+    std::set<uint64_t> active;
+    auto enemies=mpMap->GetEnemyIterator();
+    while(enemies.HasNext()) {auto* enemy=enemies.Next();if(enemy->IsActive() && !enemy->IsDisabled() && enemy->GetHealth()>0) active.insert(enemy->GetRuntimeID());}
+    const float increase=gpBase->mpGameCfg->GetFloat("Player_General","TerrorIncSpeed",0);
+    const float decrease=gpBase->mpGameCfg->GetFloat("Player_General","TerrorDecSpeed",0);
+    for(auto& entry:mEnemyTerror)
+    {
+        auto& state=entry.second;
+        for(auto it=state.sources.begin();it!=state.sources.end();) {if(!active.count(*it)) it=state.sources.erase(it);else ++it;}
+        auto player=mPlayers.find(entry.first);
+        const bool alive=player!=mPlayers.end() && player->second.age<=1 && (player->second.gameplay.flags&PlayerAlive);
+        state.value=cMath::Clamp(state.value+(alive && !state.sources.empty()?increase:-decrease)*dt,0.0f,1.0f);
+    }
+}
+
+void cLuxMultiplayerWorld::ReclaimEnemyInteraction(iPhysicsBody* body)
+{
+    if(!mpSession->IsHost() || !MarkEnemyInfluence(body)) return;
+    auto lease=mBodyLeases.find(NetworkBodyId(body));
+    if(lease!=mBodyLeases.end()) EndLease(lease->second,true);
+}
+
+bool cLuxMultiplayerWorld::MarkEnemyInfluence(iPhysicsBody* body)
+{
+    if(!mpMap || !body || body->IsCharacter() || body->GetMass()<=0) return false;
+    const uint64_t id=NetworkBodyId(body);
+    const auto tracked=mBodies.find(id);
+    if(tracked==mBodies.end() || tracked->second.body!=body ||
+       tracked->second.entityRuntimeId!=BodyEntityRuntimeId(body)) return false;
+    EnemyInfluence& influence=mEnemyInfluence[id];
+    influence.body=body; influence.runtime=tracked->second.entityRuntimeId;
+    influence.remaining=ContactGrace;
+    return true;
+}
+
+bool cLuxMultiplayerWorld::HasEnemyInfluence(iPhysicsBody* body) const
+{
+    if(!body) return false;
+    const auto influence=mEnemyInfluence.find(NetworkBodyId(body));
+    return influence!=mEnemyInfluence.end() && influence->second.remaining>0 &&
+        influence->second.body==body && influence->second.runtime==BodyEntityRuntimeId(body);
+}
+
+bool cLuxMultiplayerWorld::AllowEnemyContact(iPhysicsBody* body)
+{
+    if(!mpSession->IsActive()) return true;
+    if(!mpSession->IsHost() || !mpSession->IsReady()) return false;
+    // Bodies excluded from replication cannot be leased by a client. Preserve
+    // the host's native response for those local/procedural objects.
+    if(!MarkEnemyInfluence(body)) return true;
+    const auto locked=mBodyLeases.find(NetworkBodyId(body));
+    if(locked==mBodyLeases.end()) return true;
+    // EndLease can restore an interaction controller and publish body poses.
+    // Defer that work until Newton is no longer iterating collision contacts.
+    mEnemyReclaims.insert(locked->second);
+    return false;
+}
+
+void cLuxMultiplayerWorld::UpdateEnemyInfluence(float dt)
+{
+    if(!mpSession->IsHost()) return;
+    std::set<uint32_t> queued;
+    queued.swap(mEnemyReclaims);
+    for(uint32_t token:queued) EndLease(token,true);
+    for(auto it=mEnemyInfluence.begin();it!=mEnemyInfluence.end();)
+    {
+        const auto body=mBodies.find(it->first);
+        // Compare cached addresses and lifetime IDs only. A deleted body's
+        // address is never dereferenced, including same-name respawns.
+        if(body==mBodies.end() || body->second.body!=it->second.body ||
+           body->second.entityRuntimeId!=it->second.runtime || (it->second.remaining-=dt)<=0)
+            it=mEnemyInfluence.erase(it);
+        else ++it;
+    }
+}
+
 void cLuxMultiplayerWorld::RemovePlayerCollider(uint32_t alPeer)
 {
     std::map<uint32_t, iCharacterBody*>::iterator collider = mPlayerColliders.find(alPeer);
@@ -684,7 +1018,7 @@ void cLuxMultiplayerWorld::UpdatePlayerColliders()
     for (std::map<uint32_t, cLuxMultiplayerRemotePlayer>::const_iterator it = mPlayers.begin(); it != mPlayers.end(); ++it)
     {
         const cLuxMultiplayerRemotePlayer& player = it->second;
-        if (player.age > 2)
+        if (player.age > 1 || !(player.gameplay.flags & PlayerAlive))
         {
             RemovePlayerCollider(it->first);
             continue;
@@ -708,7 +1042,9 @@ void cLuxMultiplayerWorld::UpdatePlayerColliders()
             collider->GetCurrentBody()->SetCollideFlags(eFlagBit_All);
             mPlayerColliders[it->first] = collider;
         }
-        collider->SetPosition(player.renderPosition);
+        // Physics and hit testing use the same latest simulation pose. The
+        // rendered cylinder and lantern keep their independent smooth history.
+        collider->SetPosition(player.position);
         collider->GetCurrentBody()->SetActive(true);
     }
 }
@@ -823,7 +1159,7 @@ bool cLuxMultiplayerWorld::GrantLease(uint32_t alPeer, uint64_t alBody, uint32_t
         if (group.size() > MaxLeaseBodies) return false;
         iPhysicsBody* candidate = group[i];
         uint64_t id = NetworkBodyId(candidate);
-        if (!FindBody(id)) return false;
+        if (!FindBody(id) || HasEnemyInfluence(candidate)) return false;
         auto previous = mBodyLeases.find(id);
         if (previous != mBodyLeases.end())
         {
@@ -986,6 +1322,7 @@ bool cLuxMultiplayerWorld::HandleMessage(uint32_t alPeer, const std::vector<uint
         player.position.x = reader.F32(100000); player.position.y = reader.F32(100000); player.position.z = reader.F32(100000);
         player.size.x = reader.F32(5); player.size.y = reader.F32(5); player.size.z = reader.F32(5); player.yaw = reader.F32(100000);
         player.lantern = ReadLantern(reader);
+        player.gameplay = ReadPlayerState(reader);
         if (!reader.Done() || player.size.x < 0.1f || player.size.y < 0.1f || player.size.z < 0.1f ||
             (mpSession->IsHost() && peer != alPeer)) return false;
         if (peer == mpSession->GetLocalPeerId()) return true; // Host also relays to the originator.
@@ -1002,7 +1339,9 @@ bool cLuxMultiplayerWorld::HandleMessage(uint32_t alPeer, const std::vector<uint
             renderNode->SetPosition(player.renderPosition);
             renderNode->ResetRenderInterpolation();
         }
+        if(old!=mPlayers.end() && old->second.gameplay.life!=player.gameplay.life) mEnemyTerror.erase(peer);
         mPlayers[peer] = player;
+        PrepareEnemyPlayers();
         if (mpSession->IsHost()) mpSession->Broadcast(avMessage, false);
         return true;
     }
@@ -1162,6 +1501,9 @@ void cLuxMultiplayerWorld::OnPeerDisconnected(uint32_t alPeer)
         mInitialPackets.erase(pending);
     }
     RemovePlayerCollider(alPeer);
+    RemoveEnemyPlayerBody(alPeer);
+    mEnemyTerror.erase(alPeer);
+    mHearingBudgets.erase(alPeer);
     RemovePlayerLight(alPeer);
     mPlayerRenderNodes.erase(alPeer);
     mPlayers.erase(alPeer);

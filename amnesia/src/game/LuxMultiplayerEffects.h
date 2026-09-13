@@ -22,6 +22,7 @@ public:
     bool SendInitialState(uint32_t peer);
     bool HandleMessage(uint32_t peer,const std::vector<uint8_t>& bytes,tString& error);
     void EmitPlayerSound(const tString& asset,float volume,float minimum,float maximum);
+    bool ShouldEmitEnemyStimulus(cSoundEntity* sound) const;
     void OnSoundCreated(hpl::cWorld*,hpl::cSoundEntity*,hpl::iPhysicsBody*);
     void OnParticleCreated(hpl::cWorld*,hpl::cParticleSystem*,const tString&,const cVector3f&,hpl::iPhysicsBody*);
 private:
@@ -49,6 +50,7 @@ private:
     struct Budget {float elapsed=0;unsigned creates=0, packets=0, bytes=0;};
     typedef std::pair<uint32_t,uint32_t> Key;
     bool IgnoreCapture() const;
+    bool ShouldCaptureBody(iPhysicsBody* body) const;
     void SetOrigin(luxfx::Effect& effect,iPhysicsBody* body);
     bool Owns(const luxfx::Effect& effect) const;
     bool Capture(Local& local);
@@ -59,6 +61,7 @@ private:
     void RemoveLocal(Local& local);
     uint32_t NextID();
     cLuxMultiplayer* mpSession;
+    cLuxMap* mpMap=NULL;
     cWorld* mpWorld=NULL;
     bool mbApplying=false;
     bool mbSendFailed=false;

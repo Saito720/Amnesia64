@@ -22,6 +22,8 @@
 #include "LuxMapHandler.h"
 #include "LuxMap.h"
 #include "LuxEnemy.h"
+#include "LuxMultiplayer.h"
+#include "LuxMultiplayerWorld.h"
 
 #include "LuxPlayer.h"
 #include "LuxPlayerHelpers.h"
@@ -278,12 +280,26 @@ bool cLuxMapHelper::ShapeDamage(iCollideShape *apShape, const cMatrixf& a_mtxTra
 	//Set up
 	cWorld *pWorld = pCurrentMap->GetWorld();
 	iPhysicsWorld *pPhysicsWorld = pCurrentMap->GetPhysicsWorld();
+	cLuxMultiplayer* session=gpBase->mpMultiplayer;
+	iPhysicsBody* source=pWorld->GetEffectSourceBody();
+	iLuxEntity* sourceEntity=source && source->IsCharacter()?static_cast<iLuxEntity*>(source->GetCharacterBody()->GetUserData()):NULL;
+	const bool networkEnemy=sourceEntity && sourceEntity->GetEntityType()==eLuxEntityType_Enemy && session && session->IsActive();
+	if(networkEnemy && !session->IsHost()) return false;
+	std::map<iPhysicsBody*,cLuxEnemyPlayer> players;
+	if(networkEnemy && abCheckPlayer)
+	{
+		session->GetWorld()->PrepareEnemyPlayers();
+		for(const auto& player:session->GetWorld()->GetEnemyPlayers())
+			if(player.Eligible()) players[player.body->GetCurrentBody()]=player;
+	}
 
 	cBoundingVolume shapeBV =  apShape->GetBoundingVolume();
 	shapeBV.SetTransform(cMath::MatrixMul(a_mtxTransform, shapeBV.GetTransform()));
 	
 	std::vector<iPhysicsBody*> vBodies;
 	pPhysicsWorld->GetBodiesInBV(&shapeBV, &vBodies);
+	for(const auto& player:players)
+		if(std::find(vBodies.begin(),vBodies.end(),player.first)==vBodies.end()) vBodies.push_back(player.first);
 	if(vBodies.empty()) return false;
 
     cCollideData collideData;
@@ -298,16 +314,19 @@ bool cLuxMapHelper::ShapeDamage(iCollideShape *apShape, const cMatrixf& a_mtxTra
 	for(size_t i=0; i<vBodies.size(); ++i)
 	{
 		iPhysicsBody *pBody = vBodies[i];
+		const auto playerHit=players.find(pBody);
+		const bool sessionPlayer=playerHit!=players.end();
+		if(networkEnemy && pBody==gpBase->mpPlayer->GetCharacterBody()->GetCurrentBody() && !sessionPlayer) continue;
 
-		if(pBody->IsActive()==false) continue;
-		if(pBody->GetCollide()==false) continue;
+		if(!sessionPlayer && pBody->IsActive()==false) continue;
+		if(!sessionPlayer && pBody->GetCollide()==false) continue;
 
 		///////////////////////
 		//Check if valid
 		if(pBody->GetUserData() && abCheckProps==false) continue;
 		if(pBody->IsCharacter())
 		{
-			if(pBody == gpBase->mpPlayer->GetCharacterBody()->GetCurrentBody())
+			if(sessionPlayer || pBody == gpBase->mpPlayer->GetCharacterBody()->GetCurrentBody())
 			{
 				if(abCheckPlayer == false) continue;
 			}
@@ -357,7 +376,7 @@ bool cLuxMapHelper::ShapeDamage(iCollideShape *apShape, const cMatrixf& a_mtxTra
 
         ///////////////////////
 		//Add Force
-		if(pBody->GetMass() > 0 || pBody->IsCharacter())
+		if(!sessionPlayer && (pBody->GetMass() > 0 || pBody->IsCharacter()))
 		{
 			cVector3f vDir = cMath::Vector3Normalize(vHitPos - avOrigin);
 			
@@ -367,6 +386,7 @@ bool cLuxMapHelper::ShapeDamage(iCollideShape *apShape, const cMatrixf& a_mtxTra
 			}
 			else
 			{
+				if(networkEnemy) session->GetWorld()->ReclaimEnemyInteraction(pBody);
 				float fImpulse = cMath::Min(afForce / pBody->GetMass(), afMaxImpulse);
 				pBody->AddImpulseAtPosition(vDir * fImpulse, vHitPos);
 			}
@@ -425,7 +445,13 @@ bool cLuxMapHelper::ShapeDamage(iCollideShape *apShape, const cMatrixf& a_mtxTra
 		///////////////////////
 		//Add Damage
 		float fDamage = cMath::RandRectf(afMinDamage, afMaxDamage);
-		if(pEntity)
+		if(sessionPlayer)
+		{
+			const cVector3f force=cMath::Vector3Normalize(vHitPos-avOrigin)*afForce*0.1f;
+			session->GetWorld()->DamageEnemyPlayer(playerHit->second.peer,fDamage,alStrength,aDamageType,abLethalForPlayer,force);
+			if(apHitPlayer) *apHitPlayer=true;
+		}
+		else if(pEntity)
 		{
 			pEntity->GiveDamage(fDamage,alStrength);
 		}

@@ -100,6 +100,40 @@ namespace LuxWorldWire
         return light;
     }
 
+    // Gameplay information accompanies the owning player's pose. It never uses
+    // interpolated draw transforms. Terror is computed by the host, not sent here.
+    enum PlayerFlags : uint8_t { PlayerAlive=1, PlayerCrouching=2, PlayerLantern=4, PlayerProtected=8 };
+    struct PlayerState
+    {
+        uint8_t flags = PlayerAlive;
+        uint32_t life = 1;
+        float eyeOffset[3] = {}, forward[3] = {0,0,-1}, velocity[3] = {};
+        float pitch=0, fov=1.2f, aspect=4.0f/3.0f, speed=0, light=1, health=100;
+    };
+    inline void WritePlayerState(Writer& writer, const PlayerState& player)
+    {
+        writer.U8(player.flags);writer.U32(player.life);
+        for(float v : player.eyeOffset) writer.F32(v);
+        for(float v : player.forward) writer.F32(v);
+        for(float v : player.velocity) writer.F32(v);
+        writer.F32(player.pitch); writer.F32(player.fov); writer.F32(player.aspect);
+        writer.F32(player.speed); writer.F32(player.light); writer.F32(player.health);
+    }
+    inline PlayerState ReadPlayerState(Reader& reader)
+    {
+        PlayerState player;
+        player.flags=reader.U8();player.life=reader.U32();
+        for(float& v : player.eyeOffset) v=reader.F32(8);
+        float norm=0;
+        for(float& v : player.forward) {v=reader.F32(1.01f);norm+=v*v;}
+        for(float& v : player.velocity) v=reader.F32(100);
+        player.pitch=reader.F32(100000); player.fov=reader.F32(3.14f); player.aspect=reader.F32(32);
+        player.speed=reader.F32(100); player.light=reader.F32(1000); player.health=reader.F32(10000);
+        if(!player.life || player.flags>15 || std::fabs(norm-1)>0.025f || player.fov<0.05f || player.aspect<0.02f ||
+           player.speed<0 || player.light<0 || player.health<0) reader.valid=false;
+        return player;
+    }
+
     struct Body
     {
         uint64_t id;

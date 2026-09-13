@@ -32,6 +32,28 @@ static bool Decode(const std::vector<uint8_t>& bytes, std::vector<Body>& bodies)
 
 int main()
 {
+    const auto encodePlayer=[](const PlayerState& player) {
+        Writer writer(Pose,7);WritePlayerState(writer,player);return writer.bytes;
+    };
+    const auto decodePlayer=[](const std::vector<uint8_t>& bytes,PlayerState& player) {
+        Reader reader(bytes);if(reader.U8()!=Pose || reader.U32()!=7) return false;
+        player=ReadPlayerState(reader);return reader.Done();
+    };
+    PlayerState player,decodedPlayer;player.flags=PlayerAlive|PlayerCrouching|PlayerLantern;player.life=27;
+    player.eyeOffset[1]=0.7f;player.velocity[0]=2;player.speed=2;player.health=73;
+    const auto playerBytes=encodePlayer(player);
+    assert(decodePlayer(playerBytes,decodedPlayer) && encodePlayer(decodedPlayer)==playerBytes);
+    for(size_t length=0;length<playerBytes.size();++length)
+        assert(!decodePlayer(std::vector<uint8_t>(playerBytes.begin(),playerBytes.begin()+length),decodedPlayer));
+    auto invalidPlayer=player;invalidPlayer.life=0;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
+    invalidPlayer=player;invalidPlayer.flags=16;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
+    invalidPlayer=player;invalidPlayer.forward[2]=0;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
+    invalidPlayer=player;invalidPlayer.health=-1;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
+    invalidPlayer=player;invalidPlayer.aspect=0;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
+    invalidPlayer=player;invalidPlayer.fov=0;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
+    invalidPlayer=player;invalidPlayer.eyeOffset[0]=9;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
+    invalidPlayer=player;invalidPlayer.light=std::numeric_limits<float>::quiet_NaN();assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
+
     const auto encodeLantern=[](const Lantern& light) {
         Writer writer(Pose,7);WriteLantern(writer,light);return writer.bytes;
     };

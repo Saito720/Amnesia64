@@ -3,6 +3,7 @@
 
 #include "LuxBase.h"
 #include "LuxMultiplayerWorldProtocol.h"
+#include "LuxEnemyPlayer.h"
 #include <map>
 #include <set>
 #include <deque>
@@ -11,6 +12,7 @@
 class cLuxMultiplayer;
 class cLuxMap;
 class iLuxProp;
+class iLuxEnemy;
 
 struct cLuxMultiplayerRemotePlayer
 {
@@ -18,6 +20,7 @@ struct cLuxMultiplayerRemotePlayer
     float yaw, age;
     uint32_t sequence;
     LuxWorldWire::Lantern lantern;
+    LuxWorldWire::PlayerState gameplay;
     cLuxMultiplayerRemotePlayer() : position(0), size(0), renderPosition(0), renderLanternOffset(0), yaw(0), age(0), sequence(0) {}
 };
 
@@ -44,11 +47,26 @@ public:
     bool OwnsSimulation(iPhysicsBody* apBody) const;
     bool GetSimulationLease(iPhysicsBody* body, uint32_t& owner, uint32_t& token) const;
     bool AllowPlayerContact(iPhysicsBody* apBody);
+    // Called during character collision traversal: lease changes are queued and
+    // applied only after physics has finished the tick.
+    bool AllowEnemyContact(iPhysicsBody* body);
     bool IsInteractionOwnedByOther(iPhysicsBody* apBody) const;
     bool IsInteractionOwnedByOther(iPhysicsBody* apBody, uint32_t alPeer) const;
     bool IsEntityLeased(iLuxProp* apProp) const;
     static bool IsInteractionState(eLuxPlayerState aState);
     const std::map<uint32_t, cLuxMultiplayerRemotePlayer>& GetRemotePlayers() const { return mPlayers; }
+    std::vector<cLuxEnemyPlayer> GetEnemyPlayers() const;
+    float GetEnemyTerror(uint32_t peer) const;
+    void SetEnemyTerror(uint32_t peer, float amount);
+    void SetEnemyTerrorSource(uint32_t peer, iLuxEnemy* enemy, bool active);
+    void ReclaimEnemyInteraction(iPhysicsBody* body);
+    void PrepareEnemyPlayers();
+    void DamageEnemyPlayer(uint32_t peer, float amount, int strength, eLuxDamageType type, bool lethal, const cVector3f& force);
+    bool HandlePlayerEvent(uint32_t peer, const std::vector<uint8_t>& bytes);
+    void EmitEnemyStimulus(const cVector3f& position,float volume,float minimum,float maximum);
+    bool HandleEnemyStimulus(uint32_t peer,const std::vector<uint8_t>& bytes);
+    uint32_t GetLocalPlayerLife() const {return mlLocalPlayerLife;}
+    void OnLocalPlayerRespawn();
 
 private:
     struct BodyTrack
@@ -77,6 +95,12 @@ private:
     void RefreshBodies();
     void UpdatePlayerColliders();
     void RemovePlayerCollider(uint32_t alPeer);
+    void RemoveEnemyPlayerBody(uint32_t peer);
+    void RestorePlayerCollisionMask();
+    void UpdateEnemyTerror(float dt);
+    void UpdateEnemyInfluence(float dt);
+    bool HasEnemyInfluence(iPhysicsBody* body) const;
+    bool MarkEnemyInfluence(iPhysicsBody* body);
     void UpdatePlayerLights();
     void RemovePlayerLight(uint32_t alPeer);
     iPhysicsBody* FindBody(uint64_t alId) const;
@@ -104,15 +128,32 @@ private:
     // on the same presentation timeline as the rest of the physics world.
     std::map<uint32_t, std::unique_ptr<cNode3D> > mPlayerRenderNodes;
     std::map<uint32_t, iCharacterBody*> mPlayerColliders;
+    std::map<uint32_t, iCharacterBody*> mEnemyPlayerBodies;
+    iCharacterBody* mpMaskedPlayer = NULL;
+    tFlag mlPlayerCollisionMask = 0;
+    struct PlayerTerror { float value=0; std::set<uint64_t> sources; };
+    std::map<uint32_t, PlayerTerror> mEnemyTerror;
+    struct HearingBudget {float tokens=64;uint32_t sequence=0;};
+    std::map<uint32_t,HearingBudget> mHearingBudgets;
+    uint32_t mlStimulusSequence=0;
+    uint32_t mlLocalPlayerLife=1;
     std::set<uint32_t> mPlayerLights;
     std::map<uint32_t, Lease> mLeases;
     std::map<uint64_t, uint32_t> mBodyLeases;
     std::map<uint64_t, float> mContactAges, mContactRequests;
+    struct EnemyInfluence {
+        iPhysicsBody* body = NULL;
+        uint64_t runtime = 0;
+        float remaining = 0;
+    };
+    std::map<uint64_t,EnemyInfluence> mEnemyInfluence;
+    std::set<uint32_t> mEnemyReclaims;
     std::set<uint64_t> mAmbiguousBodies;
     std::map<uint32_t, std::deque<std::vector<uint8_t> > > mInitialPackets;
     size_t mlInitialBytes;
     bool mbLocalInteractionStarted;
     uint32_t mlSequence, mlLeaseCounter, mlLocalLease, mlRequestCounter, mlPendingRequest;
+    uint32_t mlDamageSequence, mlLastDamageSequence, mlLastTerrorSequence;
     uint64_t mlPendingBody;
     eLuxPlayerState mPendingState, mPendingPreviousState;
     cVector3f mvPendingFocus;

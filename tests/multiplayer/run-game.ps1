@@ -1,4 +1,4 @@
-param([string]$RetailDirectory,[int]$Port=27843,[ValidateSet('Standalone','Steamworks')][string]$Backend='Standalone',[switch]$SteamHostOnly,[switch]$SettingsOnly,[ValidateSet('Auto','Bordered','Borderless')][string]$BorderMode='Auto',[switch]$SkipBuild,[switch]$KeepProfiles,[ValidateRange(320,8192)][int]$Width=800,[ValidateRange(240,8192)][int]$Height=600)
+param([string]$RetailDirectory,[int]$Port=27843,[ValidateSet('Standalone','Steamworks')][string]$Backend='Standalone',[switch]$SteamHostOnly,[switch]$SettingsOnly,[switch]$EnemiesOnly,[ValidateSet('Auto','Bordered','Borderless')][string]$BorderMode='Auto',[switch]$SkipBuild,[switch]$KeepProfiles,[ValidateRange(320,8192)][int]$Width=800,[ValidateRange(240,8192)][int]$Height=600)
 $ErrorActionPreference='Stop'
 if(-not $PSBoundParameters.ContainsKey('BorderMode') -and -not $SettingsOnly) { $BorderMode='Bordered' }
 . (Join-Path $PSScriptRoot 'TestSupport.ps1')
@@ -6,12 +6,23 @@ $context=Get-MultiplayerTestContext 'game'
 $retail=Find-AmnesiaRetailDirectory $RetailDirectory
 if($SteamHostOnly -and $Backend -ne 'Steamworks') { throw '-SteamHostOnly requires -Backend Steamworks and a signed-in account with access to the configured AppID.' }
 if($SteamHostOnly -and $SettingsOnly) { throw '-SteamHostOnly and -SettingsOnly select different tests.' }
+if($EnemiesOnly -and ($SteamHostOnly -or $SettingsOnly)) { throw '-EnemiesOnly cannot be combined with another focused test mode.' }
 $roles=if($SettingsOnly) { @('settings') } elseif($SteamHostOnly) { @('steam-host') } else { @('host','client') }
 if(-not $SkipBuild) { & (Join-Path $PSScriptRoot 'build.ps1') -Kind game -Backend $Backend }
 if($Port -lt 1 -or $Port -gt 65535) { throw 'Port must be from 1 to 65535.' }
 $runId=[Guid]::NewGuid().ToString('N').Substring(0,12)
 $run=Join-Path $context.Output $runId
 New-Item -ItemType Directory -Path $run | Out-Null
+$enemyMap = $null
+$enemyCache = $null
+if($EnemiesOnly) {
+    . (Join-Path $PSScriptRoot 'EnemyFixture.ps1')
+    $enemyMap = New-MultiplayerEnemyFixture $retail $run
+    $enemyHash=(Get-FileHash -LiteralPath $enemyMap -Algorithm SHA256).Hash.ToLowerInvariant()
+    $enemyCacheRoot=[IO.Path]::GetFullPath((Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'HPL2/Amnesia/MultiplayerCache/objects'))
+    $enemyCache=[IO.Path]::GetFullPath((Join-Path $enemyCacheRoot "$enemyHash.map"))
+    if(Test-Path -LiteralPath $enemyCache) { throw 'A unique enemy fixture unexpectedly already exists in the cache.' }
+}
 $profileParent=[IO.Path]::GetFullPath((Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Amnesia'))
 $profilePaths=@{}
 $template=[IO.File]::ReadAllText((Join-Path $retail 'config/main_init.cfg'))
@@ -35,7 +46,10 @@ foreach($role in $roles) {
     [IO.File]::WriteAllText((Join-Path $run "$role-init.cfg"),$config)
 }
 $processes=@()
+$savedEnemyMode=$env:CODEX_MP_ENEMIES
+$savedEnemyMap=$env:CODEX_MP_ENEMY_MAP
 try {
+    if($EnemiesOnly) { $env:CODEX_MP_ENEMIES='1'; $env:CODEX_MP_ENEMY_MAP=$enemyMap }
     foreach($role in $roles) {
         $arguments=Join-TestProcessArguments @($role,(Join-Path $run "$role-init.cfg"),$run,[string]$Port)
         $processes += Start-Process -FilePath (Join-Path $context.Output 'smoke.exe') -ArgumentList $arguments -WorkingDirectory $retail -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $run "$role-stdout.txt") -RedirectStandardError (Join-Path $run "$role-stderr.txt")
@@ -58,7 +72,19 @@ try {
         if(-not (Test-Path -LiteralPath (Join-Path $run "$role-passed.txt"))) { throw "Missing success marker for $role." }
     }
 } finally {
+    $env:CODEX_MP_ENEMIES=$savedEnemyMode
+    $env:CODEX_MP_ENEMY_MAP=$savedEnemyMap
     Stop-TestProcesses $processes
+    if($enemyCache -and (Test-Path -LiteralPath $enemyCache)) {
+        $item=Get-Item -LiteralPath $enemyCache
+        # The unique comment gives this run its own hash. Remove only this exact
+        # ordinary file, including failed runs; existing downloaded maps remain.
+        if($item.FullName -eq $enemyCache -and $item.DirectoryName -eq $enemyCacheRoot -and
+           -not ($item.Attributes -band ([IO.FileAttributes]::ReparsePoint -bor [IO.FileAttributes]::Directory)) -and
+           (Get-FileHash -LiteralPath $enemyCache -Algorithm SHA256).Hash.ToLowerInvariant() -eq $enemyHash) {
+            Remove-Item -LiteralPath $enemyCache -Force
+        } else { Write-Warning "Enemy cache cleanup refused unexpected file: $enemyCache" }
+    }
     foreach($role in $roles) {
         $path=$profilePaths[$role]
         if(-not (Test-Path -LiteralPath $path)) { continue }

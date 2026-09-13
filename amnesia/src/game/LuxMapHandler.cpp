@@ -20,6 +20,7 @@
 #include "LuxMapHandler.h"
 #include "LuxMultiplayer.h"
 #include "LuxMultiplayerWorld.h"
+#include "LuxMultiplayerEffects.h"
 
 #include "LuxMap.h"
 #include "LuxPlayer.h"
@@ -74,6 +75,8 @@ void cMapHandlerSoundCallback::OnStart(cSoundEntity *apSoundEntity)
 {
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	if(pMap==NULL) return;
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive() &&
+		!gpBase->mpMultiplayer->GetEffects()->ShouldEmitEnemyStimulus(apSoundEntity)) return;
 	
 	///////////////////////////
 	//Check if the sound is something to worry bout
@@ -94,7 +97,7 @@ void cMapHandlerSoundCallback::OnStart(cSoundEntity *apSoundEntity)
 	///////////////////////////
 	//Iterate enemies and send sound message to those close enough
 	float fMaxDist = apSoundEntity->GetMaxDistance();
-	float fMinDist = apSoundEntity->GetMaxDistance();
+	float fMinDist = apSoundEntity->GetMinDistance();
 	float fVolume = apSoundEntity->GetVolume();
 	cVector3f vPos = apSoundEntity->GetWorldPosition();
 	

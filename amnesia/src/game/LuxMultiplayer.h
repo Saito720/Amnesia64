@@ -11,6 +11,7 @@ class cLuxMultiplayerUI;
 class cLuxMultiplayerWorld;
 class cLuxMultiplayerEntities;
 class cLuxMultiplayerEffects;
+class cLuxMultiplayerEnemies;
 class iLuxEntity;
 class iLuxProp;
 class cLuxDiary;
@@ -36,6 +37,7 @@ struct cLuxMultiplayerSettings {
 class cLuxMultiplayer : public iLuxUpdateable {
     friend class cLuxMultiplayerEntities;
     friend class cLuxMultiplayerEffects;
+    friend class cLuxMultiplayerWorld;
 public:
     cLuxMultiplayer();
     ~cLuxMultiplayer();
@@ -83,6 +85,7 @@ public:
     cLuxMultiplayerWorld* GetWorld() { return mpWorld; }
     cLuxMultiplayerEntities* GetEntities() { return mpEntities; }
     cLuxMultiplayerEffects* GetEffects() { return mpEffects; }
+    cLuxMultiplayerEnemies* GetEnemies() { return mpEnemies; }
     bool Send(uint32_t peer, const std::vector<uint8_t>& data, bool reliable);
     void Broadcast(const std::vector<uint8_t>& data, bool reliable);
     void ShowWindow(bool campaign=false);
@@ -93,6 +96,7 @@ public:
     void NotifyHostMapChange(const tString& map);
     void CancelHostMapChange(const tString& reason);
     bool RemotePlayerTouches(iLuxEntity* entity);
+    uint32_t GetRemotePlayerTouching(iLuxEntity* entity);
     bool RequestEntityInteraction(iLuxEntity* entity, iPhysicsBody* body, const cVector3f& pos);
     void BroadcastScriptEffect(const std::vector<uint8_t>& effect);
     bool AllowObjectBreak(const tString& name);
@@ -105,6 +109,8 @@ public:
     void RecordNativeDiaryDecision(bool open);
     bool IsApplyingScriptEffect() const { return mbApplyingScriptEffect; }
     bool SetRemoteScriptTrigger(bool remote) { bool old=mbRemoteScriptTrigger;mbRemoteScriptTrigger=remote;return old; }
+    uint32_t GetScriptPlayerPeer() const { return mbRemoteScriptTrigger ? mlScriptPlayerPeer : mlLocalPeer; }
+    uint32_t SetScriptPlayerPeer(uint32_t peer) { uint32_t old=mlScriptPlayerPeer;mlScriptPlayerPeer=peer;return old; }
 private:
     struct Peer {
         bool greeted=false, ready=false, beginSent=false, endSent=false, transferRequested=false;
@@ -132,12 +138,14 @@ private:
     cLuxMultiplayerWorld* mpWorld;
     cLuxMultiplayerEntities* mpEntities;
     cLuxMultiplayerEffects* mpEffects;
+    cLuxMultiplayerEnemies* mpEnemies;
     cLuxMultiplayerSettings mSettings;
     std::map<uint32_t,Peer> mPeers;
     std::vector<uint8_t> mvMapBytes;
     std::vector<std::vector<uint8_t> > mvScriptHistory;
     size_t mlScriptHistoryBytes;
     uint32_t mlLocalPeer, mlMapEpoch, mlMapChecksum, mlExpectedMapBytes;
+    uint32_t mlScriptPlayerPeer=UINT32_MAX;
     uint32_t mlDownloadedMapBytes=0;
     uint64_t mlPendingSteamInvite;
     tString msStatus, msMapName, msStartPos, msReceivedMapPath;
@@ -166,11 +174,11 @@ private:
 
 class cLuxMultiplayerRemoteTriggerScope {
 public:
-    explicit cLuxMultiplayerRemoteTriggerScope(bool remote):mpSession(gpBase->mpMultiplayer),mbOld(false) {
-        if(mpSession) mbOld=mpSession->SetRemoteScriptTrigger(remote);
+    explicit cLuxMultiplayerRemoteTriggerScope(bool remote,uint32_t peer=UINT32_MAX):mpSession(gpBase->mpMultiplayer),mbOld(false),mlOldPeer(UINT32_MAX) {
+        if(mpSession) {mbOld=mpSession->SetRemoteScriptTrigger(remote);mlOldPeer=mpSession->SetScriptPlayerPeer(peer);}
     }
-    ~cLuxMultiplayerRemoteTriggerScope() {if(mpSession) mpSession->SetRemoteScriptTrigger(mbOld);}
+    ~cLuxMultiplayerRemoteTriggerScope() {if(mpSession) {mpSession->SetRemoteScriptTrigger(mbOld);mpSession->SetScriptPlayerPeer(mlOldPeer);}}
 private:
-    cLuxMultiplayer* mpSession;bool mbOld;
+    cLuxMultiplayer* mpSession;bool mbOld;uint32_t mlOldPeer;
 };
 #endif

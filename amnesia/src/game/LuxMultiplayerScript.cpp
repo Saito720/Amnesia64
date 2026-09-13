@@ -10,6 +10,7 @@ unsigned cLuxMultiplayerScriptScope::smDepth=0;
 // their non-resource side effects (credits, subtitles, etc.) are preserved.
 struct cScriptResourceValidation {
     bool apply;
+    bool hostEnemyCommand=false;
     std::string& error;
     uint32_t optionalMask=0, unavailableMask=0, checkedMask=0;
     unsigned nextResource=0;
@@ -30,7 +31,7 @@ struct cScriptResourceValidation {
     }
     template<class Callback> bool Invoke(const Callback& callback) {
         if(!Finish()) return false;
-        if(apply) callback();
+        if(apply && !hostEnemyCommand) callback();
         return true;
     }
     bool Read(luxnet::Reader& r);
@@ -43,6 +44,9 @@ bool cScriptResourceValidation::Read(luxnet::Reader& r) {
         resources.optionalMask=r.U32();id &= ~LuxScriptOptionalResources;
         if(!r.valid || !resources.optionalMask) return false;
     }
+    // Enemy decisions are represented by the host snapshot, including late
+    // joins. Replaying these commands would start client AI or restart attacks.
+    hostEnemyCommand=id>=134 && id<=144;
     switch(id) {
     case 1: { // StartCredits
         std::string asMusic = r.String(4096);

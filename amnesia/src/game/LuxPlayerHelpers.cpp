@@ -880,8 +880,10 @@ void cLuxPlayerFlashback::Start(const tString &asFlashbackFile, const tString &a
 		return;
 	}
 
-	//Disable enemies
-	gpBase->mpMapHandler->GetCurrentMap()->BroadcastEnemyMessage(eLuxEnemyMessage_Reset, false,0,0);
+	// Multiplayer protection belongs to the affected player. Resetting every
+	// enemy here would also cancel encounters involving somebody else.
+	if(!gpBase->mpMultiplayer || !gpBase->mpMultiplayer->IsActive())
+		gpBase->mpMapHandler->GetCurrentMap()->BroadcastEnemyMessage(eLuxEnemyMessage_Reset, false,0,0);
 
 	mfFlashDelay = 0.5f; //Show flash effect after a little delay
 	gpBase->mpHelpFuncs->PlayGuiSoundData("flashback_flash", eSoundEntryType_Gui);

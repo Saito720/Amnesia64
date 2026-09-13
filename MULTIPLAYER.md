@@ -2,7 +2,7 @@
 
 This is an experimental multiplayer foundation, not a campaign-complete co-op release.
 It provides real host/client sessions, shared player and physics state, map delivery,
-exclusive object interaction, host script effects, and coordinated map changes.
+exclusive object interaction, host-authoritative enemies, host script effects, and coordinated map changes.
 Windows Debug and Release x64 are the primary build targets for this checkout.
 
 ## Starting a session
@@ -110,7 +110,7 @@ or cached maps skip the download phase. Every waiting frame clears the viewport;
 blocking verification and loading also present their screen before starting work.
 Cancelled or failed host map changes return clients to the previous map, preserving
 in-flight world events. Same-map start-position changes do not put clients into a
-map-loading state. This transition handshake uses protocol **8**; all players need
+map-loading state. The session uses protocol **9**; all players need
 the updated build.
 The client cannot open the game debug menu; F3/fast-forward is disabled for everyone
 in a session. Host debug map loads/reloads use a queued session-preserving path.
@@ -183,6 +183,47 @@ walking through it. Deliberate interactions take priority over passive contact,
 and contact never starts an interaction controller or disables door auto-close.
 Accepted owner snapshots relay directly to observers rather than taking another
 smoothing pass through the host's follower. Final state transfers reliably on release.
+
+Enemies remain under host authority for their entire lifetime. Grunts/brutes and
+water lurkers evaluate each living player's position, crouch, movement, lighting
+and lantern through their native detection rules. Sight and last-known positions
+are remembered separately for each player. A target commitment and score threshold
+prevent rapid switching between similarly placed players; an attack already in
+progress keeps its aim. Losing sight does not reveal the player's new position.
+The host-only Player-script option governs script callbacks, not enemy eligibility.
+Scripted enemy reveals use the known triggering player; callbacks without an
+attributed player retain a fallback to an eligible encounter participant.
+
+Remote attack targets use separate character query shapes at their latest
+reported gameplay positions; their controllers remain inactive. Enemies collide
+with these players even when player-to-player collision is disabled. Physics uses
+gameplay positions independently of render interpolation. Native attack shapes
+and wall occlusion resolve once on the host.
+Damage and knockback go only to players hit by that attack, with sequence checks,
+map epochs and player-life identifiers preventing duplicate or pre-respawn hits.
+Attack timing uses the fixed simulation step. There is no historical hit rewind;
+Internet latency and dodge fairness still require playtesting.
+
+Clients receive reliable enemy lifecycle/state changes and conditional 20 Hz
+position, animation-layer and attached-light updates. A periodic heartbeat repairs
+a lost final update. They interpolate presentation through the existing render
+history while their enemy controllers, decisions and attack markers remain inactive.
+Late joiners receive the current state, animation phase and removal history.
+An enemy created by a script must exist through the ordinary creation replay before
+its pending snapshot can be applied; missing or incompatible instances fail clearly.
+
+Native ambient/action sounds and character effects come from the host; cosmetic
+animation sounds still follow the rendered animation locally. Player footsteps and
+other player-origin hearing stimuli reach the host with bounded rates, source
+validation and duplicate suppression. Terror and music follow the affected player,
+and sanity/glow remain local viewing effects. Observation and automatic removal
+consider the group. A player's flashback protection, death or respawn does not
+reset another player's encounter.
+Players remain protected while their native death/respawn sequence is active.
+Enemy contact and deliberate attacks reclaim the affected dynamic assembly on
+the host. Contact-triggered handoffs wait until the physics traversal has ended,
+and a short grace period prevents players immediately taking the assembly back
+while the enemy is still influencing it.
 
 Item pickups and lamp ignition use exclusive host-approved transactions. The
 collector alone receives the item or spends a tinderbox; successful pickup removes
@@ -292,7 +333,7 @@ and other indirect script execution do not yet retain the originating player's i
 ## Remaining integration work
 
 - Complete replication of native non-script gameplay: inventory use and
-  combinations, enemy AI/health, all puzzle state, journals and quest progress.
+  combinations, all puzzle state, journals and quest progress.
   Players can currently diverge in these systems. Shared script item grants are supported,
   and each client's inventory survives ordinary map transitions.
 - Campaign death scripts that require global checkpoint callbacks need an explicit
@@ -306,8 +347,22 @@ and other indirect script execution do not yet retain the originating player's i
   deferred trigger attribution, and full coverage of all script APIs.
 - Further Internet playtests with sustained latency, jitter and disconnects, co-op save/resume,
   content-version manifests, and runtime missing-resource reporting for all asset managers.
+- AMFP-specific Tesla personal blackout/audio presentation on remote players. Shared
+  enemy state and attached lights are supported, but the native encounter tests use
+  The Dark Descent's grunt, brute and water-lurker assets.
 
 ## Verification
+
+Enemy integration verification passes Steam-enabled Debug and Release x64 builds,
+the protocol and real Newton suites, focused two-instance enemy run `e78850edb034`,
+and full multiplayer regression `d51f04166657`. The focused run covers client-only
+chase, stable target choice, wall occlusion and hidden-position memory, reciprocal
+native attacks and duplicate-hit rejection, grunt/brute/water-lurker behavior,
+exact-zero-health death, normal respawn, inherited fear cleanup, disconnect/rejoin
+into a paused attack, lifecycle ordering and map teardown. Collision regressions
+exercise both player-collision modes and deferred enemy ownership handoffs.
+The client grunt capture also confirms visible, animated presentation. These are
+local Steamworks direct-IP sessions; this change still needs an Internet playtest.
 
 Completed verification from earlier runs includes:
 
@@ -402,7 +457,7 @@ have exercised that path; each new build still needs a two-account playtest for
 latency, disconnects and campaign behavior beyond the controlled regression suite.
 Full-game smoke tests use isolated test configurations/profiles and a bounded run;
 they must not share a live player's configuration or overwrite retail assets.
-The current session/lobby protocol is version **8**; all testers must use the new build.
+The current session/lobby protocol is version **9**; all testers must use the new build.
 See `tests/multiplayer/README.md` for profile cleanup, output paths and runner options.
 
 ## Source layout
@@ -411,6 +466,9 @@ See `tests/multiplayer/README.md` for profile cleanup, output paths and runner o
 - `HPL2/dependencies/networking`: pinned dependency build, provenance and licenses.
 - `LuxMultiplayer`: session lifecycle, transfer, map/trigger policy and global updates.
 - `LuxMultiplayerWorld`: physics, poses, rendering and interaction leases.
+- `LuxEnemyPlayer`: shared gameplay samples for local and remote enemy targets.
+- `LuxMultiplayerEnemies` / `LuxMultiplayerEnemyProtocol`: authoritative enemy
+  lifecycle, animation/presentation snapshots and client replicas.
 - `LuxMultiplayerEntities`: approved pickups/ignition, removal history and native entity state.
 - `LuxMultiplayerEffects`: shared native world/player presentation and effect lifecycle;
   locally simulated physics and already replicated/local presentation are excluded.

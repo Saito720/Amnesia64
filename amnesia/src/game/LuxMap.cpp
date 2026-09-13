@@ -19,6 +19,7 @@
 
 #include "LuxMap.h"
 #include "LuxMultiplayer.h"
+#include "LuxMultiplayerWorld.h"
 
 #include "LuxConfigHandler.h"
 
@@ -43,6 +44,7 @@
 #include "LuxArea_Sticky.h"
 
 #include <sstream>
+#include <cmath>
 
 //////////////////////////////////////////////////////////////////////////
 // DISSOLVE ENTITIES
@@ -716,6 +718,14 @@ void cLuxMap::BroadcastEnemyMessage(eLuxEnemyMessage aType, bool abHasPosition, 
 
 void cLuxMap::BroadcastEnemySoundMessage(const cVector3f& avPos, float afVolume ,float afMinDist, float afMaxDist)
 {
+	if(!std::isfinite(afVolume) || !std::isfinite(afMinDist) || !std::isfinite(afMaxDist) ||
+		!std::isfinite(avPos.x) || !std::isfinite(avPos.y) || !std::isfinite(avPos.z) || afVolume <= 0 || afMaxDist <= 0) return;
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient())
+	{
+		gpBase->mpMultiplayer->GetWorld()->EmitEnemyStimulus(avPos, afVolume, afMinDist, afMaxDist);
+		return;
+	}
+	afMinDist = cMath::Clamp(afMinDist, 0.0f, afMaxDist);
 	cLuxEnemyIterator it =GetEnemyIterator();
 	while(it.HasNext())
 	{
@@ -735,8 +745,12 @@ void cLuxMap::BroadcastEnemySoundMessage(const cVector3f& avPos, float afVolume 
 		float fDistance = cMath::Vector3Dist(pBv->GetWorldCenter(), avPos);
 		if(fDistance < 2.0f) continue; //Skip sounds that are too close!
 
-		float fHearVolume = 1.0f - cMath::Clamp( (fDistance - afMinDist)/(afMaxDist - afMinDist), 0.0f ,1.0f);
+		// Equal min/max distances mean an abrupt cutoff, not a division by zero.
+		const float fFalloff = afMaxDist - afMinDist;
+		float fHearVolume = fFalloff > 0 ? 1.0f - cMath::Clamp((fDistance-afMinDist)/fFalloff, 0.0f, 1.0f) :
+			(fDistance <= afMaxDist ? 1.0f : 0.0f);
 		fHearVolume *= afVolume;
+		if(fHearVolume <= 0) continue;
 
 		/////////////////////////
 		//Send message

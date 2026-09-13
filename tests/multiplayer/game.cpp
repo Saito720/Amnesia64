@@ -11,6 +11,9 @@
 #include <deque>
 #include <filesystem>
 #define private public
+#define protected public
+#include "LuxEnemy.h"
+#undef protected
 #include "LuxMainMenu.h"
 #include "LuxMainMenu_Options.h"
 #include "LuxPlayerHelpers.h"
@@ -20,6 +23,7 @@
 #include "LuxMultiplayer.h"
 #include "LuxMultiplayerWorld.h"
 #include "LuxMultiplayerEffects.h"
+#include "LuxMultiplayerEnemies.h"
 #include "LuxMultiplayerUI.h"
 #undef private
 #include <SDL2/SDL.h>
@@ -63,6 +67,7 @@ static void printStatus(const char* message) {
 #include "FPSSettingsRegression.h"
 #include "BorderlessSettingsRegression.h"
 #include "NetworkInterpolationRegression.h"
+#include "EnemyRegression.h"
 class cGameSmoke : public iUpdateable, public iRendererCallback {
     int state=0;
     Uint32 started=0, readyAt=0, statusAt=0;
@@ -89,6 +94,8 @@ class cGameSmoke : public iUpdateable, public iRendererCallback {
     cFrameCadenceRegression cadenceRegression;
     cFPSSettingsRegression fpsSettingsRegression;
     cBorderlessSettingsRegression borderlessSettingsRegression;
+    cEnemyRegression enemyRegression;
+    bool enemiesOnly=std::getenv("CODEX_MP_ENEMIES")!=NULL;
     cVector2l resizeValidated=0;
     bool genericEffectsDone=false;
     cMapCacheRegression mapCacheRegression;
@@ -196,6 +203,7 @@ public:
         packet.F32(12345);packet.F32(0);packet.F32(0);
         packet.F32(0.6f);packet.F32(1.8f);packet.F32(0.6f);packet.F32(0);
         LuxWorldWire::WriteLantern(packet,LuxWorldWire::Lantern());
+        LuxWorldWire::WritePlayerState(packet,LuxWorldWire::PlayerState());
         for(const auto& peer:gpBase->mpMultiplayer->mPeers) gpBase->mpMultiplayer->Send(peer.first,packet.bytes,false);
     }
     void Update(float dt) {
@@ -214,6 +222,7 @@ public:
             const int settings=fpsSettingsRegression.Initial(loadingError);
             if(settings<0) {fail(loadingError);return;}
             if(!settings) return;
+            if(enemiesOnly) {state=70;return;}
             if(role=="settings") {
                 const int borderless=borderlessSettingsRegression.Update(loadingError);
                 if(borderless<0) {fail(loadingError);return;}
@@ -232,6 +241,14 @@ public:
                 mp->ShowWindow(true);screenshotPending=true;
             }
             state=1;return;
+        }
+        if(state==70) {
+            const int enemy=enemyRegression.Update(loadingError,dt);
+            if(enemy<0) {fail(loadingError);return;}
+            if(!enemy) return;
+            mark(role+"-passed.txt","PASS: host-authoritative retail enemies, remote targeting, attack results and lifecycle.");
+            printStatus("PASS: host-authoritative enemy encounter regression");
+            result=0;state=99;gpBase->mpEngine->Exit();return;
         }
         if(state==1) {
             if(role=="host") {
@@ -592,6 +609,7 @@ public:
     }
     void OnPostRender(float dt) {
         tString loadingError;
+        if(enemiesOnly && !enemyRegression.OnPostRender(loadingError)) {fail(loadingError);return;}
         if(uncappedTests && !cadenceRegression.Render(loadingError)) {fail(loadingError);return;}
         if(!fpsSettingsRegression.OnPostRender(loadingError)) {fail(loadingError);return;}
         const cVector2l renderSize=gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeInt();

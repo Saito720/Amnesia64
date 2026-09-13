@@ -114,7 +114,7 @@ bool cLuxMultiplayerEntities::DeferDiaryPresentation(const std::string& name,cLu
 void cLuxMultiplayerEntities::RecordDiaryDecision(bool open) {
     if(mpDiaryDecision) *mpDiaryDecision=open;
 }
-bool cLuxMultiplayerEntities::Commit(iLuxEntity* entity,bool remote,bool callbackOnly,int diaryIndex) {
+bool cLuxMultiplayerEntities::Commit(iLuxEntity* entity,bool remote,bool callbackOnly,int diaryIndex,uint32_t peer) {
     const bool item=static_cast<iLuxProp*>(entity)->GetPropType()==eLuxPropType_Item;
     bool openDiary=true;
     // A callback's return decision belongs to this pickup, not to whichever
@@ -133,7 +133,7 @@ bool cLuxMultiplayerEntities::Commit(iLuxEntity* entity,bool remote,bool callbac
     // Run native callbacks exactly once, in the host VM, attributed to the collector.
     // The collector alone receives the item / pays the tinderbox cost.
     if(!remote || mpSession->GetSettings().allPlayersTriggerScripts) {
-        cLuxMultiplayerRemoteTriggerScope trigger(remote);
+        cLuxMultiplayerRemoteTriggerScope trigger(remote,peer);
         mbCallback=true;
         if(remote && item && diaryIndex>=0) {
             auto* pickup=static_cast<cLuxProp_Item*>(entity);
@@ -363,7 +363,7 @@ bool cLuxMultiplayerEntities::HandleMessage(uint32_t peer,const std::vector<uint
         Claim accepted=claim->second;mClaims.erase(claim);
         const bool committed=success && IsNative(entity) && !entity->GetDestroyMe() && entity->GetRuntimeID()==accepted.runtimeId;
         bool openDiary=true;
-        if(committed) openDiary=Commit(entity,true,accepted.callbackOnly,static_cast<int>(diary)-1);
+        if(committed) openDiary=Commit(entity,true,accepted.callbackOnly,static_cast<int>(diary)-1,peer);
         if(diary && mpSession->IsHost() && epoch==mpSession->GetMapEpoch()) {
             // Reliable ordering places the decision after all synchronous
             // callback effects; only its collector has this pending token.

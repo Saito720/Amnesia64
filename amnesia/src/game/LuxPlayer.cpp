@@ -218,6 +218,7 @@ void cLuxPlayer::LoadFonts()
 
 void cLuxPlayer::Reset()
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()) gpBase->mpMultiplayer->GetWorld()->OnLocalPlayerRespawn();
 	////////////////////////
 	// Reset variables
 	mbActive = true;
@@ -876,6 +877,8 @@ void cLuxPlayer::SetActive(bool abX)
 void cLuxPlayer::SetHealth(float afX)
 {
 	if(mfHealth <=0 && afX <= 0) return;
+	if(mfHealth<=0 && afX>0 && gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive())
+		gpBase->mpMultiplayer->GetWorld()->OnLocalPlayerRespawn();
 
 	mfHealth = afX;
 
@@ -910,7 +913,7 @@ void cLuxPlayer::SetLampOil(float afX)
 
 void cLuxPlayer::AddHealth(float afX)
 {
-	if( (mfHealth >= 100 && afX>0) || mfHealth<0) return;
+    if( (mfHealth >= 100 && afX>0) || mfHealth<=0) return;
 	
 	mfHealth += afX;
 	if(mfHealth > 100) mfHealth = 100;
@@ -1349,7 +1352,11 @@ void cLuxPlayer::UpdateCamera(float afTimeStep)
 
 void cLuxPlayer::UpdateTerror(float afTimeStep)
 {
-	if(m_setTerrorEnemies.empty() || IsDead())
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient())
+	{
+		mfTerror=IsDead()?0:gpBase->mpMultiplayer->GetWorld()->GetEnemyTerror(gpBase->mpMultiplayer->GetLocalPeerId());
+	}
+	else if(m_setTerrorEnemies.empty() || IsDead())
 	{
 		mfTerror -= mfTerrorDecSpeed * afTimeStep;
 		if(mfTerror < 0) mfTerror =0;

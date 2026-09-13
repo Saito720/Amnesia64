@@ -4,6 +4,7 @@
 #include "LuxMultiplayerContent.h"
 #include "LuxMap.h"
 #include "LuxPlayer.h"
+#include "LuxEnemy.h"
 #include "system/Script.h"
 #include "sound/SoundEntityData.h"
 #include "sound/SoundHandler.h"
@@ -40,7 +41,7 @@ bool cLuxMultiplayerEffects::IgnoreCapture() const {
         mpSession->IsApplyingScriptEffect() || mpWorld->GetEffectLocalPresentation();
 }
 void cLuxMultiplayerEffects::OnMapLoaded(cLuxMap* map) {
-    Reset();mpWorld=map?map->GetWorld():NULL;
+    Reset();mpMap=map;mpWorld=map?map->GetWorld():NULL;
     // Attach after authored map creation. Its ambient objects already exist on
     // every peer and must not be instantiated a second time by this stream.
     if(mpWorld) mpWorld->SetEffectCallback(this);
@@ -56,7 +57,33 @@ void cLuxMultiplayerEffects::Reset() {
             if(entry.second.particle && particles.count(entry.second.particle) && entry.second.particle->GetCreationID()==entry.second.creation) entry.second.particle->SetPresentationSuppressed(false);
         }
     }
-    mLocal.clear();mRemote.clear();mBudgets.clear();mLastCreated.clear();mPlayerSounds.clear();mRemoved.clear();mpWorld=NULL;mlNextID=0;mbSendFailed=false;
+    mLocal.clear();mRemote.clear();mBudgets.clear();mLastCreated.clear();mPlayerSounds.clear();mRemoved.clear();mpMap=NULL;mpWorld=NULL;mlNextID=0;mbSendFailed=false;
+}
+bool cLuxMultiplayerEffects::ShouldCaptureBody(iPhysicsBody* body) const {
+    if(!body) return true;
+    // Newton props still produce collision and scrape presentation locally.
+    // Character effects instead belong to their controller's authority.
+    if(!body->IsCharacter()) return false;
+    if(gpBase->mpPlayer && body->GetCharacterBody()==gpBase->mpPlayer->GetCharacterBody()) return true;
+    if(!mpSession->IsHost() || !mpMap) return false;
+    auto enemies=mpMap->GetEnemyIterator();
+    while(enemies.HasNext()) if(enemies.Next()->GetCharacterBody()==body->GetCharacterBody()) return true;
+    return false;
+}
+
+bool cLuxMultiplayerEffects::ShouldEmitEnemyStimulus(cSoundEntity* sound) const {
+    if(!mpSession->IsActive()) return true;
+    if(!sound || !mpWorld || mbApplying) return false;
+    if(mpSession->IsHost()) {
+        // Replaying a remote player's sound must not duplicate the separate
+        // gameplay stimulus, including sounds which restart their main loop.
+        for(const auto& entry:mRemote)
+            if(entry.second.sound==sound && entry.second.soundCreation==sound->GetCreationID()) return false;
+        return true;
+    }
+    const auto local=mLocal.find(sound);
+    return local!=mLocal.end() && local->second.sound==sound &&
+        local->second.creation==uint64_t(sound->GetCreationID()) && local->second.effect.origin==luxfx::Player;
 }
 void cLuxMultiplayerEffects::SetOrigin(luxfx::Effect& effect,iPhysicsBody* body) {
     effect.epoch=mpSession->GetMapEpoch();effect.peer=mpSession->GetLocalPeerId();
@@ -69,7 +96,7 @@ bool cLuxMultiplayerEffects::Owns(const luxfx::Effect& effect) const {
 }
 void cLuxMultiplayerEffects::OnSoundCreated(cWorld* world,cSoundEntity* sound,iPhysicsBody* body) {
     if(world!=mpWorld || IgnoreCapture() || !sound) return;
-    if(body && (!body->IsCharacter() || body->GetCharacterBody()!=gpBase->mpPlayer->GetCharacterBody())) return;
+    if(!ShouldCaptureBody(body)) return;
     if(mLocal.size()>=4096) return;
     auto old=mLocal.find(sound);if(old!=mLocal.end()) {if(old->second.published) {auto removed=old->second.effect;removed.operation=luxfx::Remove;mRemoved.push_back(removed);}mLocal.erase(old);}
     Local local;local.sound=sound;local.creation=uint64_t(sound->GetCreationID());local.effect.kind=luxfx::Sound;SetOrigin(local.effect,body);
@@ -82,7 +109,7 @@ void cLuxMultiplayerEffects::OnSoundCreated(cWorld* world,cSoundEntity* sound,iP
 void cLuxMultiplayerEffects::OnParticleCreated(cWorld* world,cParticleSystem* particle,const tString& asset,
     const cVector3f& size,iPhysicsBody* body) {
     if(world!=mpWorld || IgnoreCapture() || !particle) return;
-    if(body && (!body->IsCharacter() || body->GetCharacterBody()!=gpBase->mpPlayer->GetCharacterBody())) return;
+    if(!ShouldCaptureBody(body)) return;
     if(mLocal.size()>=4096) return;
     auto old=mLocal.find(particle);if(old!=mLocal.end()) {if(old->second.published) {auto removed=old->second.effect;removed.operation=luxfx::Remove;mRemoved.push_back(removed);}mLocal.erase(old);}
     Local local;local.particle=particle;local.creation=particle->GetCreationID();local.effect.kind=luxfx::Particle;SetOrigin(local.effect,body);

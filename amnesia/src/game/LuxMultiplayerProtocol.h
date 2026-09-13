@@ -8,13 +8,14 @@
 #include <vector>
 
 namespace luxnet {
-static const uint32_t ProtocolVersion = 8;
+static const uint32_t ProtocolVersion = 9;
 static const uint32_t MaxMapBytes = 16 * 1024 * 1024;
 static const uint32_t MapChunkBytes = 32 * 1024;
 enum Packet : uint8_t { Hello=1, MapBegin, MapChunk, MapEnd, Ready, Reject,
     MapChangeRequest, ScriptEffect, EntityInteract, ObjectBreak,
     NativeRequest, NativeGrant, NativeResult, EntityState, ItemRemoved, MapRequest,
-    MapPreparing, MapCancelled, NativeDiaryResult, WorldEffect, JointBreakRequest };
+    MapPreparing, MapCancelled, NativeDiaryResult, WorldEffect, JointBreakRequest,
+    EnemyState, EnemyRemoved, EnemyDamage, EnemyTerror, EnemyStimulus };
 
 struct Writer {
     std::vector<uint8_t> data;

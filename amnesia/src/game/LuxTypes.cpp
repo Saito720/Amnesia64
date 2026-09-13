@@ -169,9 +169,11 @@ void iLuxCollideCallbackContainer::CheckCollisionCallback(const tString& asName,
 
 		bCollide = CheckEntityCollision(pEntity, apMap);
 		bool bRemotePlayerTrigger = false;
+		uint32_t lTriggerPeer=UINT32_MAX;
 		if(asName == "Player" && gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsHost())
 		{
-			const bool bRemoteCollide = gpBase->mpMultiplayer->RemotePlayerTouches(pEntity);
+			lTriggerPeer=gpBase->mpMultiplayer->GetRemotePlayerTouching(pEntity);
+			const bool bRemoteCollide = lTriggerPeer!=UINT32_MAX;
 			bRemotePlayerTrigger = luxnet::UpdatePlayerTriggerOrigin(bCollide, bRemoteCollide,
 				pCallback->mbRemotePlayerColliding);
 			bCollide = bCollide || bRemoteCollide;
@@ -187,7 +189,7 @@ void iLuxCollideCallbackContainer::CheckCollisionCallback(const tString& asName,
 			if(lState == pCallback->mlStates || pCallback->mlStates==0)
 			{
 				tString sCommand = pCallback->msCallbackFunc+"(\"" + asName + "\", \""+ pEntity->GetName()+"\", "+cString::ToString(lState)+")" ;
-				cLuxMultiplayerRemoteTriggerScope remoteTrigger(bRemotePlayerTrigger);
+				cLuxMultiplayerRemoteTriggerScope remoteTrigger(bRemotePlayerTrigger,lTriggerPeer);
 				apMap->RunScript(sCommand);
 			
 				///////////////////////

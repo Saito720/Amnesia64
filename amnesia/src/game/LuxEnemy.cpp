@@ -34,9 +34,30 @@
 #include "LuxDebugHandler.h"
 #include "LuxProgressLogHandler.h"
 #include "LuxHelpFuncs.h"
+#include "LuxMultiplayer.h"
+#include "LuxMultiplayerWorld.h"
+#include "LuxMultiplayerEnemies.h"
+#include <set>
+#include <limits>
 
 #include "LuxProp.h"
 #include "LuxProp_Object.h"
+
+namespace {
+class cLuxEnemyCharacterCallback : public iCharacterBodyCallback
+{
+public:
+	void OnGravityCollide(iCharacterBody*, iPhysicsBody*, cCollideData*) {}
+	void OnHitGround(iCharacterBody*, const cVector3f&) {}
+	bool AllowBodyPush(iCharacterBody*, iPhysicsBody* body)
+	{
+		if(!gpBase->mpMultiplayer || !gpBase->mpMultiplayer->IsActive()) return true;
+		return gpBase->mpMultiplayer->GetWorld()->AllowEnemyContact(body);
+	}
+};
+// No per-enemy state: its lifetime exceeds every registered character body.
+cLuxEnemyCharacterCallback gEnemyCharacterCallback;
+}
 
 //////////////////////////////////////////////////////////////////////////
 // Global Vars
@@ -205,6 +226,7 @@ void iLuxEnemyLoader::AfterLoad(cXmlElement *apRootElem, const cMatrixf &a_mtxTr
 	pCharBody->SetFeetPosition(mpEntity->GetWorldPosition());
 
     pCharBody->SetUserData(pEnemy);
+	pCharBody->SetCallback(&gEnemyCharacterCallback);
 	pEnemy->mpCharBody = pCharBody;
 
 	//////////////////////////////
@@ -621,6 +643,11 @@ void iLuxEnemy::OnMapEnter()
 
 void iLuxEnemy::OnUpdate(float afTimeStep)
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient())
+	{
+		gpBase->mpMultiplayer->GetEnemies()->UpdateReplica(this, afTimeStep);
+		return;
+	}
 	if(mbDisabled) return;
 
 	//In case the update is called in save or anyhting else that just want a quick update, we do not want to be updated.
@@ -795,6 +822,7 @@ iEntity3D* iLuxEnemy::GetAttachEntity()
 
 void iLuxEnemy::GiveDamage(float afAmount, int alStrength)
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return;
 	if(mfHealth > 0)
 
 	if(alStrength < mlToughness-1)			afAmount =0;
@@ -824,7 +852,49 @@ void iLuxEnemy::GiveDamage(float afAmount, int alStrength)
 
 void iLuxEnemy::ShowPlayerPosition()
 {
-	mvLastKnownPlayerPos = gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition();
+	if(HasMultiplayerAI())
+	{
+		// This is an explicit script revelation. Unlike ordinary search, it may
+		// acquire a player that has not already been seen.
+		const uint32_t lPreviousPeer = mlTargetPeer;
+		const auto players = gpBase->mpMultiplayer->GetWorld()->GetEnemyPlayers();
+		const uint32_t lScriptPeer = gpBase->mpMultiplayer->GetScriptPlayerPeer();
+		bool bSelected = false;
+		for(const cLuxEnemyPlayer& player : players)
+		{
+			if(player.Eligible() && player.peer == lScriptPeer)
+			{
+				mTargetPlayer = player;
+				mlTargetPeer = player.peer;
+				bSelected = true;
+				break;
+			}
+		}
+		if(!bSelected)
+		{
+			float fNearest = std::numeric_limits<float>::max();
+			for(const cLuxEnemyPlayer& player : players)
+			{
+				const float fDistance = player.peer == lPreviousPeer ? -1.0f : cMath::Vector3DistSqr(player.feet, mpCharBody->GetFeetPosition());
+				if(player.Eligible() && fDistance < fNearest)
+				{
+					mTargetPlayer = player; mlTargetPeer = player.peer;
+					fNearest = fDistance; bSelected = true;
+				}
+			}
+		}
+		if(!bSelected) return;
+		cPlayerAwareness& awareness = mPlayerAwareness[mlTargetPeer];
+		if(awareness.player.life != mTargetPlayer.life) awareness = cPlayerAwareness();
+		awareness.player = mTargetPlayer;
+		awareness.lastKnown = mTargetPlayer.feet;
+		awareness.hasLastKnown = true;
+		mvLastKnownPlayerPos = mTargetPlayer.feet;
+		mbCanSeePlayer = awareness.visible;
+		mbPlayerDetected = awareness.detected;
+		OnTargetChanged(lPreviousPeer);
+	}
+	else mvLastKnownPlayerPos = gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition();
 }
 
 void iLuxEnemy::AlertOfPlayerPresence()
@@ -842,6 +912,7 @@ void iLuxEnemy::AlertOfPlayerPresence()
 
 void iLuxEnemy::ChangeState(eLuxEnemyState aState)
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return;
 	if(aState == eLuxEnemyState_LastEnum) return;
 	if(mCurrentState == aState) return;
 
@@ -855,6 +926,10 @@ void iLuxEnemy::ChangeState(eLuxEnemyState aState)
 
 void iLuxEnemy::SendMessage(eLuxEnemyMessage aType, float afTime, bool abLocalScope, const cVector3f& avX,float afX, int alX)
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return;
+	// Native death broadcasts have no player identity. Multiplayer resolves
+	// the selected player's death from its sample after committed attacks.
+	if(HasMultiplayerAI() && aType == eLuxEnemyMessage_PlayerDead && alX == 0) return;
 	if(mbDisabled) return;
 	if(	TriggersDisabled() && 
 		aType > eLuxEnemyMessage_EndOfPath && 
@@ -975,9 +1050,11 @@ float iLuxEnemy::ConvertAnimToAbsoluteTime(float afRelativeTimePostion)
 
 cSoundEntity* iLuxEnemy::PlaySound(const tString &asName)
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return NULL;
 	if(asName=="") return NULL;
-	// Enemy presentation follows the locally running enemy state and position.
-	cWorldEffectLocalScope localEffects(mpMap->GetWorld());
+	// State-machine vocalizations have one authoritative source. Animation
+	// event footsteps are separately emitted by each local animation pose.
+	cWorldEffectSourceScope effectSource(mpMap->GetWorld(), mpCharBody->GetCurrentBody());
 
 	cSoundEntity *pSound = mpMap->GetWorld()->CreateSoundEntity("EnemySound", asName, true);
 	if(pSound)
@@ -1000,6 +1077,13 @@ void iLuxEnemy::SetPositionAtStartPos()
 
 void iLuxEnemy::ResetProperties()
 {
+	SetTargetTerrorSource(false);
+	RemoveTargetMusic(eLuxEnemyMusic_Search);
+	RemoveTargetMusic(eLuxEnemyMusic_Attack);
+	mPlayerAwareness.clear();
+	mTargetPlayer = cLuxEnemyPlayer();
+	mlTargetPeer = UINT32_MAX;
+	mfTargetCommitment = 0;
 	SetPositionAtStartPos();
 	ChangeState(eLuxEnemyState_Idle);
 
@@ -1379,8 +1463,260 @@ void iLuxEnemy::UpdateCharBody(float afTimeStep)
 
 //-----------------------------------------------------------------------
 
+bool iLuxEnemy::HasMultiplayerAI() const
+{
+	return gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive() && gpBase->mpMultiplayer->IsHost();
+}
+
+cLuxEnemyPlayer iLuxEnemy::GetTargetPlayer() const
+{
+	return HasMultiplayerAI() ? mTargetPlayer : cLuxEnemyPlayer::Local();
+}
+
+bool iLuxEnemy::IsTargetingLocalPlayer() const
+{
+	return !gpBase->mpMultiplayer || !gpBase->mpMultiplayer->IsActive() ||
+		(mlTargetPeer != UINT32_MAX && mlTargetPeer == gpBase->mpMultiplayer->GetLocalPeerId());
+}
+
+bool iLuxEnemy::GetPlayerDetectedForPeer(uint32_t alPeer) const
+{
+	if(!HasMultiplayerAI()) return mbPlayerDetected && IsTargetingLocalPlayer() &&
+		(!gpBase->mpMultiplayer || !gpBase->mpMultiplayer->IsActive() || alPeer == gpBase->mpMultiplayer->GetLocalPeerId());
+	const auto it = mPlayerAwareness.find(alPeer);
+	return it != mPlayerAwareness.end() && it->second.detected;
+}
+
+float iLuxEnemy::GetTargetTerror()
+{
+	return HasMultiplayerAI() ? gpBase->mpMultiplayer->GetWorld()->GetEnemyTerror(mlTargetPeer) : gpBase->mpPlayer->GetTerror();
+}
+
+void iLuxEnemy::SetTargetTerror(float afAmount)
+{
+	if(HasMultiplayerAI()) gpBase->mpMultiplayer->GetWorld()->SetEnemyTerror(mlTargetPeer, afAmount);
+	else gpBase->mpPlayer->SetTerror(afAmount);
+}
+
+void iLuxEnemy::SetTargetTerrorSource(bool abEnabled)
+{
+	mbTargetTerrorSource = abEnabled;
+	// A current-map host can inherit a native local registration before this
+	// enemy has selected its first session target. Always clear that registration.
+	if(!abEnabled) gpBase->mpPlayer->RemoveTerrorEnemy(this);
+	if(HasMultiplayerAI()) gpBase->mpMultiplayer->GetWorld()->SetEnemyTerrorSource(mlTargetPeer, this, abEnabled);
+	else if(abEnabled) gpBase->mpPlayer->AddTerrorEnemy(this);
+}
+
+void iLuxEnemy::AddTargetMusic(eLuxEnemyMusic aType)
+{
+	mlTargetMusicFlags |= uint8_t(1u << aType);
+	if(IsTargetingLocalPlayer()) gpBase->mpMusicHandler->AddEnemy(aType, this);
+}
+
+void iLuxEnemy::RemoveTargetMusic(eLuxEnemyMusic aType)
+{
+	mlTargetMusicFlags &= uint8_t(~(1u << aType));
+	gpBase->mpMusicHandler->RemoveEnemy(aType, this);
+}
+
+bool iLuxEnemy::PrepareBodyInfluence(iPhysicsBody* apBody)
+{
+	if(!apBody) return false;
+	if(!gpBase->mpMultiplayer || !gpBase->mpMultiplayer->IsActive()) return true;
+	if(!gpBase->mpMultiplayer->IsHost()) return false;
+	gpBase->mpMultiplayer->GetWorld()->ReclaimEnemyInteraction(apBody);
+	return true;
+}
+
+void iLuxEnemy::OnTargetChanged(uint32_t alPreviousPeer, bool abNewLife)
+{
+	if(alPreviousPeer == mlTargetPeer && !abNewLife) return;
+	mfTargetCommitment = 1.25f;
+	if(mbTargetTerrorSource)
+	{
+		gpBase->mpMultiplayer->GetWorld()->SetEnemyTerrorSource(alPreviousPeer, this, false);
+		gpBase->mpMultiplayer->GetWorld()->SetEnemyTerrorSource(mlTargetPeer, this, true);
+	}
+	gpBase->mpMusicHandler->RemoveEnemy(eLuxEnemyMusic_Attack, this);
+	gpBase->mpMusicHandler->RemoveEnemy(eLuxEnemyMusic_Search, this);
+	if(IsTargetingLocalPlayer())
+		for(int i=0; i<eLuxEnemyMusic_LastEnum; ++i)
+			if(mlTargetMusicFlags & (1u << i)) gpBase->mpMusicHandler->AddEnemy(eLuxEnemyMusic(i), this);
+}
+
+bool iLuxEnemy::ReceiveEnemyHelp(cLuxStateMessage* apMessage)
+{
+	if(!HasMultiplayerAI()) { ShowPlayerPosition(); return true; }
+	if(mbPlayerDetected && mTargetPlayer.Eligible()) return true;
+	const uint32_t lPeer = uint32_t(apMessage->mlCustomValue);
+	for(const cLuxEnemyPlayer& player : gpBase->mpMultiplayer->GetWorld()->GetEnemyPlayers())
+	{
+		if(player.peer != lPeer || !player.Eligible()) continue;
+		const uint32_t lPreviousPeer = mlTargetPeer;
+		mlTargetPeer = player.peer; mTargetPlayer = player;
+		cPlayerAwareness& awareness = mPlayerAwareness[player.peer];
+		if(awareness.player.life != player.life) awareness = cPlayerAwareness();
+		awareness.player = player;
+		awareness.lastKnown = apMessage->mvCustomValue;
+		awareness.hasLastKnown = true;
+		mvLastKnownPlayerPos = awareness.lastKnown;
+		mbCanSeePlayer = awareness.visible;
+		mbPlayerDetected = awareness.detected;
+		OnTargetChanged(lPreviousPeer);
+		return true;
+	}
+	return false;
+}
+
+void iLuxEnemy::BroadcastEnemyHelp()
+{
+	// Share what this enemy knows, not the current position of an arbitrary
+	// player on the receiving machine.
+	if(HasMultiplayerAI() && mlTargetPeer == UINT32_MAX) return;
+	mpMap->BroadcastEnemyMessage(eLuxEnemyMessage_HelpMe, true, mpCharBody->GetPosition(), mfActivationDistance*0.5f,
+		0, false, HasMultiplayerAI() ? mvLastKnownPlayerPos : mpCharBody->GetFeetPosition(), 0, HasMultiplayerAI() ? int(mlTargetPeer) : 0);
+}
+
+float iLuxEnemy::DistToNearestPlayer()
+{
+	if(!HasMultiplayerAI()) return DistToPlayer();
+	float fDistance = 100000.0f;
+	for(const cLuxEnemyPlayer& player : gpBase->mpMultiplayer->GetWorld()->GetEnemyPlayers())
+	{
+		// A protected player still observes the encounter and prevents removal.
+		if(player.alive && player.body)
+			fDistance = cMath::Min(fDistance, cMath::Vector3Dist(mpCharBody->GetFeetPosition(), player.feet));
+	}
+	return fDistance;
+}
+
+void iLuxEnemy::UpdateMultiplayerTargets(float afTimeStep)
+{
+	const uint32_t lPreviousPeer = mlTargetPeer;
+	const uint32_t lPreviousLife = mTargetPlayer.life;
+	const bool bPreviouslyVisible = mbCanSeePlayer;
+	const bool bPreviouslyDetected = mbPlayerDetected;
+	mfTargetCommitment = cMath::Max(0.0f, mfTargetCommitment - afTimeStep);
+	mfLookForPlayerCount -= afTimeStep;
+	const bool bSampleSight = mfLookForPlayerCount <= 0;
+	if(bSampleSight) mfLookForPlayerCount = 0.3f;
+
+	const auto players = gpBase->mpMultiplayer->GetWorld()->GetEnemyPlayers();
+	std::set<uint32_t> present;
+	mbEvaluatingPlayerSenses = true;
+	for(const cLuxEnemyPlayer& player : players)
+	{
+		present.insert(player.peer);
+		cPlayerAwareness& awareness = mPlayerAwareness[player.peer];
+		if(awareness.player.life != player.life) awareness = cPlayerAwareness();
+		awareness.player = player;
+		if(!player.Eligible() || mbDisableTriggers)
+		{
+			awareness.visible = awareness.detected = false;
+			awareness.losCount = 0;
+			continue;
+		}
+
+		if(bSampleSight)
+		{
+			float fRange = mfSightRange;
+			if(player.lantern) fRange *= 1.5f;
+			else if(!mbSkipVisibilityRangeHandicaps)
+			{
+				if(player.lightLevel < mfPlayerInDarknessLightLevel && player.speed < 0.05f) fRange = mfDarknessSightRange;
+				if(player.crouching) fRange *= mfCrouchVisibleRangeMul;
+			}
+			const float fDistance = cMath::Vector3Dist(player.position, mpCharBody->GetPosition());
+			const float fNear = mpCharBody->GetCurrentBody()->GetBoundingVolume()->GetRadius() +
+				player.body->GetCurrentBody()->GetBoundingVolume()->GetRadius() + 0.05f;
+			if(fDistance <= fRange && LineOfSight(player.position, player.size, fDistance >= fNear))
+			{
+				if(awareness.losCount >= 2) awareness.visible = true;
+				else ++awareness.losCount;
+			}
+			else
+			{
+				awareness.losCount = 0;
+				awareness.visible = false;
+			}
+		}
+
+		// Reuse each enemy's own detection rules, including the lurker's water
+		// height rule, against an explicit context for this player alone.
+		mTargetPlayer = player;
+		mlTargetPeer = player.peer;
+		mbCanSeePlayer = awareness.visible;
+		awareness.detected = PlayerIsDetected();
+		if(awareness.detected)
+		{
+			awareness.lastKnown = player.feet;
+			awareness.hasLastKnown = true;
+		}
+	}
+	mbEvaluatingPlayerSenses = false;
+	for(auto it = mPlayerAwareness.begin(); it != mPlayerAwareness.end();)
+	{
+		if(present.count(it->first) == 0) it = mPlayerAwareness.erase(it);
+		else ++it;
+	}
+
+	const auto score = [this](const cPlayerAwareness& awareness) {
+		return awareness.detected ? 1.0f / (0.5f + cMath::Vector3Dist(mpCharBody->GetFeetPosition(), awareness.player.feet)) : 0.0f;
+	};
+	auto previous = mPlayerAwareness.find(lPreviousPeer);
+	const bool bPreviousEligible = previous != mPlayerAwareness.end() && previous->second.player.Eligible() && previous->second.hasLastKnown;
+	uint32_t lSelectedPeer = bPreviousEligible ? lPreviousPeer : UINT32_MAX;
+	uint32_t lBestPeer = UINT32_MAX;
+	float fBestScore = 0;
+	for(const auto& item : mPlayerAwareness)
+	{
+		const float fScore = score(item.second);
+		if(fScore > fBestScore) { fBestScore = fScore; lBestPeer = item.first; }
+	}
+	const bool bAttackCommitted = mCurrentState == eLuxEnemyState_AttackMeleeShort ||
+		mCurrentState == eLuxEnemyState_AttackMeleeLong || mCurrentState == eLuxEnemyState_AttackRange;
+	// An attack commits to one incarnation of a player, not just its reusable
+	// peer identity. Finish at the old aim point if that player respawns.
+	if(bAttackCommitted) lSelectedPeer = previous != mPlayerAwareness.end() &&
+		previous->second.player.life == lPreviousLife ? lPreviousPeer : UINT32_MAX;
+	else if(lBestPeer != UINT32_MAX && (lSelectedPeer == UINT32_MAX || (mfTargetCommitment <= 0 &&
+		fBestScore > score(previous->second) * 1.6f))) lSelectedPeer = lBestPeer;
+
+	mlTargetPeer = lSelectedPeer;
+	if(lSelectedPeer != UINT32_MAX)
+	{
+		const cPlayerAwareness& selected = mPlayerAwareness.find(lSelectedPeer)->second;
+		mTargetPlayer = selected.player;
+		mbCanSeePlayer = selected.visible;
+		mbPlayerDetected = selected.detected;
+		mlPlayerInLOSCount = selected.losCount;
+		if(selected.hasLastKnown) mvLastKnownPlayerPos = selected.lastKnown;
+	}
+	else
+	{
+		mTargetPlayer = cLuxEnemyPlayer();
+		mbCanSeePlayer = mbPlayerDetected = false;
+		mlPlayerInLOSCount = 0;
+	}
+
+	OnTargetChanged(lPreviousPeer, lPreviousPeer == mlTargetPeer && lPreviousLife != mTargetPlayer.life);
+	if(mbCanSeePlayer && (!bPreviouslyVisible || lPreviousPeer != mlTargetPeer)) SendMessage(eLuxEnemyMessage_PlayerSeen);
+	else if(!mbCanSeePlayer && bPreviouslyVisible) SendMessage(eLuxEnemyMessage_PlayerUnseen);
+	if(mbPlayerDetected && (!bPreviouslyDetected || lPreviousPeer != mlTargetPeer)) SendMessage(eLuxEnemyMessage_PlayerDetected);
+	else if(!mbPlayerDetected && bPreviouslyDetected) SendMessage(eLuxEnemyMessage_PlayerUndetected);
+	if(lPreviousPeer != UINT32_MAX && !bPreviousEligible && mlTargetPeer == UINT32_MAX && !bAttackCommitted)
+		SendMessage(eLuxEnemyMessage_PlayerDead, 0, false, 0, 0, 1);
+	if(bSampleSight || lPreviousPeer != mlTargetPeer) mbIsSeenByPlayer = IsSeenByPlayer();
+}
+
 void iLuxEnemy::UpdateCanSeePlayer(float afTimeStep)
 {
+	if(HasMultiplayerAI())
+	{
+		UpdateMultiplayerTargets(afTimeStep);
+		return;
+	}
 	cLuxPlayer *pPlayer = gpBase->mpPlayer;
 
 	if(pPlayer->IsDead()) return;
@@ -1421,7 +1757,7 @@ void iLuxEnemy::UpdateCanSeePlayer(float afTimeStep)
 	// Check range
 	float fMaxRange = mfSightRange;
 
-	if(bLanternOn) mfSightRange *= 1.5f;
+	if(bLanternOn) fMaxRange *= 1.5f;
 	
 	if(bLanternOn==false && pPlayer->GetHelperLightLevel()->GetNormalLightLevel() < mfPlayerInDarknessLightLevel && pPlayer->GetAvgSpeed() < 0.05f && 
 		mbSkipVisibilityRangeHandicaps==false)
@@ -1486,6 +1822,7 @@ void iLuxEnemy::UpdateCanSeePlayer(float afTimeStep)
 
 void iLuxEnemy::UpdatePlayerDetected(float afTimeStep)
 {
+	if(HasMultiplayerAI()) return; // Per-player transitions were resolved together.
 	if(gpBase->mpPlayer->IsDead()) return;
 
 	bool bDetected = PlayerIsDetected();
@@ -1506,9 +1843,9 @@ void iLuxEnemy::UpdatePlayerDetected(float afTimeStep)
 
 void iLuxEnemy::UpdatePlayerInRange(float afTimeStep)
 {
-	if(gpBase->mpPlayer->IsDead()) return;
+	if(!HasMultiplayerAI() && gpBase->mpPlayer->IsDead()) return;
 
-	float fDistance = DistToPlayer();
+	float fDistance = DistToNearestPlayer();
 
 	if(fDistance <= mfActivationDistance && mbPlayerInRange==false)
 	{
@@ -1614,6 +1951,9 @@ void iLuxEnemy::UpdateCheckStuckAtDoor(float afTimeStep)
 
 void iLuxEnemy::UpdateCheckLastPlayerPos(float afTimeStep)
 {
+	// Multiplayer samples remember only positions actually sensed. Retail's
+	// one-second pursuit grace otherwise follows a hidden player's live pose.
+	if(HasMultiplayerAI()) return;
 	if(CanSeePlayer())
 	{
 		mfLastPlayerPosCount += afTimeStep;
@@ -1723,7 +2063,9 @@ void iLuxEnemy::UpdateHallucination(float afTimeStep)
 {
 	if(mbHallucination==false || mfHealth <= 0) return;
 
-	float fDistSqr = cMath::Vector3DistSqr(mpCharBody->GetPosition(), gpBase->mpPlayer->GetCharacterBody()->GetPosition());
+	float fDistance = HasMultiplayerAI() ? DistToNearestPlayer() :
+		cMath::Vector3Dist(mpCharBody->GetPosition(), gpBase->mpPlayer->GetCharacterBody()->GetPosition());
+	float fDistSqr = fDistance * fDistance;
 	if(fDistSqr < mfHallucinationEndDist * mfHallucinationEndDist)
 	{
 		FadeToSmoke(true);
@@ -1781,6 +2123,7 @@ void iLuxEnemy::UpdateAlignEntityWithGroundRay(float afTimeStep)
 
 bool iLuxEnemy::TriggersDisabled()
 {
+	if(HasMultiplayerAI()) return mbDisableTriggers || (mlTargetPeer != UINT32_MAX && mTargetPlayer.protectedFromEnemies);
 	return mbDisableTriggers || gpBase->mpPlayer->GetHelperFlashback()->IsActive();
 }
 
@@ -1788,6 +2131,7 @@ bool iLuxEnemy::TriggersDisabled()
 
 bool iLuxEnemy::Attack(const cEnemyAttackSizeData &aSizeData, const cEnemyAttackDamageData &aDamageData, float afDamageMul)
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return false;
 	cWorldEffectSourceScope effectSource(mpMap->GetWorld(), mpCharBody->GetCurrentBody());
 	bool bHitPlayer = false;
 	bool bHit = gpBase->mpMapHelper->ShapeDamage(GetAttackShape(aSizeData.mlShapeIdx), GetDamageShapeMatrix(aSizeData.mvOffset), mpCharBody->GetPosition(),
@@ -1831,7 +2175,7 @@ cAINode *iLuxEnemy::GetSearchForPlayerNode(int alMaxIterations, float afMaxAngle
 		float fAngle = cMath::RandRectf(-fMaxAngle, fMaxAngle);
 
 		//Get the distance and direction to player
-		cVector3f vToPlayer = gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition() - mpCharBody->GetFeetPosition();
+		cVector3f vToPlayer = GetPlayerFeetPos() - mpCharBody->GetFeetPosition();
 		float fToPlayerDist = vToPlayer.Length();
 		vToPlayer.Normalize();
 
@@ -1864,7 +2208,7 @@ cAINode *iLuxEnemy::GetPatrolAroundPlayerNode(int alMaxIterations, float afMaxAn
 {
 	float fMaxAngle = mfPlayerPatrolMaxAngle * afMaxAngleMul;
 
-	cVector3f vPlayerFeetPos = gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition();
+	cVector3f vPlayerFeetPos = GetPlayerFeetPos();
 
 	////////////////////
 	//Iterate until a node is found or max iterations is reached.
@@ -2071,6 +2415,8 @@ cLuxProp_Object* iLuxEnemy::GetClosestFood(float afMaxDist, float afMaxHeightDis
 
 cVector3f iLuxEnemy::GetPlayerFeetPos()
 {
+	if(HasMultiplayerAI())
+		return mbEvaluatingPlayerSenses || mbPlayerDetected ? mTargetPlayer.feet : mvLastKnownPlayerPos;
 	return gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition();
 }
 
@@ -2118,6 +2464,8 @@ cVector3f iLuxEnemy::GetDirection2D(const cVector3f &avPos)
 
 float iLuxEnemy::DistToPlayer()
 {
+	if(HasMultiplayerAI())
+		return mTargetPlayer.Eligible() ? cMath::Vector3Dist(mpCharBody->GetFeetPosition(), GetPlayerFeetPos()) : 100000.0f;
 	if(gpBase->mpPlayer->IsDead()) return 100000.0f;
 
 	return DistToChar(gpBase->mpPlayer->GetCharacterBody());
@@ -2125,6 +2473,8 @@ float iLuxEnemy::DistToPlayer()
 
 float iLuxEnemy::DistToPlayer2D()
 {
+	if(HasMultiplayerAI())
+		return mTargetPlayer.Eligible() ? cMath::Vector2DistXZ(mpCharBody->GetFeetPosition(), GetPlayerFeetPos()) : 100000.0f;
 	if(gpBase->mpPlayer->IsDead()) return 100000.0f;
 
 	return DistToChar2D(gpBase->mpPlayer->GetCharacterBody());
@@ -2132,11 +2482,15 @@ float iLuxEnemy::DistToPlayer2D()
 
 float iLuxEnemy::DistToPlayer2D(const cVector3f& avPos)
 {
+	if(HasMultiplayerAI())
+		return mTargetPlayer.Eligible() ? cMath::Vector2DistXZ(GetPlayerFeetPos(), avPos) : 100000.0f;
 	return cMath::Vector2DistXZ(gpBase->mpPlayer->GetCharacterBody()->GetPosition(), avPos);
 }
 
 float iLuxEnemy::AbsHeightDistToPlayer()
 {
+	if(HasMultiplayerAI())
+		return mTargetPlayer.Eligible() ? cMath::Abs(mpCharBody->GetFeetPosition().y - GetPlayerFeetPos().y) : 100000.0f;
 	if(gpBase->mpPlayer->IsDead()) return 100000.0f;
 
 	return AbsHeightDistToChar(gpBase->mpPlayer->GetCharacterBody());
@@ -2144,13 +2498,37 @@ float iLuxEnemy::AbsHeightDistToPlayer()
 
 cVector3f iLuxEnemy::GetDirection2DToPlayer()
 {
+	if(HasMultiplayerAI()) return GetDirection2D(GetPlayerFeetPos());
 	return GetDirection2D(gpBase->mpPlayer->GetCharacterBody()->GetPosition());
 }
 
 //-----------------------------------------------------------------------
 
+bool iLuxEnemy::PlayerCanObserve(const cLuxEnemyPlayer& aPlayer, const cVector3f& avFeetPos, bool abCheckOcclusion)
+{
+	if(!aPlayer.alive || !aPlayer.body) return false;
+	cCamera camera;
+	camera.SetPosition(aPlayer.eyes);
+	camera.SetYaw(aPlayer.yaw);
+	camera.SetPitch(aPlayer.pitch);
+	camera.SetFOV(aPlayer.fov);
+	camera.SetAspect(aPlayer.aspect);
+	camera.SetFarClipPlane(gpBase->mpPlayer->GetCamera()->GetFarClipPlane());
+	cBoundingVolume bounds = *mpCharBody->GetCurrentBody()->GetBoundingVolume();
+	bounds.SetPosition(avFeetPos + cVector3f(0,mpCharBody->GetSize().y/2,0));
+	if(camera.GetFrustum()->CollideBoundingVolume(&bounds) == eCollision_Outside) return false;
+	return !abCheckOcclusion || LineOfSight(avFeetPos + cVector3f(0,mpCharBody->GetSize().y/2,0),
+		mpCharBody->GetSize(), false, aPlayer.eyes);
+}
+
 bool iLuxEnemy::IsSeenByPlayer()
 {
+	if(HasMultiplayerAI())
+	{
+		for(const cLuxEnemyPlayer& player : gpBase->mpMultiplayer->GetWorld()->GetEnemyPlayers())
+			if(PlayerCanObserve(player, mpCharBody->GetFeetPosition(), true)) return true;
+		return false;
+	}
 	///////////////////////////////
 	// Check frustum
 	cFrustum *pFrustum = gpBase->mpPlayer->GetCamera()->GetFrustum();
@@ -2170,6 +2548,12 @@ bool iLuxEnemy::IsSeenByPlayer()
 
 bool iLuxEnemy::IsInPlayerFovAtFeetPos(const cVector3f& avFeetPos)
 {
+	if(HasMultiplayerAI())
+	{
+		for(const cLuxEnemyPlayer& player : gpBase->mpMultiplayer->GetWorld()->GetEnemyPlayers())
+			if(PlayerCanObserve(player, avFeetPos, false)) return true;
+		return false;
+	}
 	cBoundingVolume bv;
 	bv = *mpCharBody->GetCurrentBody()->GetBoundingVolume();
 	bv.SetPosition(avFeetPos + cVector3f(0, mpCharBody->GetSize().y/2, 0) );
@@ -2182,6 +2566,12 @@ bool iLuxEnemy::IsInPlayerFovAtFeetPos(const cVector3f& avFeetPos)
 
 bool iLuxEnemy::IsVisibleToPlayerAtFeetPos(const cVector3f& avFeetPos)
 {
+	if(HasMultiplayerAI())
+	{
+		for(const cLuxEnemyPlayer& player : gpBase->mpMultiplayer->GetWorld()->GetEnemyPlayers())
+			if(player.alive && LineOfSight(avFeetPos + cVector3f(0,mpCharBody->GetSize().y/2,0), mpCharBody->GetSize(), false, player.eyes)) return true;
+		return false;
+	}
 	cVector3f vPlayerEyePos = gpBase->mpPlayer->GetCamera()->GetPosition();
 	cVector3f vCharPos = avFeetPos;
 	vCharPos.y += mpCharBody->GetSize().y/2;
@@ -2193,6 +2583,15 @@ bool iLuxEnemy::IsVisibleToPlayerAtFeetPos(const cVector3f& avFeetPos)
 
 float iLuxEnemy::GetPlayerMovementTowardEnemyAmount()
 {
+	if(HasMultiplayerAI())
+	{
+		if(!mTargetPlayer.Eligible() || !mbPlayerDetected) return -1;
+		cVector3f vDirection = mTargetPlayer.velocity;
+		vDirection.y = 0;
+		if(vDirection.SqrLength() < 0.01f) return -1;
+		vDirection.Normalize();
+		return cMath::Vector3Dot(vDirection, GetDirection2D(mTargetPlayer.position) * -1);
+	}
 	iCharacterBody *pPlayerBody = gpBase->mpPlayer->GetCharacterBody();
 	
 	cVector3f vPlayerDir = pPlayerBody->GetVelocity(gpBase->mpEngine->GetStepSize());
@@ -2243,6 +2642,7 @@ bool iLuxEnemy::InFOV(const cVector3f &avPos)
 
 bool iLuxEnemy::PlayerInFOV()
 {
+	if(HasMultiplayerAI()) return mTargetPlayer.Eligible() && InFOV(GetPlayerFeetPos() + cVector3f(0,mTargetPlayer.size.y/2,0));
 	return InFOV(gpBase->mpPlayer->GetCharacterBody()->GetPosition());
 }
 
@@ -2252,7 +2652,7 @@ void iLuxEnemy::OnSetActive(bool abX)
 {	
 	if(mpCharBody)
 	{
-		mpCharBody->SetActive(abX);
+		mpCharBody->SetActive(abX && !(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()));
 	}
 
 	///////////////////
@@ -2266,9 +2666,9 @@ void iLuxEnemy::OnSetActive(bool abX)
 	//Remove from attack and search music
 	if(abX==false)
 	{
-		gpBase->mpMusicHandler->RemoveEnemy(eLuxEnemyMusic_Attack,this);
-		gpBase->mpMusicHandler->RemoveEnemy(eLuxEnemyMusic_Search,this);
-		gpBase->mpPlayer->RemoveTerrorEnemy(this);
+		RemoveTargetMusic(eLuxEnemyMusic_Attack);
+		RemoveTargetMusic(eLuxEnemyMusic_Search);
+		SetTargetTerrorSource(false);
 
 		ChangeState(eLuxEnemyState_Idle);
 	}

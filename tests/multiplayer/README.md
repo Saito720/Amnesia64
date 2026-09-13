@@ -274,6 +274,40 @@ Shelf progress diagnostics include real transforms;
 the legacy `GetMoveState()` ratio is unreliable for this retail fixture's tiny
 off-axis starting rotation, so pass/fail uses actual rotation and translation.
 
+`-EnemiesOnly -Backend Steamworks` runs a focused two-instance enemy regression.
+The runner copies Old Archives into the run directory, adds inactive authored
+retail grunt, brute and water-lurker assets plus a navigation grid, and loads it
+through normal hosting and map transfer. Identical static test geometry above
+the retail level isolates line-of-sight and melee collisions. The first encounter
+uses normal movement; subsequent sensing and attack stages freeze enemy movement
+while retaining native AI, animation attack markers and all networking.
+The fixture checks client-only detection/chase with a distant host, attack query
+proxies when player collision is disabled, stable target choice, occluded-player
+memory, damage to each intended victim without duplicate application, brute and
+water-lurker detection, death/disconnect cleanup, a real reconnect into a paused
+mid-attack baseline, old-epoch rejection and map/session teardown. Native death
+coverage includes exactly zero health and the normal respawn fade. A lit client
+encounter screenshot and mesh/animation assertions check the rendered enemy.
+Codec checks
+also cover prefix truncation, non-finite values, excessive/duplicate animation
+and light layers, identity generations, removal tombstones and reordered packets.
+The live decoder also receives an unreliable replacement before its reliable
+baseline: confirmation must retain the newer pose and keep the old native instance
+alive until the replacement script can use it. The unique generated map's cache
+object is removed on completion or failure after verifying its path and hash.
+The ordinary complete suite is unchanged unless this mode is selected.
+
+Verified on 2026-09-13 with Debug x64 and the Steamworks backend: the two local
+instances passed the complete enemy fixture (final run `e78850edb034`, including
+inherited fear cleanup before a session target exists). The full existing multiplayer
+regression also passed as `d51f04166657`. The standalone
+protocol and real Newton tests also passed, including host/client damage and
+respawn-life rejection, bounded hearing events, collision with remote players in
+both player-collision modes, raw collision poses independent of render smoothing,
+collision-mask restoration, and deferred enemy contact lease reclaim with an
+assembly-wide grace period. This exercises local UDP sessions using the Steamworks
+networking backend; separate-account Steam relay playtesting remains distinct.
+
 `-SteamHostOnly -Backend Steamworks` runs one actual game instance against the
 configured Steam AppID. It starts a friends-only campaign lobby, verifies world
 updates through menus, changes to Old Archives while retaining the same lobby,

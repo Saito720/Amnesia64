@@ -24,6 +24,8 @@
 
 #include "LuxEntity.h"
 #include "LuxSavedEngineTypes.h"
+#include "LuxEnemyPlayer.h"
+#include <map>
 
 //----------------------------------------------
 
@@ -365,6 +367,7 @@ friend class iLuxEnemyLoader;
 friend class cLuxEnemy_WorldCollisionCallback;
 friend class cLuxEnemyMover;
 friend class cLuxEnemyPathfinder;
+friend class cLuxMultiplayerEnemies;
 public:	
 	iLuxEnemy(const tString &asName, int alID, cLuxMap *apMap, eLuxEnemyType aEnemyType);
 	virtual ~iLuxEnemy();
@@ -460,6 +463,9 @@ public:
 	bool CanSeePlayer(){ return mbCanSeePlayer;}
 	bool GetPlayerDetected(){ return mbPlayerDetected;}
 	bool GetPlayerInRange(){ return mbPlayerInRange;}
+	uint32_t GetTargetPeer() const { return mlTargetPeer; }
+	bool IsTargetingLocalPlayer() const;
+	bool GetPlayerDetectedForPeer(uint32_t alPeer) const;
 
 	float GetHealth(){ return mfHealth; }
 
@@ -479,7 +485,7 @@ public:
 	int GetBodyNum(){ return 1; }
 	iPhysicsBody* GetBody(int alIdx){ return mpCharBody->GetCurrentBody();}
 
-	void SetIsSeenByPlayer(bool abX){ mbIsSeenByPlayer = abX;}
+	void SetIsSeenByPlayer(bool abX){ if(!HasMultiplayerAI()) mbIsSeenByPlayer = abX; }
 	bool GetIsSeenByPlayer(){ return mbIsSeenByPlayer;}
 
 	bool CausesSanityDecrease(){ return mbCausesSanityDecrease;}
@@ -532,6 +538,7 @@ protected:
 	void UpdateAnimation(float afTimeStep);
 	void UpdateCharBody(float afTimeStep);
 	void UpdateCanSeePlayer(float afTimeStep);
+	void UpdateMultiplayerTargets(float afTimeStep);
 	void UpdatePlayerDetected(float afTimeStep);
 	void UpdatePlayerInRange(float afTimeStep);
 	void UpdateCheckStuckAtDoor(float afTimeStep);
@@ -551,6 +558,19 @@ protected:
 	/////////////////////////////////////
 	// Helpers
 	bool TriggersDisabled();
+	bool HasMultiplayerAI() const;
+	cLuxEnemyPlayer GetTargetPlayer() const;
+	float GetTargetTerror();
+	void SetTargetTerror(float afAmount);
+	void SetTargetTerrorSource(bool abEnabled);
+	void AddTargetMusic(eLuxEnemyMusic aType);
+	void RemoveTargetMusic(eLuxEnemyMusic aType);
+	bool PrepareBodyInfluence(iPhysicsBody* apBody);
+	void OnTargetChanged(uint32_t alPreviousPeer, bool abNewLife=false);
+	bool ReceiveEnemyHelp(cLuxStateMessage* apMessage);
+	void BroadcastEnemyHelp();
+	float DistToNearestPlayer();
+	bool PlayerCanObserve(const cLuxEnemyPlayer& aPlayer, const cVector3f& avFeetPos, bool abCheckOcclusion);
 
 	bool Attack(const cEnemyAttackSizeData &aSizeData, const cEnemyAttackDamageData &aDamageData, float afDamageMul=1.0f);
 
@@ -631,6 +651,23 @@ protected:
 	bool mbCanSeePlayer;
 	bool mbPlayerDetected;
 	bool mbPlayerInRange;
+
+	// Each player's senses and last known location remain independent. These
+	// session identities are deliberately not persisted in singleplayer saves.
+	struct cPlayerAwareness
+	{
+		cLuxEnemyPlayer player;
+		cVector3f lastKnown = 0;
+		int losCount = 0;
+		bool visible = false, detected = false, hasLastKnown = false;
+	};
+	std::map<uint32_t, cPlayerAwareness> mPlayerAwareness;
+	cLuxEnemyPlayer mTargetPlayer;
+	uint32_t mlTargetPeer = UINT32_MAX;
+	float mfTargetCommitment = 0;
+	bool mbEvaluatingPlayerSenses = false;
+	bool mbTargetTerrorSource = false;
+	uint8_t mlTargetMusicFlags = 0;
 
 	float mfCheckAtDoorCount;
 	bool mbStuckAtDoor;

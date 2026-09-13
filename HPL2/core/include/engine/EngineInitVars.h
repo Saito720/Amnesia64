@@ -54,6 +54,7 @@ namespace hpl {
 				mlDisplay(0),
 				mlScreenBpp(32),
 				mbFullscreen(false),
+				mWindowBorderMode(eWindowBorderMode_Auto),
 				mlMultisampling(0),
 				msWindowCaption(""),
 				mvWindowPosition(-1),
@@ -64,6 +65,7 @@ namespace hpl {
 			int mlDisplay;
 			int mlScreenBpp;
 			bool mbFullscreen;
+			eWindowBorderMode mWindowBorderMode;
 			int mlMultisampling;
 			tString msWindowCaption;
 			cVector2l mvWindowPosition;

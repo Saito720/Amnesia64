@@ -1,10 +1,12 @@
-param([string]$RetailDirectory,[int]$Port=27843,[ValidateSet('Standalone','Steamworks')][string]$Backend='Standalone',[switch]$SteamHostOnly,[switch]$SkipBuild,[switch]$KeepProfiles,[ValidateRange(320,8192)][int]$Width=800,[ValidateRange(240,8192)][int]$Height=600)
+param([string]$RetailDirectory,[int]$Port=27843,[ValidateSet('Standalone','Steamworks')][string]$Backend='Standalone',[switch]$SteamHostOnly,[switch]$SettingsOnly,[ValidateSet('Auto','Bordered','Borderless')][string]$BorderMode='Auto',[switch]$SkipBuild,[switch]$KeepProfiles,[ValidateRange(320,8192)][int]$Width=800,[ValidateRange(240,8192)][int]$Height=600)
 $ErrorActionPreference='Stop'
+if(-not $PSBoundParameters.ContainsKey('BorderMode') -and -not $SettingsOnly) { $BorderMode='Bordered' }
 . (Join-Path $PSScriptRoot 'TestSupport.ps1')
 $context=Get-MultiplayerTestContext 'game'
 $retail=Find-AmnesiaRetailDirectory $RetailDirectory
 if($SteamHostOnly -and $Backend -ne 'Steamworks') { throw '-SteamHostOnly requires -Backend Steamworks and a signed-in account with access to the configured AppID.' }
-$roles=if($SteamHostOnly) { @('steam-host') } else { @('host','client') }
+if($SteamHostOnly -and $SettingsOnly) { throw '-SteamHostOnly and -SettingsOnly select different tests.' }
+$roles=if($SettingsOnly) { @('settings') } elseif($SteamHostOnly) { @('steam-host') } else { @('host','client') }
 if(-not $SkipBuild) { & (Join-Path $PSScriptRoot 'build.ps1') -Kind game -Backend $Backend }
 if($Port -lt 1 -or $Port -gt 65535) { throw 'Port must be from 1 to 65535.' }
 $runId=[Guid]::NewGuid().ToString('N').Substring(0,12)
@@ -14,9 +16,10 @@ $profileParent=[IO.Path]::GetFullPath((Join-Path ([Environment]::GetFolderPath('
 $profilePaths=@{}
 $template=[IO.File]::ReadAllText((Join-Path $retail 'config/main_init.cfg'))
 $mainPath=(Join-Path $run 'main-settings.cfg').Replace('\','/')
+$borderSetting=switch($BorderMode) { 'Bordered' { ' Borderless="false"' }; 'Borderless' { ' Borderless="true"' }; default { '' } }
 [IO.File]::WriteAllText($mainPath,@"
 <Main ShowMenu="true" ShowPreMenu="false" SaveConfig="false" DefaultProfileName="multiplayer_test" ForceCacheLoadingAndSkipSaving="true" UpdateLogActive="false" />
-<Screen Width="$Width" Height="$Height" Display="0" FullScreen="false" Vsync="false" />
+<Screen Width="$Width" Height="$Height" Display="0" FullScreen="false" Vsync="false"$borderSetting />
 <Graphics ShadowsActive="false" SSAOActive="false" WorldReflection="false" TextureQuality="1" />
 <Engine LimitFPS="true" />
 <Sound Volume="0" HRTF="false" />

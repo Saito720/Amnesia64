@@ -99,6 +99,7 @@ namespace hpl {
         mpScreen = 0;
         mbGrab = false;
         mbRelativeMouse = false;
+		mWindowBorderMode = eWindowBorderMode_Bordered;
 
 		mbDoubleSidedStencilIsSet = false;
 
@@ -183,7 +184,7 @@ namespace hpl {
 
 	bool cLowLevelGraphicsSDL::Init(int alWidth, int alHeight, int alDisplay, int alBpp, int abFullscreen, 
 		int alMultisampling, eGpuProgramFormat aGpuProgramFormat,const tString& asWindowCaption,
-		const cVector2l &avWindowPos)
+		const cVector2l &avWindowPos, eWindowBorderMode aWindowBorderMode)
 	{
 		mvScreenSize.x = alWidth;
 		mvScreenSize.y = alHeight;
@@ -224,10 +225,16 @@ namespace hpl {
 		}
 
 #if SDL_VERSION_ATLEAST(2, 0, 0)
+        if (mlDisplay < 0 || mlDisplay >= SDL_GetNumVideoDisplays())
+        {
+            Warning("Display %d is unavailable; using the primary display.\n", mlDisplay);
+            mlDisplay = 0;
+        }
+        SDL_DisplayMode desktopMode = {};
+        const bool hasDesktopMode = SDL_GetDesktopDisplayMode(mlDisplay, &desktopMode) == 0;
         unsigned int mlFlags = SDL_WINDOW_OPENGL;
         if (alWidth == 0 && alHeight == 0) {
-            SDL_DisplayMode desktopMode;
-            if (SDL_GetDesktopDisplayMode(mlDisplay, &desktopMode) == 0)
+            if (hasDesktopMode)
                 mvScreenSize = cVector2l(desktopMode.w, desktopMode.h);
             else {
                 Warning("Could not get desktop resolution: %s\n", SDL_GetError());
@@ -237,7 +244,17 @@ namespace hpl {
         } else if (abFullscreen) {
             mlFlags |= SDL_WINDOW_FULLSCREEN;
         }
-        if (!abFullscreen) mlFlags |= SDL_WINDOW_RESIZABLE;
+        // Keep legacy desktop-sized launches frameless, but allow an explicit
+        // bordered choice at that size. This decision is only made at startup:
+        // growing a normal window must never remove its resize controls.
+        const auto windowBorderFlags = [&]() -> unsigned int {
+            if (abFullscreen) return 0;
+            const bool borderless = aWindowBorderMode == eWindowBorderMode_Borderless ||
+                (aWindowBorderMode == eWindowBorderMode_Auto && hasDesktopMode &&
+                 mvScreenSize == cVector2l(desktopMode.w, desktopMode.h));
+            return borderless ? SDL_WINDOW_BORDERLESS : SDL_WINDOW_RESIZABLE;
+        };
+        mlFlags |= windowBorderFlags();
 
 
         Log(" Setting video mode: %d x %d - %d bpp\n",alWidth, alHeight, alBpp);
@@ -249,6 +266,8 @@ namespace hpl {
             // try disabling FSAA
 			Error("Could not set display mode setting a lower one! %s\n", SDL_GetError());
 			mvScreenSize = cVector2l(640,480);
+            mlFlags &= ~(SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE);
+            mlFlags |= windowBorderFlags();
             SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 0);
             SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 0);
             mpScreen = SDL_CreateWindow(asWindowCaption.c_str(),
@@ -270,8 +289,11 @@ namespace hpl {
             SDL_GetWindowSize(mpScreen, &w, &h);
             mvScreenSize = cVector2l(w, h);
         }
+        mWindowBorderMode = !abFullscreen && (SDL_GetWindowFlags(mpScreen) & SDL_WINDOW_BORDERLESS)
+            ? eWindowBorderMode_Borderless : eWindowBorderMode_Bordered;
         mGLContext = SDL_GL_CreateContext(mpScreen);
-        if (!abFullscreen) SDL_SetWindowMinimumSize(mpScreen, 320, 240);
+        if (!abFullscreen && mWindowBorderMode == eWindowBorderMode_Bordered)
+            SDL_SetWindowMinimumSize(mpScreen, 320, 240);
 #ifdef _WIN32
         if(!cWindowsWindowResize::Install(mpScreen))
         {
@@ -283,6 +305,7 @@ namespace hpl {
 		unsigned int mlFlags = SDL_OPENGL;
 
 		if(abFullscreen) mlFlags |= SDL_FULLSCREEN;
+        else if(aWindowBorderMode == eWindowBorderMode_Borderless) mlFlags |= SDL_NOFRAME;
 
 		// If caption set before engine creation, no chance for the "SDL_App" to appear for even a msec
 		SetWindowCaption(asWindowCaption);
@@ -311,6 +334,8 @@ namespace hpl {
 		}
         // update with the screen size ACTUALLY obtained
         mvScreenSize = cVector2l(mpScreen->w, mpScreen->h);
+        mWindowBorderMode = !abFullscreen && (mpScreen->flags & SDL_NOFRAME)
+            ? eWindowBorderMode_Borderless : eWindowBorderMode_Bordered;
 #   ifdef _WIN32
 		//////////////////////////////
 		// Set up window position

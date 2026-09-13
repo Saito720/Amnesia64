@@ -280,7 +280,7 @@ namespace hpl {
 							apVars->mGraphics.mGpuProgramFormat,
 							apVars->mGraphics.msWindowCaption,
 							apVars->mGraphics.mvWindowPosition,
-							mpResources,alHplSetupFlags);
+							mpResources,alHplSetupFlags,apVars->mGraphics.mWindowBorderMode);
 		
 		//Init Sound
 		mpSound->Init(mpResources, apVars->mSound.mlSoundDeviceID,

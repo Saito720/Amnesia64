@@ -31,6 +31,26 @@ To separate builds from execution:
 ./tests/multiplayer/run-game.ps1 -SkipBuild -Port 27843
 ```
 
+For a focused native Graphics-menu test, use one isolated instance and exit
+before loading a campaign or starting a session:
+
+```powershell
+./tests/multiplayer/run-game.ps1 -Backend Steamworks -SettingsOnly -SkipBuild
+./tests/multiplayer/run-game.ps1 -Backend Steamworks -SettingsOnly -SkipBuild -BorderMode Borderless
+```
+
+This reuses the normal Create Profile flow, rendered options screenshot, and
+FPS/V-sync tests. It verifies that routine config saving preserves the absent
+legacy Auto key or an explicit mode, then checks Borderless label/layout/controller navigation,
+fullscreen exclusivity, Cancel, restart notices, saved preferences, and that the
+current window remains unchanged until restart. `-BorderMode Auto` (the focused default)
+omits the new setting to exercise legacy resolution matching; `Bordered` and
+`Borderless` write explicit false/true choices. Combine with `-Width`/`-Height`
+matching the monitor to check legacy borderless startup and its explicit bordered
+override. Regular multiplayer runs default to explicit `Bordered` so resize tests
+can continue to exercise decorations at monitor-native resolutions. Test profiles
+remain isolated and are cleaned by the same runner.
+
 For a focused shared-effects regression, start directly in Old Archives and
 skip the unrelated campaign, inventory, and drawer phases:
 

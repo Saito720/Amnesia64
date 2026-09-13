@@ -150,6 +150,7 @@ private:
 	cWidgetDummy	*mpDBasicGfxOptions;
 	cWidgetComboBox *mpCBResolution;
 	cWidgetCheckBox *mpChBFullScreen;
+	cWidgetCheckBox *mpChBBorderless;
 	cWidgetCheckBox *mpChBVSync;
 	cWidgetCheckBox *mpChBUncapFPS;
 //	cWidgetCheckBox *mpChBAdaptiveVSync;

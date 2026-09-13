@@ -61,6 +61,7 @@ static void printStatus(const char* message) {
 #endif
 #include "FrameCadenceRegression.h"
 #include "FPSSettingsRegression.h"
+#include "BorderlessSettingsRegression.h"
 #include "NetworkInterpolationRegression.h"
 class cGameSmoke : public iUpdateable, public iRendererCallback {
     int state=0;
@@ -87,6 +88,7 @@ class cGameSmoke : public iUpdateable, public iRendererCallback {
     bool uncappedTests=std::getenv("CODEX_MP_UNCAPPED")!=NULL;
     cFrameCadenceRegression cadenceRegression;
     cFPSSettingsRegression fpsSettingsRegression;
+    cBorderlessSettingsRegression borderlessSettingsRegression;
     cVector2l resizeValidated=0;
     bool genericEffectsDone=false;
     cMapCacheRegression mapCacheRegression;
@@ -164,6 +166,10 @@ public:
     cGameSmoke() : iUpdateable("MultiplayerGameSmoke") {}
     void OnStart() {
         started=SDL_GetTicks();
+        if(role=="settings") {
+            tString error;
+            if(!borderlessSettingsRegression.CheckStartup(error)) {fail(error);return;}
+        }
         gpBase->mpEngine->SetWaitIfAppOutOfFocus(false);
         if(uncappedTests && (gpBase->mpEngine->GetLimitFPS() || !gpBase->mpConfigHandler->mbVSync)) {
             fail("fresh settings must default to uncapped rendering and V-sync");return;
@@ -208,6 +214,14 @@ public:
             const int settings=fpsSettingsRegression.Initial(loadingError);
             if(settings<0) {fail(loadingError);return;}
             if(!settings) return;
+            if(role=="settings") {
+                const int borderless=borderlessSettingsRegression.Update(loadingError);
+                if(borderless<0) {fail(loadingError);return;}
+                if(!borderless) return;
+                mark(role+"-passed.txt","PASS: native Graphics menu, FPS/V-sync and borderless/fullscreen preferences.");
+                printStatus("PASS: focused native graphics settings and window-mode persistence");
+                result=0;state=99;gpBase->mpEngine->Exit();return;
+            }
             if(resizeTests) {
                 const int resize=resizeRegression.Initial(loadingError);
                 if(resize<0) {fail(loadingError);return;}
@@ -613,7 +627,7 @@ public:
     }
 };
 int main(int argc,char** argv) {
-    if(argc!=5) {std::fprintf(stderr,"Usage: smoke host|client|steam-host init.cfg output-dir port\n");return 2;}
+    if(argc!=5) {std::fprintf(stderr,"Usage: smoke host|client|steam-host|settings init.cfg output-dir port\n");return 2;}
     role=argv[1];outputDir=argv[3];port=static_cast<unsigned short>(std::atoi(argv[4]));
     gpBase=hplNew(cLuxBase,());
     if(!gpBase->Init(argv[2])) {

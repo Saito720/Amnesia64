@@ -88,7 +88,7 @@ namespace hpl {
 
 		bool Init(int alWidth, int alHeight, int alDisplay, int alBpp, int abFullscreen, int alMultisampling,
 					eGpuProgramFormat aGpuProgramFormat,const tString &asWindowCaption, const cVector2l &avWindowPos,
-					cResources* apResources, tFlag alHplSetupFlags);
+					cResources* apResources, tFlag alHplSetupFlags, eWindowBorderMode aWindowBorderMode=eWindowBorderMode_Auto);
 
 		void Update(float afTimeStep);
 		void OnScreenResize();

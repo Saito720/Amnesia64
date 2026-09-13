@@ -129,6 +129,8 @@ cLuxMainMenu_Options::cLuxMainMenu_Options(cGuiSet *apGuiSet, cGuiSkin *apGuiSki
 	mbShowCommentary = gpBase->mpMenuCfg->GetBool("Options","ShowCommentary", false);
 
 	mbSettingInitialValues = false;
+	mpChBFullScreen = NULL;
+	mpChBBorderless = NULL;
 
 	mbKeyConfigOpen = false;
 }
@@ -477,9 +479,24 @@ void cLuxMainMenu_Options::AddBasicGfxOptions(cWidgetDummy* apDummy)
 		vPosInGroup.x += mpCBResolution->GetSize().x + 100;
 
 		/////////////////////////////////
-		// Full screen and Vsync
+		// Window mode and Vsync
 		mpChBFullScreen = mpGuiSet->CreateWidgetCheckBox(vPosInGroup + cVector3f(0,2,0), -1, kTranslate("OptionsMenu","FullScreen"), pGroup);
 		SetUpInput(NULL, mpChBFullScreen, true, kTranslate("OptionsMenu","FullScreenTip"));
+
+		tWString sBorderless = kTranslate("OptionsMenu", "Borderless");
+		tWString sBorderlessTip = kTranslate("OptionsMenu", "BorderlessTip");
+		if(sBorderless.empty()) sBorderless = _W("Borderless");
+		if(sBorderlessTip.empty())
+			sBorderlessTip = _W("Remove the window frame. Select your display's native resolution to fill the screen.");
+		mpChBBorderless = mpGuiSet->CreateWidgetCheckBox(mpChBFullScreen->GetLocalPosition() +
+			cVector3f(mpChBFullScreen->GetSize().x+15,0,0), -1, sBorderless, pGroup);
+		SetUpInput(NULL, mpChBBorderless, true, sBorderlessTip);
+		// Use the spare gap after Resolution when a translated label needs more room.
+		const float fModeWidth = mpChBFullScreen->GetSize().x + 15 + mpChBBorderless->GetSize().x;
+		vPosInGroup.x = cMath::Max(mpCBResolution->GetLocalPosition().x + mpCBResolution->GetSize().x + 20,
+			cMath::Min(vPosInGroup.x, pGroup->GetSize().x - fBorderSize - fModeWidth));
+		mpChBFullScreen->SetPosition(vPosInGroup + cVector3f(0,2,0));
+		mpChBBorderless->SetPosition(vPosInGroup + cVector3f(mpChBFullScreen->GetSize().x+15,2,0));
 
 		mpChBVSync = mpGuiSet->CreateWidgetCheckBox(vPosInGroup + cVector3f(0,mpChBFullScreen->GetSize().y+10,0), 0, kTranslate("OptionsMenu","VSync"), pGroup);
 		SetUpInput(NULL, mpChBVSync, false, kTranslate("OptionsMenu","VSyncTip"));
@@ -553,7 +570,11 @@ void cLuxMainMenu_Options::AddBasicGfxOptions(cWidgetDummy* apDummy)
 	mpCBResolution->SetFocusNavigation(eUIArrow_Right, mpChBFullScreen);
 
 	mpChBFullScreen->SetFocusNavigation(eUIArrow_Left, mpCBResolution);
+	mpChBFullScreen->SetFocusNavigation(eUIArrow_Right, mpChBBorderless);
 	mpChBFullScreen->SetFocusNavigation(eUIArrow_Down, mpChBVSync);
+
+	mpChBBorderless->SetFocusNavigation(eUIArrow_Left, mpChBFullScreen);
+	mpChBBorderless->SetFocusNavigation(eUIArrow_Down, mpChBVSync);
 
 	mpChBVSync->SetFocusNavigation(eUIArrow_Left, mpCBResolution);
 //	mpChBVSync->SetFocusNavigation(eUIArrow_Right, mpChBAdaptiveVSync);
@@ -1207,6 +1228,7 @@ void cLuxMainMenu_Options::SetInputValues(cResourceVarsObject& aObj)
 		/////////////////////////
 		// Fullscreen & vsync
 		mpChBFullScreen->SetChecked(aObj.GetVarBool("FullScreen"), false);
+		mpChBBorderless->SetChecked(aObj.GetVarBool("Borderless") && mpChBFullScreen->IsChecked()==false, false);
 		mpChBVSync->SetChecked(aObj.GetVarBool("VSync"), false);
 		mpChBUncapFPS->SetChecked(aObj.GetVarBool("UncapFPS"), false);
 //		mpChBAdaptiveVSync->SetChecked(aObj.GetVarBool("AdaptiveVsync"), false);
@@ -1484,7 +1506,13 @@ void cLuxMainMenu_Options::ApplyChanges()
         const cVideoMode vidMode = mvScreenSizes[mpCBResolution->GetSelectedItem()];
 		pCfgHdr->mvScreenSize = vidMode.mvScreenSize;
         pCfgHdr->mlDisplay = vidMode.mlDisplay;
-		pCfgHdr->mbFullscreen = mpChBFullScreen->IsChecked();
+		const bool bFullscreen = mpChBFullScreen->IsChecked();
+		const bool bBorderless = mpChBBorderless->IsChecked() && bFullscreen==false;
+		if(pCfgHdr->mbFullscreen!=bFullscreen || pCfgHdr->mbBorderless!=bBorderless)
+			pCfgHdr->SetGameNeedsRestart();
+		pCfgHdr->mbFullscreen = bFullscreen;
+		pCfgHdr->mbBorderless = bBorderless;
+		pCfgHdr->mbBorderlessSpecified = true;
 		pCfgHdr->mbVSync = mpChBVSync->IsChecked();
 		gpBase->mpEngine->SetLimitFPS(mpChBUncapFPS->IsChecked()==false);
 //		pCfgHdr->mbAdaptiveVSync = mpChBAdaptiveVSync->IsChecked();
@@ -1798,6 +1826,7 @@ void cLuxMainMenu_Options::DumpInitialValues(cResourceVarsObject &aObj)
 		/////////////////////////
 		// Fullscreen & vsync
 		aObj.AddVarBool("FullScreen", gpBase->mpConfigHandler->mbFullscreen);
+		aObj.AddVarBool("Borderless", gpBase->mpConfigHandler->mbBorderless);
 		aObj.AddVarBool("VSync", gpBase->mpConfigHandler->mbVSync);
 		aObj.AddVarBool("UncapFPS", gpBase->mpEngine->GetLimitFPS()==false);
 		aObj.AddVarBool("AdaptiveVsync", gpBase->mpConfigHandler->mbAdaptiveVSync);
@@ -1896,6 +1925,7 @@ void cLuxMainMenu_Options::DumpCurrentValues(cResourceVarsObject &aObj)
 		/////////////////////////
 		// Fullscreen & vsync
 		aObj.AddVarBool("FullScreen",	mpChBFullScreen->IsChecked());
+		aObj.AddVarBool("Borderless", mpChBBorderless->IsChecked());
 		aObj.AddVarBool("VSync",		mpChBVSync->IsChecked());
 		aObj.AddVarBool("UncapFPS", mpChBUncapFPS->IsChecked());
 		
@@ -2080,6 +2110,17 @@ bool cLuxMainMenu_Options::Option_OnChangeValue(iWidget* apWidget, const cGuiMes
 {
 	if(mbSettingInitialValues)
 		return true;
+
+	// These modes exclude each other. Delay the restart flag until OK so Cancel
+	// and switching back to the original mode do not request an unnecessary restart.
+	if(apWidget==mpChBFullScreen || apWidget==mpChBBorderless)
+	{
+		if(apWidget==mpChBFullScreen && mpChBFullScreen->IsChecked())
+			mpChBBorderless->SetChecked(false, false);
+		else if(apWidget==mpChBBorderless && mpChBBorderless->IsChecked())
+			mpChBFullScreen->SetChecked(false, false);
+		return true;
+	}
 
 	if(apWidget->GetUserData())
 	{

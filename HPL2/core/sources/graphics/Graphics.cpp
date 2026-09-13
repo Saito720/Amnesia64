@@ -127,7 +127,7 @@ namespace hpl {
 							int alMultisampling,eGpuProgramFormat aGpuProgramFormat,
 							const tString &asWindowCaption, const cVector2l &avWindowPos,
 							cResources* apResources,
-							tFlag alHplSetupFlags)
+							tFlag alHplSetupFlags, eWindowBorderMode aWindowBorderMode)
 	{
 		Log("Initializing Graphics Module\n");
 		Log("--------------------------------------------------------\n");
@@ -146,7 +146,7 @@ namespace hpl {
 		{
 			Log("Init lowlevel graphics: %dx%d disp:%d bpp:%d fs:%d ms:%d gpufmt:%d cap:'%s' pos:(%dx%d)\n",alWidth,alHeight,alDisplay,alBpp,abFullscreen,alMultisampling,aGpuProgramFormat, asWindowCaption.c_str(), avWindowPos.x,avWindowPos.y);
 			mpLowLevelGraphics->Init(alWidth,alHeight,alDisplay,alBpp,abFullscreen,alMultisampling,aGpuProgramFormat,asWindowCaption,
-									avWindowPos);
+									avWindowPos, aWindowBorderMode);
 			mbScreenIsSetup = true;
 		}
 		else

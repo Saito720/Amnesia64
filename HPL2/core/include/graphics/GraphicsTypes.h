@@ -38,6 +38,15 @@ namespace hpl {
 
 	//-----------------------------------------
 
+	// Auto preserves legacy desktop-sized window behavior until the user makes
+	// an explicit choice. Resolve it once at creation, never during resizing.
+	enum eWindowBorderMode
+	{
+		eWindowBorderMode_Auto,
+		eWindowBorderMode_Bordered,
+		eWindowBorderMode_Borderless
+	};
+
 	class cVideoMode
 	{
 	public:

@@ -51,7 +51,7 @@ namespace hpl {
 
 		virtual bool Init(	int alWidth, int alHeight, int alDisplay, int alBpp, int abFullscreen, int alMultisampling,
 							eGpuProgramFormat aGpuProgramFormat, const tString& asWindowCaption,
-							const cVector2l &avWindowPos)=0;
+							const cVector2l &avWindowPos, eWindowBorderMode aWindowBorderMode=eWindowBorderMode_Auto)=0;
 
 		virtual eGpuProgramFormat GetGpuProgramFormat()=0;
 		
@@ -97,6 +97,7 @@ namespace hpl {
 		* Get fullscreen mode
 		*/
 		virtual bool GetFullscreenModeActive() = 0;
+		virtual eWindowBorderMode GetWindowBorderMode() const = 0;
 		
 		/**
 		 * Set if vsync should be active

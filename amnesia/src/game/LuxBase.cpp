@@ -1134,6 +1134,9 @@ bool cLuxBase::InitEngine()
 	vars.mGraphics.mvScreenSize =  mpConfigHandler->mvScreenSize;
 	vars.mGraphics.mlDisplay = mpConfigHandler->mlDisplay;
 	vars.mGraphics.mbFullscreen =  mpConfigHandler->mbFullscreen;
+	vars.mGraphics.mWindowBorderMode = mpConfigHandler->mbBorderlessSpecified ?
+		(mpConfigHandler->mbBorderless ? eWindowBorderMode_Borderless : eWindowBorderMode_Bordered) :
+		eWindowBorderMode_Auto;
 	vars.mGraphics.msWindowCaption = msGameName + " Loading...";
 
 	vars.mSound.mlSoundDeviceID = mpConfigHandler->mlSoundDevID;
@@ -1175,6 +1178,9 @@ bool cLuxBase::InitEngine()
 	/////////////////////////
 	// Create the engine
 	mpEngine = CreateHPLEngine(eHplAPI_OpenGL, eHplSetup_All, &vars);
+	// Show the resolved legacy mode in Options without changing pending settings on resize.
+	mpConfigHandler->mbBorderless = mpConfigHandler->mbFullscreen==false &&
+		mpEngine->GetGraphics()->GetLowLevel()->GetWindowBorderMode()==eWindowBorderMode_Borderless;
 	
 	/////////////////////////
 	// Set up more properties

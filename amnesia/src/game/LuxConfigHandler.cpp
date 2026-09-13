@@ -79,6 +79,9 @@ void cLuxConfigHandler::LoadMainConfig()
 	mvScreenSize.y =	gpBase->mpMainConfig->GetInt("Screen","Height", 600);
     mlDisplay =			gpBase->mpMainConfig->GetInt("Screen","Display", 0);
 	mbFullscreen =		gpBase->mpMainConfig->GetBool("Screen","FullScreen", false);
+	// Configs without this option retain the native-resolution borderless startup behavior.
+	mbBorderlessSpecified = gpBase->mpMainConfig->GetString("Screen", "Borderless", "").empty()==false;
+	mbBorderless = mbFullscreen==false && gpBase->mpMainConfig->GetBool("Screen", "Borderless", false);
 	mbVSync =			gpBase->mpMainConfig->GetBool("Screen","Vsync", true);
 	mbAdaptiveVSync =	gpBase->mpMainConfig->GetBool("Screen","AdaptiveVsync", false);
 
@@ -149,6 +152,9 @@ void cLuxConfigHandler::SaveMainConfig()
 	gpBase->mpMainConfig->SetInt("Screen","Width", mvScreenSize.x);
 	gpBase->mpMainConfig->SetInt("Screen","Height", mvScreenSize.y);
 	gpBase->mpMainConfig->SetBool("Screen","FullScreen", mbFullscreen);
+	// Keep legacy auto mode until the user accepts an explicit choice in Options.
+	if(mbBorderlessSpecified)
+		gpBase->mpMainConfig->SetBool("Screen","Borderless", mbBorderless && mbFullscreen==false);
 	gpBase->mpMainConfig->SetBool("Screen","Vsync", mbVSync);
 
 	gpBase->mpMainConfig->SetBool("MapLoad","FastPhysicsLoad", mbFastPhysicsLoad);

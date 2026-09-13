@@ -107,7 +107,7 @@ namespace hpl {
 
 		bool Init(	int alWidth, int alHeight, int alDisplay, int alBpp, int abFullscreen, int alMultisampling,
 					eGpuProgramFormat aGpuProgramFormat,const tString& asWindowCaption,
-					const cVector2l &avWindowPos);
+					const cVector2l &avWindowPos, eWindowBorderMode aWindowBorderMode=eWindowBorderMode_Auto);
 
 		eGpuProgramFormat GetGpuProgramFormat(){ return mGpuProgramFormat;}
 
@@ -130,6 +130,7 @@ namespace hpl {
         bool GetWindowIsVisible();
 
 		bool GetFullscreenModeActive() { return mbFullscreen; }
+		eWindowBorderMode GetWindowBorderMode() const { return mWindowBorderMode; }
 
 		void SetVsyncActive(bool abX, bool abAdaptive);
 
@@ -328,6 +329,7 @@ namespace hpl {
 		int mlMultisampling;
 		int mlBpp;
 		bool mbFullscreen;
+		eWindowBorderMode mWindowBorderMode;
 		eGpuProgramFormat mGpuProgramFormat;
 
 		//////////////////////////////////////

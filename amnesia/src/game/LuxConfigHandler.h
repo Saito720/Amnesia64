@@ -52,6 +52,8 @@ public:
 	cVector2l mvScreenSize;
     int mlDisplay;
 	bool mbFullscreen;
+	bool mbBorderless;
+	bool mbBorderlessSpecified;
 	bool mbVSync;
 	bool mbAdaptiveVSync;
 	int mlTextureQuality;

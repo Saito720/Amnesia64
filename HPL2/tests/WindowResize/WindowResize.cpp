@@ -80,8 +80,11 @@ namespace
     {
         const Uint32 flags = SDL_GetWindowFlags(window);
         Check((flags & SDL_WINDOW_RESIZABLE) != 0, "windowed mode must have native resize borders");
+        Check((flags & SDL_WINDOW_BORDERLESS) == 0, "ordinary windowed mode must retain its decoration");
         Check((flags & SDL_WINDOW_FULLSCREEN) == 0, "windowed mode must stay windowed");
         Check(!graphics.GetFullscreenModeActive(), "engine must report windowed mode");
+        Check(graphics.GetWindowBorderMode() == eWindowBorderMode_Bordered,
+              "engine must resolve ordinary windowed presentation to bordered mode");
     }
 
     void DrawRectangle(float left, float bottom, float right, float top,
@@ -177,10 +180,12 @@ namespace
         CheckNoGlError("swap resized window");
     }
 
-    void Initialize(cLowLevelGraphicsSDL& graphics, int width, int height, bool fullscreen)
+    void Initialize(cLowLevelGraphicsSDL& graphics, int width, int height, bool fullscreen,
+                    eWindowBorderMode borderMode = eWindowBorderMode_Auto, int display = 0,
+                    const cVector2l& position = cVector2l(-1))
     {
-        Check(graphics.Init(width, height, 0, 32, fullscreen, 0,
-                            eGpuProgramFormat_GLSL, "Amnesia window resize smoke test", cVector2l(-1)),
+        Check(graphics.Init(width, height, display, 32, fullscreen, 0,
+                            eGpuProgramFormat_GLSL, "Amnesia window resize smoke test", position, borderMode),
               "graphics initialization failed");
         graphics.SetVsyncActive(false, false);
         // Some compatibility drivers leave GL_INVALID_ENUM after glewInit.
@@ -231,26 +236,150 @@ namespace
         std::puts("PASS: relaunch uses 640 x 480");
     }
 
-    void TestDesktopResolution()
+    #include "NativeWindowResize.h"
+
+    bool SameDisplayMode(const SDL_DisplayMode& a, const SDL_DisplayMode& b)
     {
-        SDL_DisplayMode desktop;
-        Check(SDL_GetDesktopDisplayMode(0, &desktop) == 0, "must be able to read the desktop resolution");
-        cLowLevelGraphicsSDL graphics;
-        Initialize(graphics, 0, 0, false);
-        SDL_Window* window = CurrentWindow();
-        CheckWindowed(graphics, window);
-        Check(graphics.GetScreenSizeInt() == cVector2l(desktop.w, desktop.h),
-              "0,0 windowed launch must select the desktop resolution");
-        CheckRenderedFrame(graphics, window);
-        std::printf("PASS: 0,0 windowed launch selects desktop %d x %d\n", desktop.w, desktop.h);
+        return a.w == b.w && a.h == b.h && a.format == b.format && a.refresh_rate == b.refresh_rate;
     }
 
-    #include "NativeWindowResize.h"
+    void CheckDisplayModeUnchanged(int display, const SDL_DisplayMode& previous)
+    {
+        SDL_DisplayMode current;
+        Check(SDL_GetCurrentDisplayMode(display, &current) == 0, "must be able to read the current display mode");
+        Check(SameDisplayMode(previous, current), "windowed presentation must not switch the monitor's display mode");
+    }
+
+    void CheckBorderless(cLowLevelGraphicsSDL& graphics, SDL_Window* window, const cVector2l& size,
+                         int display, const SDL_Rect* expectedBounds = NULL)
+    {
+        const Uint32 flags = SDL_GetWindowFlags(window);
+        Check((flags & SDL_WINDOW_BORDERLESS) != 0, "borderless mode must request no SDL window decoration");
+        Check((flags & SDL_WINDOW_RESIZABLE) == 0, "borderless mode must not enable native resize borders");
+        Check((flags & SDL_WINDOW_FULLSCREEN) == 0, "borderless mode must remain a desktop window");
+        Check(!graphics.GetFullscreenModeActive(), "borderless mode must not report exclusive fullscreen");
+        Check(graphics.GetWindowBorderMode() == eWindowBorderMode_Borderless,
+              "engine must report the resolved borderless presentation");
+        Check(WindowSize(window) == size, "borderless mode must retain the selected client resolution");
+        Check(SDL_GetWindowDisplayIndex(window) == display, "borderless mode must use the selected monitor");
+        int width = 0, height = 0;
+        SDL_GL_GetDrawableSize(window, &width, &height);
+        Check(cVector2l(width, height) == size, "borderless framebuffer storage must match its selected resolution");
+        if (expectedBounds)
+        {
+            int x = 0, y = 0;
+            SDL_GetWindowPosition(window, &x, &y);
+            Check(x == expectedBounds->x && y == expectedBounds->y,
+                  "native-resolution borderless must start at the selected monitor's origin");
+        }
+#if defined(_WIN32)
+        const HWND native = NativeWindow(window);
+        const RECT outer = NativeRect(native);
+        RECT client = {};
+        Check(GetClientRect(native, &client) != FALSE, "borderless test must read the native client bounds");
+        Check(outer.right - outer.left == client.right - client.left &&
+              outer.bottom - outer.top == client.bottom - client.top,
+              "borderless native window must not add a caption, frame, or invisible resize margin");
+        Check((GetWindowLongPtr(native, GWL_STYLE) & WS_THICKFRAME) == 0,
+              "borderless native style must not contain a sizing frame");
+        if (expectedBounds)
+            Check(outer.left == expectedBounds->x && outer.top == expectedBounds->y &&
+                  outer.right == expectedBounds->x + expectedBounds->w &&
+                  outer.bottom == expectedBounds->y + expectedBounds->h,
+                  "desktop borderless window must cover exactly its selected monitor, including the taskbar area");
+        NativeSizeCommand(native, WMSZ_RIGHT);
+        Check(GetCapture() != native && SameNativeRect(outer, NativeRect(native)),
+              "borderless must reject native sizing without entering a modal loop or changing its bounds");
+#endif
+        Check(!graphics.UpdateScreenSize(), "stable borderless mode must not request a resource rebuild");
+        CheckRenderedFrame(graphics, window);
+    }
+
+    void TestBorderlessModes()
+    {
+        const int displayCount = SDL_GetNumVideoDisplays();
+        Check(displayCount > 0, "borderless tests require an available monitor");
+        for (int display = 0; display < displayCount; ++display)
+        {
+            SDL_DisplayMode desktop, previous;
+            SDL_Rect bounds;
+            Check(SDL_GetDesktopDisplayMode(display, &desktop) == 0, "must be able to read the selected desktop resolution");
+            Check(SDL_GetCurrentDisplayMode(display, &previous) == 0, "must be able to read the selected current display mode");
+            Check(SDL_GetDisplayBounds(display, &bounds) == 0, "must be able to read the selected monitor's full bounds");
+            const cVector2l size(desktop.w, desktop.h);
+            for (int useDesktopSentinel = 0; useDesktopSentinel <= 1; ++useDesktopSentinel)
+            {
+                cLowLevelGraphicsSDL graphics;
+                Initialize(graphics, useDesktopSentinel ? 0 : desktop.w, useDesktopSentinel ? 0 : desktop.h,
+                           false, eWindowBorderMode_Auto, display);
+                CheckBorderless(graphics, CurrentWindow(), size, display, &bounds);
+                CheckDisplayModeUnchanged(display, previous);
+            }
+            {
+                cLowLevelGraphicsSDL graphics;
+                Initialize(graphics, desktop.w, desktop.h, false, eWindowBorderMode_Borderless, display);
+                CheckBorderless(graphics, CurrentWindow(), size, display, &bounds);
+                CheckDisplayModeUnchanged(display, previous);
+            }
+            CheckDisplayModeUnchanged(display, previous);
+            std::printf("PASS: automatic and explicit desktop borderless on monitor %d at %d x %d\n",
+                        display, desktop.w, desktop.h);
+        }
+
+        SDL_DisplayMode desktop, previous;
+        Check(SDL_GetDesktopDisplayMode(0, &desktop) == 0, "must be able to read the primary desktop resolution");
+        Check(SDL_GetCurrentDisplayMode(0, &previous) == 0, "must be able to read the primary display mode");
+        {
+            cLowLevelGraphicsSDL graphics;
+            Initialize(graphics, 640, 480, false, eWindowBorderMode_Borderless);
+            CheckBorderless(graphics, CurrentWindow(), cVector2l(640, 480), 0);
+            CheckDisplayModeUnchanged(0, previous);
+        }
+        {
+            // Explicitly bordered must defeat legacy automatic border removal,
+            // including when the requested desktop size used the 0,0 sentinel.
+            cLowLevelGraphicsSDL graphics;
+            Initialize(graphics, 0, 0, false, eWindowBorderMode_Bordered);
+            SDL_Window* window = CurrentWindow();
+            CheckWindowed(graphics, window);
+            Check(WindowSize(window) == cVector2l(desktop.w, desktop.h),
+                  "explicitly bordered desktop launch must retain its requested client resolution");
+#if defined(_WIN32)
+            const HWND native = NativeWindow(window);
+            Check((GetWindowLongPtr(native, GWL_STYLE) & WS_THICKFRAME) != 0,
+                  "explicitly bordered desktop launch must keep its native resize frame");
+            const POINT pointer = BeginNativeSize(native, WMSZ_RIGHT);
+            NativeResizeMotion(native, pointer, -40, 0);
+            EndNativeSize(native);
+            Check(WindowSize(window) == cVector2l(desktop.w - 40, desktop.h),
+                  "explicitly bordered desktop launch must accept normal native resizing");
+            Check(graphics.UpdateScreenSize(), "native resizing of bordered desktop launch must update engine dimensions");
+#endif
+            CheckRenderedFrame(graphics, window);
+            CheckDisplayModeUnchanged(0, previous);
+        }
+        {
+            // Compatibility is a launch decision: resizing an ordinary window
+            // to desktop dimensions must never strip its native controls.
+            cLowLevelGraphicsSDL graphics;
+            Initialize(graphics, 640, 480, false);
+            SDL_Window* window = CurrentWindow();
+            SDL_SetWindowSize(window, desktop.w, desktop.h);
+            PumpEvents();
+            Check(graphics.UpdateScreenSize(), "growing an ordinary window to desktop size must update engine dimensions");
+            CheckWindowed(graphics, window);
+            CheckRenderedFrame(graphics, window);
+            CheckDisplayModeUnchanged(0, previous);
+        }
+        CheckDisplayModeUnchanged(0, previous);
+        std::puts("PASS: smaller explicit borderless, bordered desktop override, and no mode changes during resizing");
+    }
 
     void TestFullscreen()
     {
         cLowLevelGraphicsSDL graphics;
-        Initialize(graphics, 0, 0, true);
+        // A remembered borderless preference must not override fullscreen.
+        Initialize(graphics, 0, 0, true, eWindowBorderMode_Borderless);
         SDL_Window* window = CurrentWindow();
         const Uint32 flags = SDL_GetWindowFlags(window);
         Check((flags & SDL_WINDOW_FULLSCREEN_DESKTOP) == SDL_WINDOW_FULLSCREEN_DESKTOP,
@@ -312,6 +441,7 @@ namespace
         cEngineInitVars variables;
         variables.mGraphics.mvScreenSize = cVector2l(640, 480);
         variables.mGraphics.mbFullscreen = false;
+        variables.mGraphics.mWindowBorderMode = eWindowBorderMode_Bordered;
         variables.mGraphics.msWindowCaption = "Amnesia renderer resize smoke test";
         variables.mSound.mbUseHRTF = false;
         variables.mSound.mbUseThreading = false;
@@ -485,7 +615,7 @@ int main(int argc, char** argv)
         TestWindowResize();
         TestNativeWindowResize();
         TestRelaunch();
-        TestDesktopResolution();
+        TestBorderlessModes();
         for (int i = 1; i < argc; ++i)
         {
             if (std::strcmp(argv[i], "--fullscreen") == 0) { TestFullscreen(); TestNativeWindowStates(); }

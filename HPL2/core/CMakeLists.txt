@@ -242,17 +242,19 @@ source_group("Platform" REGULAR_EXPRESSION "\\/impl\\/Platform.+")
 
 FindPrebuiltLibrary(NEWTON_LIBRARY Newton)
 FindPrebuiltLibrary(ANGELSCRIPT_LIBRARY angelscript)
-FindPrebuiltLibrary(FBX_LIBRARY fbxsdk-2012.2-static)
 FindPrebuiltLibrary(GLEW_LIBRARY GLEW)
 FindPrebuiltLibrary(THEORA_LIBRARY theora)
 FindPrebuiltLibrary(DEVIL_LIBRARY IL)
 
 find_package(OpenGL)
-mark_as_advanced(NEWTON_LIBRARY ANGELSCRIPT_LIBRARY FBX_LIBRARY GLEW_LIBRARY THEORA_LIBRARY DEVIL_LIBRARY)
+mark_as_advanced(NEWTON_LIBRARY ANGELSCRIPT_LIBRARY GLEW_LIBRARY THEORA_LIBRARY DEVIL_LIBRARY)
 
 # setup HPL2 compile target
 
+set_source_files_properties(../dependencies/sources/ufbx/ufbx.c PROPERTIES LANGUAGE CXX)
+
 add_library(HPL2 STATIC
+    ../dependencies/sources/ufbx/ufbx.c
     ${common_sources}
     ${version_sources}
     ${impl_sources}
@@ -260,6 +262,7 @@ add_library(HPL2 STATIC
 
 target_include_directories(HPL2
     ${HPL2_INCLUDES}
+    PRIVATE ../dependencies/sources/ufbx
 )
 
 target_compile_definitions(HPL2
@@ -295,7 +298,6 @@ target_link_libraries(HPL2
     ${THEORA_LIBRARY}
     ${DEVIL_LIBRARY}
     z
-    ${FBX_LIBRARY}
     ${PLATFORM_LIBS}
 )
 

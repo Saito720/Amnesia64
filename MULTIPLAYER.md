@@ -5,6 +5,18 @@ It provides real host/client sessions, shared player and physics state, map deli
 exclusive object interaction, host-authoritative enemies, host script effects, and coordinated map changes.
 Windows Debug and Release x64 are the primary build targets for this checkout.
 
+FBX meshes and skeletal animations use the importer from `amfp` commit `be7694f`,
+including its AMFP asset compatibility fixes. The bundled ufbx dependency builds
+from source in Visual Studio and CMake; no Autodesk SDK is required. Existing
+`.msh` and `.anm` cache settings apply, and multiplayer asset validation accepts
+FBX references backed by those caches. Importer limits and dependency licensing
+are documented in `HPL2/dependencies/sources/ufbx/README.md`.
+
+The multiplayer content test suite covers FBX source import and cache fallback.
+Set `AMFP_DIR` to a Machine for Pigs installation to additionally test character
+and enemy FBX sources, including cloth and sparse animation tracks, against shipped
+animation caches. Source tests disable cache reads and writes to preserve retail files.
+
 ## Starting a session
 
 - **Main Menu → Start New Game → Multiplayer → Host / Join** opens the streamlined

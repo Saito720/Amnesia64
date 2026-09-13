@@ -1,1540 +1,713 @@
 /*
- * Copyright © 2009-2020 Frictional Games
+ * Copyright © 2011-2020 Frictional Games
  * 
- * This file is part of Amnesia: The Dark Descent.
+ * This file is part of Amnesia: A Machine For Pigs.
  * 
- * Amnesia: The Dark Descent is free software: you can redistribute it and/or modify
+ * Amnesia: A Machine For Pigs is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version. 
 
- * Amnesia: The Dark Descent is distributed in the hope that it will be useful,
+ * Amnesia: A Machine For Pigs is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  * 
  * You should have received a copy of the GNU General Public License
- * along with Amnesia: The Dark Descent.  If not, see <https://www.gnu.org/licenses/>.
+ * along with Amnesia: A Machine For Pigs.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#if 0
-
 #include "impl/MeshLoaderFBX.h"
+#include "impl/MeshLoaderMSH.h"
+#include "ufbx.h"
 
 #include "system/LowLevelSystem.h"
 #include "system/String.h"
 #include "system/Platform.h"
-
 #include "resources/MaterialManager.h"
 #include "resources/MeshManager.h"
 #include "resources/Resources.h"
-#include "resources/FileSearcher.h"
-
 #include "graphics/LowLevelGraphics.h"
 #include "graphics/VertexBuffer.h"
 #include "graphics/Mesh.h"
 #include "graphics/SubMesh.h"
-
 #include "graphics/Material.h"
 #include "graphics/Skeleton.h"
 #include "graphics/Bone.h"
 #include "graphics/Animation.h"
 #include "graphics/AnimationTrack.h"
-
-#include "impl/MeshLoaderMSH.h"
-
 #include "math/Math.h"
 
-#ifdef IOS_REF
-	#undef  IOS_REF
-	#define IOS_REF (*(mpSdkManager->GetIOSettings()))
-#endif
+#include <algorithm>
+#include <array>
+#include <climits>
+#include <cmath>
+#include <map>
+#include <memory>
+#include <set>
 
 namespace hpl {
-
-	static KFbxXMatrix GetGeometry(KFbxNode* pNode) {
-		KFbxVector4 lT, lR, lS;
-		KFbxXMatrix lGeometry;
-
-		lT = pNode->GetGeometricTranslation(KFbxNode::eSOURCE_SET);
-		lR = pNode->GetGeometricRotation(KFbxNode::eSOURCE_SET);
-		lS = pNode->GetGeometricScaling(KFbxNode::eSOURCE_SET);
-
-	    lGeometry.SetT(lT);
-	    lGeometry.SetR(lR);
-	    lGeometry.SetS(lS);
-
-	    return lGeometry;
-	}
-
-	static KFbxMatrix GetGeometryTwo(KFbxNode* pNode) {
-		KFbxVector4 lT, lR, lS;
-
-		lT = pNode->GetGeometricTranslation(KFbxNode::eSOURCE_SET);
-		lR = pNode->GetGeometricRotation(KFbxNode::eSOURCE_SET);
-		lS = pNode->GetGeometricScaling(KFbxNode::eSOURCE_SET);
-
-	    return KFbxMatrix( lT, lR, lS );
-	}
-
-	//////////////////////////////////////////////////////////////////////////
-	// CONSTRUCTORS
-	//////////////////////////////////////////////////////////////////////////
-
-	//-----------------------------------------------------------------------
-	
-	cMeshLoaderFBX::cMeshLoaderFBX(iLowLevelGraphics *apLowLevelGraphics, cMeshLoaderMSH *apMeshLoaderMSH, bool abLoadAndSaveMSHFormat) : iMeshLoader(apLowLevelGraphics)
-	{
-		mpMeshLoaderMSH = apMeshLoaderMSH;
-		mbLoadAndSaveMSHFormat = abLoadAndSaveMSHFormat;
-
-		mpSdkManager = KFbxSdkManager::Create();
-
-		AddSupportedExtension("fbx");
-
-		KFbxIOSettings * ios = KFbxIOSettings::Create(mpSdkManager, IOSROOT );
-		mpSdkManager->SetIOSettings(ios);
-
-		mbLog = true;
-		mbLowLog = false;
-	}
-	
-	//-----------------------------------------------------------------------
-
-	cMeshLoaderFBX::~cMeshLoaderFBX()
-	{
-	}
-
-	//-----------------------------------------------------------------------
-
-	//////////////////////////////////////////////////////////////////////////
-	// PUBLIC METHODS
-	//////////////////////////////////////////////////////////////////////////
-
-	//-----------------------------------------------------------------------
-	
-	cMesh* cMeshLoaderFBX::LoadMesh(const tWString& asFile, tMeshLoadFlag aFlags)
-	{
-		/////////////////////////////////////////////////
-		// TRY USING MSH LOADER
-		if(mbLoadAndSaveMSHFormat)
-		{
-			tWString sMSHFile = cString::SetFileExtW(asFile, _W("msh"));
-			cDate currentDate = cPlatform::FileModifiedDate(asFile);
-			cDate mshDate = cPlatform::FileModifiedDate(sMSHFile);
-			
-			if(cResources::GetForceCacheLoadingAndSkipSaving() || mshDate > currentDate || cPlatform::FileExists(asFile)==false)
-			{
-				cMesh *pMesh = mpMeshLoaderMSH->LoadMesh(sMSHFile, aFlags);
-				if(pMesh)
-				{
-					pMesh->SetFullPath(asFile);//Use dae as full path! (otherwise file will be loaded several times!)
-					return pMesh;
-				}
-			}
-		}
-
-		KFbxScene * pScene = KFbxScene::Create(mpSdkManager,"");
-		KFbxImporter* pImporter = KFbxImporter::Create(mpSdkManager,"");
-
-		LoadScene(mpSdkManager, pScene, cString::To8Char(asFile).c_str());
-
-		tSubMeshDataList lstSubData;
-
-		cSkeleton* pSkeleton = new cSkeleton();
-		
-		if(mbLog)Log("Loading skeleton '%s':\n", asFile.c_str());
-		LoadSkeletonRec(pSkeleton->GetRootBone(),pScene->GetRootNode(),0);
-		
-		//Check if any bones where found.
-		if(pSkeleton->GetRootBone()->GetChildIterator().HasNext() == false)
-		{
-			delete pSkeleton;
-			pSkeleton = NULL;
-		}
-
-		//Go through all nodes
-		if(mbLog)Log("Loading scene '%s':\n", asFile.c_str());
-		LoadSceneRec(&lstSubData,pSkeleton,NULL,pScene->GetRootNode(),0, false);
-
-		//Finalize the bones. That is remove non-linked bones and
-		//make the local matrices.
-		if(pSkeleton)
-		{
-			cBoneIterator boneIt = pSkeleton->GetRootBone()->GetChildIterator();
-			while(boneIt.HasNext())
-			{
-				cMatrixf mtxIdentity = cMatrixf::Identity;
-				MakeFinalBonesRec(boneIt.Next(),mtxIdentity, mtxIdentity);
-			}
-		}
-				
-		//Load animations
-		cAnimation *pAnimation = NULL;//LoadAnimations(pScene, pImporter, asFile,pSkeleton);
-
-		//Clean up
-		pScene->Destroy(true,true);
-		pImporter->Destroy(true,true);
-		
-		//Create the mesh
-		cMesh *pMesh = hplNew( cMesh, (cString::To8Char(asFile), asFile, mpMaterialManager,mpAnimationManager) );
-		
-		//Set skeleton.
-		if(pSkeleton) pMesh->SetSkeleton(pSkeleton);
-
-		//Add Animation
-		if(pAnimation) pMesh->AddAnimation(pAnimation);
-
-		tSubMeshDataListIt it = lstSubData.begin();
-		for(;it != lstSubData.end();it++)
-		{
-			cSubMeshData& subData = *it;
-			
-			cSubMesh * pSubMesh = pMesh->CreateSubMesh(subData.msName);
-            
-			pSubMesh->SetVertexBuffer(subData.mpVtxBuffer);
-
-			for(int i=0; i < (int)subData.mvVtxBonePairs.size(); i++)
-			{
-				cVertexBonePair VBPair;
-				VBPair.boneIdx = subData.mvVtxBonePairs[i].boneIdx;
-				VBPair.vtxIdx = subData.mvVtxBonePairs[i].vtxIdx;
-				VBPair.weight = subData.mvVtxBonePairs[i].weight;
-
-				pSubMesh->AddVertexBonePair(VBPair);
-			}
-
-			cMaterial *pMaterial = mpMaterialManager->CreateMaterial(subData.msMaterial);
-			if(pMaterial)
-			{
-				pSubMesh->SetMaterial(pMaterial);
-				pSubMesh->SetMaterialName(pMaterial->GetName());
-			}
-			else
-			{
-				pSubMesh->SetMaterialName("");
-			}
-
-
-			pSubMesh->Compile();
-		}
-		
-		//Setup the joints (create new vertex coords, etc)
-		if(pSkeleton) pMesh->CompileBonesAndSubMeshes();
-
-		/////////////////////////////////////////////////
-		// SAVE MSH FORMAT
-		if(	cResources::GetForceCacheLoadingAndSkipSaving()==false && mbLoadAndSaveMSHFormat )
-		{
-			tWString sMSHFile = cString::SetFileExtW(asFile, _W("msh"));
-			
-			mpMeshLoaderMSH->SaveMesh(pMesh, sMSHFile);
-		}
-				
-		return pMesh;
-	}
-
-	//-----------------------------------------------------------------------
-
-	//-----------------------------------------------------------------------
-
-	cAnimation* cMeshLoaderFBX::LoadAnimation(const tWString& asFile)
-	{
-		/////////////////////////////////////////////////
-		// TRY USING MSH LOADER
-		if(mbLoadAndSaveMSHFormat)
-		{
-			tWString sMSHFile = cString::SetFileExtW(asFile, _W("anm"));
-			cDate currentDate = cPlatform::FileModifiedDate(asFile);
-			cDate mshDate = cPlatform::FileModifiedDate(sMSHFile);
-
-			if(	cResources::GetForceCacheLoadingAndSkipSaving() ||
-				mshDate > currentDate || cPlatform::FileExists(asFile)==false)
-			{
-				cAnimation *pAnim = mpMeshLoaderMSH->LoadAnimation(sMSHFile);
-				if(pAnim)
-				{
-					pAnim->SetFullPath(asFile);//Use dae as full path! (otherwise file will be loaded several times!)
-					return pAnim;
-				}
-			}
-		}
-
-		KFbxScene * pScene = KFbxScene::Create(mpSdkManager,"");
-		KFbxImporter* pImporter = KFbxImporter::Create(mpSdkManager,"");
-
-		LoadScene(mpSdkManager, pScene, cString::To8Char(asFile).c_str());
-
-		cSkeleton* pSkeleton = new cSkeleton();
-		
-		if(mbLog)Log("Loading skeleton '%s':\n", asFile.c_str());
-		LoadSkeletonRec(pSkeleton->GetRootBone(),pScene->GetRootNode(),0);
-		
-		//Check if any bones where found.
-		if(pSkeleton->GetRootBone()->GetChildIterator().HasNext() == false)
-		{
-			delete pSkeleton;
-			pSkeleton = NULL;
-		}
-
-		//Go through all nodes
-		//if(mbLog)Log("Loading scene '%s':\n", asFile.c_str());
-		LoadSceneRec(NULL, pSkeleton,NULL,pScene->GetRootNode(),0, true);
-
-		//Finalize the bones. That is remove non-linked bones and
-		//make the local matrices.
-		if(pSkeleton)
-		{
-			cBoneIterator boneIt = pSkeleton->GetRootBone()->GetChildIterator();
-			while(boneIt.HasNext())
-			{
-				cMatrixf mtxIdentity = cMatrixf::Identity;
-				MakeFinalBonesRec(boneIt.Next(),mtxIdentity, mtxIdentity);
-			}
-		}
-				
-		//Load animations
-		cAnimation *pAnimation = LoadAnimations(pScene, pImporter, asFile,pSkeleton);
-
-		//Clean up
-		pScene->Destroy(true,true);
-		pImporter->Destroy(true,true);
-		
-		if(pSkeleton) hplDelete(pSkeleton);
-
-		/////////////////////////////////////////////////
-		// SAVE MSH FORMAT
-		if(cResources::GetForceCacheLoadingAndSkipSaving()==false && mbLoadAndSaveMSHFormat)
-		{
-			tWString sMSHFile = cString::SetFileExtW(asFile, _W("anm"));
-
-			mpMeshLoaderMSH->SaveAnimation(pAnimation, sMSHFile);
-		}
-
-		return pAnimation;
-	}
-
-	//////////////////////////////////////////////////////////////////////////
-	// PRIVATE METHODS
-	//////////////////////////////////////////////////////////////////////////
-	
-
-	//-----------------------------------------------------------------------
-
-	cAnimation*  cMeshLoaderFBX::LoadAnimations(KFbxScene *apScene, KFbxImporter* apImporter, const tWString& asFile, cSkeleton * apSkeleton)
-	{
-		int lTake = -1;
-
-		KArrayTemplate<KString*> vStrings;
-		apScene->FillAnimStackNameArray(vStrings);
-
-		Log("Animations: ");
-		for(int i=0;i<vStrings.GetCount();i++)
-		{
-			Log("'%s' ",vStrings[i]->Buffer());
-		}
-		Log("\n");
-
-		int lStart;
-		int lEnd;
-		
-        for(int i=0;i<vStrings.GetCount();i++)
-		{
-			KFbxTakeInfo* pTakeInfo = apScene->GetTakeInfo(*vStrings[i]);
-			if(pTakeInfo==NULL)continue;
-
-			Log("Info for '%s'\n",vStrings[i]->Buffer());
-
-			lStart = pTakeInfo->mLocalTimeSpan.GetStart().GetMilliSeconds();
-			lEnd = pTakeInfo->mLocalTimeSpan.GetStop().GetMilliSeconds();
-			int lOffset = pTakeInfo->mImportOffset.GetMilliSeconds();
-			int lAnimLength = lEnd - lStart;
-			Log("TimeSpan: %d to %d\n",lStart,lEnd);
-			Log("Offset: %d\n",lOffset);
-
-			if(lAnimLength > 0){
-				lTake = i;
-				break;
-			}
-		}
-		Log("\n");
-		
-		// If there where any animations in the file, create an animation and add the tracks to it.
-		// Only 
-		if(lTake != -1)
-		{
-			cAnimation*pAnimation = hplNew( cAnimation, (vStrings[lTake]->Buffer(), asFile, cString::GetFileName(cString::To8Char(asFile))) );
-			pAnimation->SetLength( ((float)lEnd)/1000.0f );
-			
-			LoadAnimationRec(apScene,apScene->GetRootNode(),pAnimation,vStrings[lTake]->Buffer(),0, 
-							cVector3f(0,0,0),cVector3f(1,1,1),cVector3f(0,0,0), apSkeleton);
-
-			return pAnimation;
-		}
-		return NULL;
-	}
-
-	//-----------------------------------------------------------------------
-	
-	static KFCurve *GetCurve(KFbxNode *apNode, KFbxAnimLayer * apAnimLayer, tAnimTransformFlag aType, int alAxis)
-	{
-		KFCurve *pCurve=NULL;
-		switch(aType)
-		{
-		case eAnimTransformFlag_Translate:
-			if(alAxis==0) pCurve = apNode->LclTranslation.GetCurve<KFbxAnimCurve>(apAnimLayer, KFCURVENODE_T_X, true)->GetKFCurve();
-			if(alAxis==1) pCurve = apNode->LclTranslation.GetCurve<KFbxAnimCurve>(apAnimLayer, KFCURVENODE_T_Y, true)->GetKFCurve();
-			if(alAxis==2) pCurve = apNode->LclTranslation.GetCurve<KFbxAnimCurve>(apAnimLayer, KFCURVENODE_T_Z, true)->GetKFCurve();
-			break;
-		case eAnimTransformFlag_Scale:
-			if(alAxis==0) pCurve = apNode->LclScaling.GetCurve<KFbxAnimCurve>(apAnimLayer, KFCURVENODE_S_X, true)->GetKFCurve();
-			if(alAxis==1) pCurve = apNode->LclScaling.GetCurve<KFbxAnimCurve>(apAnimLayer, KFCURVENODE_S_Y, true)->GetKFCurve();
-			if(alAxis==2) pCurve = apNode->LclScaling.GetCurve<KFbxAnimCurve>(apAnimLayer, KFCURVENODE_S_Z, true)->GetKFCurve();
-			break;
-		case eAnimTransformFlag_Rotate:
-			if(alAxis==0) pCurve = apNode->LclRotation.GetCurve<KFbxAnimCurve>(apAnimLayer, KFCURVENODE_R_X, true)->GetKFCurve();
-			if(alAxis==1) pCurve = apNode->LclRotation.GetCurve<KFbxAnimCurve>(apAnimLayer, KFCURVENODE_R_Y, true)->GetKFCurve();
-			if(alAxis==2) pCurve = apNode->LclRotation.GetCurve<KFbxAnimCurve>(apAnimLayer, KFCURVENODE_R_Z, true)->GetKFCurve();
-			break;
-		}
-
-		return pCurve;
-	}
-
-	////////////////////////
-
-	static void GetAnimTimes(tAnimTimeSet *pTimesSet,KFbxNode * apNode, KFbxAnimLayer * apAnimLayer, tAnimTransformFlag aType, int alAxis)
-	{
-		KFCurve *pCurve = GetCurve(apNode,apAnimLayer, aType, alAxis);
-
-		for(int i=0;i<pCurve->KeyGetCount();i++)
-		{
-			KFCurveKey key = pCurve->KeyGet(i);
-			float fTime = ((float)key.GetTime().GetMilliSeconds()) / 1000.0f;
-
-			pTimesSet->insert(fTime);
-		}
-	}
-
-	static void FillKeyVec(tTakeKeyDataVec *pVec,tAnimTimeSet *pTimesSet,
-							KFbxNode *apNode,KFbxAnimLayer * apAnimLayer, tAnimTransformFlag aType, int alAxis)
-	{
-		KFCurve *pCurve = GetCurve(apNode, apAnimLayer,aType, alAxis);
-		
-		pVec->resize(pTimesSet->size());
-		int i=0;
-		tAnimTimeSetIt it = pTimesSet->begin();
-		for(;it != pTimesSet->end(); it++)
-		{
-			KTime time;
-			time.SetMilliSeconds((kLongLong)(*it * 1000));
-			
-			(*pVec)[i].mfTime = *it;
-			(*pVec)[i].mfValue = pCurve->Evaluate(time);
-			//Log("%f, ", (float) key.GetValue());
-			i++;
-		}
-		
-		/*//See if any time is missing if so insert it at the end.
-		tAnimTimeSetIt it = pTimesSet->begin();
-		for(;it != pTimesSet->end(); it++)
-		{
-			for(int i=0; i<pVec)
-		}*/
-	}
-
-
-	////////////////////////
-
-	static int FindTimeIndex(tTempKeyFrameDataVec *pVec, float afTime)
-	{
-		for(int i=0; i< (int)pVec->size(); i++)
-		{
-			if(std::abs(afTime - (*pVec)[i].mfTime) < kEpsilonf) return i;	
-		}
-
-		return -1;
-	}
-
-	////////////////////////
-
-	static cVector3f GetAxisVector(int alAxis, float afValue)
-	{
-		switch(alAxis)
-		{
-		case 0: return cVector3f(afValue,0,0);
-		case 1: return cVector3f(0,afValue,0);
-		case 2: return cVector3f(0,0,afValue);
-		}
-
-		return cVector3f();
-	}
-	////////////////////////
-	
-	static void AddVectorElementsToTempArray(tTempKeyFrameDataVec* apDestVec,tTakeKeyDataVec* apSrcVec,
-												tAnimTransformFlag aType)
-	{
-		for(int axis=0;axis<3;axis++)
-		{
-			for(int index = 0; index < (int)apSrcVec[axis].size(); index++)
-			{
-				cTakeKeyData *data = &apSrcVec[axis][index];
-				int lPos = FindTimeIndex(apDestVec, data->mfTime);
-
-				cVector3f vVec = GetAxisVector(axis,data->mfValue);
-				
-
-				//Log("type: %d time: %f axis: %d: vec: (%s) ",aType,data->mfTime, axis, vVec.ToString().c_str());
-
-				if(lPos>=0)
-				{
-					//Log("adding to pos %d\n",lPos);
-					switch(aType){
-					case eAnimTransformFlag_Translate: (*apDestVec)[lPos].vTrans += vVec; break;
-					case eAnimTransformFlag_Scale: (*apDestVec)[lPos].vScale += vVec; break;
-					case eAnimTransformFlag_Rotate: (*apDestVec)[lPos].vRot += vVec; break;
-					}
-				}
-				else
-				{
-					//Log("creating new frame\n");
-					cTempKeyFrameData frame;
-					
-					//Clear all the values to 0
-					frame.vRot =0; frame.vScale =0; frame.vTrans=0;
-					frame.mfTime = data->mfTime;
-					
-					//Set the vector
-					switch(aType){
-					case eAnimTransformFlag_Translate: frame.vTrans += vVec; break;
-					case eAnimTransformFlag_Scale: frame.vScale += vVec; break;
-					case eAnimTransformFlag_Rotate: frame.vRot += vVec; break;
-					}
-					//Add frame with new time to array.
-					apDestVec->push_back(frame);
-				}
-			}
-		}
-	}
-	////////////////////////
-	
-	static cMatrixf MatrixFromEulerAngles(cVector3f avRot)
-	{
-		cMatrixf mtxRot = cMath::MatrixRotateX(cMath::ToRad(avRot.x));
-		mtxRot = cMath::MatrixMul(cMath::MatrixRotateY(cMath::ToRad(avRot.y)), mtxRot);
-		mtxRot = cMath::MatrixMul(cMath::MatrixRotateZ(cMath::ToRad(avRot.z)), mtxRot);
-		
-		return mtxRot;
-	}
-	
-	////////////////////////
-	
-	void cMeshLoaderFBX::LoadAnimationRec(KFbxScene *apScene,KFbxNode * apNode, cAnimation* apAnimation,const tString &asAnimStackName, 
-											int alDepth, 
-											cVector3f vParentT, cVector3f vParentS, cVector3f vParentR, cSkeleton * apSkeleton)
-	{
-		const char * node_name = apNode->GetName();
-
-		KFbxAnimStack * pAnimationStack = apScene->FindMember(FBX_TYPE(KFbxAnimStack), asAnimStackName.c_str());
-		KFbxAnimLayer * pAnimLayer = pAnimationStack->GetMember(FBX_TYPE(KFbxAnimLayer), 0);
-
-		if( pAnimationStack != NULL && apNode->GetSkeleton() )
-		{
-			tTakeKeyDataVec vTranslateKeys[3];
-			tTakeKeyDataVec vRotateKeys[3];
-			tTakeKeyDataVec vScaleKeys[3];
-			
-			tAnimTransformFlag transFlags = 0;
-
-			tAnimTimeSet setTimes;
-			
-			for(int i=0;i<3;i++)
-			{
-				GetAnimTimes(&setTimes,apNode,pAnimLayer,eAnimTransformFlag_Translate, i);
-				GetAnimTimes(&setTimes,apNode,pAnimLayer,eAnimTransformFlag_Rotate, i);
-				GetAnimTimes(&setTimes,apNode,pAnimLayer,eAnimTransformFlag_Scale, i);
-			}
-
-			transFlags |= eAnimTransformFlag_Translate;
-			transFlags |= eAnimTransformFlag_Rotate;
-
-			KFbxVector4 pTranslation;
-			KFbxQuaternion pRotation;
-			KFbxVector4 pShearing;
-			KFbxVector4 pScaling;
-			double pSign;
-
-			tTempKeyFrameDataVec vTempKeyFrame;
-			vTempKeyFrame.resize(setTimes.size() );
-			int i=0;
-			tAnimTimeSetIt it = setTimes.begin();
-			for(;it != setTimes.end(); it++)
-			{
-				KTime time;
-				time.SetMilliSeconds((kLongLong)(*it * 1000));
-				
-				KFbxMatrix localTransform = apNode->EvaluateLocalTransform(time, KFbxNode::eSOURCE_SET);
-				KFbxMatrix geometryMatrix = GetGeometryTwo(apNode);
-				localTransform = localTransform * geometryMatrix;
-
-				localTransform.GetElements( pTranslation, pRotation, pShearing, pScaling, pSign);
-
-				vTempKeyFrame[i].mfTime = *it;
-				vTempKeyFrame[i].vTrans = cVector3f( pTranslation.GetAt(0), pTranslation.GetAt(1), pTranslation.GetAt(2) );
-				vTempKeyFrame[i].vScale = cVector3f( pScaling.GetAt(0), pScaling.GetAt(1), pScaling.GetAt(2) );
-				vTempKeyFrame[i].qFinalRot = cQuaternion( pRotation.GetAt(3), pRotation.GetAt(0), pRotation.GetAt(1), pRotation.GetAt(2) );
-				vTempKeyFrame[i].vRot = 0;
-				i++;
-			}
-			
-			cBone* pBone = apSkeleton->GetBoneByName(apNode->GetName());
-			cMatrixf boneLocal = pBone->GetLocalTransform();
-			cMatrixf boneLocalUnscaled = pBone->GetLocalTransformUnscaled();
-			
-			cQuaternion qInvBoneRot;
-			qInvBoneRot.FromRotationMatrix( boneLocalUnscaled.GetRotation() );
-			qInvBoneRot.v = qInvBoneRot.v * -1;
-			qInvBoneRot.Normalize();
-			
-			//Add all of the temporary keyframes to the track. Subtract bone rest pose's translation and orientation ( the latter by premultiplying with inv bone rot )
-			cAnimationTrack *pTrack = apAnimation->CreateTrack(apNode->GetName(),transFlags);
-			
-			for(int i=0; i< vTempKeyFrame.size(); i++)
-			{
-				cTempKeyFrameData *data = &vTempKeyFrame[i];
-				
-				cKeyFrame *pKeyFrame = pTrack->CreateKeyFrame(data->mfTime);
-				pKeyFrame->trans = data->vTrans - boneLocal.GetTranslation();
-				
-				data->qFinalRot.Normalize();
-
-				pKeyFrame->rotation = cMath::QuaternionMul(qInvBoneRot, data->qFinalRot );
-				pKeyFrame->rotation.Normalize();
-			}
-		}
-
-		for(int i=0;i<apNode->GetChildCount();i++)
-		{
-			LoadAnimationRec(apScene, apNode->GetChild(i),apAnimation,asAnimStackName,alDepth+1,vParentT, vParentS, vParentR, apSkeleton);
-		}
-	}
-	
-	//-----------------------------------------------------------------------
-
-	void cMeshLoaderFBX::LoadSkeletonRec(cBone* apBone,	KFbxNode *apNode, int alDepth)
-	{
-		if(apNode->GetSkeleton())
-		{
-			apBone = LoadSkeletonData(apBone,apNode,alDepth);
-		}
-
-		for(int i=0;i<apNode->GetChildCount();i++)
-		{
-			LoadSkeletonRec(apBone,apNode->GetChild(i),alDepth+1);
-		}
-	}
-
-	//-----------------------------------------------------------------------
-
-	void cMeshLoaderFBX::MakeFinalBonesRec(cBone* apBone, cMatrixf a_mtxParentGlobal, cMatrixf a_mtxParentGlobalUnscaled)
-	{
-		//If bone is linked to geometry get the local matrix.
-		if(apBone->GetValue() != 0)
-		{
-			cMatrixf mtxGlobal = apBone->GetLocalTransform();
-			cMatrixf mtxInvParent = cMath::MatrixInverse(a_mtxParentGlobal);
-			cMatrixf mtxLocal = cMath::MatrixMul(mtxInvParent,mtxGlobal);
-			apBone->SetTransform(mtxLocal);
-			a_mtxParentGlobal = mtxGlobal;
-
-			// unscaled
-
-			cMatrixf mtxGlobalUnscaled = apBone->GetLocalTransformUnscaled();
-			cMatrixf mtxInvParentUnscaled = cMath::MatrixInverse(a_mtxParentGlobalUnscaled);
-			cMatrixf mtxLocalUnscaled = cMath::MatrixMul(mtxInvParentUnscaled,mtxGlobalUnscaled);
-			apBone->SetTransformUnscaled(mtxLocalUnscaled);
-			a_mtxParentGlobalUnscaled = mtxGlobalUnscaled;
-
-			// end special code
-		}
-		else
-		{
-			a_mtxParentGlobal = apBone->GetWorldTransform();
-			a_mtxParentGlobalUnscaled = apBone->GetWorldTransformUnscaled();
-		}
-		
-		cBoneIterator it = apBone->GetChildIterator();
-
-		while(it.HasNext())
-		{
-			MakeFinalBonesRec(it.Next(),a_mtxParentGlobal, a_mtxParentGlobalUnscaled);
-		}
-		
-	}
-
-	//-----------------------------------------------------------------------
-
-	//Search the scene for geometry
-	void cMeshLoaderFBX::LoadSceneRec(tSubMeshDataList* apSubMeshList,cSkeleton *apSkeleton, 
-										cNode3D* apHplNode,
-										KFbxNode *apNode, int alDepth, bool animationOnly)
-	{
-		//Load the Mesh
-		if(apNode->GetMesh())
-		{
-			LoadMeshData(apSubMeshList,apSkeleton,apHplNode,apNode,alDepth, animationOnly);
-		}
-		
-		//Loop through children
-        for(int i=0;i<apNode->GetChildCount();i++)
-		{
-			LoadSceneRec(apSubMeshList,apSkeleton,apHplNode,apNode->GetChild(i),alDepth+1, animationOnly);
-		}
-	}
-
-	//-----------------------------------------------------------------------
-	
-	cBone* cMeshLoaderFBX::LoadSkeletonData(cBone* apBone,KFbxNode *apNode, int alDepth)
-	{
-		//////////////////////////////////////////////////////
-		// Get bone properties.
-		KFbxSkeleton* pSkeleton = apNode->GetSkeleton();
-		
-        cBone* pNewBone = apBone->CreateChildBone(apNode->GetName(), apNode->GetName());
-
-		//Just set identity for the time being, 
-		//The global matrix will be loaded when the matrix links are loaded.
-		cMatrixf mtxLocal = cMatrixf::Identity;
-        		
-		pNewBone->SetTransform(mtxLocal);
-		pNewBone->SetTransformUnscaled(mtxLocal);
-
-		//Set value to 0, use this value later to see what bones are linked to
-		//geometry.
-		pNewBone->SetValue(0);
-		
-		if(mbLog)
-		{
-			//Log("%s Loading bone: '%s'\n",GetTabs(alDepth),apNode->GetName());
-			//Log("%s Type: %s\n",GetTabs(alDepth),GetSkelTypeName(pSkeleton->GetSkeletonType()));
-			//Log("%s Limb length: %f\n",GetTabs(alDepth),pSkeleton->GetLimbLength());
-			//Log("%s NodeSize: %f\n",GetTabs(alDepth),pSkeleton->GetLimbNodeSize());
-			//Log("%s Local Transform: %s\n",GetTabs(alDepth),cMath::MatrixToChar(mtxLocal));
-		}
-		
-		return pNewBone;
-	}
-
-	//-----------------------------------------------------------------------
-
-	//-----------------------------------------------------------------------
-	
-	void cMeshLoaderFBX::LoadMeshData(tSubMeshDataList* apSubMeshList,cSkeleton* apSkeleton, cNode3D* apHplNode, KFbxNode *apNode, int alDepth, bool animationOnly)
-	{
-		//Build this list with uv, pos, normal and color.
-		tVertexVec mvVertexes;
-
-		//Build this is with indicies
-		tUIntVec mvIndexes;
-
-		//Get the texture name in this
-		cSubMeshData subMeshData;
-
-		KFbxMesh *pMesh = apNode->GetMesh();
-		tExtraVertricesVec vExtraVetrices;
-        
-        tString nodeName = apNode->GetName();
-        bool isControllerNode = nodeName.substr(0,4) == "CON_";
-
-		if ( !animationOnly && !isControllerNode )    // exclude controller objects, used only for animation, don't contain mesh data
-		{
-			//This lists stores values that needs an extra vertex:
-			tExtraVtxValueList lstExtraValues;
-
-			subMeshData.msName = nodeName;
-
-			//If the mesh has been transformed to triangles or not.
-			bool mbTriangulated=false;
-		
-			if(mbLog)Log("%s Loading node: '%s'\n",GetTabs(alDepth),apNode->GetName());
-
-			//triangulate the mesh
-		
-			KFbxGeometryConverter pConverter( mpSdkManager );
-			//pConverter->TriangulateInPlace(apNode);
-
-		
-
-			KFbxMesh *pTriMesh = pMesh;
-			if(mbTriangulated==false)pTriMesh = pConverter.TriangulateMesh(pMesh);
-	
-			//mpSdkManager->DestroyKFbxGeometryConverter(pConverter);
-
-			KFbxVector4 *pPositions = pMesh->GetControlPoints();
-		
-			//////////////////////////////////////////////////////
-			//Polygons (indicies)
-			if(mbLowLog)Log("%s Polygons:\n %s ",GetTabs(alDepth),GetTabs(alDepth));
-			for(int i=0;i<pTriMesh->GetPolygonCount();i++)
-			{
-				if(mbLowLog)Log("[");
-				for(int j=0;j<pTriMesh->GetPolygonSize(i);j++)
-				{
-					if(mbLowLog)Log("%d", pTriMesh->GetPolygonVertex(i,j));
-					if(mbLowLog)if(j != pTriMesh->GetPolygonSize(i)-1)Log(", ");
-
-					mvIndexes.push_back(pTriMesh->GetPolygonVertex(i,j));
-				}
-				if(mbLowLog)Log("]");
-			}
-			if(mbLowLog)Log("\n");
-
-			//////////////////////////////////////////////////////	
-			//Positions (vertrices)
-			if(mbLowLog)Log("%s Positions:\n %s ",GetTabs(alDepth),GetTabs(alDepth));
-			for(int i=0;i<pMesh->GetControlPointsCount();i++)
-			{
-				if(mbLowLog)Log("(%.1f, %.1f, %.1f) ", pPositions[i].GetAt(0),pPositions[i].GetAt(1),pPositions[i].GetAt(2));
-				if(mbLowLog)if(i != pMesh->GetControlPointsCount()-1)Log(", ");
-
-				cVector3f vPos((float)pPositions[i].GetAt(0),(float)pPositions[i].GetAt(1),(float)pPositions[i].GetAt(2));
-			
-				//The negative z is because it shows when the vertex has gotten a uv coord.
-				//And then extra uvs can be found.
-				mvVertexes.push_back(cVertex(vPos,cVector3f(0,0,-1),cColor(1,1)));
-			}
-			if(mbLowLog)Log("\n");
-
-			KFbxLayer *pLayer = pTriMesh->GetLayer(0);
-
-			//////////////////////////////////////////////////////
-			//Normals
-			KFbxLayerElementNormal *pNormLayer = pLayer->GetNormals();
-			
-			if(pNormLayer)
-			{
-				if(mbLog)Log("%s Normal mapping mode: %d \n",GetTabs(alDepth), pNormLayer->GetMappingMode());
-				if(mbLog)Log("%s Normal reference mode: %d \n",GetTabs(alDepth), pNormLayer->GetReferenceMode());
-
-				if(pNormLayer->GetMappingMode() == KFbxLayerElementNormal::eBY_CONTROL_POINT)
-				{
-					KFbxLayerElementNormal::DirectArrayType pNormals = pNormLayer->GetDirectArray();
-
-					if(mbLowLog)Log("%s Normals:\n %s ",GetTabs(alDepth),GetTabs(alDepth));
-					for(int i=0;i<pMesh->GetControlPointsCount();i++)
-					{
-						if(mbLowLog)Log("(%.1f, %.1f, %.1f) ", pNormals[i].GetAt(0),pNormals[i].GetAt(1),pNormals[i].GetAt(2));
-						if(mbLowLog)if(i != pMesh->GetControlPointsCount()-1)Log(", ");
-
-						cVector3f vPos((float)pNormals[i].GetAt(0),(float)pNormals[i].GetAt(1),(float)pNormals[i].GetAt(2));
-
-						mvVertexes[i].norm = vPos;
-					}
-
-					if(mbLowLog)Log("\n");
-				}
-				else if(pNormLayer->GetMappingMode() == KFbxLayerElementNormal::eBY_POLYGON_VERTEX)
-				{
-					if ( pNormLayer->GetReferenceMode() == KFbxLayerElement::eDIRECT )
-					{
-						KFbxLayerElementNormal::DirectArrayType pNormals = pNormLayer->GetDirectArray();
-
-						if(mbLowLog)Log("%s Normals:\n %s ",GetTabs(alDepth),GetTabs(alDepth));
-						for ( int i = 0; i < (int)mvIndexes.size(); i++)
-						{
-							cVector3f vPos((float)pNormals[i].GetAt(0),(float)pNormals[i].GetAt(1),(float)pNormals[i].GetAt(2));
-							mvVertexes[mvIndexes[i]].norm = vPos;
-						}
-					}
-					else
-					{
-						Error("Normal mapping mode is not correct!\n");
-						return;
-					}
-				}
-			}
-
-			//////////////////////////////////////////////////////
-			//Tangents
-			KFbxLayerElementTangent *pTangentLayer = pLayer->GetTangents();
-			
-			if(pTangentLayer)
-			{
-				if(mbLog)Log("%s Tangent mapping mode: %d \n",GetTabs(alDepth), pTangentLayer->GetMappingMode());
-				if(mbLog)Log("%s Tangent reference mode: %d \n",GetTabs(alDepth), pTangentLayer->GetReferenceMode());
-
-				KFbxLayerElementTangent::DirectArrayType pTangents = pTangentLayer->GetDirectArray();
-				KFbxLayerElementArrayTemplate<int> pTangentIndices = pTangentLayer->GetIndexArray();
-
-				if(pTangentLayer->GetMappingMode() == KFbxLayerElementNormal::eBY_CONTROL_POINT)
-				{
-					if(mbLowLog)Log("%s Tangents:\n %s ",GetTabs(alDepth),GetTabs(alDepth));
-					for(int i=0;i<pMesh->GetControlPointsCount();i++)
-					{
-						if(mbLowLog)Log("(%.1f, %.1f, %.1f) ", pTangents[i].GetAt(0),pTangents[i].GetAt(1),pTangents[i].GetAt(2));
-						if(mbLowLog)if(i != pMesh->GetControlPointsCount()-1)Log(", ");
-
-						cVector3f vPos((float)pTangents[i].GetAt(0),(float)pTangents[i].GetAt(1),(float)pTangents[i].GetAt(2));
-
-						mvVertexes[i].tan = vPos;
-					}
-
-					if(mbLowLog)Log("\n");
-				}
-				else if(pTangentLayer->GetMappingMode() == KFbxLayerElementNormal::eBY_POLYGON_VERTEX)
-				{
-					/*for(int i=0;i<pMesh->GetControlPointsCount();i++)
-					{
-						if(mbLowLog)Log("(%.1f, %.1f, %.1f) ", pTangents[i].GetAt(0),pTangents[i].GetAt(1),pTangents[i].GetAt(2));
-						if(mbLowLog)if(i != pMesh->GetControlPointsCount()-1)Log(", ");
-
-						cVector3f vPos((float)pTangents[i].GetAt(0),(float)pTangents[i].GetAt(1),(float)pTangents[i].GetAt(2));
-
-						mvVertexes[i].tan = vPos;
-					}
-					*/
-					/*
-					int polyCount = pMesh->GetPolygonCount();
-
-					for ( int polyIndex = 0; polyIndex < polyCount; polyIndex++ )
-					{
-						int vertexCount = pMesh->GetPolygonSize(polyIndex);
-						int polygonVertexIndex = pMesh->GetPolygonVertexIndex( polyIndex );
-
-						for ( int vertexIndex = 0; vertexIndex < vertexCount; vertexIndex++ )
-						{
-							int positionIndex = polygonVertexIndex + vertexIndex;
-
-							
-							cVector3f vPos((float)pTangents[positionIndex].GetAt(0),(float)pTangents[positionIndex].GetAt(1),(float)pTangents[positionIndex].GetAt(2));
-							mvVertexes[positionIndex].tan = vPos;
-
-
-
-							switch (pTangentLayer->GetReferenceMode()) {
-								case KFbxLayerElement::eDIRECT:
-									for (int p = 0; p < 3; ++p)
-										vert.tangent[p] = (float)tangents->GetDirectArray().GetAt( positionIndex )[p];
-									break;
-								case KFbxLayerElement::eINDEX_TO_DIRECT:
-									{
-										int index = tangents->GetIndexArray().GetAt( positionIndex );
-										for (int p = 0; p < 3; ++p)
-											vert.tangent[p] = (float)tangents->GetDirectArray().GetAt( index )[p];
-									}
-									break;
-						}
-					}*/
-
-					if ( pTangentLayer->GetReferenceMode() == KFbxLayerElement::eDIRECT )
-					{					
-						if(mbLowLog)Log("%s Tangents:\n %s ",GetTabs(alDepth),GetTabs(alDepth));
-						for ( int i = 0; i < (int)mvIndexes.size(); i++)
-						{
-							cVector3f vPos((float)pTangents[i].GetAt(0),(float)pTangents[i].GetAt(1),(float)pTangents[i].GetAt(2));
-							mvVertexes[mvIndexes[i]].tan = vPos;
-						}
-					}
-					else
-					{
-						Error("Tangent mapping mode is not correct!\n");
-						return;
-					}
-					
-					/*for(int i=0;i<(int)mvIndexes.size();i++)
-					{
-						int VtxPos = mvIndexes[i];
-						int lPos = pTangentIndices[VtxPos];
-						cVector3f vPos((float)pTangents[lPos].GetAt(0),(float)pTangents[lPos].GetAt(1),(float)pTangents[lPos].GetAt(2));
-						
-						
-						mvVertexes[VtxPos].tan = vPos;
-
-						if(mbLowLog)if(i != mvIndexes.size()-1)Log(", ");
-					}*/
-					if(mbLowLog)Log("\n");
-				}
-			}
-
-			//////////////////////////////////////////////////////
-			//UV coords.
-			KFbxLayerElementUV *pUvLayer = pLayer->GetUVs();
-
-			if(pUvLayer)
-			{
-
-				KFbxLayerElementUV::DirectArrayType pUvs = pUvLayer->GetDirectArray();
-				KFbxLayerElementArrayTemplate<int> pUvIndices = pUvLayer->GetIndexArray();
-
-				if(mbLog)Log("%s UV mapping mode: %d \n",GetTabs(alDepth), pUvLayer->GetMappingMode());
-				if(mbLog)Log("%s UV reference mode: %d \n",GetTabs(alDepth), pUvLayer->GetReferenceMode());
-
-				//One UV for each position
-				if(pUvLayer->GetMappingMode() == KFbxLayerElementNormal::eBY_CONTROL_POINT)
-				{
-					if(mbLowLog)Log("%s Uvs:\n %s ",GetTabs(alDepth),GetTabs(alDepth));
-					for(int i=0;i<pMesh->GetControlPointsCount();i++)
-					{
-						if(mbLowLog)Log("(%.1f, %.1f) ", pUvs[i].GetAt(0),pUvs[i].GetAt(1));
-						if(mbLowLog)if(i != pMesh->GetControlPointsCount()-1)Log(", ");
-
-						//Invert y sicne it uses a another coord system
-						cVector3f vPos(	(float)pUvs[i].GetAt(0),
-							1.0f -(float)pUvs[i].GetAt(1),0);
-
-						mvVertexes[i].tex = vPos;
-					}
-					if(mbLog)Log("\n");
-				}
-				//One UV for each vertex, find what vertex the index belongs to.
-				else if(pUvLayer->GetMappingMode() == KFbxLayerElementNormal::eBY_POLYGON_VERTEX)
-				{
-					if(mbLowLog)Log("%s Uvs:\n %s ",GetTabs(alDepth),GetTabs(alDepth));
-					for(int i=0;i<(int)mvIndexes.size();i++)
-					{
-						int lPos = pUvIndices[i];
-						if(mbLowLog)Log("(%.1f, %.1f) ", pUvs[lPos].GetAt(0),pUvs[lPos].GetAt(1));
-
-						//Invert y sicne it uses a another coord system
-						cVector3f vPos(	(float)pUvs[lPos].GetAt(0),
-							1.0f -(float)pUvs[lPos].GetAt(1),0);
-
-						int VtxPos = mvIndexes[i];
-
-						//check if there is allready a uv coords at this vertex,
-						//if so a new has to be made.
-						if(mvVertexes[VtxPos].tex.z != -1 && mvVertexes[VtxPos].tex != vPos)
-						{
-							lstExtraValues.push_back(cExtraVtxValue(i,vPos));
-						}
-						else
-						{
-							mvVertexes[VtxPos].tex = vPos;
-						}
-
-						if(mbLowLog)if(i != mvIndexes.size()-1)Log(", ");
-					}
-					if(mbLowLog)Log("\n");
-				}
-				else{
-					Error("UV mapping mode is not correct! No uv coords will be created.\n");
-					pUvLayer = NULL;
-				}
-			}
-
-			//////////////////////////////////////////////////////
-			//Mesh processing
-
-			//Create a vector for extra vertrcies added.
-			vExtraVetrices.resize(mvVertexes.size());
-		
-			//OInly useful to add extra if there are uv's
-			if(pUvLayer)
-			{
-				//Add extra vertexes if needed
-				if(mbLowLog)Log("%s Adding new vertexes to indices: ",GetTabs(alDepth));
-				tExtraVtxValueListIt it = lstExtraValues.begin();
-				int lStartPos = (int)mvVertexes.size();
-				for(;it != lstExtraValues.end();it++)
-				{
-					cExtraVtxValue &val = *it;
-					cVertex newVtx;
-
-					if(mbLowLog)Log("%d ",val.mlIndexNum);	
-
-					//Check if there is allready a point added with the same values.
-					bool bOldFound = false;
-					for(int i=lStartPos; i<(int)mvVertexes.size();i++)
-					{
-						if(mvVertexes[i].tex == val.mvVal && 
-							mvVertexes[i].pos == mvVertexes[mvIndexes[val.mlIndexNum]].pos &&
-							mvVertexes[i].norm == mvVertexes[mvIndexes[val.mlIndexNum]].norm &&
-							mvVertexes[i].tan == mvVertexes[mvIndexes[val.mlIndexNum]].tan)
-						{
-							mvIndexes[val.mlIndexNum] = i;
-							bOldFound = true;
-							break;
-						}
-					}
-
-					if(bOldFound)continue;
-
-					unsigned int lVtxNum = mvIndexes[val.mlIndexNum];
-				
-					//Add the added to a list, so it is later to check up what points
-					//Have been splitted.
-					vExtraVetrices[lVtxNum].mvNewPoints.push_back((int)mvVertexes.size());
-
-					newVtx.tex = val.mvVal;
-					newVtx.pos = mvVertexes[lVtxNum].pos;
-					newVtx.norm = mvVertexes[lVtxNum].norm;
-					newVtx.tan = mvVertexes[lVtxNum].tan;
-
-					mvVertexes.push_back(newVtx);
-
-					mvIndexes[val.mlIndexNum] = (unsigned int)mvVertexes.size()-1;
-				}
-				if(mbLowLog)Log("\n");
-			}
-
-			//////////////////////////////////////////////////////
-			//Material
-			KFbxLayerElementMaterial *pMaterialLayer = pLayer->GetMaterials();
-
-			if(pMaterialLayer)
-			{
-				if(pMaterialLayer->GetMappingMode() != KFbxLayerElementMaterial::eALL_SAME)
-				{
-					Error("Per polygon material not supported!\n");
-					return;
-				}
-
-				KFbxLayerElementMaterial::DirectArrayType pMatArray = pMaterialLayer->ParentClass::GetDirectArray();
-				KFbxSurfaceMaterial *pMat = pMatArray.GetAt(0);
-
-				if(pMat)
-				{
-					// first set the material based on the material name
-					subMeshData.msMaterial = pMat->GetName();
-					//lProperty = pMat->FindProperty(KFbxSurfaceMaterial::sDiffuse);
-
-					if (pMat->GetClassId() == KFbxSurfacePhong::ClassId )
-					{
-						fbxDouble3 col = ((KFbxSurfacePhong *)pMat)->Diffuse.Get();
-						fbxDouble1 factor = ((KFbxSurfacePhong *)pMat)->DiffuseFactor.Get();
-						for(int i=0;i<(int)mvVertexes.size();i++)
-						{
-							mvVertexes[i].col = cColor((float)col[0],(float)col[1], 
-								(float)col[2], (float)factor);
-						}
-					}
-				}
-				else
-				{
-					Error("No material found!\n");
-				}
-			}
-	
-			//////////////////////////////////////////////////////
-			//Texture
-
-			KFbxLayerElementTexture *pTextureLayer = pLayer->GetTextures(KFbxLayerElement::eDIFFUSE_TEXTURES);
-		
-			if(pUvLayer)
-			{
-				if(pTextureLayer)
-				{
-					KFbxTexture *pTexture = pTextureLayer->GetDirectArray().GetAt(0);
-					if(pTexture)
-					{
-						subMeshData.msMaterial = cString::SetFileExt(cString::GetFileName(pTexture->GetName()),"");  // replaced GetFileName by GetName, maybe GetUrl or something else?
-
-						if(mbLog){
-							Log("%s Swap UV: %d\n",GetTabs(alDepth),pTexture->GetSwapUV()?1:0);
-							Log("%s Material name: %s\n",GetTabs(alDepth),subMeshData.msMaterial.c_str());
-						}
-					}
-					else
-					{
-						Error("No texture found!\n");
-						pTextureLayer = NULL;
-
-						subMeshData.msMaterial ="";
-					}
-				}
-			}
-			else
-			{
-				pTextureLayer = NULL;
-			}
-
-
-			//////////////////////////////////////////////////////
-			//Matrix
-
-			//What is the difference between source and destination?
-			//Destination gives the right matrix here..hmmm...
-			KFbxMatrix GMtx = apNode->EvaluateGlobalTransform( KTIME_INFINITE, KFbxNode::eSOURCE_SET, false);
-			//Something else here using rotation and scaling?
-			KFbxMatrix LMtx = apNode->EvaluateLocalTransform(KTIME_INFINITE, KFbxNode::eSOURCE_SET, false);    // again, why no local transform here? todo!
-
-			subMeshData.m_mtxGlobal = cMatrixf(&GMtx.Transpose().mData[0][0]);
-			subMeshData.m_mtxLocal = cMatrixf(&LMtx.Transpose().mData[0][0]);
-
-			if(mbLog)Log("%s Matrix: %s\n",GetTabs(alDepth),cMath::MatrixToChar(subMeshData.m_mtxGlobal));
-
-
-			//Transform the vertices according to the matrix
-			cMatrixf mtxNormTrans = subMeshData.m_mtxLocal;
-			mtxNormTrans.m[0][3] =0;
-			mtxNormTrans.m[1][3] =0;
-			mtxNormTrans.m[2][3] =0;
-
-			for(int i=0; i < (int)mvVertexes.size(); i++)
-			{
-				mvVertexes[i].pos = cMath::MatrixMul(subMeshData.m_mtxGlobal, mvVertexes[i].pos);
-				mvVertexes[i].norm = cMath::MatrixMul(mtxNormTrans, mvVertexes[i].norm);
-				mvVertexes[i].norm.Normalize();
-				mvVertexes[i].tan = cMath::MatrixMul(mtxNormTrans, mvVertexes[i].tan);
-				mvVertexes[i].tan.Normalize();
-			}
-
-			//Invert the positions of the indices
-			for(int i=0; i< (int)mvIndexes.size();i+=3)
-			{
-				unsigned int lTemp = mvIndexes[i+0];
-				mvIndexes[i+0] = mvIndexes[i+2];
-				mvIndexes[i+2] = lTemp;
-			}
-		}
-
-		///////////////////////////////////////////////////////////
-		//Get Links and Skin the bones.
-		if(apSkeleton)
-		{
-			int deformerCount = pMesh->GetDeformerCount( KFbxDeformer::eSKIN );
-			if(deformerCount  != 1 ) Error("No or multiple skin deformers assigned to mesh!\n");
-
-			for(int i=0;i<deformerCount;i++)
-			{
-				KFbxSkin * skin = (KFbxSkin *)pMesh->GetDeformer(i, KFbxDeformer::eSKIN);
-
-				int clusterCount = skin->GetClusterCount();
-
-				for ( int j = 0; j < clusterCount; j++ )
-				{
-					KFbxLink* pLink = skin->GetCluster(j);
-
-					KFbxNode* pBoneNode = pLink->GetLink();
-
-					KFbxNode* pAssNode = pLink->GetAssociateModel();
-					tString sAssName ="None";
-					if(pAssNode)sAssName = pAssNode->GetName();
-
-					if(mbLog)Log("%s Link: %d,LinkNode: %s, Mode: %s AssModel: %s\n",GetTabs(alDepth), i,
-													pBoneNode->GetName(),
-													GetLinkModeName(pLink->GetLinkMode()),
-													sAssName.c_str());
-				
-					//////////////////////
-					//Get the bone matrix:
-					cBone* pBone = apSkeleton->GetBoneByName(pBoneNode->GetName());
-
-					KFbxXMatrix mtxTemp;
-					//////////////////////
-					//Get transform of the linking node (bone)
-				
-					KFbxVector4 vTrans, vRot, vScale; 
-
-					KFbxXMatrix transformLinkMatrix, lClusterGeometry;
-					pLink->GetTransformLinkMatrix( transformLinkMatrix );
-
-					// Multiply transformLinkMatrix by Geometric Transformation
-					lClusterGeometry = GetGeometry(pLink->GetLink());
-					transformLinkMatrix *= lClusterGeometry;
-
-					vTrans = transformLinkMatrix.GetT();
-					vScale = transformLinkMatrix.GetS();
-					vRot = transformLinkMatrix.GetR();
-					
-					cVector3f vT(vTrans.GetAt(0),vTrans.GetAt(1),vTrans.GetAt(2));
-					cVector3f vS(vScale.GetAt(0),vScale.GetAt(1),vScale.GetAt(2));
-					cVector3f vR(vRot.GetAt(0),vRot.GetAt(1),vRot.GetAt(2));
-				
-					cMatrixf mtxS = cMath::MatrixScale(vS);
-					cMatrixf mtxT = cMath::MatrixTranslate(vT);
-					cMatrixf mtxR = MatrixFromEulerAngles( vR );
-
-
-					// WARNING OR SOMETHING 
-					// The rotaions are alittle crazy but so far it is working
-					// If something seems screwed up here is a good place to debug.
-					cMatrixf mtxBone =  cMath::MatrixMul(mtxR,mtxS);
-					mtxBone = cMath::MatrixMul(mtxT,mtxBone);
-
-					if(mbLog)Log("%s LTransform: %s\n",GetTabs(alDepth),cMath::MatrixToChar(mtxBone));
-				
-					//Sets the global position at rest for the bone!
-					pBone->SetTransform(mtxBone);
-					pBone->SetTransformUnscaled(mtxR);
-
-					//Set value to 1 to show that the bone has a link connection.
-					pBone->SetValue(1);
-				
-					//////////////////////
-					//Get transform of the node containing link.
-					//pLink->GetTransformMatrix(mtxTemp);
-					//cMatrixf mtxTrans(& mtxTemp.Transpose().mData[0][0]);
-					//if(mbLog)Log("%s NTransform: %s\n",GetTabs(alDepth),cMath::MatrixToChar(mtxTrans));
-
-					if ( !animationOnly )
-					{
-						/////////////////////
-						/// Get the data for the link
-						double *pWeights = pLink->GetControlPointWeights();
-						int *pVtxIndices = pLink->GetControlPointIndices();
-				
-						/////////////////////
-						// Set up a default bone-vtx pair
-						cVertexBonePair vtxBonePair;
-						vtxBonePair.boneIdx = apSkeleton->GetBoneIndexByName(pBoneNode->GetName());
-
-						if(mbLowLog)Log("%s Adding links to bone: '%s' idx: %d\n",GetTabs(alDepth),
-										pBoneNode->GetName(), vtxBonePair.boneIdx);
-
-						for(int j=0;j<pLink->GetControlPointIndicesCount();j++)
-						{
-							vtxBonePair.weight = (float)pWeights[j];
-							vtxBonePair.vtxIdx = pVtxIndices[j];
-							subMeshData.mvVtxBonePairs.push_back(vtxBonePair);
-
-							//Add the new vertices that was made if the vertex was split.
-							for(int k=0;k< (int)vExtraVetrices[pVtxIndices[j]].mvNewPoints.size(); k++)
-							{
-								vtxBonePair.vtxIdx = vExtraVetrices[pVtxIndices[j]].mvNewPoints[k];
-							}
-						}
-					}
-				}
-			}
-		}
-
-		if ( !animationOnly && !isControllerNode )
-		{
-			///////////////////////////////////////////////////////////
-			//Create VertexBuffer
-			tVertexCompileFlag compileFlags = 0;
-		
-			eVertexBufferUsageType usageType = eVertexBufferUsageType_Static;
-			//Do some test to see if the mesh should be dynamic
-
-			subMeshData.mpVtxBuffer = mpLowLevelGraphics->CreateVertexBuffer(eVertexBufferType_Hardware,eVertexBufferDrawType_Tri,
-				usageType,
-				(int)mvVertexes.size(), (int)mvIndexes.size());
-
-			subMeshData.mpVtxBuffer->CreateElementArray( eVertexBufferElement_Position,eVertexBufferElementFormat_Float, 4);
-			subMeshData.mpVtxBuffer->CreateElementArray( eVertexBufferElement_Normal,eVertexBufferElementFormat_Float, 3);
-			//if(pTextureLayer)
-			//{
-				subMeshData.mpVtxBuffer->CreateElementArray( eVertexBufferElement_Texture0,eVertexBufferElementFormat_Float, 3);
-			//}
-			subMeshData.mpVtxBuffer->CreateElementArray( eVertexBufferElement_Color0,eVertexBufferElementFormat_Float, 4);
-			subMeshData.mpVtxBuffer->CreateElementArray( eVertexBufferElement_Texture1Tangent,eVertexBufferElementFormat_Float, 4);
-
-
-			//Add the vertices
-			for(int i=0;i<(int)mvVertexes.size();i++)
-			{
-				subMeshData.mpVtxBuffer->AddVertexVec3f(eVertexBufferElement_Position, mvVertexes[i].pos);
-				subMeshData.mpVtxBuffer->AddVertexColor(eVertexBufferElement_Color0, mvVertexes[i].col);
-				subMeshData.mpVtxBuffer->AddVertexVec3f(eVertexBufferElement_Normal, mvVertexes[i].norm);
-
-				//if(pTextureLayer)
-				//{
-					subMeshData.mpVtxBuffer->AddVertexVec3f(eVertexBufferElement_Texture0, mvVertexes[i].tex);
-					//This is useless right??
-					subMeshData.mpVtxBuffer->AddVertexVec3f(eVertexBufferElement_Texture1Tangent, mvVertexes[i].tan);
-				//}
-			}
-
-			//Add the indices
-			for(int i=0;i<(int)mvIndexes.size();i++)
-			{
-				subMeshData.mpVtxBuffer->AddIndex(mvIndexes[i]);
-			}
-
-			//Compile the vertex buffer
-			if(mbLog)Log("\n%s Compiling mesh\n",GetTabs(alDepth));
-			subMeshData.mpVtxBuffer->Compile(compileFlags);
-
-			//Add the sub mesh data to the list
-			if(apSubMeshList) apSubMeshList->push_back(subMeshData);
-		}
-
-		//end of mesh
-		if(mbLog)Log("\n");
-	}
-	
-	//-----------------------------------------------------------------------
-	
-	const char* cMeshLoaderFBX::GetTabs(int alDepth)
-	{
-		msTemp = "";
-
-		for(int i=0;i<alDepth;i++)msTemp+="\t";
-
-		return msTemp.c_str();
-	}
-
-	const char* cMeshLoaderFBX::GetAttrName(KFbxNodeAttribute::EAttributeType alNum)
-	{
-		switch(alNum)
-		{
-		case KFbxNodeAttribute::eUNIDENTIFIED: return "Unidentified";
-		case KFbxNodeAttribute::eNULL: return "Null";
-		case KFbxNodeAttribute::eMARKER: return "Marker";
-		case KFbxNodeAttribute::eSKELETON: return "Skeleton";
-		case KFbxNodeAttribute::eMESH: return "Mesh"; 
-		case KFbxNodeAttribute::eNURB: return "Nurb"; 
-		case KFbxNodeAttribute::ePATCH: return "Patch"; 
-		case KFbxNodeAttribute::eCAMERA: return "Camera"; 
-		case KFbxNodeAttribute::eCAMERA_SWITCHER: return "CameraSwicther";
-		case KFbxNodeAttribute::eLIGHT: return "Light";
-		case KFbxNodeAttribute::eOPTICAL_REFERENCE: return "Reference";
-		case KFbxNodeAttribute::eOPTICAL_MARKER: return "Marker";
-		}
-
-		return "Uknown";
-	}
-
-	const char*  cMeshLoaderFBX::GetSkelTypeName(KFbxSkeleton::ESkeletonType alNum)
-	{
-		switch(alNum)
-		{
-		case KFbxSkeleton::eROOT: return "Root";
-		case KFbxSkeleton::eLIMB: return "Limb";
-		case KFbxSkeleton::eLIMB_NODE:  return "Limb Node";
-		case KFbxSkeleton::eEFFECTOR:  return "Effector (root)";
-		}
-
-		return "Unknown";
-	}
-
-	const char* cMeshLoaderFBX::GetRotOrderName(ERotationOrder alNum)
-	{
-		switch(alNum)
-		{
-		case eEULER_XYZ: return "X Y Z";
-		case eEULER_XZY: return "X Z Y";
-		case eEULER_YZX: return "Y Z X";
-		case eEULER_YXZ: return "Y X Z";
-		case eEULER_ZXY: return "Z X Y";
-		case eEULER_ZYX:return "Z Y X";
-		case eSPHERIC_XYZ: return "SphereXYZ";
-		}
-		return "Unknown";
-	}
-
-	const char* cMeshLoaderFBX::GetLinkModeName(KFbxLink::ELinkMode alNum)
-	{
-		switch(alNum)
-		{
-		case KFbxLink::eNORMALIZE: return "Normalize";
-		case KFbxLink::eADDITIVE: return "Additive";
-		case KFbxLink::eTOTAL1:  return "TotalOne";
-		}
-		return "Unknown";
-	}
-
-	//-----------------------------------------------------------------------
-
-	bool cMeshLoaderFBX::LoadScene(KFbxSdkManager* pSdkManager, KFbxDocument* pScene, const char* pFilename)
-	{
-		int lFileMajor, lFileMinor, lFileRevision;
-		int lSDKMajor,  lSDKMinor,  lSDKRevision;
-		//int lFileFormat = -1;
-		int i, lAnimStackCount;
-		bool lStatus;
-		char lPassword[1024];
-
-		// Get the file version number generate by the FBX SDK.
-		KFbxSdkManager::GetFileFormatVersion(lSDKMajor, lSDKMinor, lSDKRevision);
-
-		// Create an importer.
-		KFbxImporter* lImporter = KFbxImporter::Create(pSdkManager,"");
-
-		// Initialize the importer by providing a filename.
-		const bool lImportStatus = lImporter->Initialize(pFilename, -1, pSdkManager->GetIOSettings());
-		lImporter->GetFileVersion(lFileMajor, lFileMinor, lFileRevision);
-
-		if( !lImportStatus )
-		{
-			printf("Call to KFbxImporter::Initialize() failed.\n");
-			printf("Error returned: %s\n\n", lImporter->GetLastErrorString());
-
-			if (lImporter->GetLastErrorID() == KFbxIO::eFILE_VERSION_NOT_SUPPORTED_YET ||
-				lImporter->GetLastErrorID() == KFbxIO::eFILE_VERSION_NOT_SUPPORTED_ANYMORE)
-			{
-				printf("FBX version number for this FBX SDK is %d.%d.%d\n", lSDKMajor, lSDKMinor, lSDKRevision);
-				printf("FBX version number for file %s is %d.%d.%d\n\n", pFilename, lFileMajor, lFileMinor, lFileRevision);
-			}
-
+namespace {
+
+typedef std::unique_ptr<ufbx_scene, void(*)(ufbx_scene*)> tFBXScenePtr;
+
+tString FBXString(const ufbx_string& aString)
+{
+	return aString.length ? tString(aString.data, aString.length) : tString();
+}
+
+bool FBXError(const tWString& asFile, const char* asMessage, const char* asNode = "")
+{
+	Error("FBX '%s': %s%s%s\n", cString::To8Char(asFile).c_str(), asMessage,
+		asNode[0] ? ": " : "", asNode);
+	return false;
+}
+
+cVector3f FBXVector(const ufbx_vec3& avValue)
+{
+	return cVector3f((float)avValue.x, (float)avValue.y, (float)avValue.z);
+}
+
+cQuaternion FBXQuaternion(const ufbx_quat& aqValue)
+{
+	cQuaternion q((float)aqValue.w, (float)aqValue.x, (float)aqValue.y, (float)aqValue.z);
+	q.Normalize();
+	return q;
+}
+
+cMatrixf FBXMatrix(const ufbx_matrix& aMatrix)
+{
+	cMatrixf m = cMatrixf::Identity;
+	for(int row = 0; row < 3; ++row)
+		for(int col = 0; col < 4; ++col)
+			m.m[row][col] = (float)aMatrix.v[col * 3 + row];
+	return m;
+}
+
+bool FBXFinite(const cVector3f& avValue)
+{
+	return std::isfinite(avValue.x) && std::isfinite(avValue.y) && std::isfinite(avValue.z);
+}
+
+bool FBXInvertible(const ufbx_matrix& aMatrix)
+{
+	for(size_t i = 0; i < 12; ++i)
+		if(!std::isfinite(aMatrix.v[i])) return false;
+	return std::fabs(ufbx_matrix_determinant(&aMatrix)) > 1.0e-15;
+}
+
+bool FBXMatrixEqual(const ufbx_matrix& a, const ufbx_matrix& b)
+{
+	for(size_t i = 0; i < 12; ++i)
+		if(!std::isfinite(a.v[i]) || !std::isfinite(b.v[i]) ||
+			std::fabs(a.v[i] - b.v[i]) > 1.0e-4 * std::max(1.0, std::max(std::fabs(a.v[i]), std::fabs(b.v[i]))))
 			return false;
-		}
+	return true;
+}
 
-		printf("FBX version number for this FBX SDK is %d.%d.%d\n", lSDKMajor, lSDKMinor, lSDKRevision);
+tFBXScenePtr FBXLoadScene(const tWString& asFile)
+{
+	// Use the engine's wide-character file API, including on Windows.
+	FILE* pFile = cPlatform::OpenFile(asFile, _W("rb"));
+	if(!pFile)
+	{
+		FBXError(asFile, "could not open source file");
+		return tFBXScenePtr(NULL, ufbx_free_scene);
+	}
+	ufbx_load_opts opts = {};
+	opts.file_format = UFBX_FILE_FORMAT_FBX;
+	opts.generate_missing_normals = true;
+	// The original AMFP importer did not convert FBX axes or units. Applying
+	// target_axes/target_unit_meters here would invalidate shipped entity data.
+	// Keep geometric transforms separate: the AMFP mesh and animation paths
+	// intentionally apply different conventions, documented at each use below.
+	ufbx_error error = {};
+	ufbx_scene* pScene = ufbx_load_stdio(pFile, &opts, &error);
+	fclose(pFile);
+	if(!pScene) FBXError(asFile, "could not parse source", error.description.data);
+	return tFBXScenePtr(pScene, ufbx_free_scene);
+}
 
-		if (lImporter->IsFBX())
+struct cFBXSkeletonData
+{
+	cFBXSkeletonData() : mpSkeleton(NULL) {}
+	~cFBXSkeletonData() { if(mpSkeleton) hplDelete(mpSkeleton); }
+	cSkeleton* Release() { cSkeleton* pResult = mpSkeleton; mpSkeleton = NULL; return pResult; }
+
+	cSkeleton* mpSkeleton;
+	std::vector<bool> mvSelected;
+	std::vector<bool> mvHasBind;
+	std::vector<bool> mvDeformingSubtree;
+	std::vector<int> mvBoneIndices;
+	std::vector<ufbx_matrix> mvBindWorld;
+	std::vector<ufbx_matrix> mvBindLocal;
+	std::vector<const ufbx_node*> mvNodes;
+	std::set<tString> mNames;
+};
+
+bool FBXCreateBones(const ufbx_node* apNode, cBone* apParent, int alParentNode,
+	cFBXSkeletonData& aData, const tWString& asFile)
+{
+	const uint32_t id = apNode->typed_id;
+	if(aData.mvSelected[id])
+	{
+		const tString sName = FBXString(apNode->name);
+		if(sName.empty() || !aData.mNames.insert(sName).second)
+			return FBXError(asFile, "empty or duplicate bone name", sName.c_str());
+		// Skinning buffers store bone indices as unsigned bytes on both builds.
+		if(aData.mpSkeleton->GetBoneNum() >= 256)
+			return FBXError(asFile, "skeleton exceeds HPL's 256-bone limit");
+		// AMFP's SDK loader starts unclustered bones at identity in their
+		// parent's bind space. These placeholders are significant: shipped ANM
+		// tracks include the full motion for such roots, rather than subtracting
+		// the FBX default pose. Preserve this when mixing raw FBX and caches.
+		if(!aData.mvHasBind[id])
+			aData.mvBindWorld[id] = alParentNode >= 0 ? aData.mvBindWorld[alParentNode] : ufbx_identity_matrix;
+		if(!FBXInvertible(aData.mvBindWorld[id]))
+			return FBXError(asFile, "singular or non-finite bone bind transform", sName.c_str());
+		ufbx_matrix local = aData.mvBindWorld[id];
+		if(alParentNode >= 0)
 		{
-			printf("FBX version number for file %s is %d.%d.%d\n\n", pFilename, lFileMajor, lFileMinor, lFileRevision);
-
-			// From this point, it is possible to access animation stack information without
-			// the expense of loading the entire file.
-
-			printf("Animation Stack Information\n");
-
-			lAnimStackCount = lImporter->GetAnimStackCount();
-
-			printf("    Number of Animation Stacks: %d\n", lAnimStackCount);
-			printf("    Current Animation Stack: \"%s\"\n", lImporter->GetActiveAnimStackName().Buffer());
-			printf("\n");
-
-			for(i = 0; i < lAnimStackCount; i++)
-			{
-				KFbxTakeInfo* lTakeInfo = lImporter->GetTakeInfo(i);
-
-				printf("    Animation Stack %d\n", i);
-				printf("         Name: \"%s\"\n", lTakeInfo->mName.Buffer());
-				printf("         Description: \"%s\"\n", lTakeInfo->mDescription.Buffer());
-
-				// Change the value of the import name if the animation stack should be imported 
-				// under a different name.
-				printf("         Import Name: \"%s\"\n", lTakeInfo->mImportName.Buffer());
-
-				// Set the value of the import state to false if the animation stack should be not
-				// be imported. 
-				printf("         Import State: %s\n", lTakeInfo->mSelect ? "true" : "false");
-				printf("\n");
-			}
-
-			// Set the import states. By default, the import states are always set to 
-			// true. The code below shows how to change these states.
-			IOS_REF.SetBoolProp(IMP_FBX_MATERIAL,        true);
-			IOS_REF.SetBoolProp(IMP_FBX_TEXTURE,         true);
-			IOS_REF.SetBoolProp(IMP_FBX_LINK,            true);
-			IOS_REF.SetBoolProp(IMP_FBX_SHAPE,           true);
-			IOS_REF.SetBoolProp(IMP_FBX_GOBO,            true);
-			IOS_REF.SetBoolProp(IMP_FBX_ANIMATION,       true);
-			IOS_REF.SetBoolProp(IMP_FBX_GLOBAL_SETTINGS, true);
+			ufbx_matrix inverse = ufbx_matrix_invert(&aData.mvBindWorld[alParentNode]);
+			local = ufbx_matrix_mul(&inverse, &local);
 		}
+		cBone* pBone = apParent->CreateChildBone(sName, sName);
+		pBone->SetTransform(FBXMatrix(local));
+		const ufbx_transform transform = ufbx_matrix_to_transform(&local);
+		pBone->SetTransformUnscaled(cMath::MatrixQuaternion(FBXQuaternion(transform.rotation)));
+		aData.mvBoneIndices[id] = aData.mpSkeleton->GetBoneNum() - 1;
+		aData.mvBindLocal[id] = local;
+		aData.mvNodes.push_back(apNode);
+		apParent = pBone;
+		alParentNode = (int)id;
+	}
+	for(size_t i = 0; i < apNode->children.count; ++i)
+		if(!FBXCreateBones(apNode->children[i], apParent, alParentNode, aData, asFile)) return false;
+	return true;
+}
 
-		// Import the scene.
-		lStatus = lImporter->Import(pScene);
+void FBXCollectBindPoses(const ufbx_node* apNode, cFBXSkeletonData& aData,
+	const tWString& asFile, bool& abHasBones, bool& abWarned)
+{
+	// Match the SDK loader's depth-first LoadSceneRec/LoadMeshData order.
+	// Some shipped child animations contain multiple controller meshes with
+	// differing Head bind poses. Their ANM caches use the last encountered
+	// cluster, so choosing the first cluster or averaging would change motion.
+	if(apNode->mesh)
+		for(size_t i = 0; i < apNode->mesh->skin_deformers.count; ++i)
+			for(size_t j = 0; j < apNode->mesh->skin_deformers[i]->clusters.count; ++j)
+			{
+				const ufbx_skin_cluster* pCluster = apNode->mesh->skin_deformers[i]->clusters[j];
+				if(!pCluster->bone_node) continue;
+				const uint32_t id = pCluster->bone_node->typed_id;
+				if(aData.mvHasBind[id] && !FBXMatrixEqual(aData.mvBindWorld[id], pCluster->bind_to_world) && !abWarned)
+				{
+					Warning("FBX '%s': differing controller bind poses; using the last scene-order cluster as in the original importer\n", cString::To8Char(asFile).c_str());
+					abWarned = true;
+				}
+				aData.mvSelected[id] = abHasBones = true;
+				aData.mvBindWorld[id] = pCluster->bind_to_world;
+				aData.mvHasBind[id] = true;
+			}
+	for(size_t i = 0; i < apNode->children.count; ++i)
+		FBXCollectBindPoses(apNode->children[i], aData, asFile, abHasBones, abWarned);
+}
 
-		if(lStatus == false && lImporter->GetLastErrorID() == KFbxIO::ePASSWORD_ERROR)
+bool FBXLoadSkeleton(const ufbx_scene* apScene, cFBXSkeletonData& aData, const tWString& asFile)
+{
+	if(apScene->nodes.count > INT_MAX) return FBXError(asFile, "too many scene nodes");
+	const size_t count = apScene->nodes.count;
+	aData.mvSelected.resize(count, false);
+	aData.mvHasBind.resize(count, false);
+	aData.mvDeformingSubtree.resize(count, false);
+	aData.mvBoneIndices.resize(count, -1);
+	aData.mvBindWorld.resize(count);
+	aData.mvBindLocal.resize(count);
+	bool bHasBones = false;
+	for(size_t i = 0; i < count; ++i)
+	{
+		const ufbx_node* pNode = apScene->nodes[i];
+		aData.mvBindWorld[i] = pNode->node_to_world;
+		if(pNode->bone && !pNode->is_root) aData.mvSelected[i] = bHasBones = true;
+	}
+	bool warnedBind = false;
+	FBXCollectBindPoses(apScene->root_node, aData, asFile, bHasBones, warnedBind);
+	if(!bHasBones) return true;
+	for(size_t i = 0; i < count; ++i)
+	{
+		const ufbx_node* pNode = apScene->nodes[i];
+		const bool hasGeometry = pNode->mesh && pNode->mesh->num_triangles &&
+			FBXString(pNode->name).compare(0, 4, "CON_") != 0;
+		if(aData.mvHasBind[i] || hasGeometry)
+			for(const ufbx_node* pParent = pNode; pParent; pParent = pParent->parent)
+				aData.mvDeformingSubtree[pParent->typed_id] = true;
+	}
+	aData.mpSkeleton = hplNew(cSkeleton, ());
+	return FBXCreateBones(apScene->root_node, aData.mpSkeleton->GetRootBone(), -1, aData, asFile);
+}
+
+struct cFBXVertex
+{
+	cVector3f pos, normal, uv, tangent, bitangent;
+	cColor color;
+	uint32_t controlPoint;
+	float tangentSign;
+};
+
+tString FBXMaterialName(const ufbx_material* apMaterial)
+{
+	if(!apMaterial) return "";
+	tString sName = FBXString(apMaterial->name);
+	const ufbx_texture* pTexture = apMaterial->fbx.diffuse_color.texture;
+	// FBX surface material names identify HPL .mat resources. Texture paths
+	// may be stale authoring references (gent still points at wretch.dds), and
+	// texture object labels such as "Map #15" are not material resource names.
+	if(sName.empty() && pTexture)
+	{
+		tString sTexture = FBXString(pTexture->relative_filename);
+		if(sTexture.empty()) sTexture = FBXString(pTexture->filename);
+		if(sTexture.empty()) sTexture = FBXString(pTexture->name);
+		if(!sTexture.empty()) sName = cString::GetFileName(sTexture);
+	}
+	return sName.empty() ? sName : cString::SetFileExt(sName, "mat");
+}
+
+void FBXBuildTangents(std::vector<cFBXVertex>& avVertices, const tUIntVec& avIndices, bool abImported)
+{
+	if(!abImported)
+	{
+		for(size_t i = 0; i < avIndices.size(); i += 3)
 		{
-			printf("Please enter password: ");
-
-			lPassword[0] = '\0';
-
-			scanf("%s", lPassword);
-			KString lString(lPassword);
-
-			IOS_REF.SetStringProp(IMP_FBX_PASSWORD,      lString);
-			IOS_REF.SetBoolProp(IMP_FBX_PASSWORD_ENABLE, true);
-
-			lStatus = lImporter->Import(pScene);
-
-			if(lStatus == false && lImporter->GetLastErrorID() == KFbxIO::ePASSWORD_ERROR)
-			{
-				printf("\nPassword is wrong, import aborted.\n");
-			}
+			cFBXVertex& a = avVertices[avIndices[i]];
+			cFBXVertex& b = avVertices[avIndices[i + 1]];
+			cFBXVertex& c = avVertices[avIndices[i + 2]];
+			const cVector3f edge1 = b.pos - a.pos, edge2 = c.pos - a.pos;
+			const cVector3f uv1 = b.uv - a.uv, uv2 = c.uv - a.uv;
+			const float det = uv1.x * uv2.y - uv1.y * uv2.x;
+			if(std::fabs(det) < 1.0e-12f) continue;
+			const cVector3f tangent = (edge1 * uv2.y - edge2 * uv1.y) / det;
+			const cVector3f bitangent = (edge2 * uv1.x - edge1 * uv2.x) / det;
+			a.tangent += tangent; b.tangent += tangent; c.tangent += tangent;
+			a.bitangent += bitangent; b.bitangent += bitangent; c.bitangent += bitangent;
 		}
-
-		// Destroy the importer.
-		lImporter->Destroy();
-
-		return lStatus;
+	}
+	for(size_t i = 0; i < avVertices.size(); ++i)
+	{
+		cFBXVertex& vertex = avVertices[i];
+		vertex.tangent -= vertex.normal * cMath::Vector3Dot(vertex.normal, vertex.tangent);
+		if(vertex.tangent.Normalize() <= 1.0e-8f)
+		{
+			const cVector3f axis = std::fabs(vertex.normal.x) < 0.9f ? cVector3f(1,0,0) : cVector3f(0,1,0);
+			vertex.tangent = cMath::Vector3Cross(axis, vertex.normal);
+			vertex.tangent.Normalize();
+		}
+		vertex.tangentSign = cMath::Vector3Dot(cMath::Vector3Cross(vertex.normal, vertex.tangent), vertex.bitangent) < 0 ? -1.0f : 1.0f;
 	}
 }
-#endif
+
+bool FBXLoadMeshNode(const ufbx_node* apNode, cMesh* apResult, const cFBXSkeletonData& aSkeleton,
+	iLowLevelGraphics* apGraphics, cMaterialManager* apMaterials, cMeshManager* apMeshes,
+	const tWString& asFile, tMeshLoadFlag aFlags)
+{
+	const ufbx_mesh* pMesh = apNode->mesh;
+	if(!pMesh || pMesh->num_triangles == 0 || FBXString(apNode->name).compare(0, 4, "CON_") == 0) return true;
+	if(pMesh->num_indices > INT_MAX || pMesh->num_triangles > INT_MAX / 3)
+		return FBXError(asFile, "mesh exceeds HPL index limits", apNode->name.data);
+	if(pMesh->skin_deformers.count > 1)
+		return FBXError(asFile, "multiple skin deformers are not representable by HPL", apNode->name.data);
+	if(pMesh->blend_deformers.count || pMesh->cache_deformers.count)
+		return FBXError(asFile, "blend shapes and vertex cache deformation are not supported by HPL", apNode->name.data);
+	const ufbx_skin_deformer* pSkin = pMesh->skin_deformers.count ? pMesh->skin_deformers[0] : NULL;
+	int rigidBone = -1;
+	const ufbx_node* pRigidNode = NULL;
+	if(!pSkin && !aSkeleton.mvNodes.empty())
+	{
+		// HPL skins every submesh of a skeletal mesh. A rigid attachment has an
+		// unambiguous owner only when it is parented beneath an imported bone.
+		for(const ufbx_node* pParent = apNode; pParent; pParent = pParent->parent)
+			if(aSkeleton.mvBoneIndices[pParent->typed_id] >= 0)
+			{
+				rigidBone = aSkeleton.mvBoneIndices[pParent->typed_id];
+				pRigidNode = pParent;
+				break;
+			}
+		if(rigidBone < 0)
+			return FBXError(asFile, "unskinned mesh in a skeletal scene has no bone parent", apNode->name.data);
+	}
+	if(pSkin && pSkin->skinning_method != UFBX_SKINNING_METHOD_LINEAR && pSkin->skinning_method != UFBX_SKINNING_METHOD_RIGID)
+		return FBXError(asFile, "dual-quaternion skinning is not supported by HPL", apNode->name.data);
+	// Match the SDK loader's EvaluateGlobalTransform() for mesh positions.
+	// Shipped child meshes have non-zero geometric translations and different
+	// cluster bind poses, but their MSH caches deliberately contain node-space
+	// geometry transformed by node_to_world alone. Applying geometry_to_world
+	// or recovering a mesh bind transform would move body parts out of place.
+	ufbx_matrix transform = apNode->node_to_world;
+	if(pRigidNode)
+	{
+		if(!FBXInvertible(pRigidNode->node_to_world))
+			return FBXError(asFile, "singular rigid attachment parent transform", apNode->name.data);
+		const ufbx_matrix inverse = ufbx_matrix_invert(&pRigidNode->node_to_world);
+		const ufbx_matrix local = ufbx_matrix_mul(&inverse, &transform);
+		transform = ufbx_matrix_mul(&aSkeleton.mvBindWorld[pRigidNode->typed_id], &local);
+	}
+	if(!FBXInvertible(transform)) return FBXError(asFile, "singular or non-finite mesh transform", apNode->name.data);
+	const ufbx_matrix normalTransform = ufbx_matrix_for_normals(&transform);
+	const bool bReverse = ufbx_matrix_determinant(&transform) >= 0;
+	const bool bTangents = pMesh->vertex_tangent.exists && pMesh->vertex_bitangent.exists;
+	std::vector<uint32_t> triangles(pMesh->max_face_triangles * 3);
+
+	for(size_t partIndex = 0; partIndex < pMesh->material_parts.count; ++partIndex)
+	{
+		const ufbx_mesh_part& part = pMesh->material_parts[partIndex];
+		if(part.num_triangles == 0) continue;
+		const ufbx_material* pMaterial = partIndex < apNode->materials.count ? apNode->materials[partIndex] : NULL;
+		cColor color(1,1);
+		if(pMaterial && pMaterial->fbx.diffuse_color.has_value)
+		{
+			const ufbx_vec3& c = pMaterial->fbx.diffuse_color.value_vec3;
+			color = cColor((float)c.x, (float)c.y, (float)c.z, (float)pMaterial->fbx.diffuse_factor.value_real);
+		}
+		std::vector<cFBXVertex> vertices;
+		tUIntVec indices;
+		typedef std::array<uint32_t, 7> tVertexKey;
+		std::map<tVertexKey, uint32_t> vertexMap;
+		indices.reserve(part.num_triangles * 3);
+		for(size_t faceIndex = 0; faceIndex < part.face_indices.count; ++faceIndex)
+		{
+			const ufbx_face face = pMesh->faces[part.face_indices[faceIndex]];
+			if(face.num_indices < 3) continue;
+			const uint32_t numTriangles = ufbx_triangulate_face(triangles.data(), triangles.size(), pMesh, face);
+			for(size_t i = 0; i < size_t(numTriangles) * 3; ++i)
+			{
+				const uint32_t corner = triangles[i];
+				tVertexKey key = {{
+					pMesh->vertex_indices[corner], pMesh->vertex_normal.indices[corner],
+					pMesh->vertex_uv.exists ? pMesh->vertex_uv.indices[corner] : UFBX_NO_INDEX,
+					pMesh->vertex_color.exists ? pMesh->vertex_color.indices[corner] : UFBX_NO_INDEX,
+					bTangents ? pMesh->vertex_tangent.indices[corner] : UFBX_NO_INDEX,
+					bTangents ? pMesh->vertex_bitangent.indices[corner] : UFBX_NO_INDEX, 0
+				}};
+				std::map<tVertexKey, uint32_t>::iterator found = vertexMap.find(key);
+				uint32_t index;
+				if(found != vertexMap.end()) index = found->second;
+				else
+				{
+					cFBXVertex vertex;
+					vertex.pos = FBXVector(ufbx_transform_position(&transform, pMesh->vertex_position[corner]));
+					vertex.normal = FBXVector(ufbx_transform_direction(&normalTransform, pMesh->vertex_normal[corner]));
+					vertex.normal.Normalize();
+					vertex.uv = cVector3f(0,0,0);
+					if(pMesh->vertex_uv.exists)
+					{
+						const ufbx_vec2 uv = pMesh->vertex_uv[corner];
+						vertex.uv = cVector3f((float)uv.x, 1.0f - (float)uv.y, 0);
+					}
+					vertex.color = color;
+					if(pMesh->vertex_color.exists)
+					{
+						const ufbx_vec4 c = pMesh->vertex_color[corner];
+						vertex.color = cColor((float)c.x, (float)c.y, (float)c.z, (float)c.w);
+					}
+					vertex.tangent = cVector3f(0,0,0);
+					vertex.bitangent = cVector3f(0,0,0);
+					if(bTangents)
+					{
+						vertex.tangent = FBXVector(ufbx_transform_direction(&transform, pMesh->vertex_tangent[corner]));
+						// Flipping V also flips the bitangent direction.
+						vertex.bitangent = FBXVector(ufbx_transform_direction(&transform, pMesh->vertex_bitangent[corner])) * -1.0f;
+					}
+					vertex.controlPoint = key[0];
+					vertex.tangentSign = 1.0f;
+					if(!FBXFinite(vertex.pos) || !FBXFinite(vertex.normal) || !FBXFinite(vertex.uv) ||
+						!FBXFinite(vertex.tangent) || !FBXFinite(vertex.bitangent))
+						return FBXError(asFile, "non-finite vertex data", apNode->name.data);
+					index = (uint32_t)vertices.size();
+					vertices.push_back(vertex);
+					vertexMap.insert(std::make_pair(key, index));
+				}
+				indices.push_back(index);
+			}
+		}
+		if(indices.empty()) continue;
+		// HPL's clockwise front faces differ from FBX. A reflected world transform
+		// already reverses orientation and must not be reversed a second time.
+		if(bReverse)
+			for(size_t i = 0; i < indices.size(); i += 3) std::swap(indices[i], indices[i + 2]);
+		FBXBuildTangents(vertices, indices, bTangents);
+		tString sName = FBXString(apNode->name);
+		if(pMesh->material_parts.count > 1) sName += "_" + cString::ToString((int)partIndex);
+		cSubMesh* pSubMesh = apResult->CreateSubMesh(sName);
+		iVertexBuffer* pBuffer = apGraphics->CreateVertexBuffer(eVertexBufferType_Hardware,
+			eVertexBufferDrawType_Tri, eVertexBufferUsageType_Static, (int)vertices.size(), (int)indices.size());
+		if(!pBuffer) return FBXError(asFile, "could not create vertex buffer", apNode->name.data);
+		pSubMesh->SetVertexBuffer(pBuffer);
+		pBuffer->CreateElementArray(eVertexBufferElement_Position, eVertexBufferElementFormat_Float, 4);
+		pBuffer->CreateElementArray(eVertexBufferElement_Normal, eVertexBufferElementFormat_Float, 3);
+		pBuffer->CreateElementArray(eVertexBufferElement_Texture0, eVertexBufferElementFormat_Float, 3);
+		pBuffer->CreateElementArray(eVertexBufferElement_Color0, eVertexBufferElementFormat_Float, 4);
+		pBuffer->CreateElementArray(eVertexBufferElement_Texture1Tangent, eVertexBufferElementFormat_Float, 4);
+		for(size_t i = 0; i < vertices.size(); ++i)
+		{
+			const cFBXVertex& vertex = vertices[i];
+			pBuffer->AddVertexVec4f(eVertexBufferElement_Position, vertex.pos, 1.0f);
+			pBuffer->AddVertexVec3f(eVertexBufferElement_Normal, vertex.normal);
+			pBuffer->AddVertexVec3f(eVertexBufferElement_Texture0, vertex.uv);
+			pBuffer->AddVertexColor(eVertexBufferElement_Color0, vertex.color);
+			pBuffer->AddVertexVec4f(eVertexBufferElement_Texture1Tangent, vertex.tangent, vertex.tangentSign);
+			if(pSkin)
+			{
+				if(vertex.controlPoint >= pSkin->vertices.count)
+					return FBXError(asFile, "vertex has no skin influences", apNode->name.data);
+				const ufbx_skin_vertex& skinVertex = pSkin->vertices[vertex.controlPoint];
+				const size_t limit = pSkin->skinning_method == UFBX_SKINNING_METHOD_RIGID ? 1 : 4;
+				size_t numWeights = 0;
+				unsigned int boneIndices[4];
+				double weights[4], totalWeight = 0;
+				for(size_t j = 0; j < skinVertex.num_weights && numWeights < limit; ++j)
+				{
+					const ufbx_skin_weight& weight = pSkin->weights[skinVertex.weight_begin + j];
+					if(weight.weight <= 0) continue;
+					const ufbx_node* pBone = pSkin->clusters[weight.cluster_index]->bone_node;
+					const int boneIndex = pBone ? aSkeleton.mvBoneIndices[pBone->typed_id] : -1;
+					if(boneIndex < 0 || !std::isfinite(weight.weight))
+						return FBXError(asFile, "invalid skin influence", apNode->name.data);
+					boneIndices[numWeights] = (unsigned int)boneIndex;
+					weights[numWeights] = weight.weight;
+					totalWeight += weight.weight;
+					++numWeights;
+				}
+				if(numWeights == 0 || !std::isfinite(totalWeight) || totalWeight <= 0)
+					return FBXError(asFile, "vertex has no positive skin influences", apNode->name.data);
+				for(size_t j = 0; j < numWeights; ++j)
+					pSubMesh->AddVertexBonePair(cVertexBonePair((unsigned int)i, boneIndices[j], (float)(weights[j] / totalWeight)));
+			}
+			else if(rigidBone >= 0)
+				pSubMesh->AddVertexBonePair(cVertexBonePair((unsigned int)i, (unsigned int)rigidBone, 1.0f));
+		}
+		for(size_t i = 0; i < indices.size(); ++i) pBuffer->AddIndex(indices[i]);
+		if(!pBuffer->Compile(0)) return FBXError(asFile, "could not compile vertex buffer", apNode->name.data);
+		const tString sMaterial = FBXMaterialName(pMaterial);
+		pSubMesh->SetMaterialName(sMaterial);
+		if(!(aFlags & eMeshLoadFlag_NoMaterial) && !sMaterial.empty())
+		{
+			const tString sLoadMaterial = apMeshes->GetUseFastloadMaterial() ? apMeshes->GetFastloadMaterial() : sMaterial;
+			pSubMesh->SetMaterial(apMaterials->CreateMaterial(sLoadMaterial));
+		}
+		pSubMesh->Compile();
+	}
+	return true;
+}
+
+// The runtime post-multiplies the full bind matrix by a rotation and adds
+// translation; it does not animate scale. Test the actual linear delta rather
+// than discarding shear/non-uniform scale through a lossy TRS decomposition.
+bool FBXAnimationDelta(const ufbx_matrix& aBind, const ufbx_matrix& aAnimated, cKeyFrame& aKey)
+{
+	if(!FBXInvertible(aAnimated)) return false;
+	ufbx_matrix inverse = ufbx_matrix_invert(&aBind);
+	ufbx_matrix delta = ufbx_matrix_mul(&inverse, &aAnimated);
+	delta.m03 = delta.m13 = delta.m23 = 0;
+	ufbx_transform transform = ufbx_matrix_to_transform(&delta);
+	transform.translation = ufbx_zero_vec3;
+	transform.scale.x = transform.scale.y = transform.scale.z = 1;
+	const ufbx_matrix rotation = ufbx_transform_to_matrix(&transform);
+	if(!FBXMatrixEqual(delta, rotation)) return false;
+	aKey.trans = cVector3f((float)(aAnimated.m03 - aBind.m03),
+		(float)(aAnimated.m13 - aBind.m13), (float)(aAnimated.m23 - aBind.m23));
+	aKey.rotation = FBXQuaternion(transform.rotation);
+	return FBXFinite(aKey.trans);
+}
+
+cAnimation* FBXLoadAnimation(const ufbx_scene* apScene, const cFBXSkeletonData& aSkeleton, const tWString& asFile)
+{
+	const ufbx_anim_stack* pStack = NULL;
+	for(size_t i = 0; i < apScene->anim_stacks.count; ++i)
+		if(apScene->anim_stacks[i]->time_end > apScene->anim_stacks[i]->time_begin)
+		{
+			pStack = apScene->anim_stacks[i];
+			break;
+		}
+	if(!pStack || pStack->layers.count == 0 || aSkeleton.mvNodes.empty())
+	{
+		FBXError(asFile, "no skeletal animation take found");
+		return NULL;
+	}
+	ufbx_error error = {};
+	const double begin = pStack->time_begin, end = pStack->time_end;
+	if(!std::isfinite(begin) || !std::isfinite(end) || std::fabs(begin) > 1.0e7 || std::fabs(end) > 1.0e7)
+	{
+		FBXError(asFile, "invalid animation time span");
+		return NULL;
+	}
+	std::set<float> times;
+	std::vector<std::set<float> > trackTimes(aSkeleton.mvNodes.size());
+	// Preserve authored per-bone keys, including empty tracks. The SDK loader
+	// used the first layer's Lcl T/R/S curves and truncated FBX time to integer
+	// milliseconds before storing float seconds. Resampling all bones at a
+	// global frame rate changes sparse cloth curves and dormant marker tracks.
+	const char* properties[] = { UFBX_Lcl_Translation, UFBX_Lcl_Rotation, UFBX_Lcl_Scaling };
+	for(size_t i = 0; i < aSkeleton.mvNodes.size(); ++i)
+	{
+		for(size_t property = 0; property < 3; ++property)
+		{
+			const ufbx_anim_prop* pProp = ufbx_find_anim_prop(pStack->layers[0], &aSkeleton.mvNodes[i]->element, properties[property]);
+			if(!pProp) continue;
+			for(size_t axis = 0; axis < 3; ++axis)
+			{
+				const ufbx_anim_curve* pCurve = pProp->anim_value->curves[axis];
+				if(!pCurve) continue;
+				for(size_t k = 0; k < pCurve->keyframes.count; ++k)
+				{
+					const double sourceTime = pCurve->keyframes[k].time;
+					if(!std::isfinite(sourceTime) || std::fabs(sourceTime) > 1.0e7)
+					{
+						FBXError(asFile, "invalid animation key time");
+						return NULL;
+					}
+					const float time = (float)(int64_t)(sourceTime * 1000.0) / 1000.0f;
+					trackTimes[i].insert(time);
+					times.insert(time);
+				}
+			}
+		}
+	}
+	if(times.size() > 1000000)
+	{
+		FBXError(asFile, "animation has too many samples");
+		return NULL;
+	}
+	cAnimation* pAnimation = hplNew(cAnimation, (FBXString(pStack->name), asFile, cString::GetFileName(cString::To8Char(asFile))));
+	pAnimation->SetLength((float)(int64_t)(end * 1000.0) / 1000.0f);
+	std::vector<cAnimationTrack*> tracks;
+	for(size_t i = 0; i < aSkeleton.mvNodes.size(); ++i)
+		tracks.push_back(pAnimation->CreateTrack(FBXString(aSkeleton.mvNodes[i]->name), eAnimTransformFlag_Translate | eAnimTransformFlag_Rotate));
+	bool warnedMarkerScale = false;
+	for(std::set<float>::const_iterator it = times.begin(); it != times.end(); ++it)
+	{
+		const float time = *it;
+		// Match the SDK's SetMilliSeconds((int64)(floatSeconds * 1000)).
+		const double evaluateTime = (double)(int64_t)(time * 1000.0f) / 1000.0;
+		ufbx_evaluate_opts evalOpts = {};
+		tFBXScenePtr evaluated(ufbx_evaluate_scene(apScene, pStack->anim, evaluateTime, &evalOpts, &error), ufbx_free_scene);
+		if(!evaluated)
+		{
+			FBXError(asFile, "could not evaluate animation", error.description.data);
+			hplDelete(pAnimation);
+			return NULL;
+		}
+		for(size_t i = 0; i < tracks.size(); ++i)
+		{
+			if(trackTimes[i].find(time) == trackTimes[i].end()) continue;
+			const uint32_t id = aSkeleton.mvNodes[i]->typed_id;
+			// The legacy animation path evaluates local, not world, and includes
+			// bone geometric transforms before extracting its delta.
+			const ufbx_node* pNode = evaluated->nodes[id];
+			const ufbx_matrix local = ufbx_matrix_mul(&pNode->node_to_parent, &pNode->geometry_to_node);
+			cKeyFrame key;
+			if(!FBXAnimationDelta(aSkeleton.mvBindLocal[id], local, key))
+			{
+				if(aSkeleton.mvDeformingSubtree[id] || !FBXInvertible(local))
+				{
+					FBXError(asFile, "animated scale/shear cannot be represented by HPL rotation/translation tracks", aSkeleton.mvNodes[i]->name.data);
+					hplDelete(pAnimation);
+					return NULL;
+				}
+				// Unclustered end markers (eg. Biped toe nubs) have identity
+				// bind placeholders in shipped caches. The SDK importer discarded
+				// their scale. Retain its rotation/translation tracks, but never
+				// apply this exception to a bone that can deform geometry.
+				ufbx_matrix marker = local;
+				// SDK GetElements assigns a reflection to all three scale axes,
+				// whereas ufbx assigns it to one. Match the SDK rotation choice
+				// for mirrored nondeforming Biped finger/toe end markers.
+				if(ufbx_matrix_determinant(&marker) < 0)
+					for(size_t k = 0; k < 9; ++k) marker.v[k] = -marker.v[k];
+				const ufbx_transform transform = ufbx_matrix_to_transform(&marker);
+				key.trans = FBXVector(transform.translation) - FBXVector(aSkeleton.mvBindLocal[id].cols[3]);
+				key.rotation = FBXQuaternion(transform.rotation);
+				if(!warnedMarkerScale)
+				{
+					Warning("FBX '%s': ignoring scale/shear on nondeforming bone markers, as in the original importer\n", cString::To8Char(asFile).c_str());
+					warnedMarkerScale = true;
+				}
+			}
+			cKeyFrame* pKey = tracks[i]->CreateKeyFrame(time);
+			pKey->trans = key.trans;
+			pKey->rotation = key.rotation;
+		}
+	}
+	return pAnimation;
+}
+
+bool FBXUseCache(const tWString& asSource, const tWString& asCache)
+{
+	return cResources::GetForceCacheLoadingAndSkipSaving() || !cPlatform::FileExists(asSource) ||
+		cPlatform::FileModifiedDate(asCache) > cPlatform::FileModifiedDate(asSource);
+}
+
+} // namespace
+
+cMeshLoaderFBX::cMeshLoaderFBX(iLowLevelGraphics* apLowLevelGraphics, cMeshLoaderMSH* apMeshLoaderMSH,
+	bool abLoadAndSaveMSHFormat) : iMeshLoader(apLowLevelGraphics),
+	mpMeshLoaderMSH(apMeshLoaderMSH), mbLoadAndSaveMSHFormat(abLoadAndSaveMSHFormat)
+{
+	AddSupportedExtension("fbx");
+}
+
+cMeshLoaderFBX::~cMeshLoaderFBX() {}
+
+cMesh* cMeshLoaderFBX::LoadMesh(const tWString& asFile, tMeshLoadFlag aFlags)
+{
+	const tWString sCache = cString::SetFileExtW(asFile, _W("msh"));
+	if(mbLoadAndSaveMSHFormat && mpMeshLoaderMSH && FBXUseCache(asFile, sCache))
+	{
+		cMesh* pCached = mpMeshLoaderMSH->LoadMesh(sCache, aFlags);
+		if(pCached) { pCached->SetFullPath(asFile); return pCached; }
+	}
+	tFBXScenePtr scene = FBXLoadScene(asFile);
+	if(!scene) return NULL;
+	cFBXSkeletonData skeleton;
+	if(!FBXLoadSkeleton(scene.get(), skeleton, asFile)) return NULL;
+	cMesh* pMesh = hplNew(cMesh, (cString::To8Char(asFile), asFile, mpMaterialManager, mpAnimationManager));
+	pMesh->SetSkeleton(skeleton.Release());
+	if(!(aFlags & eMeshLoadFlag_NoGeometry))
+	{
+		for(size_t i = 0; i < scene->nodes.count; ++i)
+			if(!FBXLoadMeshNode(scene->nodes[i], pMesh, skeleton, mpLowLevelGraphics, mpMaterialManager, mpMeshManager, asFile, aFlags))
+			{
+				hplDelete(pMesh);
+				return NULL;
+			}
+		if(pMesh->GetSubMeshNum() == 0)
+		{
+			FBXError(asFile, "no renderable triangle meshes found");
+			hplDelete(pMesh);
+			return NULL;
+		}
+		pMesh->CompileBonesAndSubMeshes();
+	}
+	if(mbLoadAndSaveMSHFormat && mpMeshLoaderMSH && !(aFlags & eMeshLoadFlag_NoGeometry) &&
+		!cResources::GetForceCacheLoadingAndSkipSaving())
+		mpMeshLoaderMSH->SaveMesh(pMesh, sCache);
+	return pMesh;
+}
+
+cAnimation* cMeshLoaderFBX::LoadAnimation(const tWString& asFile)
+{
+	const tWString sCache = cString::SetFileExtW(asFile, _W("anm"));
+	if(mbLoadAndSaveMSHFormat && mpMeshLoaderMSH && FBXUseCache(asFile, sCache))
+	{
+		cAnimation* pCached = mpMeshLoaderMSH->LoadAnimation(sCache);
+		if(pCached) { pCached->SetFullPath(asFile); return pCached; }
+	}
+	tFBXScenePtr scene = FBXLoadScene(asFile);
+	if(!scene) return NULL;
+	cFBXSkeletonData skeleton;
+	if(!FBXLoadSkeleton(scene.get(), skeleton, asFile)) return NULL;
+	cAnimation* pAnimation = FBXLoadAnimation(scene.get(), skeleton, asFile);
+	if(pAnimation && mbLoadAndSaveMSHFormat && mpMeshLoaderMSH && !cResources::GetForceCacheLoadingAndSkipSaving())
+		mpMeshLoaderMSH->SaveAnimation(pAnimation, sCache);
+	return pAnimation;
+}
+
+} // namespace hpl

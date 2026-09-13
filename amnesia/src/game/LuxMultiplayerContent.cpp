@@ -156,8 +156,8 @@ namespace
                 candidate = cString::SetFileExt(candidate, defaultExt);
             tWString path = search->GetFilePath(candidate);
             const tString ext = cString::ToLowerCase(cString::GetFileExt(candidate));
-            if(path.empty() && ext == "dae") path = search->GetFilePath(cString::SetFileExt(candidate, "msh"));
-            if(path.empty() && ext == "dae") path = search->GetFilePath(cString::SetFileExt(candidate, "anm"));
+            if(path.empty() && (ext == "dae" || ext == "fbx")) path = search->GetFilePath(cString::SetFileExt(candidate, "msh"));
+            if(path.empty() && (ext == "dae" || ext == "fbx")) path = search->GetFilePath(cString::SetFileExt(candidate, "anm"));
             if(path.empty() && defaultExt == "audio" && ext.empty())
                 for(const char* format : {"ogg", "wav"})
                 {

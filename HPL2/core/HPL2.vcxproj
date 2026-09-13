@@ -159,6 +159,7 @@
     <ClInclude Include="include\network\NetworkTransport.h" />
     <ClInclude Include="include\impl\GamepadSDL2.h" />
     <ClInclude Include="include\impl\MeshLoaderFBX.h" />
+    <ClInclude Include="..\dependencies\sources\ufbx\ufbx.h" />
     <ClInclude Include="include\gui\GuiPopUpUIKeyboard.h" />
     <ClInclude Include="include\impl\GamepadSDL.h" />
     <ClInclude Include="include\impl\GamepadXInput.h" />
@@ -492,7 +493,13 @@
   <ItemGroup>
     <ClCompile Include="sources\network\NetworkTransport.cpp" />
     <ClCompile Include="sources\impl\GamepadSDL2.cpp" />
-    <ClCompile Include="sources\impl\MeshLoaderFBX.cpp" />
+    <ClCompile Include="sources\impl\MeshLoaderFBX.cpp">
+      <AdditionalIncludeDirectories>..\dependencies\sources\ufbx;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <ClCompile Include="..\dependencies\sources\ufbx\ufbx.c">
+      <CompileAs>CompileAsCpp</CompileAs>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="sources\gui\GuiPopUpUIKeyboard.cpp" />
     <ClCompile Include="sources\impl\GamepadSDL.cpp" />
     <ClCompile Include="sources\impl\GamepadXInput.cpp" />

@@ -20,6 +20,7 @@ static void Require(bool value, const char* message)
 static std::vector<uint8_t> Bytes(const std::string& text) { return std::vector<uint8_t>(text.begin(), text.end()); }
 #include "MultiplayerCacheMetricsTests.h"
 #include "MultiplayerCachePathTests.h"
+#include "MultiplayerFBXTests.h"
 static void TestMapCache(const tWString& logPath) {
     const auto parent=std::filesystem::path(logPath).parent_path();
     tWString root;
@@ -90,6 +91,7 @@ int main(int argc, char** argv)
     Require(engine != nullptr, "create engine");
     SDL_HideWindow(SDL_GL_GetCurrentWindow());
     cResources* resources = engine->GetResources();
+    TestFBX(resources, engine->GetGraphics()->GetLowLevel(), cString::To16Char(argv[1]));
     Require(resources->LoadResourceDirsFile("resources.cfg"), "load retail resource directories");
     resources->AddResourceDir(_W("lang/eng/voices"), true);
     tString error;

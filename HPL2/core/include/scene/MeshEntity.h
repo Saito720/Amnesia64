@@ -178,6 +178,7 @@ namespace hpl {
 		void SetVisible(bool abVisible);
 
 		cBoundingVolume* GetBoundingVolume();
+		cBoundingVolume* GetRenderBoundingVolume();
 
 		void SetStatic(bool abX);
 		bool IsStatic(){ return mbStatic;}
@@ -231,6 +232,9 @@ namespace hpl {
 		
 		bool mbBoneMatricesNeedUpdate;
 		int mlBoneMatricesTransformCount;
+		int mlBoneMatricesRenderFrame;
+		int mlSkeletonBoundsRenderFrame;
+		cBoundingVolume mRenderSkeletonBoundingVolume;
 
 		cMatrixf m_mtxInvWorldMatrix;
 		int mlInvWorldMatrixTransformCount;
@@ -250,6 +254,8 @@ namespace hpl {
 		tNodeStateVec mvTempBoneStates;
 
 		std::vector<cMatrixf> mvBoneMatrices;
+		cMatrixf m_mtxSkeletonRenderRoot;
+		int mlSkeletonRenderUpdateCount;
 
 		bool mbSkeletonPhysics;
 		bool mbSkeletonPhysicsFading;

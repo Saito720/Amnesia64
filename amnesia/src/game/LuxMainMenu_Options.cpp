@@ -509,6 +509,17 @@ void cLuxMainMenu_Options::AddBasicGfxOptions(cWidgetDummy* apDummy)
 		mpCBTextureSizeLevel->AddItem(vTexQualityStrings[i]);
 
 	/////////////////////////////////
+	// Rendering cadence. Keep the gamma image and footer at their retail positions.
+	tWString sUncapFPS = kTranslate("OptionsMenu", "UncapFPS");
+	tWString sUncapFPSTip = kTranslate("OptionsMenu", "UncapFPSTip");
+	if(sUncapFPS.empty()) sUncapFPS = _W("Uncap FPS");
+	if(sUncapFPSTip.empty())
+		sUncapFPSTip = _W("Allow rendering above 60 frames per second. Enable V-sync to match your display's refresh rate.");
+	mpChBUncapFPS = mpGuiSet->CreateWidgetCheckBox(mpCBTextureSizeLevel->GetLocalPosition() +
+		cVector3f(0,mpCBTextureSizeLevel->GetSize().y+15,0), 0, sUncapFPS, apDummy);
+	SetUpInput(NULL, mpChBUncapFPS, false, sUncapFPSTip);
+
+	/////////////////////////////////
 	// Gamma
 	vPos.x += 140;
 
@@ -554,9 +565,13 @@ void cLuxMainMenu_Options::AddBasicGfxOptions(cWidgetDummy* apDummy)
 //	mpChBAdaptiveVSync->SetFocusNavigation(eUIArrow_Down, mpCBTextureSizeLevel);
 
 	mpCBTextureSizeLevel->SetFocusNavigation(eUIArrow_Up, mpCBResolution);
-	mpCBTextureSizeLevel->SetFocusNavigation(eUIArrow_Down, mpSGamma);
+	mpCBTextureSizeLevel->SetFocusNavigation(eUIArrow_Down, mpChBUncapFPS);
 
-	mpSGamma->SetFocusNavigation(eUIArrow_Up, mpCBTextureSizeLevel);
+	mpChBUncapFPS->SetFocusNavigation(eUIArrow_Up, mpCBTextureSizeLevel);
+	mpChBUncapFPS->SetFocusNavigation(eUIArrow_Right, mpSGamma);
+	mpChBUncapFPS->SetFocusNavigation(eUIArrow_Down, mpSGamma);
+
+	mpSGamma->SetFocusNavigation(eUIArrow_Up, mpChBUncapFPS);
 	
 }
 
@@ -1193,6 +1208,7 @@ void cLuxMainMenu_Options::SetInputValues(cResourceVarsObject& aObj)
 		// Fullscreen & vsync
 		mpChBFullScreen->SetChecked(aObj.GetVarBool("FullScreen"), false);
 		mpChBVSync->SetChecked(aObj.GetVarBool("VSync"), false);
+		mpChBUncapFPS->SetChecked(aObj.GetVarBool("UncapFPS"), false);
 //		mpChBAdaptiveVSync->SetChecked(aObj.GetVarBool("AdaptiveVsync"), false);
 
 		/////////////////////////
@@ -1470,6 +1486,7 @@ void cLuxMainMenu_Options::ApplyChanges()
         pCfgHdr->mlDisplay = vidMode.mlDisplay;
 		pCfgHdr->mbFullscreen = mpChBFullScreen->IsChecked();
 		pCfgHdr->mbVSync = mpChBVSync->IsChecked();
+		gpBase->mpEngine->SetLimitFPS(mpChBUncapFPS->IsChecked()==false);
 //		pCfgHdr->mbAdaptiveVSync = mpChBAdaptiveVSync->IsChecked();
 		pGfx->GetLowLevel()->SetVsyncActive(pCfgHdr->mbVSync, pCfgHdr->mbAdaptiveVSync);
 		pGfx->GetLowLevel()->SetGammaCorrection(GetGamma());
@@ -1782,6 +1799,7 @@ void cLuxMainMenu_Options::DumpInitialValues(cResourceVarsObject &aObj)
 		// Fullscreen & vsync
 		aObj.AddVarBool("FullScreen", gpBase->mpConfigHandler->mbFullscreen);
 		aObj.AddVarBool("VSync", gpBase->mpConfigHandler->mbVSync);
+		aObj.AddVarBool("UncapFPS", gpBase->mpEngine->GetLimitFPS()==false);
 		aObj.AddVarBool("AdaptiveVsync", gpBase->mpConfigHandler->mbAdaptiveVSync);
 		
 		/////////////////////////
@@ -1879,6 +1897,7 @@ void cLuxMainMenu_Options::DumpCurrentValues(cResourceVarsObject &aObj)
 		// Fullscreen & vsync
 		aObj.AddVarBool("FullScreen",	mpChBFullScreen->IsChecked());
 		aObj.AddVarBool("VSync",		mpChBVSync->IsChecked());
+		aObj.AddVarBool("UncapFPS", mpChBUncapFPS->IsChecked());
 		
 		/////////////////////////
 		// Texture quality and filtering

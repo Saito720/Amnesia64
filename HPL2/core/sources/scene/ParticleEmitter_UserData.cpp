@@ -869,7 +869,8 @@ namespace hpl {
 		}
         
 
-		// ---
+		// Birth and respawn must not interpolate from the particle's former life.
+		apParticle->CaptureRenderState();
 	}
 
 	//-----------------------------------------------------------------------

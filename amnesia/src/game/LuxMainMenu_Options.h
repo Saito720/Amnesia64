@@ -151,6 +151,7 @@ private:
 	cWidgetComboBox *mpCBResolution;
 	cWidgetCheckBox *mpChBFullScreen;
 	cWidgetCheckBox *mpChBVSync;
+	cWidgetCheckBox *mpChBUncapFPS;
 //	cWidgetCheckBox *mpChBAdaptiveVSync;
 
 	cWidgetComboBox *mpCBTextureSizeLevel;

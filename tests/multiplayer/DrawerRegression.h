@@ -150,6 +150,15 @@ class cDrawerRegression {
             std::printf("%s contact phase=%u player=(%.4g %.4g %.4g) box=(%.4g %.4g %.4g) acc=%.4g speed=%.4g contacts=%u owned=%d\n",
                 role.c_str(),phase,position.x,position.y,position.z,box.x,box.y,box.z,
                 player->GetMoveAcc(eCharDir_Forward),player->GetMoveSpeed(eCharDir_Forward),unsigned(world->mContactAges.count(id)),int(world->OwnsSimulation(body)));
+            const auto forward=player->GetForward(),force=player->GetForceVelocity();
+            const auto mouse=gpBase->mpEngine->GetInput()->GetMouse()->GetAbsPosition();
+            std::printf("%s contact direction body-yaw=%.6g camera-yaw=%.6g pitch=%.6g forward=(%.5g %.5g %.5g) right-speed=%.5g force-velocity=(%.5g %.5g %.5g) look-at=%d mouse=(%d %d) sensitivity=%.4g\n",
+                role.c_str(),player->GetYaw(),gpBase->mpPlayer->GetCamera()->GetYaw(),player->GetPitch(),forward.x,forward.y,forward.z,
+                player->GetMoveSpeed(eCharDir_Right),force.x,force.y,force.z,int(gpBase->mpPlayer->GetHelperLookAt()->IsActive()),
+                mouse.x,mouse.y,gpBase->mpInputHandler->GetMouseSensitivity());
+#ifdef USE_GAMEPAD
+            std::printf("%s contact gamepad-present=%d\n",role.c_str(),int(gpBase->mpInputHandler->IsGamepadPresent()));
+#endif
             std::fflush(stdout);
         }
         if(phase==11) {

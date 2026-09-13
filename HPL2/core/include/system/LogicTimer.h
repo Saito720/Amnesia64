@@ -34,7 +34,8 @@ namespace hpl {
 		 * \param *apLowLevelSystem 
 		 * \return 
 		 */
-		cLogicTimer(int alUpdatesPerSec,iLowLevelSystem *apLowLevelSystem);
+		// The optional monotonic millisecond clock also allows deterministic timing tests.
+		cLogicTimer(int alUpdatesPerSec,iLowLevelSystem *apLowLevelSystem, double (*apClock)() = 0);
 		~cLogicTimer();
 
 		/**
@@ -73,18 +74,26 @@ namespace hpl {
 		 */
 		float GetStepSize();
 
+		// Fraction between the previous and current fixed simulation poses.
+		float GetInterpolationAmount() const;
+
 		double GetLocalTime(){ return mlLocalTime;}
 		double GetLocalTimeAdd(){ return mlLocalTimeAdd;}
 
-		void SetSpeedMul(float afX){ mfSpeedMul = afX;}
+		void SetSpeedMul(float afX);
 		
 	private:
-		void Update();
+		void AccumulateTime();
+		static double GetMonotonicTime();
 
 		double mlLocalTime;
 		double mlLocalTimeAdd;
 
 		double mfSpeedMul;
+		double mfAccumulator;
+		double mfLastTime;
+		bool mbInUpdateLoop;
+		double (*mpClock)();
 
 		int mlMaxUpdates;
 		int mlUpdateCount;

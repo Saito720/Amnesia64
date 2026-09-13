@@ -62,7 +62,7 @@ namespace hpl {
 
 	cMatrixf*  cGuiSetEntity::GetModelMatrix(cFrustum *apFrustum)
 	{
-		m_mtxTemp = GetWorldMatrix();
+		m_mtxTemp = GetRenderWorldMatrix();
 		return &m_mtxTemp;
 	}
 
@@ -70,7 +70,7 @@ namespace hpl {
 
 	int cGuiSetEntity::GetMatrixUpdateCount()
 	{
-		return GetTransformUpdateCount();
+		return GetRenderTransformUpdateCount();
 	}
 
 	//-----------------------------------------------------------------------

@@ -29,9 +29,12 @@ try {
     if($Kind -eq 'game') {
         if($Backend -eq 'Standalone') { $libraryNames += @('GameNetworkingSockets_s','HPLProtobuf') }
         [xml]$project=[IO.File]::ReadAllText((Join-Path $workspace 'amnesia/src/game/Lux.vcxproj'))
-        $objects=@($project.GetElementsByTagName('ClCompile') | Where-Object { $_.HasAttribute('Include') -and $_.Include -ne 'Main.cpp' } | ForEach-Object {
+        $objects=@($project.GetElementsByTagName('ClCompile') | Where-Object { $_.HasAttribute('Include') -and $_.Include -ne 'Main.cpp' -and $_.Include -ne 'LuxMultiplayerWorld.cpp' } | ForEach-Object {
             Join-Path $workspace ('amnesia/src/game/x64/Debug/'+[IO.Path]::GetFileNameWithoutExtension($_.Include)+'.obj')
         })
+        # Compile the unchanged production implementation with test access to its
+        # decoder helpers; MSVC includes member access in mangled method names.
+        $additionalSources=@(Join-Path $PSScriptRoot 'interpolation_world.cpp')
     } else {
         $inputSource=[IO.File]::ReadAllText((Join-Path $workspace 'amnesia/src/game/LuxInputHandler.cpp'))
         $start=$inputSource.IndexOf('void cLuxInputHandler::Update(float afTimeStep)')

@@ -6,6 +6,7 @@
 #include <map>
 #include <set>
 #include <deque>
+#include <memory>
 
 class cLuxMultiplayer;
 class cLuxMap;
@@ -99,6 +100,9 @@ private:
     cLuxMap* mpMap;
     std::map<uint64_t, BodyTrack> mBodies;
     std::map<uint32_t, cLuxMultiplayerRemotePlayer> mPlayers;
+    // Ordinary scene history keeps direct cylinder rendering and attached lights
+    // on the same presentation timeline as the rest of the physics world.
+    std::map<uint32_t, std::unique_ptr<cNode3D> > mPlayerRenderNodes;
     std::map<uint32_t, iCharacterBody*> mPlayerColliders;
     std::set<uint32_t> mPlayerLights;
     std::map<uint32_t, Lease> mLeases;

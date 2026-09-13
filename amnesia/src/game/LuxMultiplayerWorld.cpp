@@ -91,6 +91,7 @@ void cLuxMultiplayerWorld::Reset()
     }
     mPlayerColliders.clear();
     mPlayerLights.clear();
+    mPlayerRenderNodes.clear();
     // The map may already have been destroyed; never dereference cached bodies
     // here. Normal disconnect releases the interaction before resetting.
     mpMap = NULL;
@@ -299,6 +300,7 @@ void cLuxMultiplayerWorld::Update(float afTimeStep)
         const auto& light = it->second.lantern;
         it->second.renderLanternOffset += (cVector3f(light.offset[0],light.offset[1],light.offset[2]) -
             it->second.renderLanternOffset) * std::min(1.0f, dt * 15);
+        mPlayerRenderNodes[it->first]->SetPosition(it->second.renderPosition);
     }
     UpdatePlayerColliders();
     UpdatePlayerLights();
@@ -412,9 +414,13 @@ void cLuxMultiplayerWorld::ApplyBody(const Body& aState, uint32_t alSequence, bo
         for (int col = 0; col < 3; ++col)
             rotationError = std::max(rotationError, std::fabs(body->GetLocalMatrix().v[row*4+col] - aState.matrix[row*4+col]));
     const bool settled = !(aState.flags & Awake) && body->GetMass() > 0 && error < 0.02f && rotationError < 0.02f;
-    if (abGroundTruth || (!abFromOwner && initial) || error > 1.5f || settled)
+    const bool discontinuity = abGroundTruth || (!abFromOwner && initial) || error > 1.5f;
+    if (discontinuity || settled)
     {
         body->SetMatrix(Matrix(aState));
+        // A burst or hard correction is a new pose, not motion through the old
+        // location. Descendant meshes/bones must discard that interval too.
+        if (discontinuity) body->ResetRenderInterpolation();
         body->SetLinearVelocity(Vector(aState.linear));
         body->SetAngularVelocity(Vector(aState.angular));
         if (settled) track.hasTarget = false;
@@ -658,10 +664,11 @@ void cLuxMultiplayerWorld::UpdatePlayerLights()
             light = world->CreateLightPoint(name, "", false);
             light->SetIsSaved(false);
             light->SetCastShadows(false);
+            mPlayerRenderNodes[entry.first]->AddEntity(light);
             mPlayerLights.insert(entry.first);
         }
         const Lantern& source = player.lantern;
-        light->SetPosition(player.renderPosition + player.renderLanternOffset);
+        light->SetPosition(player.renderLanternOffset);
         light->SetRadius(source.radius);
         light->SetDiffuseColor(cColor(source.color[0],source.color[1],source.color[2],source.color[3]));
     }
@@ -920,7 +927,10 @@ void cLuxMultiplayerWorld::EndLease(uint32_t alToken, bool abBroadcast)
                 iPhysicsBody* body = FindBody(lease.bodies[i]);
                 if (body && track->second.hasTarget && track->second.targetAge <= 0.25f && lease.owner != mpSession->GetLocalPeerId())
                 {
-                    body->SetMatrix(PredictedMatrix(track->second.target, track->second.targetAge));
+                    const cMatrixf finalPose = PredictedMatrix(track->second.target, track->second.targetAge);
+                    const bool discontinuity = cMath::Vector3Dist(body->GetLocalPosition(), finalPose.GetTranslation()) > 1.5f;
+                    body->SetMatrix(finalPose);
+                    if (discontinuity) body->ResetRenderInterpolation();
                     body->SetLinearVelocity(Vector(track->second.target.linear));
                     body->SetAngularVelocity(Vector(track->second.target.angular));
                 }
@@ -985,6 +995,13 @@ bool cLuxMultiplayerWorld::HandleMessage(uint32_t alPeer, const std::vector<uint
         player.renderLanternOffset = old != mPlayers.end() && old->second.lantern.active ?
             old->second.renderLanternOffset : cVector3f(player.lantern.offset[0],player.lantern.offset[1],player.lantern.offset[2]);
         if (old != mPlayers.end() && cMath::Vector3Dist(player.position, player.renderPosition) > 8) player.renderPosition = player.position;
+        auto& renderNode = mPlayerRenderNodes[peer];
+        if (!renderNode) renderNode.reset(new cNode3D("MultiplayerPlayerRender", false));
+        if (old == mPlayers.end() || player.renderPosition != old->second.renderPosition)
+        {
+            renderNode->SetPosition(player.renderPosition);
+            renderNode->ResetRenderInterpolation();
+        }
         mPlayers[peer] = player;
         if (mpSession->IsHost()) mpSession->Broadcast(avMessage, false);
         return true;
@@ -1146,6 +1163,7 @@ void cLuxMultiplayerWorld::OnPeerDisconnected(uint32_t alPeer)
     }
     RemovePlayerCollider(alPeer);
     RemovePlayerLight(alPeer);
+    mPlayerRenderNodes.erase(alPeer);
     mPlayers.erase(alPeer);
     std::vector<uint32_t> leases;
     for (std::map<uint32_t, Lease>::iterator it = mLeases.begin(); it != mLeases.end(); ++it)
@@ -1170,7 +1188,7 @@ void cLuxMultiplayerWorld::RenderSolid(cRendererCallbackFunctions* apFunctions)
         const cLuxMultiplayerRemotePlayer& player = it->second;
         if (player.age > 10) continue;
         float radius = player.size.x * 0.5f, height = player.size.y;
-        cVector3f base = player.renderPosition - cVector3f(0, height * 0.5f, 0);
+        cVector3f base = mPlayerRenderNodes[it->first]->GetRenderWorldPosition() - cVector3f(0, height * 0.5f, 0);
         cVector3f top = base + cVector3f(0, height, 0);
         cColor color = it->first == 0 ? cColor(0.82f, 0.62f, 0.25f, 1) : cColor(0.25f, 0.65f, 0.8f, 1);
         const int segments = 16;

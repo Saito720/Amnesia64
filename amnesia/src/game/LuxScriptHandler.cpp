@@ -2376,6 +2376,7 @@ void __stdcall cLuxScriptHandler::SetEntityPos(string& asName, float afX, float 
 			if(pEntity->GetBodyNum() == 0) continue;
 		
 			pEntity->GetBody(0)->SetWorldPosition(cVector3f(afX, afY, afZ));
+			pEntity->GetBody(0)->ResetRenderInterpolation();
 		}
 
 	END_SET_PROPERTY
@@ -2550,7 +2551,7 @@ void __stdcall cLuxScriptHandler::PlaceEntityAtEntity(string& asName, string& as
 	if(pBody == NULL) return;
 
 	iLuxEntity *pTargetEntity = GetEntity(asTargetEntity,eLuxEntityType_LastEnum, -1);
-	if(pEntity == NULL) return;
+	if(pTargetEntity == NULL) return;
 
 	iPhysicsBody *pTargetBody = GetBodyInEntity(pTargetEntity, asTargetBodyName);
 	if(pTargetBody == NULL) return;
@@ -2567,6 +2568,7 @@ void __stdcall cLuxScriptHandler::PlaceEntityAtEntity(string& asName, string& as
 	}
 
 	pBody->SetWorldMatrix(mtxTransform);
+	pBody->ResetRenderInterpolation();
 }
 
 //-----------------------------------------------------------------------

@@ -85,6 +85,10 @@ namespace hpl {
 		inline void SetSmoothPosition(const cVector3f& avPos) { mvSmoothPosition = avPos;}
 		inline const cVector3f& GetSmoothPosition() const { return mvSmoothPosition;}
 
+		void CaptureRenderState() { mvPreviousRenderPosition = mvSmoothPosition; }
+		cVector3f GetRenderPosition(float afAlpha) const
+		{ return mvPreviousRenderPosition*(1-afAlpha) + mvSmoothPosition*afAlpha; }
+
 		void SetInvMass(float afInvMass){ mfInvMass = afInvMass; }
 		inline float GetInvMass() const { return mfInvMass; }
 
@@ -94,6 +98,7 @@ namespace hpl {
 		cVector3f mvPosition;
 		cVector3f mvPrevPosition;
 		cVector3f mvSmoothPosition;
+		cVector3f mvPreviousRenderPosition;
 		float mfInvMass;
 	};
 

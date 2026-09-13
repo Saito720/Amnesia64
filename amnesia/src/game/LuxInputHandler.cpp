@@ -1176,8 +1176,8 @@ void cLuxInputHandler::UpdateGamePlayerInput()
 		if(mpPad->HatIsInState(eGamepadHat_0, eGamepadHatState_Up) || mpPad->HatIsInState(eGamepadHat_0, eGamepadHatState_Down))
 #endif
 		{
-			if(mpInput->IsTriggerd(eLuxAction_ZoomOut))	mpPlayer->Scroll( gpBase->mpEngine->GetFrameTime() * 8.0f);
-			if(mpInput->IsTriggerd(eLuxAction_ZoomIn))	mpPlayer->Scroll(-gpBase->mpEngine->GetFrameTime() * 8.0f);
+			if(mpInput->IsTriggerd(eLuxAction_ZoomOut))	mpPlayer->Scroll( gpBase->mpEngine->GetStepSize() * 8.0f);
+			if(mpInput->IsTriggerd(eLuxAction_ZoomIn))	mpPlayer->Scroll(-gpBase->mpEngine->GetStepSize() * 8.0f);
 		}
 
 		//////////////////////////////////////////
@@ -1202,7 +1202,7 @@ void cLuxInputHandler::UpdateGamePlayerInput()
 		{
 			if(mpInput->IsTriggerd(eLuxAction_Rotate))
 			{
-				mpPlayer->Scroll(-gpBase->mpEngine->GetFrameTime() * 6.0f * vAnalogLookAxis.y);
+				mpPlayer->Scroll(-gpBase->mpEngine->GetStepSize() * 6.0f * vAnalogLookAxis.y);
 
 #if USE_SDL2
 				vAnalogLookAxis = cVector2f(mpPad->GetAxisValue(eGamepadAxis_LeftX), mpPad->GetAxisValue(eGamepadAxis_LeftY));

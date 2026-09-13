@@ -77,6 +77,7 @@ namespace hpl {
 		iVertexBuffer* GetVertexBuffer();
 
 		cBoundingVolume* GetBoundingVolume();
+		cBoundingVolume* GetRenderBoundingVolume();
 
 		cMatrixf* GetModelMatrix(cFrustum *apFrustum);
 
@@ -126,6 +127,7 @@ namespace hpl {
 		bool mbUpdateBody;
 
 		bool mbGraphicsUpdated;
+		int mlSkinningUpdateCount;
 
 		char mlStaticNullMatrixCount;
 		void *mpUserData;

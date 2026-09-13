@@ -94,6 +94,7 @@ void cEngineVerletParticle_SaveData::ToParticle(cVerletParticle *apPart)
 	apPart->SetPosition(mvPosition, false);
 	apPart->SetPrevPosition(mvPrevPosition);
 	apPart->SetSmoothPosition(mvSmoothPosition);
+	apPart->CaptureRenderState();
 	apPart->SetInvMass(mfInvMass);
 }
 

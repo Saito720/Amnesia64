@@ -1389,7 +1389,7 @@ namespace hpl {
 		if(apLight->GetLightType() == eLightType_Point)
 		{
 			a_mtxDestRender = cMath::MatrixScale(apLight->GetRadius() * afRadiusMul); //kLightRadiusMul = make sure it encapsulates the light.
-			a_mtxDestTransform = cMath::MatrixMul(apFrustum->GetViewMatrix(), apLight->GetWorldMatrix());
+			a_mtxDestTransform = cMath::MatrixMul(apFrustum->GetViewMatrix(), apLight->GetRenderWorldMatrix());
 			a_mtxDestRender = cMath::MatrixMul(a_mtxDestTransform,a_mtxDestRender);
 		}
 		////////////////////////////
@@ -1403,7 +1403,7 @@ namespace hpl {
 			float fFarWidth = fFarHeight * pLightSpot->GetAspect(); 
 
 			a_mtxDestRender = cMath::MatrixScale(cVector3f(fFarWidth,fFarHeight,apLight->GetRadius()) );//x and y = "far plane", z = radius 
-			a_mtxDestTransform = cMath::MatrixMul(apFrustum->GetViewMatrix(), apLight->GetWorldMatrix());
+			a_mtxDestTransform = cMath::MatrixMul(apFrustum->GetViewMatrix(), apLight->GetRenderWorldMatrix());
 			a_mtxDestRender = cMath::MatrixMul(a_mtxDestTransform,a_mtxDestRender);
 		}
 	}
@@ -1428,7 +1428,7 @@ namespace hpl {
 		{
 			if(pLight->GetGoboTexture())
 			{
-				cMatrixf mtxFinal = cMath::MatrixMul(pLight->GetWorldMatrix(),m_mtxInvView);
+				cMatrixf mtxFinal = cMath::MatrixMul(pLight->GetRenderWorldMatrix(),m_mtxInvView);
 				apProgram->SetMatrixf(kVar_a_mtxInvViewRotation, mtxFinal.GetRotation());
 			}	
 		}
@@ -1769,7 +1769,7 @@ namespace hpl {
 			//Point
 			if(lightType == eLightType_Point)
 			{
-				pLightData->mbInsideNearPlane = mpCurrentFrustum->CheckSphereNearPlaneIntersection(	pLight->GetWorldPosition(),
+				pLightData->mbInsideNearPlane = mpCurrentFrustum->CheckSphereNearPlaneIntersection(	pLight->GetRenderWorldPosition(),
 																								pLight->GetRadius()*kLightRadiusMul_Low);
 			}
 			//Spot
@@ -1798,7 +1798,7 @@ namespace hpl {
 			//Spot
 			else if(lightType == eLightType_Spot)
 			{
-				cMath::GetClipRectFromBV(	pLightData->mClipRect, *pLight->GetBoundingVolume(), mpCurrentFrustum,
+				cMath::GetClipRectFromBV(	pLightData->mClipRect, *pLight->GetRenderBoundingVolume(), mpCurrentFrustum,
 											mvScreenSize, mfScissorLastTanHalfFov);
 			}
 			pLightData->mlArea = pLightData->mClipRect.w * pLightData->mClipRect.h;
@@ -1821,7 +1821,7 @@ namespace hpl {
 				else
 				{
 					cVector3f vIntersection = pLightSpot->GetFrustum()->GetOrigin();
-					pLightSpot->GetFrustum()->CheckLineIntersection(mpCurrentFrustum->GetOrigin(), pLight->GetBoundingVolume()->GetWorldCenter(),vIntersection);
+					pLightSpot->GetFrustum()->CheckLineIntersection(mpCurrentFrustum->GetOrigin(), pLight->GetRenderBoundingVolume()->GetWorldCenter(),vIntersection);
 					
 					float fDistToLight = cMath::Vector3Dist(mpCurrentFrustum->GetOrigin(), vIntersection);
 					
@@ -1940,13 +1940,13 @@ namespace hpl {
 
 				//Set up matrix
 				pLightData->m_mtxViewSpaceRender = cMath::MatrixScale(pLightBox->GetSize());
-				pLightData->m_mtxViewSpaceRender.SetTranslation(pLightBox->GetWorldPosition());
+				pLightData->m_mtxViewSpaceRender.SetTranslation(pLightBox->GetRenderWorldPosition());
 				pLightData->m_mtxViewSpaceRender = cMath::MatrixMul(mpCurrentFrustum->GetViewMatrix(), pLightData->m_mtxViewSpaceRender);
 				
 				mpCurrentSettings->mlNumberOfLightsRendered++;
 
 				//Check if near plane is inside box. If so only render back
-				if( mpCurrentFrustum->CheckBVNearPlaneIntersection(pLight->GetBoundingVolume()) )
+				if( mpCurrentFrustum->CheckBVNearPlaneIntersection(pLight->GetRenderBoundingVolume()) )
 				{
 					mvSortedLights[eDeferredLightList_Box_RenderBack].push_back(pLightData);
 				}
@@ -2684,8 +2684,8 @@ namespace hpl {
 
 				if(pLight->GetLightType() == eLightType_Point)
 				{
-					mpLowLevelGraphics->DrawSphere(pLight->GetWorldPosition(),pLight->GetRadius(), cColor(1,1));
-					mpLowLevelGraphics->DrawSphere(pLight->GetWorldPosition(),0.2f, cColor(0.6f,1));
+					mpLowLevelGraphics->DrawSphere(pLight->GetRenderWorldPosition(),pLight->GetRadius(), cColor(1,1));
+					mpLowLevelGraphics->DrawSphere(pLight->GetRenderWorldPosition(),0.2f, cColor(0.6f,1));
 				}
 				else if(pLight->GetLightType() == eLightType_Spot)
 				{
@@ -3032,7 +3032,7 @@ namespace hpl {
 				
 				////////////////////////////////////
 				// Get the clip rect needed by the refraction
-				cBoundingVolume *pBV = pObject->GetBoundingVolume();
+				cBoundingVolume *pBV = pObject->GetRenderBoundingVolume();
 
 				if(fHalfFovTan ==0)	
 					fHalfFovTan = tan(mpCurrentFrustum->GetFOV()*0.5f);
@@ -3148,7 +3148,7 @@ namespace hpl {
 			cPlanef maxRelfctionDistPlane;
 			maxRelfctionDistPlane.FromNormalPoint(vNormal, vPoint);
 
-			if(cMath::CheckPlaneBVCollision(maxRelfctionDistPlane, *pReflectionObject->GetBoundingVolume())==eCollision_Outside)
+			if(cMath::CheckPlaneBVCollision(maxRelfctionDistPlane, *pReflectionObject->GetRenderBoundingVolume())==eCollision_Outside)
 			{
 				bReflectionIsInRange = false;
 			}
@@ -3225,8 +3225,8 @@ namespace hpl {
 		///////////////////////////
 		//Make a frustum, mirrored along the plane
 		cSubMesh *pSubMesh = pReflectionObject->GetSubMesh();
-		cVector3f vSurfaceNormal = cMath::Vector3Normalize(cMath::MatrixMul3x3(pReflectionObject->GetWorldMatrix(), pSubMesh->GetOneSidedNormal()));
-		cVector3f vSurfacePos = cMath::MatrixMul(pReflectionObject->GetWorldMatrix(), pSubMesh->GetOneSidedPoint());
+		cVector3f vSurfaceNormal = cMath::Vector3Normalize(cMath::MatrixMul3x3(pReflectionObject->GetRenderWorldMatrix(), pSubMesh->GetOneSidedNormal()));
+		cVector3f vSurfacePos = cMath::MatrixMul(pReflectionObject->GetRenderWorldMatrix(), pSubMesh->GetOneSidedPoint());
 
 		cPlanef reflectPlane;
 		reflectPlane.FromNormalPoint(vSurfaceNormal, vSurfacePos);
@@ -3334,7 +3334,7 @@ namespace hpl {
 
 			cVector3f vMin,vMax;
 			bool bNeedsClipRect = false;
-			bool bVisible = cMath::GetNormalizedClipRectFromBV(vMin, vMax, *pReflectionObject->GetBoundingVolume(), &reflectFrustum, fHalfFovTan);
+			bool bVisible = cMath::GetNormalizedClipRectFromBV(vMin, vMax, *pReflectionObject->GetRenderBoundingVolume(), &reflectFrustum, fHalfFovTan);
 			if(bVisible)
 			{
 				if(mbLog) Log("  Normalized Clip limits: (%s) -> (%s)\n", vMin.ToString().c_str(), vMax.ToString().c_str());
@@ -3392,7 +3392,7 @@ namespace hpl {
 					vRenderTargetSize.y = renderTarget.mvSize.y < 0 ? vFrameBufferSize.y : renderTarget.mvSize.y;
 
 					cRect2l clipRect;
-					cMath::GetClipRectFromBV(clipRect, *pReflectionObject->GetBoundingVolume(), mpCurrentFrustum, vRenderTargetSize, fHalfFovTan);
+					cMath::GetClipRectFromBV(clipRect, *pReflectionObject->GetRenderBoundingVolume(), mpCurrentFrustum, vRenderTargetSize, fHalfFovTan);
 
 					if(mbLog) Log("  Setting up scissor rect. pos: (%d, %d)  %d x %d\n", clipRect.x, clipRect.y,clipRect.w, clipRect.h);
 

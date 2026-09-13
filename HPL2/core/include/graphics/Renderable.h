@@ -58,6 +58,7 @@ namespace hpl {
 
 		virtual bool CollidesWithBV(cBoundingVolume *apBV);
 		virtual bool CollidesWithFrustum(cFrustum *apFrustum);
+		cBoundingVolume* GetRenderBoundingVolume();
 
 		virtual cMatrixf* GetModelMatrix(cFrustum *apFrustum)=0;
 
@@ -128,6 +129,7 @@ namespace hpl {
 		void* GetRenderableUserData() { return mpRenderableUserData; }
 
 	protected:
+		void OnRenderInterpolation();
 		cMatrixf m_mtxInvModel;
 		cMatrixf m_mtxPrevious;
 		cMatrixf *mpModelMatrix;

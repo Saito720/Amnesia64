@@ -119,7 +119,7 @@ namespace hpl {
 		if(pMaterialType && pMaterialType->IsTranslucent() && pMaterialType->IsDecal()==false)
 		{
 			cVector3f vIntersectionPos;
-			cBoundingVolume *pBV = apObject->GetBoundingVolume();
+			cBoundingVolume *pBV = apObject->GetRenderBoundingVolume();
 
 			//If there is an intersection (which happens unless inside), use that. Else use world center
 			if(cMath::CheckAABBLineIntersection(pBV->GetMin(), pBV->GetMax(), mpFrustum->GetOrigin(), pBV->GetWorldCenter(), &vIntersectionPos, NULL)==false)
@@ -132,7 +132,7 @@ namespace hpl {
 		}
 		else
 		{
-			cVector3f vCameraPos = cMath::MatrixMul(mpFrustum->GetViewMatrix(), apObject->GetBoundingVolume()->GetWorldCenter());
+			cVector3f vCameraPos = cMath::MatrixMul(mpFrustum->GetViewMatrix(), apObject->GetRenderBoundingVolume()->GetWorldCenter());
 			apObject->SetViewSpaceZ(vCameraPos.z);
 		}
 		
@@ -411,7 +411,7 @@ namespace hpl {
 		
 		//////////////////////////
 		//Vector (just so that order stays the same
-        return apObjectA->GetWorldPosition()  < apObjectB->GetWorldPosition();
+        return apObjectA->GetRenderWorldPosition()  < apObjectB->GetRenderWorldPosition();
 	}
 
 	//-----------------------------------------------------------------------
@@ -498,8 +498,8 @@ namespace hpl {
 			cSubMesh *pSubMesh = pSubEnt->GetSubMesh();
 			if(pSubMesh->GetIsOneSided()==false) continue;
 
-			cVector3f vSurfaceNormal = cMath::Vector3Normalize(cMath::MatrixMul3x3(pSubEnt->GetWorldMatrix(), pSubMesh->GetOneSidedNormal()));
-			cVector3f vSurfacePos = cMath::MatrixMul(pSubEnt->GetWorldMatrix(), pSubMesh->GetOneSidedPoint());
+			cVector3f vSurfaceNormal = cMath::Vector3Normalize(cMath::MatrixMul3x3(pSubEnt->GetRenderWorldMatrix(), pSubMesh->GetOneSidedNormal()));
+			cVector3f vSurfacePos = cMath::MatrixMul(pSubEnt->GetRenderWorldMatrix(), pSubMesh->GetOneSidedPoint());
 
 			/////////////////////////////////
 			// Make sure it does not face away from frustum.
@@ -537,7 +537,7 @@ namespace hpl {
 					continue;
 				}
 				
-				float fDist = cMath::PlaneToPointDist(nearestSurfacePlane, pObject->GetBoundingVolume()->GetWorldCenter());
+				float fDist = cMath::PlaneToPointDist(nearestSurfacePlane, pObject->GetRenderBoundingVolume()->GetWorldCenter());
 				pObject->SetLargePlaneSurfacePlacement(fDist < 0 ? -1 : 1);
 
 				//Log(" %d Object: '%s' %d  Mat:'%s'\n",i, pObject->GetName().c_str(), pObject->GetLargePlaneSurfacePlacement(),  pLargeSurfaceObject->GetMaterial()->GetName().c_str());

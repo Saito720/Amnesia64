@@ -149,7 +149,7 @@ namespace hpl {
 
 		double GetGameTime(){ return mfGameTime;}
 
-		void SetLimitFPS(bool abX){ mbLimitFPS = abX;}
+		void SetLimitFPS(bool abX);
 		bool GetLimitFPS(){ return mbLimitFPS;}
 
 		void SetWaitIfAppOutOfFocus(bool abX){ mbWaitIfAppOutOfFocus =abX;}

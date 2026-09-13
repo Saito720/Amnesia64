@@ -121,10 +121,10 @@ namespace hpl {
 	
 	const cMatrixf& cLightSpot::GetViewMatrix()
 	{
-		if(mlViewMatrixCount != GetTransformUpdateCount())
+		if(mlViewMatrixCount != GetRenderTransformUpdateCount())
 		{
-			mlViewMatrixCount = GetTransformUpdateCount();
-			m_mtxView = cMath::MatrixInverse(GetWorldMatrix());
+			mlViewMatrixCount = GetRenderTransformUpdateCount();
+			m_mtxView = cMath::MatrixInverse(GetRenderWorldMatrix());
 		}
 
 		return m_mtxView;
@@ -171,12 +171,12 @@ namespace hpl {
 	
 	const cMatrixf& cLightSpot::GetViewProjMatrix()
 	{
-		if(mlViewProjMatrixCount != GetTransformUpdateCount() || mbViewProjUpdated || mbProjectionUpdated)
+		if(mlViewProjMatrixCount != GetRenderTransformUpdateCount() || mbViewProjUpdated || mbProjectionUpdated)
 		{
 			m_mtxViewProj = cMath::MatrixMul(GetProjectionMatrix(),GetViewMatrix());
 			m_mtxViewProj = cMath::MatrixMul(g_mtxTextureUnitFix, m_mtxViewProj);
 			
-			mlViewProjMatrixCount = GetTransformUpdateCount();
+			mlViewProjMatrixCount = GetRenderTransformUpdateCount();
 			mbViewProjUpdated = false;
 		}
 
@@ -187,14 +187,14 @@ namespace hpl {
 
 	cFrustum* cLightSpot::GetFrustum()
 	{
-		if(mlFrustumMatrixCount != GetTransformUpdateCount() || mbFrustumUpdated || mbProjectionUpdated)
+		if(mlFrustumMatrixCount != GetRenderTransformUpdateCount() || mbFrustumUpdated || mbProjectionUpdated)
 		{
 			mpFrustum->SetupPerspectiveProj(GetProjectionMatrix(),
 											GetViewMatrix(),
 											mfRadius,mfNearClipPlane,
-											mfFOV,mfAspect,GetWorldPosition(),false);
+											mfFOV,mfAspect,GetRenderWorldPosition(),false);
 			mbFrustumUpdated = false;
-			mlFrustumMatrixCount = GetTransformUpdateCount();
+			mlFrustumMatrixCount = GetRenderTransformUpdateCount();
 		}
 
 		return mpFrustum;
@@ -224,7 +224,7 @@ namespace hpl {
 
 	bool cLightSpot::CollidesWithBV(cBoundingVolume *apBV)
 	{
-		if(cMath::CheckBVIntersection(*GetBoundingVolume(), *apBV)==false) return false;
+		if(cMath::CheckBVIntersection(*GetRenderBoundingVolume(), *apBV)==false) return false;
 
 		return GetFrustum()->CollideBoundingVolume(apBV)!= eCollision_Outside;
 	}
@@ -288,7 +288,12 @@ namespace hpl {
 
 	void cLightSpot::UpdateBoundingVolume()
 	{
-		mBoundingVolume = GetFrustum()->GetBoundingVolume();
+		// Bounds are authoritative even when requested while rendering. The
+		// presentation frustum has a separate interpolated transform.
+		cFrustum frustum;
+		frustum.SetupPerspectiveProj(GetProjectionMatrix(),cMath::MatrixInverse(GetWorldMatrix()),
+			mfRadius,mfNearClipPlane,mfFOV,mfAspect,GetWorldPosition(),false);
+		mBoundingVolume = frustum.GetBoundingVolume();
 	}
 
 	//-----------------------------------------------------------------------

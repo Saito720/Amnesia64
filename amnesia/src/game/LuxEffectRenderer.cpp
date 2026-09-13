@@ -340,7 +340,7 @@ void cLuxEffectRenderer::RenderOutline(cRendererCallbackFunctions* apFunctions)
 	for(tRenderableListIt it = lstObjects.begin(); it != lstObjects.end(); ++it)
 	{
 		iRenderable *pObject = *it;
-		cBoundingVolume *pBV = pObject->GetBoundingVolume();
+		cBoundingVolume *pBV = pObject->GetRenderBoundingVolume();
 
 		cMath::ExpandAABB(vTotalMin, vTotalMax, pBV->GetMin(), pBV->GetMax());        
 	}
@@ -436,7 +436,7 @@ void cLuxEffectRenderer::RenderOutline(cRendererCallbackFunctions* apFunctions)
 
 		cMatrixf mtxScale = cMath::MatrixMul(cMath::MatrixScale(vScale), cMath::MatrixTranslate(pBV->GetLocalCenter()*-1));
 		mtxScale.SetTranslation(mtxScale.GetTranslation() + pBV->GetLocalCenter());
-		m_mtxTemp = cMath::MatrixMul(pObject->GetWorldMatrix(), mtxScale);
+		m_mtxTemp = cMath::MatrixMul(pObject->GetRenderWorldMatrix(), mtxScale);
 
 		apFunctions->SetVertexBuffer(pObject->GetVertexBuffer());
 		apFunctions->SetMatrix(NULL);

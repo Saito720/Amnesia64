@@ -57,6 +57,7 @@ namespace hpl {
 		mpMaterialManager = apMaterialManager;
 
 		mbGraphicsUpdated = false;
+		mlSkinningUpdateCount = -1;
 
 		if(mpMeshEntity->GetMesh()->GetSkeleton())
 		{
@@ -194,12 +195,13 @@ namespace hpl {
 		// If it has dynamic mesh, update it.
 		if(mpDynVtxBuffer)
 		{
-			if(mpMeshEntity->mbSkeletonPhysicsSleeping && mbGraphicsUpdated)
+			if(mbGraphicsUpdated && mlSkinningUpdateCount == mpMeshEntity->mlSkeletonRenderUpdateCount)
 			{
 				return;
 			}
 			
 			mbGraphicsUpdated = true;
+			mlSkinningUpdateCount = mpMeshEntity->mlSkeletonRenderUpdateCount;
 
 			const float *pBindPos = mpSubMesh->GetVertexBuffer()->GetFloatArray(eVertexBufferElement_Position);
 			const float *pBindNormal = mpSubMesh->GetVertexBuffer()->GetFloatArray(eVertexBufferElement_Normal);
@@ -327,7 +329,20 @@ namespace hpl {
 
 	int cSubMeshEntity::GetMatrixUpdateCount()
 	{
-		return GetTransformUpdateCount();
+		// Bone animation changes the rendered surface even when the mesh root
+		// stays still, so shadow caches must observe the interpolated pose too.
+		if(!IsStatic() && mpMeshEntity->GetMesh()->GetSkeleton())
+		{
+			mpMeshEntity->UpdateGraphicsForFrame(0);
+			return mpMeshEntity->mlSkeletonRenderUpdateCount;
+		}
+		return IsStatic() ? GetTransformUpdateCount() : GetRenderTransformUpdateCount();
+	}
+
+	cBoundingVolume* cSubMeshEntity::GetRenderBoundingVolume()
+	{
+		if(mpMeshEntity->GetMesh()->GetSkeleton()) return mpMeshEntity->GetRenderBoundingVolume();
+		return iRenderable::GetRenderBoundingVolume();
 	}
 
 	//-----------------------------------------------------------------------
@@ -356,7 +371,7 @@ namespace hpl {
 		// Dynamic
 		else
 		{
-			return &GetWorldMatrix();
+			return IsStatic() ? &GetWorldMatrix() : &GetRenderWorldMatrix();
 		}
 	}
 

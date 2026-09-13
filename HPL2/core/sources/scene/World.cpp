@@ -81,6 +81,7 @@
 #include "physics/PhysicsWorld.h"
 #include "physics/PhysicsBody.h"
 #include "physics/PhysicsJoint.h"
+#include "physics/PhysicsRope.h"
 
 #include "ai/AI.h"
 #include "ai/AINodeContainer.h"
@@ -233,6 +234,23 @@ namespace hpl {
 		//So that bodies can stop sound entities on destruction.
 		STLDeleteAll(mlstSoundEntities);
 
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cWorld::ResetParticleAndRopeInterpolation()
+	{
+		for(tParticleSystemListIt it = mlstParticleSystems.begin(); it != mlstParticleSystems.end(); ++it)
+		{
+			cParticleSystem* pSystem = *it;
+			for(int i=0; i<pSystem->GetEmitterNum(); ++i)
+				pSystem->GetEmitter(i)->ResetRenderState();
+		}
+		for(tRopeEntityListIt it = mlstRopeEntities.begin(); it != mlstRopeEntities.end(); ++it)
+		{
+			cVerletParticleIterator particles = (*it)->GetPhysicsRope()->GetParticleIterator();
+			while(particles.HasNext()) particles.Next()->CaptureRenderState();
+		}
 	}
 
 	//-----------------------------------------------------------------------
@@ -1353,6 +1371,8 @@ namespace hpl {
 		{
 			cParticleSystem *pPS = *it;
 
+			if(!pPS->IsActive())
+				for(int i=0; i<pPS->GetEmitterNum(); ++i) pPS->GetEmitter(i)->ResetRenderState();
 			pPS->UpdateLogic(afTimeStep);
 
 			//Check if the system is alive, else destroy

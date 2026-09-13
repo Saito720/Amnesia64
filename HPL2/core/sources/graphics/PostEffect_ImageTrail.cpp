@@ -30,6 +30,8 @@
 
 #include "system/PreprocessParser.h"
 
+#include <cmath>
+
 namespace hpl {
 	
 	//////////////////////////////////////////////////////////////////////////
@@ -86,11 +88,22 @@ namespace hpl {
 		cVector2l vSize = mpLowLevelGraphics->GetScreenSizeInt();
 		
 		mpAccumTexture = mpGraphics->CreateTexture("ImageTrailTexture", eTextureType_Rect, eTextureUsage_RenderTarget);	
-		mpAccumTexture->CreateFromRawData(cVector3l(vSize.x, vSize.y,1), ePixelFormat_RGB, NULL);
-
+		// Small high-refresh blend weights must survive between frames. An 8-bit
+		// history can round them away and leave a permanent ghost of old images.
 		mpAccumBuffer = mpGraphics->CreateFrameBuffer("ImageTrailBuffer");
-		mpAccumBuffer->SetTexture2D(0, mpAccumTexture);
-		if(mpAccumBuffer->CompileAndValidate()==false)
+		const ePixelFormat historyFormats[] = {ePixelFormat_RGB32, ePixelFormat_RGB16, ePixelFormat_RGB};
+		const int firstFormat = mpLowLevelGraphics->GetCaps(eGraphicCaps_TextureFloat) ? 0 : 2;
+		bool bBufferValid = false;
+		for(int i=firstFormat; i<3 && !bBufferValid; ++i)
+		{
+			// Some older drivers support float textures but not float render
+			// targets. Validate each fallback, retaining their original path.
+			const bool bTextureCreated = mpAccumTexture->CreateFromRawData(
+				cVector3l(vSize.x,vSize.y,1), historyFormats[i], NULL);
+			mpAccumBuffer->SetTexture2D(0, mpAccumTexture);
+			bBufferValid = bTextureCreated && mpAccumBuffer->CompileAndValidate();
+		}
+		if(!bBufferValid)
 		{
 			Error("Could not compile and validate image trail frame buffer!\n");
 		}
@@ -144,6 +157,24 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
+	float cPostEffect_ImageTrail::GetFrameBlendAlpha(float afAmount, float afFrameTime)
+	{
+		// Repeated renders with no elapsed time must not advance the history.
+		if(!(afFrameTime > 0.0f)) return 0.0f;
+		if(!(afAmount > 0.0f) || !std::isfinite(afAmount) || !std::isfinite(afFrameTime))
+			return 1.0f;
+
+		// Retail blends exp(-amount * 0.015 / dt) of the current image into
+		// history. Preserve that weight at 60 Hz, then decay the retained history
+		// exponentially with elapsed time. Scaling the exponent by FPS instead
+		// makes trails arbitrarily persistent as rendering gets faster.
+		const double fReferenceAlpha = std::exp(-static_cast<double>(afAmount) * 0.9);
+		return static_cast<float>(-std::expm1(std::log1p(-fReferenceAlpha) *
+			static_cast<double>(afFrameTime) * 60.0));
+	}
+
+	//-----------------------------------------------------------------------
+
 
 	iTexture* cPostEffect_ImageTrail::RenderEffect(iTexture *apInputTexture, iFrameBuffer *apFinalTempBuffer)
 	{
@@ -168,11 +199,8 @@ namespace hpl {
 		}
 		else
 		{
-			// Get the amount of blur depending frame time.
-			//*30 is just so that good amount values are still between 0 - 1
-			float fFrameTime = mpCurrentComposite->GetCurrentFrameTime();
-			float fPow = (1.0f / fFrameTime) * mParams.mfAmount; //The higher this is, the more blur!
-			float fAmount = exp(-fPow * 0.015f); 
+			const float fAmount = GetFrameBlendAlpha(mParams.mfAmount,
+				mpCurrentComposite->GetCurrentFrameTime());
 			if(mpImageTrailType->mpProgram)
 				mpImageTrailType->mpProgram->SetFloat(kVar_afAlpha, fAmount);
 		}

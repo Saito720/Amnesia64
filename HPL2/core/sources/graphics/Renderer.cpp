@@ -366,7 +366,7 @@ namespace hpl {
 	void cShadowMapLightCache::SetFromLight(iLight* apLight)
 	{
 		mpLight = apLight;
-		mlTransformCount = apLight->GetTransformUpdateCount();
+		mlTransformCount = apLight->GetRenderTransformUpdateCount();
 		mfRadius = apLight->GetRadius();
 		
 		if(apLight->GetLightType() == eLightType_Spot)
@@ -790,7 +790,7 @@ namespace hpl {
 		
 		///////////////////////////
 		// Check if texture map and light are valid
-		bool bValid =	cacheData.mpLight == apLight &&	cacheData.mlTransformCount == apLight->GetTransformUpdateCount() &&
+		bool bValid =	cacheData.mpLight == apLight &&	cacheData.mlTransformCount == apLight->GetRenderTransformUpdateCount() &&
 						cacheData.mfRadius == apLight->GetRadius();
 
 		/////////////////////////////
@@ -1449,7 +1449,7 @@ namespace hpl {
 		return true;
 
 
-		cBoundingVolume *pBV = apObject->GetBoundingVolume();
+		cBoundingVolume *pBV = apObject->GetRenderBoundingVolume();
 
 		//Log("---- Checking %s --- \n",apObject->GetName().c_str());
 
@@ -1618,7 +1618,7 @@ namespace hpl {
 				/////////
 				//Check if in frustum
 				if(	frustumCollision != eCollision_Inside &&
-					gpLightFrustum->CollideBoundingVolume(pObject->GetBoundingVolume()) == eCollision_Outside)
+					gpLightFrustum->CollideBoundingVolume(pObject->GetRenderBoundingVolume()) == eCollision_Outside)
 				{
 					continue;
 				}
@@ -1632,7 +1632,7 @@ namespace hpl {
 				// Add object!
 				
 				//Calculate the view space Z (just a squared distance)
-				pObject->SetViewSpaceZ(cMath::Vector3DistSqr(pObject->GetBoundingVolume()->GetWorldCenter(), 
+				pObject->SetViewSpaceZ(cMath::Vector3DistSqr(pObject->GetRenderBoundingVolume()->GetWorldCenter(),
 															gpLightFrustum->GetOrigin()));
 
 				//Add to list
@@ -2082,7 +2082,7 @@ namespace hpl {
 			mfScissorLastTanHalfFov = tan(mpCurrentFrustum->GetFOV()*0.5f);
 		}
 	
-		/*cMath::GetClipRectFromBV(mTempClipRect,*apLight->GetBoundingVolume(),mpCurrentFrustum,
+		/*cMath::GetClipRectFromBV(mTempClipRect,*apLight->GetRenderBoundingVolume(),mpCurrentFrustum,
 								mvScreenSize, mfScissorLastTanHalfFov);*/
 		
 
@@ -2203,8 +2203,8 @@ namespace hpl {
 		
 		if(pSubMesh->GetIsOneSided()==false) return true;
 
-		cVector3f vNormal = cMath::MatrixMul3x3(apObject->GetWorldMatrix(), pSubMesh->GetOneSidedNormal());
-		cVector3f vPos = cMath::MatrixMul(apObject->GetWorldMatrix(), pSubMesh->GetOneSidedPoint());
+		cVector3f vNormal = cMath::MatrixMul3x3(apObject->GetRenderWorldMatrix(), pSubMesh->GetOneSidedNormal());
+		cVector3f vPos = cMath::MatrixMul(apObject->GetRenderWorldMatrix(), pSubMesh->GetOneSidedPoint());
 
 		float fDot = cMath::Vector3Dot(vPos - apFrustum->GetOrigin(), vNormal);
 
@@ -2215,7 +2215,7 @@ namespace hpl {
 
 	cRect2l iRenderer::GetClipRectFromObject(iRenderable *apObject, float afPaddingPercent, cFrustum *apFrustum, const cVector2l &avScreenSize, float afHalfFovTan)
 	{
-		cBoundingVolume *pBV = apObject->GetBoundingVolume();
+		cBoundingVolume *pBV = apObject->GetRenderBoundingVolume();
 
 		cRect2l clipRect;
 		if(afHalfFovTan ==0)	
@@ -2252,7 +2252,7 @@ namespace hpl {
 		// NOTE: This shall always be the user clip planes! Since we wanna cull stuff like nodes where clip planes are not active, etc.
 		if(mvCurrentOcclusionPlanes.empty()==false && mbOcclusionPlanesActive)
 		{
-			cBoundingVolume *pBV = apObject->GetBoundingVolume();
+			cBoundingVolume *pBV = apObject->GetRenderBoundingVolume();
 			for(size_t i=0; i<mvCurrentOcclusionPlanes.size(); ++i)
 			{
 				cPlanef& plane = mvCurrentOcclusionPlanes[i];
@@ -2421,7 +2421,7 @@ namespace hpl {
 	{
 		cFogArea *pFogArea = apFogData->mpFogArea;
 
-		cVector3f vObjectPos = apObject->GetBoundingVolume()->GetWorldCenter();
+		cVector3f vObjectPos = apObject->GetRenderBoundingVolume()->GetWorldCenter();
 		cVector3f vRayDir = vObjectPos - mpCurrentFrustum->GetOrigin();
 		float fCameraDistance = vRayDir.Length();
 		vRayDir = vRayDir / fCameraDistance;

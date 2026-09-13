@@ -944,8 +944,17 @@ bool cLuxBase::InitMainConfig()
 	
 	/////////////////////////////////////////////////
 	// Load the main settings
-	mpMainConfig = LoadConfigFile(msDefaultMainConfigPath, msBaseSavePath + _W("main_settings.cfg"),false);
+	bool bLoadedDefaults = false;
+	mpMainConfig = LoadConfigFile(msDefaultMainConfigPath, msBaseSavePath + _W("main_settings.cfg"),false, &bLoadedDefaults);
 	if(mpMainConfig==NULL) return false;
+
+	// Retail default files predate uncapped rendering. Set this build's fresh
+	// defaults without overriding preferences from an existing settings file.
+	if(bLoadedDefaults)
+	{
+		mpMainConfig->SetBool("Engine", "LimitFPS", false);
+		mpMainConfig->SetBool("Screen", "Vsync", true);
+	}
 
 	//Load some basic variables
 	mbSaveConfigAtExit = mpMainConfig->GetBool("Main","SaveConfig",true);

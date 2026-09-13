@@ -1,6 +1,5 @@
 #include "LuxBase.h"
 #include "LuxMap.h"
-#include "LuxMainMenu.h"
 #include "LuxInputHandler.h"
 #include "LuxInventory.h"
 #include "LuxJournal.h"
@@ -12,6 +11,8 @@
 #include <deque>
 #include <filesystem>
 #define private public
+#include "LuxMainMenu.h"
+#include "LuxMainMenu_Options.h"
 #include "LuxPlayerHelpers.h"
 #include "LuxEffectRenderer.h"
 #include "LuxEffectHandler.h"
@@ -55,6 +56,12 @@ static void printStatus(const char* message) {
 #include "HostingRegression.h"
 #include "GuiAspectRegression.h"
 #include "WindowResizeRegression.h"
+#ifdef SendMessage
+#undef SendMessage
+#endif
+#include "FrameCadenceRegression.h"
+#include "FPSSettingsRegression.h"
+#include "NetworkInterpolationRegression.h"
 class cGameSmoke : public iUpdateable, public iRendererCallback {
     int state=0;
     Uint32 started=0, readyAt=0, statusAt=0;
@@ -77,6 +84,9 @@ class cGameSmoke : public iUpdateable, public iRendererCallback {
     cJointLifecycleRegression jointRegression;
     cWindowResizeRegression resizeRegression;
     bool resizeTests=std::getenv("CODEX_MP_RESIZE")!=NULL;
+    bool uncappedTests=std::getenv("CODEX_MP_UNCAPPED")!=NULL;
+    cFrameCadenceRegression cadenceRegression;
+    cFPSSettingsRegression fpsSettingsRegression;
     cVector2l resizeValidated=0;
     bool genericEffectsDone=false;
     cMapCacheRegression mapCacheRegression;
@@ -155,6 +165,13 @@ public:
     void OnStart() {
         started=SDL_GetTicks();
         gpBase->mpEngine->SetWaitIfAppOutOfFocus(false);
+        if(uncappedTests && (gpBase->mpEngine->GetLimitFPS() || !gpBase->mpConfigHandler->mbVSync)) {
+            fail("fresh settings must default to uncapped rendering and V-sync");return;
+        }
+        // Exercise either rendering mode independently of production defaults.
+        gpBase->mpEngine->SetLimitFPS(!uncappedTests);
+        gpBase->mpConfigHandler->mbVSync=false;
+        gpBase->mpEngine->GetGraphics()->GetLowLevel()->SetVsyncActive(false);
         gpBase->mpEngine->GetSound()->GetLowLevel()->SetVolume(0);
         SDL_HideWindow(SDL_GL_GetCurrentWindow());
         gpBase->mpMapHandler->GetViewport()->AddRendererCallback(this);
@@ -182,11 +199,15 @@ public:
         if(SDL_GetTicks()-started>180000) {fail("180-second handshake/test timeout: "+gpBase->mpMultiplayer->GetStatus());return;}
         cLuxMultiplayer* mp=gpBase->mpMultiplayer;
         tString loadingError;
+        if(uncappedTests && !cadenceRegression.Update(dt,loadingError)) {fail(loadingError);return;}
         if(!loadObserver.Observe(loadingError)) {fail(loadingError);return;}
         if(SDL_GetTicks()-statusAt>2000) {
             printStatus(mp->GetStatus().c_str());statusAt=SDL_GetTicks();
         }
         if(state==0) {
+            const int settings=fpsSettingsRegression.Initial(loadingError);
+            if(settings<0) {fail(loadingError);return;}
+            if(!settings) return;
             if(resizeTests) {
                 const int resize=resizeRegression.Initial(loadingError);
                 if(resize<0) {fail(loadingError);return;}
@@ -244,6 +265,7 @@ public:
                 if(!resize) return;
             }
             if(!cachePathIsValid()) return;
+            if(uncappedTests && !RunNetworkInterpolationRegression(loadingError)) {fail(loadingError);return;}
             if(gpBase->mpSaveHandler->AutoSave()) {fail("offline autosave was accepted during an active multiplayer session");return;}
             uint64_t bodyHash=0;
             for(const auto& body:mp->GetWorld()->mBodies) bodyHash+=body.first;
@@ -494,6 +516,7 @@ public:
                 fail("return to title menu retained a gameplay world after disconnect/reset");return;
             }
             mark(role+"-disconnect-render-passed.txt","PASS: title menu renders after disconnect/reset with no stale gameplay world.");
+            if(uncappedTests && !cadenceRegression.Finish(error)) {fail(error);return;}
             result=0;state=99;gpBase->mpEngine->Exit();
         }
     }
@@ -555,6 +578,8 @@ public:
     }
     void OnPostRender(float dt) {
         tString loadingError;
+        if(uncappedTests && !cadenceRegression.Render(loadingError)) {fail(loadingError);return;}
+        if(!fpsSettingsRegression.OnPostRender(loadingError)) {fail(loadingError);return;}
         const cVector2l renderSize=gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeInt();
         if(resizeTests && renderSize!=resizeValidated) {
             if(!cWindowResizeRegression::ValidateTargets(loadingError)) {fail(loadingError);return;}

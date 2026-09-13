@@ -57,6 +57,18 @@ try { ./tests/multiplayer/run-game.ps1 -Backend Steamworks -SkipBuild -Width 338
 finally { Remove-Item Env:CODEX_MP_RESIZE -ErrorAction SilentlyContinue }
 ```
 
+For uncapped rendering integration, set `CODEX_MP_UNCAPPED=1` in the same way;
+combine it with `CODEX_MP_RESIZE=1` to exercise both features together. The fixture
+first checks fresh Uncap FPS/V-sync defaults, then disables V-sync in its isolated
+instances to obtain extra rendered frames. It checks that those extra frames
+neither advance the controlled character nor send additional network poses.
+Native Graphics-menu tests cover labels/layout, gamepad navigation, Cancel, OK,
+save/reload and restoration. Interpolation fixtures cover hard network corrections,
+ownership immunity, remote cylinder/lantern alignment, and native hand bones and
+vertex buffers across moving and stationary render samples. Normal runs explicitly
+retain capped rendering for comparison. Both modes continue through the existing
+two-instance physics, menus, map/cache transitions and disconnect tests.
+
 This adds native GUI popup shrink/restore and nested-focus checks, plus an actual
 main-menu confirmation resized from 1920x1080 to 640x480. On Windows, each peer
 holds a native sizing operation for two seconds while the test checks real game

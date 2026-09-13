@@ -24,6 +24,7 @@
 #include "graphics/LowLevelGraphics.h"
 
 #include "math/Math.h"
+#include "math/TransformInterpolation.h"
 
 #include "scene/Entity3D.h"
 
@@ -74,6 +75,7 @@ namespace hpl {
 
 		mfYawLimitMin =0;
 		mfYawLimitMax =0;
+		mbHasPreviousUpdate = false;
 		
 	}
 
@@ -98,6 +100,7 @@ namespace hpl {
 		mbFrustumUpdated = true;
 
 		mNode.SetPosition(mvPosition);
+		if(!mbHasPreviousUpdate) mNode.ResetRenderInterpolation();
 	}
 
 	//-----------------------------------------------------------------------
@@ -168,6 +171,7 @@ namespace hpl {
 		mbFrustumUpdated = true;
 
 		mNode.SetPosition(mvPosition);
+		if(!mbHasPreviousUpdate) mNode.ResetRenderInterpolation();
 	}
 	
 	//-----------------------------------------------------------------------
@@ -182,6 +186,7 @@ namespace hpl {
 		mbFrustumUpdated = true;
 
 		mNode.SetPosition(mvPosition);
+		if(!mbHasPreviousUpdate) mNode.ResetRenderInterpolation();
 	}
 	
 	//-----------------------------------------------------------------------
@@ -196,6 +201,7 @@ namespace hpl {
 		mbFrustumUpdated = true;
 
 		mNode.SetPosition(mvPosition);
+		if(!mbHasPreviousUpdate) mNode.ResetRenderInterpolation();
 	}
 
 	//-----------------------------------------------------------------------
@@ -253,6 +259,7 @@ namespace hpl {
 		if(mProjectionType == aType) return;
 
 		mProjectionType = aType;
+		ResetInterpolation();
 
 		mbProjectionUpdated = true;
 		mbFrustumUpdated = true;
@@ -273,6 +280,7 @@ namespace hpl {
 
 	void cCamera::SetRotateMode(eCameraRotateMode aMode)
 	{
+		if(mRotateMode != aMode) ResetInterpolation();
 		mRotateMode = aMode;
 		mbViewUpdated = true; mbMoveUpdated = true;
 		mbFrustumUpdated = true;
@@ -290,6 +298,7 @@ namespace hpl {
 
 	void cCamera::ResetRotation()
 	{
+		ResetInterpolation();
 		mbViewUpdated = false;
 		mbMoveUpdated = false;
 		mbFrustumUpdated = true;
@@ -299,6 +308,60 @@ namespace hpl {
 		mfRoll =0;
 		mfYaw =0;
 		mfPitch =0;
+	}
+
+	//-----------------------------------------------------------------------
+
+	void cCamera::BeginInterpolationStep()
+	{
+		mvPreviousUpdatePosition = mvPosition;
+		m_mtxPreviousUpdateRotation = GetViewMatrix().GetRotation();
+		mfPreviousUpdateFOV = mfFOV;
+		mfPreviousUpdateAspect = mfAspect;
+		mfPreviousUpdateFarClipPlane = mfFarClipPlane;
+		mfPreviousUpdateNearClipPlane = mfNearClipPlane;
+		mvPreviousUpdateViewSize = mvViewSize;
+		mbHasPreviousUpdate = true;
+	}
+
+	void cCamera::ResetInterpolation()
+	{
+		// Leave history invalid until the next simulation step. In particular,
+		// setters following a teleport must not interpolate from the old location.
+		mbHasPreviousUpdate = false;
+		mNode.ResetRenderInterpolation();
+	}
+
+	cFrustum* cCamera::GetRenderFrustum(float afAlpha)
+	{
+		if(!mbHasPreviousUpdate || afAlpha >= 1.0f) return GetFrustum();
+		afAlpha = cMath::Clamp(afAlpha, 0.0f, 1.0f);
+
+		const float fPreviousWeight = 1.0f - afAlpha;
+		const cVector3f vPosition = mvPreviousUpdatePosition * fPreviousWeight + mvPosition * afAlpha;
+		const cMatrixf mtxRotation = InterpolateTransform(m_mtxPreviousUpdateRotation,
+			GetViewMatrix().GetRotation(), afAlpha);
+		const cMatrixf mtxView = cMath::MatrixMul(mtxRotation, cMath::MatrixTranslate(vPosition * -1.0f));
+		const float fFOV = mfPreviousUpdateFOV * fPreviousWeight + mfFOV * afAlpha;
+		const float fAspect = mfPreviousUpdateAspect * fPreviousWeight + mfAspect * afAlpha;
+		const float fFar = mfPreviousUpdateFarClipPlane * fPreviousWeight + mfFarClipPlane * afAlpha;
+		const float fNear = mfPreviousUpdateNearClipPlane * fPreviousWeight + mfNearClipPlane * afAlpha;
+
+		// Match GetFrustum's finite far plane: the renderer needs bounded frustum
+		// vertices even when the camera's separate projection has an infinite far plane.
+		if(mProjectionType == eProjectionType_Perspective)
+		{
+			const cMatrixf mtxProjection = cMath::MatrixPerspectiveProjection(fNear, fFar, fFOV, fAspect, false);
+			mRenderFrustum.SetupPerspectiveProj(mtxProjection, mtxView, fFar, fNear,
+				fFOV, fAspect, vPosition, false);
+		}
+		else
+		{
+			const cVector2f vViewSize = mvPreviousUpdateViewSize * fPreviousWeight + mvViewSize * afAlpha;
+			const cMatrixf mtxProjection = cMath::MatrixOrthographicProjection(fNear, fFar, vViewSize);
+			mRenderFrustum.SetupOrthoProj(mtxProjection, mtxView, fFar, fNear, vViewSize, vPosition, false);
+		}
+		return &mRenderFrustum;
 	}
 
 	//-----------------------------------------------------------------------

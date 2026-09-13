@@ -327,6 +327,7 @@ void cLuxPlayer::Reset()
 
 	////////////////////////
 	//Reset camera
+	mpCamera->ResetInterpolation();
 	mpCamera->SetRoll(0.0f);
 	mpCamera->SetPitch(0.0f);
 	mpCamera->SetYaw(0.0f);
@@ -447,6 +448,7 @@ void cLuxPlayer::SaveUserConfig()
 
 void cLuxPlayer::OnMapEnter(cLuxMap *apMap)
 {
+	mpCamera->ResetInterpolation();
 	////////////////////////////////
 	//Init all move states 
 	for(int i=0; i<eLuxMoveState_LastEnum; ++i) mvMoveStates[i]->OnMapEnter();
@@ -481,6 +483,7 @@ void cLuxPlayer::OnMapEnter(cLuxMap *apMap)
 
 void cLuxPlayer::OnMapLeave(cLuxMap *apMap)
 {
+	mpCamera->ResetInterpolation();
 	////////////////////////
 	// Set default state
 	ChangeState(eLuxPlayerState_Normal);
@@ -846,6 +849,7 @@ void cLuxPlayer::PlaceAtStartNode(cLuxNode_PlayerStart *apNode)
 	mpCamera->SetYaw(apNode->GetAngle());
 	mpCamera->SetPitch(0);
 	mpCharBody->Update(0.001f);
+	mpCamera->ResetInterpolation();
 }
 
 //-----------------------------------------------------------------------
@@ -1100,6 +1104,7 @@ tString cLuxPlayer::FocusIconStyleToString(eLuxFocusIconStyle aX)
 
 void cLuxPlayer::SetFreeCamActive(bool abX)
 {
+	if(mbFreeCameraActive != abX) mpCamera->ResetInterpolation();
 	mbFreeCameraActive = abX;
 
 	if (abX)

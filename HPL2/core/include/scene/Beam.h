@@ -118,6 +118,7 @@ namespace hpl {
 		void UpdateGraphicsForFrame(float afFrameTime);
 
 		cBoundingVolume* GetBoundingVolume();
+		cBoundingVolume* GetRenderBoundingVolume();
 
 		cMatrixf* GetModelMatrix(cFrustum *apFrustum);
 
@@ -141,6 +142,7 @@ namespace hpl {
 		int mlEndTransformCount;
 
 		cMatrixf m_mtxTempTransform;
+		cBoundingVolume mRenderBeamBoundingVolume;
 		
 		int mlLastRenderCount;
 

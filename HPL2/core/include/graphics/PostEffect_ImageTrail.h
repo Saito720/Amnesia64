@@ -66,6 +66,10 @@ namespace hpl {
 		void Reset();
 		bool ResizeScreenBuffers();
 
+		// Current-frame weight for elapsed render time, preserving the authored
+		// image trail response at the original 60 Hz rendering rate.
+		static float GetFrameBlendAlpha(float afAmount, float afFrameTime);
+
 	private:
 		void OnSetActive(bool abX);
 		void OnSetParams();

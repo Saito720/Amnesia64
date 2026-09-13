@@ -51,6 +51,16 @@ public:
             gui->DestroyPopUp(popup);popup=NULL;attention=NULL;
             resize(800,600);initialPhase=4;return 0;
         }
+        if(initialPhase>=4 && initialPhase<=7) {
+            // These go through the same GUI callbacks as the user's window,
+            // including the tall portrait shape that exposed stretched text.
+            const cVector2l sizes[]={cVector2l(800,600),cVector2l(338,1000),cVector2l(1920,1080),cVector2l(1920,540)};
+            const unsigned index=initialPhase-4;
+            if(!sizeIs(sizes[index].x,sizes[index].y)) return 0;
+            ++initialPhase;
+            const cVector2l next=initialPhase<=7?sizes[index+1]:cVector2l(800,600);
+            resize(next.x,next.y);return 0;
+        }
         if(!sizeIs(800,600)) return 0;
         mark(role+"-resize-popup-passed.txt","PASS: generic modal layout and actual main-menu resize retain visible controls and modal focus.");
         return 1;

@@ -320,7 +320,7 @@ void cLuxMessageHandler::DrawPauseMessage()
 
 	////////////////////////
 	// Black background
-	gpBase->mpGameHudSet->DrawGfx(mpBlackGfx,cVector3f(0,0,3),cVector2f(800,600),cColor(1, mfPauseMessageAlpha*0.5f));
+	gpBase->mpGameHudSet->DrawGfx(mpBlackGfx,gpBase->mvHudVirtualStartPos+cVector3f(0,0,3),gpBase->mvHudVirtualSize,cColor(1, mfPauseMessageAlpha*0.5f));
 
 	////////////////////////
 	// Text

@@ -1,4 +1,4 @@
-param([string]$RetailDirectory,[int]$Port=27843,[ValidateSet('Standalone','Steamworks')][string]$Backend='Standalone',[switch]$SteamHostOnly,[switch]$SkipBuild,[switch]$KeepProfiles)
+param([string]$RetailDirectory,[int]$Port=27843,[ValidateSet('Standalone','Steamworks')][string]$Backend='Standalone',[switch]$SteamHostOnly,[switch]$SkipBuild,[switch]$KeepProfiles,[ValidateRange(320,8192)][int]$Width=800,[ValidateRange(240,8192)][int]$Height=600)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'TestSupport.ps1')
 $context=Get-MultiplayerTestContext 'game'
@@ -14,14 +14,14 @@ $profileParent=[IO.Path]::GetFullPath((Join-Path ([Environment]::GetFolderPath('
 $profilePaths=@{}
 $template=[IO.File]::ReadAllText((Join-Path $retail 'config/main_init.cfg'))
 $mainPath=(Join-Path $run 'main-settings.cfg').Replace('\','/')
-[IO.File]::WriteAllText($mainPath,@'
+[IO.File]::WriteAllText($mainPath,@"
 <Main ShowMenu="true" ShowPreMenu="false" SaveConfig="false" DefaultProfileName="multiplayer_test" ForceCacheLoadingAndSkipSaving="true" UpdateLogActive="false" />
-<Screen Width="800" Height="600" Display="0" FullScreen="false" Vsync="false" />
+<Screen Width="$Width" Height="$Height" Display="0" FullScreen="false" Vsync="false" />
 <Graphics ShadowsActive="false" SSAOActive="false" WorldReflection="false" TextureQuality="1" />
 <Engine LimitFPS="true" />
 <Sound Volume="0" HRTF="false" />
 <Physics PhysicsAccuracy="2" UpdatesPerSec="60" />
-'@)
+"@)
 foreach($role in $roles) {
     $profileName="codex-multiplayer-smoke-$runId-$role"
     $profilePath=[IO.Path]::GetFullPath((Join-Path $profileParent $profileName))

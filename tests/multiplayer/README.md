@@ -53,7 +53,7 @@ For window-resizing integration coverage, run the complete suite with:
 
 ```powershell
 $env:CODEX_MP_RESIZE='1'
-try { ./tests/multiplayer/run-game.ps1 -Backend Steamworks -SkipBuild }
+try { ./tests/multiplayer/run-game.ps1 -Backend Steamworks -SkipBuild -Width 338 -Height 1000 }
 finally { Remove-Item Env:CODEX_MP_RESIZE -ErrorAction SilentlyContinue }
 ```
 
@@ -67,6 +67,14 @@ framebuffer completeness after rendering. The full map-change and teardown check
 then continue at the resized resolution. The separate
 [engine suite](../../HPL2/tests/WindowResize/README.md) covers all native sizing
 edges, fullscreen/minimize/restore, GPU storage, and rendered pixels.
+The optional `-Width` and `-Height` set the initial game window (defaults: 800x600).
+Portrait startup and subsequent portrait, widescreen, and ultrawide resizes also
+check the live HUD and shared GUI projections. A square and native text render
+through HPL into an isolated target using the HUD's current size and offset;
+pixel bounds must retain the square's proportions and centered placement.
+The saved aspect-probe screenshots make distortion visible independently of
+framebuffer-dimension checks. Authored layouts with other aspect ratios are also
+checked for uniform scale, centering, and containment.
 
 The UI test links real HPL2, SDL2, OpenGL, and Dear ImGui. It includes the
 production overlay source and extracts the unchanged production input update
@@ -208,6 +216,13 @@ without compiler warnings or errors, combined game run `10fb37920780` with
 the optional fullscreen and minimize/restore cases. Harness linking emits the
 existing nonincremental-link warning; the UI harness also reports its existing
 compiler option warning. Neither game build emits those harness-only warnings.
+
+The GUI proportion regression reproduces the old failure in `fd3f9907bd28`:
+a square measured 68x266 pixels in a 338x1000 window and 266x288 at 1920x1080.
+With the correction it measures 68x68 and 288x288. Complete resize-enabled game
+runs `6ed6f723991f` (portrait startup) and `757d547ee494` (normal startup, final
+probe cleanup) pass, as do both Steam-enabled game builds. These GUI probes
+check rendered proportions as well as the resource dimensions tested earlier.
 
 For focused native-interaction debugging, set `CODEX_MP_NATIVE_ONLY=1` in the
 runner's environment. The same two-instance harness starts in Old Archives and

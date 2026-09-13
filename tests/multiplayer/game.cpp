@@ -53,6 +53,7 @@ static void printStatus(const char* message) {
 #include "LoadingRegression.h"
 #include "MapCacheRegression.h"
 #include "HostingRegression.h"
+#include "GuiAspectRegression.h"
 #include "WindowResizeRegression.h"
 class cGameSmoke : public iUpdateable, public iRendererCallback {
     int state=0;
@@ -557,6 +558,7 @@ public:
         const cVector2l renderSize=gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeInt();
         if(resizeTests && renderSize!=resizeValidated) {
             if(!cWindowResizeRegression::ValidateTargets(loadingError)) {fail(loadingError);return;}
+            if(!RunGuiAspectRegression(loadingError)) {fail(loadingError);return;}
             resizeValidated=renderSize;
         }
         if(!loadObserver.OnPostRender(loadingError)) {fail(loadingError);return;}

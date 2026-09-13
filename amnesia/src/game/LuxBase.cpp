@@ -136,16 +136,16 @@ void LuxCalcGuiSetOffset(const cVector2f &avVirtualSizeIn, const cVector2f& avSc
 	if(avScreenSize.x <= 0 || avScreenSize.y <= 0 ||
 		avVirtualSizeIn.x <= 0 || avVirtualSizeIn.y <= 0) return;
 
-	// Preserve the original GUI scaling so resizing does not change the artwork
-	// and font proportions compared with launching at the same resolution.
+	// Fit the authored layout with the same pixel scale on both axes. Expand
+	// the canvas along the spare axis, keeping the authored center at the
+	// screen center and allowing full-screen effects to cover the whole view.
 	const float fWantedRatio = avVirtualSizeIn.x / avVirtualSizeIn.y;
 	const float fScreenRatio = avScreenSize.x / avScreenSize.y;
-	if(fScreenRatio >= (4.0f / 3.0f) - 0.001f)
-	{
-		const float fAddX = avVirtualSizeIn.x * (fScreenRatio - fWantedRatio);
-		avOutSize.x += fAddX;
-		avOutOffset.x = fAddX * 0.5f;
-	}
+	if(fScreenRatio >= fWantedRatio)
+		avOutSize.x = avVirtualSizeIn.y * fScreenRatio;
+	else
+		avOutSize.y = avVirtualSizeIn.x / fScreenRatio;
+	avOutOffset = (avOutSize - avVirtualSizeIn) * 0.5f;
 }
 
 void LuxCalcGuiSetScreenOffset(const cVector2f &avVirtualSizeIn, cVector2f& avOutSize, cVector2f & avOutOffset)

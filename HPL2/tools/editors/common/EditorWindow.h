@@ -58,6 +58,7 @@ public:
 	cGuiSet* GetSet() { return mpSet; }
 
 	cWidgetFrame* GetBGFrame() { return mpBGFrame; }
+	virtual void OnScreenResize() {}
 
 	iEditorBase* GetEditor() { return mpEditor; }
 	

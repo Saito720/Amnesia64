@@ -1079,6 +1079,18 @@ public:
 
 	//--------------------------------------------------------------
 
+	void OnQuit() { gpEngine->Exit(); }
+
+	void OnScreenResize()
+	{
+		cGuiSet* pSet = gpSimpleCamera->GetSet();
+		pSet->OnScreenResize();
+		cVector3f vPos = mpOptionWindow->GetLocalPosition();
+		vPos.x = pSet->GetVirtualSize().x-mpOptionWindow->GetSize().x-10;
+		vPos.y = 10;
+		mpOptionWindow->SetPosition(vPos);
+	}
+
 	void CreateGuiWindow()
 	{
 		cWidgetCheckBox *pCheckBox=NULL;

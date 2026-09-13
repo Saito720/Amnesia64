@@ -356,7 +356,7 @@ cWidgetMainMenu* cParticleEditor::CreateMainMenu()
 void cParticleEditor::SetUpWindowAreas()
 {
 	SetLayoutVec3f(eLayoutVec3_ViewportAreaPos, cVector3f(512, mpMainMenu->GetSize().y+3,1));
-	SetLayoutVec2f(eLayoutVec2_ViewportAreaSize, cVector2f(512));
+	SetLayoutVec2f(eLayoutVec2_ViewportAreaSize, cVector2f(cMath::Max(8.0f, mvScreenSize.x-512), cMath::Max(8.0f, mvScreenSize.y-mpMainMenu->GetSize().y-3)));
 }
 
 void cParticleEditor::CreateViewports()
@@ -369,9 +369,10 @@ void cParticleEditor::CreateViewports()
 	pViewport->SetEngineViewportPositionAndSize(0, GetLayoutVec2l(eLayoutVec2_ViewportAreaSize));
 	
 	pViewport->SetNormalPosition(GetLayoutVec3f(eLayoutVec3_ViewportAreaPos));
-	pViewport->SetNormalSize(GetLayoutVec2f(eLayoutVec2_ViewportAreaSize) + cVector2f(0,200));
+	pViewport->SetNormalSize(GetLayoutVec2f(eLayoutVec2_ViewportAreaSize));
 	pViewport->SetEngineViewportNormalPosition(cVector2l(0));
 	pViewport->SetEngineViewportNormalSize(GetLayoutVec2l(eLayoutVec2_ViewportAreaSize));
+	pViewport->SetEnlarged(false);
 
 	pViewport->SetActive(true);
 	pViewport->SetDrawDebug(false);

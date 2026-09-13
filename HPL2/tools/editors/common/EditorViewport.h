@@ -35,6 +35,9 @@ class cEditorViewportCamera;
 class cEditorGrid;
 class cEditorSelection;
 
+// Resize editor-owned targets without replacing textures referenced by GUI images.
+bool ResizeEditorFrameBuffer(cGraphics* apGraphics, iFrameBuffer* apBuffer, const cVector2l& avSize);
+
 //--------------------------------------------
 
 enum eEditorCameraType

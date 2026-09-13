@@ -1494,6 +1494,40 @@ void cEditorWindowMaterialEditor::OnInit()
 
 //------------------------------------------------------------------------------------
 
+void cEditorWindowMaterialEditor::OnScreenResize()
+{
+	if(!mbStandAlone || !mpImgViewport) return;
+	const cVector2f vScreen = mpSet->GetVirtualSize();
+	mpBGFrame->SetSize(vScreen);
+	for(tWidgetListIt it=mpBGFrame->GetChildren().begin(); it!=mpBGFrame->GetChildren().end(); ++it)
+		if((*it)->GetType()==eWidgetType_MainMenu)
+			(*it)->SetSize(cVector2f(vScreen.x, (*it)->GetSize().y));
+	iWidget* pGroup = mpImgViewport->GetParent();
+	const cVector2f vOld = GetGuiViewportSize();
+	const cVector2f vPreview(cMath::Max(8.0f, vScreen.x-pGroup->GetLocalPosition().x-30),
+		cMath::Max(8.0f, vScreen.y-pGroup->GetLocalPosition().y-245));
+	for(tWidgetListIt it=pGroup->GetChildren().begin(); it!=pGroup->GetChildren().end(); ++it)
+	{
+		iWidget* pChild = *it;
+		if(pChild!=mpImgViewport && pChild->GetLocalPosition().y >= vOld.y+10)
+			pChild->SetPosition(pChild->GetLocalPosition()+cVector3f(0,vPreview.y-vOld.y,0));
+	}
+	pGroup->SetSize(vPreview+cVector2f(20,135));
+	iWidget* pVars = mpFMaterialVars->GetParent();
+	pVars->SetPosition(cVector3f(10,cMath::Max(0.0f,vScreen.y-100),pVars->GetLocalPosition().z));
+	pVars->SetSize(cVector2f(cMath::Max(20.0f,vScreen.x-20),90));
+	mpFMaterialVars->SetSize(cVector2f(cMath::Max(1.0f,vScreen.x-40),75));
+	iWidget* pUnits = mpFUnits->GetParent();
+	const float fUnitsHeight = cMath::Max(40.0f,pVars->GetLocalPosition().y-pUnits->GetLocalPosition().y-10);
+	pUnits->SetSize(cVector2f(pUnits->GetSize().x,fUnitsHeight));
+	mpFUnits->SetSize(cVector2f(mpFUnits->GetSize().x,fUnitsHeight-40));
+	if(!ResizeEditorFrameBuffer(mpGfx, mpFB, cVector2l((int)vPreview.x,(int)vPreview.y)))
+		FatalError("Could not resize material preview target\n");
+	SetGuiViewportSize(vPreview);
+	SetEngineViewportPositionAndSize(0,cVector2l((int)vPreview.x,(int)vPreview.y));
+	UpdateViewport();
+}
+
 void cEditorWindowMaterialEditor::OnInitLayout()
 {
 	iEditorWindowPopUp::OnInitLayout();

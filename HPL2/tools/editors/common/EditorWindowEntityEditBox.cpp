@@ -297,6 +297,13 @@ void cEditorWindowEntityEditBox::OnInitLayout()
 
 //----------------------------------------------------------------------------
 
+void cEditorWindowEntityEditBox::OnScreenResize()
+{
+	const float fHeight = cMath::Max(40.0f,mpSet->GetVirtualSize().y-GetPosition().y-5);
+	SetSize(cVector2f(200,fHeight));
+	mpTabs->SetSize(cVector2f(190,fHeight-20));
+}
+
 void cEditorWindowEntityEditBox::OnUpdate(float afTimeStep)
 {
 	if(mpEntity==NULL)return;

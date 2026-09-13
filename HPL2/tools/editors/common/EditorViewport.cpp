@@ -842,6 +842,26 @@ void iEditorViewport::SetRenderMode(eRenderer aMode)
 
 //-------------------------------------------------------------
 
+bool ResizeEditorFrameBuffer(cGraphics* apGraphics, iFrameBuffer* apBuffer, const cVector2l& avSize)
+{
+	if(!apBuffer || avSize.x < 1 || avSize.y < 1) return false;
+	if(apBuffer->GetSize() == avSize) return true;
+	apGraphics->GetLowLevel()->SetCurrentFrameBuffer(NULL);
+	if(!apGraphics->ResizeRenderTexture(apBuffer->GetColorBuffer(0)->ToTexture(), avSize)) return false;
+	if(apBuffer->GetDepthBuffer())
+	{
+		iDepthStencilBuffer* pOld = static_cast<iDepthStencilBuffer*>(apBuffer->GetDepthBuffer());
+		iDepthStencilBuffer* pNew = apGraphics->CreateDepthStencilBuffer(avSize, pOld->GetDepthBits(), pOld->GetStencilBits(), false);
+		if(!pNew) return false;
+		apBuffer->SetDepthStencilBuffer(pNew);
+		apGraphics->DestoroyDepthStencilBuffer(pOld);
+	}
+	apBuffer->SetSize(avSize);
+	const bool bValid = apBuffer->CompileAndValidate();
+	apGraphics->GetLowLevel()->SetCurrentFrameBuffer(NULL);
+	return bValid;
+}
+
 void iEditorViewport::SetFrameBuffer(iFrameBuffer* apFB)
 {
 	if(apFB==NULL || mpFB==apFB) return;
@@ -893,8 +913,15 @@ void iEditorViewport::SetGuiViewportSize(const cVector2f& avSize)
 {
 	if(mvViewportSize==avSize) return;
 	mvViewportSize = avSize;
+	mbMousePositionUpdated = true;
+	mbUnprojectionUpdated = true;
 
 	mCamera.GetEngineCamera()->SetAspect(avSize.x/avSize.y);
+	if(mCamera.IsOrtho())
+	{
+		const float fWidth = mCamera.GetEngineCamera()->GetOrthoViewSize().x;
+		mCamera.GetEngineCamera()->SetOrthoViewSize(cVector2f(fWidth, fWidth*avSize.y/avSize.x));
+	}
 
 	if(mpImgViewport)
 		mpImgViewport->SetSize(mvViewportSize);
@@ -904,7 +931,9 @@ void iEditorViewport::SetGuiViewportSize(const cVector2f& avSize)
 
 void iEditorViewport::SetEngineViewportPositionAndSize(const cVector2l& avPos, const cVector2l& avSize)
 {
-	if(mvEngineViewportPos==avPos && mvEngineViewportSize==avSize) return;
+	// The framebuffer may have resized even if this viewport's rectangle did not.
+	mbMousePositionUpdated = true;
+	mbUnprojectionUpdated = true;
 	mvEngineViewportPos = avPos;
 	mpEngineViewport->SetPosition(mvEngineViewportPos);
 	mvEngineViewportSize = avSize;

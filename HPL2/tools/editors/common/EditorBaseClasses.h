@@ -391,6 +391,8 @@ public:
 	////////////////////////////////////
 	// iUpdateable implementation
 	void Update(float afTimeStep);
+	void OnScreenResize();
+	void OnQuit();
 
 	void OnDraw(float afFrameTime){}
 	void OnStart(){}

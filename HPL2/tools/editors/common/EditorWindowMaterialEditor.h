@@ -261,6 +261,7 @@ public:
 	void SaveMaterial(const tWString& asFilename);
 
 	void SetPreviewUpdated() { mbPreviewNeedsUpdate = true; }
+	void OnScreenResize();
 
 protected:
 	void CreateMaterial(const tString& asMat="");

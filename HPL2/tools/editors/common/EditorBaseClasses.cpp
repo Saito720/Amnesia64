@@ -172,6 +172,9 @@ iEditorBase::iEditorBase(const tWString& asFileCategoryName, const tWString& asF
 	msCaption = "";
 
 	mpMainMenu = NULL;
+	mpFrameBuffer = NULL;
+	mpBGFrame = NULL;
+	mpSet = NULL;
 
 	mpDirHandler = hplNew(cDirectoryHandler,(this));
 	mpActionHandler = hplNew(cEditorActionHandler, (this));
@@ -1528,8 +1531,72 @@ void iEditorBase::InitRenderTarget(const cVector2f& avSize)
 void iEditorBase::SetUpWindowAreas()
 {
 	cVector2f vMenuSize = mpMainMenu->GetSize();
-	SetLayoutVec2f(eLayoutVec2_ViewportAreaSize, cVector2f(0.77f * mvScreenSize.x, mvScreenSize.y-50 - vMenuSize.y-4));
+	SetLayoutVec2f(eLayoutVec2_ViewportAreaSize, cVector2f(cMath::Max(64.0f,mvScreenSize.x-233), cMath::Max(64.0f,mvScreenSize.y-50-vMenuSize.y-4)));
 	SetLayoutVec3f(eLayoutVec3_ViewportAreaPos, cVector3f(33, vMenuSize.y+2, 1));
+}
+
+void iEditorBase::OnQuit()
+{
+	// Keep the existing save/confirmation flow, including any pending dialog.
+	if(mpSet && !mpSet->PopUpIsActive()) Command_Exit();
+}
+
+void iEditorBase::OnScreenResize()
+{
+	if(!mpSet || !mpBGFrame) return;
+	mpSet->OnScreenResize();
+	const cVector2f vSize = mpSet->GetVirtualSize();
+	if(vSize.x < 1 || vSize.y < 1 || vSize == mvScreenSize) return;
+	const float fOldSidebar = GetLayoutVec3f(eLayoutVec3_ViewportAreaPos).x+GetLayoutVec2f(eLayoutVec2_ViewportAreaSize).x;
+	mvScreenSize = vSize;
+	mpBGFrame->SetSize(vSize);
+	if(mpMainMenu) mpMainMenu->SetSize(cVector2f(vSize.x, mpMainMenu->GetSize().y));
+	SetUpWindowAreas();
+	if(mpFrameBuffer && !mvViewports.empty())
+	{
+		cVector2f vArea = GetLayoutVec2f(eLayoutVec2_ViewportAreaSize);
+		vArea.x = cMath::Max(64.0f, vArea.x);
+		vArea.y = cMath::Max(64.0f, vArea.y);
+		SetLayoutVec2f(eLayoutVec2_ViewportAreaSize, vArea);
+		const cVector3f vPos = GetLayoutVec3f(eLayoutVec3_ViewportAreaPos);
+		const cVector2l vPixels((int)vArea.x, (int)vArea.y);
+		const bool bEnlarged = mpFocusedViewport && mpFocusedViewport->IsEnlarged();
+		if(!ResizeEditorFrameBuffer(mpEngine->GetGraphics(), mpFrameBuffer, vPixels))
+			FatalError("Could not resize editor viewport render target\n");
+		for(int i=0; i<(int)mvViewports.size(); ++i)
+		{
+			cEditorWindowViewport* pView = mvViewports[i];
+			const bool bSingle = mvViewports.size()==1;
+			const cVector2l vStart = bSingle ? cVector2l(0) : cVector2l((i%2)* (vPixels.x/2), (i/2)*(vPixels.y/2));
+			const cVector2l vEnd = bSingle ? vPixels : cVector2l(i%2 ? vPixels.x : vPixels.x/2, i/2 ? vPixels.y : vPixels.y/2);
+			const cVector2l vExtent = vEnd-vStart;
+			pView->SetNormalPosition(vPos+cVector3f((float)vStart.x, (float)vStart.y, 0));
+			pView->SetNormalSize(cVector2f((float)vExtent.x, (float)vExtent.y)-(bSingle ? 0.0f : 4.0f));
+			pView->SetEnlargedPosition(vPos);
+			pView->SetEnlargedSize(vArea);
+			pView->SetEngineViewportNormalPosition(vStart);
+			pView->SetEngineViewportNormalSize(vExtent);
+			pView->SetEnlarged(!bSingle && bEnlarged && pView==mpFocusedViewport);
+		}
+		for(size_t i=0; i<mvEditModes.size(); ++i)
+		{
+			iEditorWindow* pWindow = mvEditModes[i]->GetEditorWindow();
+			if(pWindow) pWindow->SetPosition(vPos+cVector3f(vArea.x,-2,0));
+		}
+		// Selection property windows are separate from the edit-mode window.
+		if(mvViewports.size()==4)
+			for(tEditorWindowListIt it=mlstWindows.begin(); it!=mlstWindows.end(); ++it)
+				if(cMath::Abs((*it)->GetPosition().x-fOldSidebar)<0.1f)
+					(*it)->SetPosition(cVector3f(vPos.x+vArea.x,(*it)->GetPosition().y,(*it)->GetPosition().z));
+		if(mpLowerToolbar)
+		{
+			mpLowerToolbar->SetPosition(cVector3f(vPos.x, vSize.y-50, 1));
+			mpLowerToolbar->SetSize(cVector2f(vArea.x, mpLowerToolbar->GetSize().y));
+		}
+	}
+	for(tEditorWindowListIt it=mlstWindows.begin(); it!=mlstWindows.end(); ++it)
+		(*it)->OnScreenResize();
+	SetLayoutNeedsUpdate(true);
 }
 
 //----------------------------------------------------------------------------

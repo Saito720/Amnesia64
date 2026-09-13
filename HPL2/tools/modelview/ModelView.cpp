@@ -559,6 +559,18 @@ public:
 		ResetEntitySubMeshes();
 	}
 
+	void OnQuit() { gpEngine->Exit(); }
+
+	void OnScreenResize()
+	{
+		cGuiSet* pSet = gpSimpleCamera->GetSet();
+		pSet->OnScreenResize();
+		cVector3f vPos = mpOptionWindow->GetLocalPosition();
+		vPos.x = pSet->GetVirtualSize().x-mpOptionWindow->GetSize().x-10;
+		vPos.y = 10;
+		mpOptionWindow->SetPosition(vPos);
+	}
+
 	//--------------------------------------------------------------
 
 	cMaterialData* GetMaterialData(const tString& asName, bool abShowErrorMess)
@@ -1305,7 +1317,7 @@ public:
 		//Window
 		cVector2f vSize = cVector2f(290, 720);
 		vGroupSize.x = vSize.x - 20;
-		cVector3f vPos = cVector3f(pSet->GetVirtualSize().x - vSize.x - 3, 3, 0);
+		cVector3f vPos = cVector3f(pSet->GetVirtualSize().x - vSize.x - 10, 10, 0);
 		mpOptionWindow = pSet->CreateWidgetWindow(0,vPos,vSize,_W("ModelView Toolbar") );
 		
 		///////////////////////////

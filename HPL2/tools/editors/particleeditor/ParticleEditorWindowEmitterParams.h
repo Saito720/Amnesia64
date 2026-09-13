@@ -42,6 +42,7 @@ public:
 	~cParticleEditorWindowEmitterParams();
 
 	void SetCurrentEmitter(cEntityWrapperParticleEmitter* apEmitter);
+	void OnScreenResize();
 
 protected:
 	void OnInitLayout();

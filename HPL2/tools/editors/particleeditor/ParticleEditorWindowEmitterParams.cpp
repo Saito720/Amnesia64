@@ -70,6 +70,12 @@ void cParticleEditorWindowEmitterParams::SetCurrentEmitter(cEntityWrapperParticl
 
 //-------------------------------------------------------------
 
+void cParticleEditorWindowEmitterParams::OnScreenResize()
+{
+	SetSize(cVector2f(512,cMath::Max(40.0f,mpSet->GetVirtualSize().y-GetPosition().y)));
+	mpTFCategories->SetSize(GetSize()-cVector2f(10,4));
+}
+
 void cParticleEditorWindowEmitterParams::OnInitLayout()
 {
 	tWStringList lstLabelMinMax;

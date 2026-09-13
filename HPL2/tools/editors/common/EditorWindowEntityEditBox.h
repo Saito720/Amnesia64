@@ -51,6 +51,7 @@ public:
 
 protected:
 	void OnInitLayout();
+	void OnScreenResize();
 	void OnSetActive(bool abX);
 
 	virtual void OnUpdate(float afTimeStep);

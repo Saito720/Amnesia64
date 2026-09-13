@@ -311,6 +311,7 @@ namespace hpl {
 		mvFileTypeExtensions[eFileBrowserFileType_Graphics].push_back(_W("jpg"));
 
 		mvFileTypeExtensions[eFileBrowserFileType_Models].push_back(_W("dae"));
+		mvFileTypeExtensions[eFileBrowserFileType_Models].push_back(_W("fbx"));
 		mvFileTypeExtensions[eFileBrowserFileType_Models].push_back(_W("ent"));
 
 		mvFileTypeExtensions[eFileBrowserFileType_Sounds].push_back(_W("ogg"));

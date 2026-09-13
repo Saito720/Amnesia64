@@ -784,8 +784,8 @@ public:
 			mpWorld = gpEngine->GetScene()->LoadWorld(asFileName, lFlags);
 			if(mpWorld == NULL)FatalError("Could not load world '%s'\n", asFileName.c_str());
 		}
-		//Dae level (non proper)
-		else if(sExt=="dae")
+		//Mesh preview (not a map file)
+		else if(sExt=="dae" || sExt=="fbx")
 		{
 			mpWorld = gpEngine->GetScene()->CreateWorld(asFileName);
 
@@ -1380,6 +1380,7 @@ public:
 		cGuiPopUpFilePicker* pPicker = pSet->CreatePopUpLoadFilePicker(mvPickedFiles,false,msCurrentFilePath,false, this, kGuiCallback(LoadWorldFromFilePicker));
 		pPicker->AddCategory(_W("Scenes"),_W("*.map"));
 		pPicker->AddFilter(0, _W("*.dae"));
+		pPicker->AddFilter(0, _W("*.fbx"));
 		
 		//pPicker->SetSaveFileDest(_W("maps"));
 

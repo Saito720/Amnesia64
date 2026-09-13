@@ -652,6 +652,7 @@ cEdInputModel::cEdInputModel(iEdWindow* apWindow, const tWString& asLabel, bool 
 		sType += _W("_anim");
 	
 	AddFileType(sType);
+	AddFileType(_W("fbx"));
 }
 
 //------------------------------------------------------------------------

@@ -589,13 +589,13 @@ bool cEditorInputFile::BrowseButton_OnPressed(iWidget* apWidget, const cGuiMessa
 		case eEditorResourceType_Model:
 			sCatName = _W("Models");
 			lstCatString.push_back(_W("*.dae"));
-			//lstCatString.push_back(_W("*.fbx"));
+			lstCatString.push_back(_W("*.fbx"));
 			pEditor->ShowLoadFilePicker(mvTempLoadedFiles, cString::GetFilePathW(msTempLoadedFile), this, kGuiCallback(Browser_OnOkay), sCatName, lstCatString);
 			break;
 		case eEditorResourceType_ModelAnim:
 			sCatName = _W("Animations");
 			lstCatString.push_back(_W("*.dae_anim"));
-			//lstCatString.push_back(_W("*.fbx"));
+			lstCatString.push_back(_W("*.fbx"));
 			pEditor->ShowLoadFilePicker(mvTempLoadedFiles, cString::GetFilePathW(msTempLoadedFile), this, kGuiCallback(Browser_OnOkay), sCatName, lstCatString);
 			break;
 		case eEditorResourceType_Sound:

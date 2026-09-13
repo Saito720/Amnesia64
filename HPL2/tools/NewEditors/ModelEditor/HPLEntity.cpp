@@ -311,7 +311,9 @@ bool cHplEntity::ToggleTestWindow()
 void cHplEntity::CreateImportMeshDialog()
 {
 	tWString sMeshFileName = cString::To16Char(mpTypeSubMesh->GetMeshFilename());
-	mpEditor->GetWindowHandler()->CreateLoadDialog(mvDestFilenames, sMeshFileName, this, kGuiCallback(ImportMesh), _W("Meshes"), tWStringList(1, _W("*.dae")));
+	tWStringList vFilters(1, _W("*.dae"));
+	vFilters.push_back(_W("*.fbx"));
+	mpEditor->GetWindowHandler()->CreateLoadDialog(mvDestFilenames, sMeshFileName, this, kGuiCallback(ImportMesh), _W("Meshes"), vFilters);
 }
 
 //-------------------------------------------------------------------

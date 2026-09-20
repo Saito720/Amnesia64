@@ -40,6 +40,8 @@ namespace
     const float PlayerJumpBlendTime = 0.12f;
     const float PlayerWalkStartSpeed = 0.12f;
     const float PlayerWalkStopSpeed = 0.06f;
+    const float PlayerBackwardDirectionThreshold = 0.2f;
+    const float PlayerDirectionBlendTime = 0.2f;
     // Keep the order in sync with cLuxMultiplayerWorld::PlayerAnimation.
     const char* const PlayerAnimationNames[] = {
         "idle", "walking", "running", "jumping", "crouched_idle", "crouched_walking"
@@ -1501,18 +1503,49 @@ void cLuxMultiplayerWorld::UpdatePlayerModels(float dt)
         const bool reset = created || player.resetModelPose;
         const float speedSquared = player.gameplay.velocity[0] * player.gameplay.velocity[0] +
                                    player.gameplay.velocity[2] * player.gameplay.velocity[2];
+        const float speed = std::sqrt(speedSquared);
+        const float threshold = !reset && visual.moving ? PlayerWalkStopSpeed : PlayerWalkStartSpeed;
+        visual.moving = speedSquared > threshold * threshold;
+        bool backward = reset ? false : visual.movingBackward;
+        if (visual.moving)
+        {
+            // Use the owner's character heading, not the delayed model or its
+            // independently aimed head. Hold direction through sideways motion.
+            const float forward = (-std::sin(player.yaw) * player.gameplay.velocity[0] -
+                                   std::cos(player.yaw) * player.gameplay.velocity[2]) / speed;
+            if (forward < -PlayerBackwardDirectionThreshold) backward = true;
+            else if (forward > PlayerBackwardDirectionThreshold) backward = false;
+        }
+        if (reset)
+        {
+            visual.gaitDirection = visual.gaitDirectionFrom = backward ? -1.0f : 1.0f;
+            visual.gaitDirectionBlendTime = PlayerDirectionBlendTime;
+        }
+        else if (backward != visual.movingBackward)
+        {
+            visual.gaitDirectionFrom = visual.gaitDirection;
+            visual.gaitDirectionBlendTime = 0;
+        }
+        visual.movingBackward = backward;
+        visual.gaitDirectionBlendTime = std::min(PlayerDirectionBlendTime, visual.gaitDirectionBlendTime + dt);
+        const float directionT = visual.gaitDirectionBlendTime / PlayerDirectionBlendTime;
+        const float directionBlend = directionT * directionT * (3.0f - 2.0f * directionT);
+        visual.gaitDirection = visual.gaitDirectionFrom +
+            ((backward ? -1.0f : 1.0f) - visual.gaitDirectionFrom) * directionBlend;
         for (PlayerAnimation gait : {AnimationWalking, AnimationRunning, AnimationCrouchedWalking})
         {
             // Body velocity already includes collisions and scripted slowdowns.
-            // Compensate for the base multiplier: effective playback must equal
-            // actual m/s divided by m/source-second, without rewinding phase.
-            if (clips[gait] && mfPlayerStrideReferenceSpeeds[gait] > 0)
-                clips[gait]->SetSpeed(std::sqrt(speedSquared) / (mfPlayerStrideReferenceSpeeds[gait] * clips[gait]->GetBaseSpeed()));
+            // Compensate for the base multiplier, then ease only the direction
+            // through zero when reversing. Existing clip phases are preserved.
+            if (clips[gait])
+            {
+                const float magnitude = mfPlayerStrideReferenceSpeeds[gait] > 0 ?
+                    speed / (mfPlayerStrideReferenceSpeeds[gait] * clips[gait]->GetBaseSpeed()) : 1.0f;
+                clips[gait]->SetSpeed(magnitude * visual.gaitDirection);
+            }
         }
-        // Run intent is separate from speed: slowing down a run must not select
-        // walking. Crouch takes precedence over run, and a stationary run is idle.
-        const float threshold = !reset && visual.moving ? PlayerWalkStopSpeed : PlayerWalkStartSpeed;
-        visual.moving = speedSquared > threshold * threshold;
+        // Forward run intent is separate from speed, including slowdowns.
+        // Crouch takes precedence over run, and a stationary run is idle.
         const bool crouching = (player.gameplay.flags & PlayerCrouching) != 0;
         const bool running = (player.gameplay.flags & PlayerRunning) != 0;
         // The owner retains this flag through the whole flight. Inferring a
@@ -1521,7 +1554,9 @@ void cLuxMultiplayerWorld::UpdatePlayerModels(float dt)
         const bool takeoff = jumping && (reset || !visual.jumping);
         visual.jumping = jumping;
         PlayerAnimation target = crouching ? (visual.moving ? AnimationCrouchedWalking : AnimationCrouchedIdle) :
-            !visual.moving ? AnimationIdle : running ? AnimationRunning : AnimationWalking;
+            !visual.moving ? AnimationIdle : running && !backward ? AnimationRunning : AnimationWalking;
+        // Backward running uses a faster reversed walk. Reversing the running
+        // pose itself keeps its forward lean and is less convincing.
         // Fall back within the requested posture before using a standing pose.
         if (!clips[target]) target = target == AnimationCrouchedWalking && clips[AnimationCrouchedIdle] ?
             AnimationCrouchedIdle : visual.moving && clips[AnimationWalking] ? AnimationWalking : AnimationIdle;

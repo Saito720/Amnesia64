@@ -81,6 +81,10 @@ inline bool RunPlayerModelRegression(tString& error, bool required)
     source.position = source.renderPosition = cVector3f(0, -1000, 0);
     source.size = cVector3f(0.6f, 1.8f, 0.6f);
     source.renderFeetPosition = source.position - cVector3f(0, source.size.y * 0.5f, 0);
+    // The synthetic cadence samples below move along +X: face that direction
+    // explicitly so their positive playback expectations mean forward walking.
+    source.yaw = source.renderYaw = -kPi2f;
+    source.gameplay.forward[0] = 1; source.gameplay.forward[2] = 0;
     const cVector3f initialFeet = source.renderFeetPosition;
     const unsigned originalBodies = countBodies();
     fixture.UpdatePlayerModels();
@@ -357,18 +361,142 @@ inline bool RunPlayerModelRegression(tString& error, bool required)
             require(std::abs(clips[animation]->GetSpeed()*clips[animation]->GetBaseSpeed()-rate) < 0.00001f,
                 "running or crouched-walking cadence did not follow its own measured stride speed");
         }
+    const auto movementVector = [&](float forward, float sideways, float speed) {
+        const float yaw = source.yaw;
+        source.gameplay.velocity[0] = speed*(-std::sin(yaw)*forward+std::cos(yaw)*sideways);
+        source.gameplay.velocity[1] = 0;
+        source.gameplay.velocity[2] = speed*(-std::cos(yaw)*forward-std::sin(yaw)*sideways);
+    };
+    tString reverseSamples = "requested_gait,backward_clip,reference_speed,backward_rate,negative_wraps\n";
+    const float crouchedIdleRate = crouchedIdle->GetSpeed()*crouchedIdle->GetBaseSpeed();
+    const float inactiveJumpRate = jumping->GetSpeed()*jumping->GetBaseSpeed();
+    for (auto gait : {World::AnimationWalking,World::AnimationRunning,World::AnimationCrouchedWalking})
+    {
+        const auto backwardClip = gait == World::AnimationRunning ? World::AnimationWalking : gait;
+        source.gameplay.flags = onGround | (gait == World::AnimationRunning ? LuxWorldWire::PlayerRunning :
+            gait == World::AnimationCrouchedWalking ? LuxWorldWire::PlayerCrouching : 0);
+        const float speed = referenceSpeeds[gait]*0.8f;
+        movementVector(1,0,speed); source.resetModelPose = true;
+        fixture.UpdatePlayerModels(0);
+        require(clips[gait]->GetWeight() == 1 && visual.gaitDirection == 1,
+            "forward gait reset did not begin with positive playback");
+        const auto forwardPose = pose();
+        const float forwardTime = clips[gait]->GetTimePosition();
+        movementVector(-1,0,speed);
+        step(0);
+        require(visual.movingBackward && visual.gaitDirection == 1 && samePose(forwardPose) &&
+            clips[gait]->GetTimePosition() == forwardTime,
+            "requesting backward movement immediately changed the phase or displayed pose");
+        float previousDirection = 1;
+        bool sawPositive = false, sawNegative = false;
+        for (int tick = 0; tick < 24; ++tick)
+        {
+            step(1.0f/60);
+            const float direction = clips[gait]->GetSpeed()*clips[gait]->GetBaseSpeed()/0.8f;
+            require(direction <= previousDirection+0.00001f && previousDirection-direction < 0.3f,
+                "forward-to-backward playback snapped or changed in the wrong direction");
+            sawPositive = sawPositive || direction > 0; sawNegative = sawNegative || direction < 0;
+            previousDirection = direction;
+        }
+        require(sawPositive && sawNegative && visual.gaitDirection == -1 && clips[backwardClip]->GetWeight() == 1,
+            "backward gait did not settle through a gradual sign change into its intended clip");
+        for (auto loop : {World::AnimationWalking,World::AnimationRunning,World::AnimationCrouchedWalking})
+            require(std::abs(clips[loop]->GetSpeed()*clips[loop]->GetBaseSpeed()+speed/referenceSpeeds[loop]) < 0.00001f,
+                "a backward gait clock lost its negative calibrated speed");
+        require(crouchedIdle->GetSpeed()*crouchedIdle->GetBaseSpeed() == crouchedIdleRate &&
+            jumping->GetSpeed()*jumping->GetBaseSpeed() == inactiveJumpRate,
+            "reversing gait playback changed idle or jump playback");
+        // Cross zero using the real animation clock, then complete two cycles.
+        auto* reverseClip = clips[backwardClip];
+        reverseClip->SetTimePosition(0.001f);
+        fixture.UpdatePlayerModels(0);
+        unsigned wraps = 0;
+        const int reverseTicks = int(std::ceil(2.1f*reverseClip->GetLength()*60/(speed/referenceSpeeds[backwardClip])));
+        for (int tick = 0; tick < reverseTicks; ++tick)
+        {
+            const float before = reverseClip->GetTimePosition();
+            step(1.0f/60);
+            if (reverseClip->GetTimePosition() > before) ++wraps;
+        }
+        require(wraps >= 2 && wraps <= 3, "negative native animation playback did not wrap continuously across zero");
+        char sample[192];
+        std::snprintf(sample,sizeof(sample),"%s,%s,%.6f,%.6f,%u\n",
+            gait == World::AnimationRunning ? "running" : gait == World::AnimationWalking ? "walking" : "crouched_walking",
+            backwardClip == World::AnimationWalking ? "walking" : "crouched_walking",referenceSpeeds[backwardClip],
+            reverseClip->GetSpeed()*reverseClip->GetBaseSpeed(),wraps);
+        reverseSamples += sample;
+        for (float rate : {0.25f,1.0f,1.8f,0.4f})
+        {
+            movementVector(-1,0,referenceSpeeds[gait]*rate); step(1.0f/60);
+            require(std::abs(reverseClip->GetSpeed()*reverseClip->GetBaseSpeed()+
+                referenceSpeeds[gait]*rate/referenceSpeeds[backwardClip]) < 0.00001f,
+                "backward slowdown or recovery lost the displayed clip's calibrated magnitude");
+        }
+        const float baseSpeed = reverseClip->GetBaseSpeed(); reverseClip->SetBaseSpeed(2);
+        step(0);
+        require(std::abs(reverseClip->GetSpeed()*reverseClip->GetBaseSpeed()+
+            referenceSpeeds[gait]*0.4f/referenceSpeeds[backwardClip]) < 0.00001f,
+            "backward stride calibration applied the authored base speed twice");
+        reverseClip->SetBaseSpeed(baseSpeed);
+        for (float forward : {-0.15f,0.15f,-0.05f,0.05f,0.0f})
+        {
+            movementVector(forward,std::sqrt(1-forward*forward),speed);
+            for (int tick = 0; tick < 4; ++tick) step(1.0f/60);
+            require(visual.movingBackward && visual.gaitDirection == -1,
+                "near-strafe velocity jitter flipped a backward gait");
+        }
+        movementVector(0,0,0);
+        for (int tick = 0; tick < 24; ++tick) step(1.0f/60);
+        require(visual.movingBackward && reverseClip->GetSpeed() == 0 &&
+            clips[gait == World::AnimationCrouchedWalking ? World::AnimationCrouchedIdle : World::AnimationIdle]->GetWeight() == 1,
+            "stopping backward movement lost direction memory or selected a moving pose");
+        movementVector(0,1,speed); step(1.0f/60);
+        require(visual.movingBackward && visual.gaitDirection == -1, "resuming with a strafe lost backward direction memory");
+        movementVector(1,0,speed);
+        for (int tick = 0; tick < 4; ++tick) step(1.0f/60);
+        const float interruptedDirection = visual.gaitDirection;
+        fixture.UpdatePlayerModels(0); const auto interruptedPose = pose();
+        movementVector(-1,0,speed); step(0);
+        require(visual.gaitDirection == interruptedDirection && samePose(interruptedPose),
+            "interrupting a direction blend snapped the signed speed or pose");
+        for (int tick = 0; tick < 4; ++tick) step(1.0f/60);
+        require(visual.gaitDirection < interruptedDirection, "interrupted direction blend did not return toward backward");
+        movementVector(1,0,speed);
+        for (int tick = 0; tick < 24; ++tick) step(1.0f/60);
+        require(!visual.movingBackward && visual.gaitDirection == 1 && clips[gait]->GetWeight() == 1,
+            "backward-to-forward movement did not restore its forward gait");
+        movementVector(-1,0,speed); source.resetModelPose = true; fixture.UpdatePlayerModels(0);
+        require(visual.movingBackward && visual.gaitDirection == -1 && clips[backwardClip]->GetWeight() == 1,
+            "new-life backward movement started with forward playback");
+        movementVector(0,0,0); source.resetModelPose = true; fixture.UpdatePlayerModels(0);
+        require(!visual.movingBackward && visual.gaitDirection == 1, "stationary reset retained the previous life's backward direction");
+    }
+    mark(role+"-player-backward.csv",reverseSamples);
+    // Gameplay body yaw determines direction even if presentation and head aim
+    // are temporarily facing the opposite way while catching up.
+    source.gameplay.flags = onGround;
+    source.renderYaw = source.yaw+kPif;
+    source.gameplay.forward[0] = std::sin(source.yaw); source.gameplay.forward[2] = std::cos(source.yaw);
+    movementVector(1,0,referenceSpeed); source.resetModelPose = true; fixture.UpdatePlayerModels(0);
+    step(1.0f/60);
+    require(!visual.movingBackward && walking->GetSpeed() > 0, "render or head yaw overrode authoritative movement direction");
+    source.renderYaw = source.yaw;
+    source.gameplay.forward[0] = -std::sin(source.yaw); source.gameplay.forward[2] = -std::cos(source.yaw);
+    source.resetModelPose = true; fixture.UpdatePlayerModels(0);
     changeState(World::AnimationIdle,onGround,0);
     // A takeoff signal wins over the character's lingering grounded grace bit.
     // The replicated full-flight flag remains set through descent and ends on landing.
     const float jumpStart = jumping->GetLength()*(4.0f/15.0f);
     const float jumpHold = jumping->GetLength()*0.56f;
     source.gameplay.flags = onGround|LuxWorldWire::PlayerJumping;
+    movementVector(-1,0,1);
     source.gameplay.velocity[1] = 3;
     step(0);
     require(std::abs(jumping->GetTimePosition()-jumpStart) < 0.00001f && jumping->IsActive(),
         "native takeoff did not start the nonlooping jump at its authored takeoff pose");
     for (int i = 0; i < 10; ++i) step(1.0f/60);
-    require(jumping->GetWeight() == 1, "takeoff did not blend into jumping promptly");
+    require(jumping->GetWeight() == 1 && jumping->GetTimePosition() > jumpStart && jumping->GetSpeed() > 0,
+        "backward takeoff reversed the jump clip or failed to blend into jumping promptly");
     source.gameplay.flags = LuxWorldWire::PlayerAlive|LuxWorldWire::PlayerJumping;
     source.gameplay.velocity[1] = 0;
     for (int i = 0; i < 80; ++i) step(1.0f/60);
@@ -420,6 +548,7 @@ inline bool RunPlayerModelRegression(tString& error, bool required)
         body->AddExtraSize(player->GetBodyCrouchSize());
         body->SetMass(player->GetDefaultMass());
         body->SetFeetPosition(cVector3f(0,1000.01f,0));
+        body->SetYaw(player->GetCamera()->GetYaw());
         body->SetCollideCharacter(false);
         player->mpCharBody = body;
         cPlayerModelMovementProbe movement(player);
@@ -437,21 +566,31 @@ inline bool RunPlayerModelRegression(tString& error, bool required)
                 (sample.running ? LuxWorldWire::PlayerRunning : 0) | (sample.jumping ? LuxWorldWire::PlayerJumping : 0) |
                 (sample.crouching ? LuxWorldWire::PlayerCrouching : 0);
             for (int axis = 0; axis < 3; ++axis) source.gameplay.velocity[axis] = sample.velocity.v[axis];
+            source.yaw = source.renderYaw = body->GetYaw();
+            for (int axis = 0; axis < 3; ++axis) source.gameplay.forward[axis] = sample.forward.v[axis];
+            source.gameplay.pitch = sample.pitch;
             source.renderFeetPosition = initialFeet+(sample.feet-nativeStartFeet);
             return sample;
         };
-        const auto move = [&](float multiplier, int ticks) {
+        const auto move = [&](float multiplier, int ticks, float direction = 1.0f) {
             player->SetEventMoveSpeedMul(multiplier);
             cVector3f measured;
             for (int i = 0; i < ticks; ++i)
             {
-                movement.Update(dt); body->Move(eCharDir_Forward,1); body->Update(dt);
+                movement.Update(dt); body->Move(eCharDir_Forward,direction); body->Update(dt);
                 measured = captureMotion().velocity;
                 step(dt);
                 const float horizontalSpeed = std::sqrt(measured.x*measured.x+measured.z*measured.z);
-                require(std::abs(walking->GetSpeed()*walking->GetBaseSpeed()-horizontalSpeed/referenceSpeed) < 0.0001f,
-                    "native character slowdown did not reach walking playback through the outgoing pose velocity sampler");
+                const float rate = walking->GetSpeed()*walking->GetBaseSpeed();
+                if (visual.gaitDirection == 1 || visual.gaitDirection == -1)
+                    require(std::abs(rate-visual.gaitDirection*horizontalSpeed/referenceSpeed) < 0.0001f,
+                        "native character slowdown did not reach signed walking playback through the outgoing pose velocity sampler");
+                else require(std::abs(rate) <= horizontalSpeed/referenceSpeed+0.0001f,
+                    "native direction reversal exceeded the measured walking cadence");
             }
+            require(visual.gaitDirection == direction &&
+                direction*(-std::sin(body->GetYaw())*measured.x-std::cos(body->GetYaw())*measured.z) > 0,
+                "native movement direction did not reach the gait through authoritative body yaw");
             return std::sqrt(measured.x*measured.x+measured.z*measured.z);
         };
         const float normalSpeed = move(1,90);
@@ -475,10 +614,33 @@ inline bool RunPlayerModelRegression(tString& error, bool required)
         require(running->GetWeight() == 1 && std::abs(slowRunSpeed/runSpeed-flashbackMultiplier) < 0.005f,
             "native slowed running changed gait or lost its proportional cadence");
         player->mbPressingRun = false;
+        const float backwardWalkSpeed = move(1,90,-1);
+        const float slowedBackwardWalk = move(flashbackMultiplier,90,-1);
+        const float recoveredBackwardWalk = move(1,90,-1);
+        require(walking->GetWeight() == 1 && walking->GetSpeed() < 0 &&
+            std::abs(slowedBackwardWalk/backwardWalkSpeed-flashbackMultiplier) < 0.005f &&
+            std::abs(recoveredBackwardWalk-backwardWalkSpeed) < 0.005f,
+            "native backward walking lost its clip or proportional slowdown/recovery");
+        player->mbPressingRun = true;
+        const float backwardRunSpeed = move(1,90,-1);
+        const float slowedBackwardRun = move(flashbackMultiplier,90,-1);
+        const float recoveredBackwardRun = move(1,90,-1);
+        require(captureMotion().running && walking->GetWeight() == 1 && running->GetWeight() == 0 &&
+            backwardRunSpeed > backwardWalkSpeed && std::abs(slowedBackwardRun/backwardRunSpeed-flashbackMultiplier) < 0.005f &&
+            std::abs(recoveredBackwardRun-backwardRunSpeed) < 0.005f,
+            "native backward running did not use faster reversed walking through slowdown/recovery");
+        player->mbPressingRun = false;
         movement.OnCrouch(true);
         const float crouchSpeed = move(1,90);
         require(captureMotion().crouching && crouchedWalking->GetWeight() == 1 && crouchSpeed < normalSpeed,
             "native crouch controller did not select crouched walking through the outgoing pose sampler");
+        const float backwardCrouchSpeed = move(1,90,-1);
+        const float slowedBackwardCrouch = move(flashbackMultiplier,90,-1);
+        const float recoveredBackwardCrouch = move(1,90,-1);
+        require(crouchedWalking->GetWeight() == 1 && crouchedWalking->GetSpeed() < 0 &&
+            std::abs(slowedBackwardCrouch/backwardCrouchSpeed-flashbackMultiplier) < 0.005f &&
+            std::abs(recoveredBackwardCrouch-backwardCrouchSpeed) < 0.005f,
+            "native crouched backward walking lost proportional slowdown/recovery");
         body->SetMoveSpeed(eCharDir_Forward,0); player->mbPressedMove = false;
         for (int i = 0; i < 30; ++i) { movement.Update(dt); body->Update(dt); captureMotion(); step(dt); }
         require(crouchedIdle->GetWeight() == 1, "stopping the native crouched body did not select crouched idle");
@@ -522,11 +684,12 @@ inline bool RunPlayerModelRegression(tString& error, bool required)
         source.gameplay.flags = onGround;
         source.renderFeetPosition = initialFeet;
         for (int i = 0; i < 24; ++i) step(1.0f/60);
-        char metrics[640];
-        std::snprintf(metrics,sizeof(metrics),"walking_reference_mps=%.6f running_reference_mps=%.6f crouched_reference_mps=%.6f baseline_mps=%.6f flashback_multiplier=%.6f slowed_mps=%.6f recovered_mps=%.6f scripted_run_mps=%.6f run_mps=%.6f slowed_run_mps=%.6f crouched_mps=%.6f jump_height=%.6f airborne=%d descent=%d landing=%d\n",
+        char metrics[1024];
+        std::snprintf(metrics,sizeof(metrics),"walking_reference_mps=%.6f running_reference_mps=%.6f crouched_reference_mps=%.6f baseline_mps=%.6f flashback_multiplier=%.6f slowed_mps=%.6f recovered_mps=%.6f scripted_run_mps=%.6f run_mps=%.6f slowed_run_mps=%.6f crouched_mps=%.6f jump_height=%.6f airborne=%d descent=%d landing=%d backward_walk_mps=%.6f slowed_backward_walk_mps=%.6f recovered_backward_walk_mps=%.6f backward_run_mps=%.6f slowed_backward_run_mps=%.6f recovered_backward_run_mps=%.6f backward_crouch_mps=%.6f slowed_backward_crouch_mps=%.6f recovered_backward_crouch_mps=%.6f\n",
             referenceSpeed,referenceSpeeds[World::AnimationRunning],referenceSpeeds[World::AnimationCrouchedWalking],normalSpeed,
             flashbackMultiplier,slowSpeed,recoveredSpeed,scriptedRunSpeed,runSpeed,slowRunSpeed,crouchSpeed,maximumJumpHeight,
-            int(sawAirborne),int(sawDescent),int(sawLanding));
+            int(sawAirborne),int(sawDescent),int(sawLanding),backwardWalkSpeed,slowedBackwardWalk,recoveredBackwardWalk,
+            backwardRunSpeed,slowedBackwardRun,recoveredBackwardRun,backwardCrouchSpeed,slowedBackwardCrouch,recoveredBackwardCrouch);
         mark(role+"-player-walk-speed.txt",metrics);
     }
     const auto setLook = [&](float yaw, float pitch) {
@@ -871,7 +1034,7 @@ class cPlayerModelScreenshot
     unsigned animationFrame = 0;
     bool captured = false;
     bool advanceFrame = true;
-    tString animationSamples = "frame,seconds,state,flags,horizontal_speed,feet_height,idle_weight,idle_time,idle_rate,walking_weight,walking_time,walking_rate,running_weight,running_time,running_rate,jumping_weight,jumping_time,jumping_rate,crouched_idle_weight,crouched_idle_time,crouched_idle_rate,crouched_walking_weight,crouched_walking_time,crouched_walking_rate,body_yaw,look_yaw,head_yaw,head_pitch\n";
+    tString animationSamples = "frame,seconds,state,flags,horizontal_speed,feet_height,idle_weight,idle_time,idle_rate,walking_weight,walking_time,walking_rate,running_weight,running_time,running_rate,jumping_weight,jumping_time,jumping_rate,crouched_idle_weight,crouched_idle_time,crouched_idle_rate,crouched_walking_weight,crouched_walking_time,crouched_walking_rate,body_yaw,look_yaw,head_yaw,head_pitch,gait_direction,moving_backward\n";
     iLight* light = NULL;
     cMeshEntity* avatarOccluder = NULL;
     unsigned visibleAvatarPixels = 0;
@@ -925,7 +1088,7 @@ public:
             rendered = 0;
             advanceFrame = true;
             if (view < 2) ++view;
-            else if (view == 2 && ++animationFrame == 576)
+            else if (view == 2 && ++animationFrame == 792)
             {
                 mark(role+"-player-animation-frames.csv", animationSamples);
                 view = 3;
@@ -956,7 +1119,9 @@ public:
                 source.gameplay.velocity[0] = source.gameplay.velocity[1] = source.gameplay.velocity[2] = 0;
                 source.renderFeetPosition = cVector3f(0,-1000.9f,0);
                 const auto speed = [&](World::PlayerAnimation clip, float rate) {
-                    source.gameplay.velocity[0] = fixture->mfPlayerStrideReferenceSpeeds[clip]*rate;
+                    const float magnitude = fixture->mfPlayerStrideReferenceSpeeds[clip]*rate;
+                    source.gameplay.velocity[0] = -std::sin(source.yaw)*magnitude;
+                    source.gameplay.velocity[2] = -std::cos(source.yaw)*magnitude;
                 };
                 if (animationFrame >= 24 && animationFrame < 60) speed(World::AnimationWalking,1);
                 else if (animationFrame >= 60 && animationFrame < 96)
@@ -983,7 +1148,7 @@ public:
                 if (animationFrame >= 288 && animationFrame < 312) { gaze += cMath::ToRad(25); source.gameplay.pitch = 0.3f; }
                 else if (animationFrame >= 312 && animationFrame < 348) { gaze += cMath::ToRad(80); source.gameplay.pitch = 0.65f; }
                 else if (animationFrame >= 348 && animationFrame < 384) { gaze -= cMath::ToRad(80); source.gameplay.pitch = -0.65f; }
-                if (animationFrame >= 432)
+                if (animationFrame >= 432 && animationFrame < 576)
                 {
                     // One second spinning, one reversing, one stopped, first
                     // idle and then moving. Input advances30 degrees per frame.
@@ -991,6 +1156,18 @@ public:
                     gaze += 4*kPif*(phase < 24 ? (phase+1)/24.0f : phase < 48 ? (47-phase)/24.0f : 0);
                     source.yaw = source.renderYaw = std::atan2(std::sin(gaze),std::cos(gaze));
                     if (animationFrame >= 504 && phase < 48) speed(World::AnimationWalking,1);
+                }
+                else if (animationFrame >= 576)
+                {
+                    // Each posture walks forward, reverses for1.5seconds, then
+                    // returns forward without restarting any animation clock.
+                    const unsigned gait = (animationFrame-576)/72;
+                    const unsigned phase = (animationFrame-576)%72;
+                    const float direction = phase >= 24 && phase < 60 ? -1.0f : 1.0f;
+                    if (gait == 1) source.gameplay.flags |= LuxWorldWire::PlayerRunning;
+                    else if (gait == 2) source.gameplay.flags |= LuxWorldWire::PlayerCrouching;
+                    speed(gait == 2 ? World::AnimationCrouchedWalking : World::AnimationWalking,
+                        direction*(gait == 1 ? 1.4f : 0.8f));
                 }
                 source.gameplay.forward[0] = -std::sin(gaze);
                 source.gameplay.forward[2] = -std::cos(gaze);
@@ -1110,7 +1287,8 @@ public:
             auto* mesh = fixture->mPlayerModels[peer].mesh;
             const char* names[] = {"idle","walking","running","jumping","crouched_idle","crouched_walking"};
             char sample[384];
-            const float speed = fixture->mPlayers[peer].gameplay.velocity[0];
+            const auto& velocity = fixture->mPlayers[peer].gameplay.velocity;
+            const float speed = std::sqrt(velocity[0]*velocity[0]+velocity[2]*velocity[2]);
             std::snprintf(sample,sizeof(sample),"%u,%.6f,%s,%u,%.6f,%.6f",animationFrame,animationFrame/24.0f,
                 names[fixture->mPlayerModels[peer].animation],unsigned(fixture->mPlayers[peer].gameplay.flags),speed,
                 fixture->mPlayers[peer].renderFeetPosition.y+1000.9f);
@@ -1122,7 +1300,8 @@ public:
                 animationSamples += sample;
             }
             const auto& visual = fixture->mPlayerModels[peer];
-            std::snprintf(sample,sizeof(sample),",%.6f,%.6f,%.6f,%.6f\n",visual.bodyYaw,visual.lookYaw,visual.headYaw,visual.headPitch);
+            std::snprintf(sample,sizeof(sample),",%.6f,%.6f,%.6f,%.6f,%.6f,%u\n",visual.bodyYaw,visual.lookYaw,visual.headYaw,visual.headPitch,
+                visual.gaitDirection,unsigned(visual.movingBackward));
             animationSamples += sample;
         }
         captured = true;

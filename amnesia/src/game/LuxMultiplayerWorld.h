@@ -154,6 +154,8 @@ private:
         cMeshEntity* mesh = NULL; // Owned by the map's world.
         std::unique_ptr<cNode3D> node;
         bool moving = false, jumping = false;
+        bool movingBackward = false;
+        float gaitDirection = 1, gaitDirectionFrom = 1, gaitDirectionBlendTime = 0.2f;
         PlayerAnimation animation = AnimationIdle;
         std::array<float, AnimationCount> weights = {}, blendFrom = {};
         float blendTime = 0, blendDuration = 0.25f;

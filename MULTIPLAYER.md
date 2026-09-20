@@ -164,6 +164,15 @@ Ground locomotion phases hold at rest; both idle clips retain their authored spe
 Calibration rejects insufficient support or inconsistent foot motion using bilateral
 agreement and median absolute deviation, retaining authored playback if measurement fails.
 
+Backward movement reverses the walking or crouched-walking loop. Backward running
+also uses walking, accelerated by actual speed against the walking reference;
+forward running retains its running clip. Direction comes from horizontal velocity
+relative to the owner's character yaw, independently of the smoothed model/head.
+A normalized forward component below -0.2 selects backward and above +0.2 selects
+forward; sideways motion and stops retain the last direction. A 0.20-second
+smoothstep eases the playback sign through zero without resetting clip phases,
+including interrupted direction changes. Idle and jump playback stay forward.
+
 Jump state follows actual takeoff through landing, independently of the shorter native
 jump-force timer. The non-looping clip starts at its takeoff section (about 0.50 s),
 holds its final flight pose (about 1.05 s) if still airborne, and blends back to ground
@@ -171,7 +180,7 @@ locomotion on landing. A quick repeat during that blend reuses the contributing 
 without rewinding a visible layer. Positive baked jump height in the hips is removed
 with a weighted per-instance bone transform, leaving the character body responsible
 for elevation while preserving the leg tuck. Ordinary falls without a jump retain
-ground locomotion. Directional locomotion clips are not implemented.
+ground locomotion. Dedicated backward and strafing clips are not implemented.
 The root and its ancestors remain anchored while the hips and limbs animate.
 The local player retains the first-person view.
 

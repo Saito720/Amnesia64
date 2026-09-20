@@ -110,12 +110,21 @@ and billboard cleanup on death, staleness and reset. Dedicated close captures
 verify all four image quadrants render in the correct orientation and disappear
 behind opaque native geometry. The synthetic image avoids relying on a particular
 Steam account's avatar during a repeatable local test.
+Backward movement uses negative native gait clocks, with phase continuity across
+zero and multiple loop wraps. Direction changes ease through zero, including
+interrupted reversals; near-strafe jitter and stationary pauses retain direction.
+Standing backward running selects faster reversed walking at its measured stride,
+while crouched backward movement keeps the crouched clip. The fixture checks
+authoritative body yaw, reset behavior, unchanged idle/jump playback and native
+backward slowdown/recovery for all three movement modes. `*-player-backward.csv`
+records the selected clips, negative rates and native wrap counts.
 The native packet decoder also receives repeated turns across both yaw wrap
 boundaries and must retain its previous presentation offset on the correct branch.
-It saves front and side views plus 576 numbered native animation frames at 24 fps
+It saves front and side views plus 792 numbered native animation frames at 24 fps
 per peer, covering all six states, slow walking, posture changes, two jumps and
 six seconds of head aim and idle body following, then six seconds of rapid idle
-and moving spins, reversals and stops.
+and moving spins, reversals and stops, then nine seconds of forward/backward
+walking, faster walking and crouched walking with eased direction changes.
 If the bundled DevIL saver reports failure, the fixture requires an exact pixel
 readback before accepting the frame: that library truncates PNG byte counts to
 one byte and misreports complete files whose size is divisible by 256.

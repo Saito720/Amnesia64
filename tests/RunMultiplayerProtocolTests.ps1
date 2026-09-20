@@ -15,7 +15,7 @@ if (!$Compiler) {
     $env:INCLUDE = "$toolsetRoot/include;$sdkRoot/Include/$sdkVersion/ucrt;$sdkRoot/Include/$sdkVersion/shared;$sdkRoot/Include/$sdkVersion/um"
     $env:LIB = "$toolsetRoot/lib/x64;$sdkRoot/Lib/$sdkVersion/ucrt/x64;$sdkRoot/Lib/$sdkVersion/um/x64"
 }
-foreach ($test in @('multiplayer_session_protocol_tests','multiplayer_world_protocol_tests','multiplayer_enemy_protocol_tests','steam_launch_tests')) {
+foreach ($test in @('multiplayer_session_protocol_tests','multiplayer_world_protocol_tests','multiplayer_enemy_protocol_tests','multiplayer_reconstruction_tests','steam_launch_tests')) {
     & $Compiler /nologo /EHsc /std:c++17 /W4 /MD "$PSScriptRoot/$test.cpp" "/Fo$outputDirectory/$test.obj" "/Fe$outputDirectory/$test.exe"
     if ($LASTEXITCODE -ne 0) { throw "$test failed to compile." }
     & "$outputDirectory/$test.exe"

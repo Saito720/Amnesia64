@@ -8,6 +8,9 @@
 #include "LuxProp.h"
 #include "LuxProp_SwingDoor.h"
 #include "LuxProp_Wheel.h"
+#include "LuxProp_Lever.h"
+#include "LuxProp_MultiSlider.h"
+#include "LuxArea_Sticky.h"
 #include "physics/PhysicsRope.h"
 #include "scene/RopeEntity.h"
 #include "LuxEnemy.h"
@@ -38,6 +41,12 @@ namespace
     const tFlag EnemyPlayerCollisionFlag = 0x40000000u;
 
     uint64_t NetworkBodyId(iPhysicsBody* body) { return BodyId(body->GetName(), body->GetUniqueID()); }
+    cLuxArea_Sticky* BodyStickyArea(cLuxMap* map, iPhysicsBody* body)
+    {
+        if(map && body) for(auto* area:map->GetStickyAreas())
+            if(area->GetAttachedBody()==body) return area;
+        return NULL;
+    }
     uint64_t BodyEntityRuntimeId(iPhysicsBody* body)
     {
         iLuxEntity* entity=static_cast<iLuxEntity*>(body->GetUserData());
@@ -117,6 +126,7 @@ void cLuxMultiplayerWorld::Reset()
     // here. Normal disconnect releases the interaction before resetting.
     mpMap = NULL;
     mBodies.clear(); mPlayers.clear(); mLeases.clear(); mBodyLeases.clear(); mAmbiguousBodies.clear();
+    mBodyGenerations.clear();mHostBodySnapshots.clear();mDepartedPlayers.clear();mStickyStates.clear();
     mContactAges.clear(); mContactRequests.clear();
     mEnemyInfluence.clear(); mEnemyReclaims.clear();
     mInitialPackets.clear(); mlInitialBytes = 0; mbLocalInteractionStarted = false;
@@ -181,13 +191,19 @@ void cLuxMultiplayerWorld::RefreshBodies()
         // Static MoveObjects (bookshelves, bridges and ladders) move through an
         // HPL motor, not Newton integration. Keep formerly dynamic bodies indexed
         // too, so scripted changes to StaticPhysics do not lose replication.
-        if (body->GetMass() <= 0 && !mover && !mBodies.count(id)) continue;
+        if (body->GetMass() <= 0 && !mover && !mBodies.count(id) && !BodyStickyArea(mpMap,body)) continue;
         if (!present.insert(id).second) { collisions.insert(id); continue; }
         BodyTrack& track = mBodies[id];
         const uint64_t runtimeId=BodyEntityRuntimeId(body);
         if (track.body != body || track.entityRuntimeId != runtimeId)
         {
             track.sent = false; track.received = false; track.hasTarget = false;
+            track.generation=0;
+            if(mpSession->IsHost()) {
+                uint32_t& generation=mBodyGenerations[id];
+                if(!++generation) ++generation;
+                track.generation=generation;
+            }
             mContactAges.erase(id);mContactRequests.erase(id);
             if(mlPendingRequest && mlPendingBody==id) CancelPendingInteraction();
         }
@@ -215,11 +231,57 @@ void cLuxMultiplayerWorld::RefreshBodies()
         for(uint64_t id:entry.second.bodies)
         {
             auto track=mBodies.find(id);
-            if(track==mBodies.end() || !LeaseMatchesBody(entry.second,id,track->second.body))
+            if(track==mBodies.end() || !LeaseMatchesBody(entry.second,id,track->second.body) || track->second.body->GetMass()<=0)
             {invalid.push_back(entry.first);break;}
         }
     for(uint32_t token:invalid) EndLease(token,mpSession->IsHost());
     if(mlPendingRequest && !mBodies.count(mlPendingBody)) CancelPendingInteraction();
+}
+
+uint32_t cLuxMultiplayerWorld::GetBodyGeneration(iPhysicsBody* body)
+{
+    if(!body || body->IsCharacter()) return 0;
+    const uint64_t id=NetworkBodyId(body);
+    auto track=mBodies.find(id);
+    if(track==mBodies.end() && body->GetMass()<=0 && !BodyStickyArea(mpMap,body)) {
+        auto* entity=static_cast<iLuxEntity*>(body->GetUserData());
+        if(!entity || entity->GetEntityType()!=eLuxEntityType_Prop ||
+           static_cast<iLuxProp*>(entity)->GetPropType()!=eLuxPropType_MoveObject) return 0;
+    }
+    if(track==mBodies.end() || track->second.body!=body || track->second.entityRuntimeId!=BodyEntityRuntimeId(body)) {
+        RefreshBodies();track=mBodies.find(id);
+    }
+    return track==mBodies.end() || track->second.body!=body?0:track->second.generation;
+}
+
+void cLuxMultiplayerWorld::BindBodyGeneration(iPhysicsBody* body,uint32_t generation)
+{
+    if(!body || !generation || !mpSession->IsClient()) return;
+    const uint64_t id=NetworkBodyId(body);
+    auto track=mBodies.find(id);
+    if(track==mBodies.end() || track->second.body!=body || track->second.entityRuntimeId!=BodyEntityRuntimeId(body)) {
+        RefreshBodies();track=mBodies.find(id);
+    }
+    if(track==mBodies.end() || track->second.body!=body) return;
+    auto previous=mBodyGenerations.find(id);
+    if(previous!=mBodyGenerations.end() && previous->second!=generation && !Newer(generation,previous->second)) return;
+    const bool rebuilt=track->second.generation==0;
+    if(track->second.generation!=generation) {track->second.received=false;track->second.hasTarget=false;}
+    track->second.generation=generation;mBodyGenerations[id]=generation;
+    // A definition can rebuild the same host incarnation after an unreliable
+    // pose arrived first. Rebind it explicitly without forgetting packet order.
+    auto snapshot=mHostBodySnapshots.find(id);
+    if(snapshot!=mHostBodySnapshots.end() && snapshot->second.body.generation==generation) {
+        if(rebuilt) {
+            // Reliable definitions can arrive after newer unreliable poses.
+            // Preserve their state too: an older queued baseline is rejected.
+            const HostBodySnapshot latest=snapshot->second;
+            track->second.received=false;
+            ApplyBody(latest.body,latest.sequence,true,false);
+        } else {
+            track->second.received=true;track->second.receivedSequence=snapshot->second.sequence;
+        }
+    }
 }
 
 iPhysicsBody* cLuxMultiplayerWorld::FindBody(uint64_t alId) const
@@ -237,6 +299,8 @@ Body cLuxMultiplayerWorld::CaptureBody(uint64_t alId, iPhysicsBody* apBody) cons
     Body state = {};
     if(auto* wheel=BodyWheel(apBody)) {state.wheel=1;state.wheelAngle=wheel->GetAngle();state.wheelStuck=uint8_t(wheel->GetStuckState()+1);}
     state.id = alId;
+    auto track=mBodies.find(alId);
+    state.generation=track==mBodies.end()?0:track->second.generation;
     const cMatrixf& matrix = apBody->GetLocalMatrix();
     for (int i = 0; i < 12; ++i) state.matrix[i] = matrix.v[i];
     Store(state.linear, Limit(apBody->GetLinearVelocity(), 150));
@@ -267,6 +331,7 @@ bool cLuxMultiplayerWorld::SendInitialState(uint32_t alPeer)
 {
     if (!mpSession->IsHost() || !mpMap || mInitialPackets.count(alPeer)) return false;
     RefreshBodies();
+    SyncStickyStates(alPeer);
     // Bound retained snapshots, and trickle the initial burst into GNS with
     // retries. A large map must not silently lose bodies when its send queue fills.
     if (mlInitialBytes + mBodies.size() * 100 > 32 * 1024 * 1024) return false;
@@ -284,6 +349,27 @@ bool cLuxMultiplayerWorld::SendInitialState(uint32_t alPeer)
         SendLease(it->second, 0, alPeer, false);
     SendPose();
     return true;
+}
+
+void cLuxMultiplayerWorld::SyncStickyStates(uint32_t peer)
+{
+    if(!mpMap || !mpSession->IsHost()) return;
+    for(auto* area:mpMap->GetStickyAreas())
+    {
+        iPhysicsBody* body=area->GetAttachedBody();
+        Writer state(StickyState,mpSession->GetMapEpoch());state.U32(uint32_t(area->GetID()));
+        state.U8(body?1:0);
+        if(body) {
+            state.U64(NetworkBodyId(body));state.F32(area->GetAttachedBodyMass());
+            state.U8(area->GetAttachedBodyGravity()?1:0);state.U8(area->CanDetach()?1:0);
+        }
+        if(peer!=UINT32_MAX) {
+            if(!mpSession->Send(peer,state.bytes,true)) mpSession->mPeers[peer].reliableSendFailed=true;
+        }
+        else if(mStickyStates[area->GetID()]!=state.bytes) {
+            mpSession->Broadcast(state.bytes,true);mStickyStates[area->GetID()]=state.bytes;
+        }
+    }
 }
 
 void cLuxMultiplayerWorld::SendPose()
@@ -323,6 +409,8 @@ void cLuxMultiplayerWorld::SendPose()
     gameplay.speed=cMath::Clamp(sample.speed,0.0f,100.0f);
     gameplay.light=cMath::Clamp(sample.lightLevel,0.0f,1000.0f);
     gameplay.health=cMath::Clamp(sample.health,0.0f,10000.0f);
+    gameplay.sanity=cMath::Clamp(gpBase->mpPlayer->GetSanity(),0.0f,100.0f);
+    gameplay.lampOil=cMath::Clamp(gpBase->mpPlayer->GetLampOil(),0.0f,100.0f);
     WritePlayerState(writer,gameplay);
     if (mpSession->IsHost()) mpSession->Broadcast(writer.bytes, false);
     else mpSession->Send(0, writer.bytes, false);
@@ -350,6 +438,7 @@ void cLuxMultiplayerWorld::Update(float afTimeStep)
     }
     RefreshBodies();
     UpdateEnemyInfluence(dt);
+    SyncStickyStates();
     for (auto it = mContactAges.begin(); it != mContactAges.end(); )
         if ((it->second += dt) > ContactGrace * 2) it = mContactAges.erase(it); else ++it;
     for (auto it = mContactRequests.begin(); it != mContactRequests.end(); )
@@ -460,11 +549,20 @@ void cLuxMultiplayerWorld::ApplyBody(const Body& aState, uint32_t alSequence, bo
     std::map<uint64_t, BodyTrack>::iterator it = mBodies.find(aState.id);
     if (it == mBodies.end()) return;
     BodyTrack& track = it->second;
+    if(!track.generation) {
+        // Keep the last generation across local replacement so delayed packets
+        // cannot establish the deleted incarnation on its successor.
+        auto previous=mBodyGenerations.find(aState.id);
+        if(previous!=mBodyGenerations.end() && !Newer(aState.generation,previous->second)) return;
+        track.generation=aState.generation;mBodyGenerations[aState.id]=aState.generation;
+    }
+    if(aState.generation!=track.generation) return;
     if (track.received && !Newer(alSequence, track.receivedSequence)) return;
     iPhysicsBody* body = FindBody(aState.id);
     if (!body) return;
     const bool initial = !track.received;
     track.received = true; track.receivedSequence = alSequence;
+    if(!abFromOwner) mHostBodySnapshots[aState.id]={aState,alSequence};
     if (!abFromOwner && OwnsSimulation(body)) return;
     if(aState.wheel) if(auto* wheel=BodyWheel(body)) wheel->ApplyNetworkAngle(aState.wheelAngle,int(aState.wheelStuck)-1);
     track.target = aState; track.targetAge = 0; track.hasTarget = true;
@@ -1098,7 +1196,7 @@ bool cLuxMultiplayerWorld::RequestInteraction(iPhysicsBody* apBody, eLuxPlayerSt
     if (IsInteractionOwnedByOther(apBody)) return false;
     RefreshBodies();
     uint64_t id = NetworkBodyId(apBody);
-    if (!FindBody(id) || apBody->GetMass() <= 0) return false;
+    if (!FindBody(id) || (apBody->GetMass() <= 0 && !mpMap->BodyIsInDetachableStickyArea(apBody))) return false;
     if (mpSession->IsHost())
     {
         bool granted = GrantLease(mpSession->GetLocalPeerId(), id, 0);
@@ -1154,13 +1252,15 @@ bool cLuxMultiplayerWorld::GrantLease(uint32_t alPeer, uint64_t alBody, uint32_t
 {
     RefreshBodies();
     iPhysicsBody* body = FindBody(alBody);
-    if (!body || body->GetMass() <= 0) return false;
+    if (!body) return false;
+    cLuxArea_Sticky* sticky=BodyStickyArea(mpMap,body);
+    if(body->GetMass()<=0 && (abContact || !sticky || !sticky->CanDetach())) return false;
     cVector3f playerPosition;
     if (alPeer == mpSession->GetLocalPeerId()) playerPosition = gpBase->mpPlayer->GetCharacterBody()->GetPosition();
     else
     {
         std::map<uint32_t, cLuxMultiplayerRemotePlayer>::iterator player = mPlayers.find(alPeer);
-        if (player == mPlayers.end() || player->second.age > 1) return false;
+        if (player == mPlayers.end() || player->second.age > 1 || !(player->second.gameplay.flags&PlayerAlive)) return false;
         playerPosition = player->second.position;
     }
     if (abContact ? !NearPlayer(alPeer, body) : cMath::Vector3Dist(playerPosition, body->GetLocalPosition()) > 6) return false;
@@ -1181,6 +1281,7 @@ bool cLuxMultiplayerWorld::GrantLease(uint32_t alPeer, uint64_t alBody, uint32_t
     // different sub-bodies must not start two competing interaction controllers.
     iLuxEntity* entity = static_cast<iLuxEntity*>(body->GetUserData());
     iLuxProp* prop = entity && entity->GetEntityType() == eLuxEntityType_Prop ? static_cast<iLuxProp*>(entity) : NULL;
+    if(!abContact && (!prop || !entity->IsActive() || entity->GetDestroyMe() || entity->GetInteractionDisabled() || !entity->CanInteract(body))) return false;
     if (prop)
         for (int i = 0; i < prop->GetBodyNum(); ++i)
         {
@@ -1217,11 +1318,12 @@ bool cLuxMultiplayerWorld::GrantLease(uint32_t alPeer, uint64_t alBody, uint32_t
     // Deliberate interaction takes priority over passive contact. Validate the
     // entire assembly first, then revoke contact ownership in reliable order.
     for (uint32_t token : superseded) EndLease(token, true);
-    if (alPeer != mpSession->GetLocalPeerId())
-    {
-        std::vector<Body> baseline;
-        for (uint64_t id : lease.bodies) baseline.push_back(CaptureBody(id, FindBody(id)));
-        SendBodyBatch(alPeer, false, baseline, true, true);
+    cLuxMultiplayerRemoteTriggerScope trigger(!abContact && alPeer!=mpSession->GetLocalPeerId(),alPeer);
+    // Detach only after validating exclusive ownership of the entire assembly.
+    if(sticky) {
+        sticky->DetachBody();
+        SyncStickyStates();
+        lease.originalGravity[alBody]=body->GetGravity();
     }
     mLeases[lease.token] = lease;
     for (size_t i = 0; i < lease.bodies.size(); ++i)
@@ -1242,6 +1344,22 @@ bool cLuxMultiplayerWorld::GrantLease(uint32_t alPeer, uint64_t alBody, uint32_t
     if(!abContact && prop && prop->GetPropType()==eLuxPropType_Wheel) {
         auto* wheel=static_cast<cLuxProp_Wheel*>(prop);
         if(wheel->GetInteractionDisablesStuck(false)) wheel->SetStuckState(0,true);
+    }
+    if(!abContact && prop && prop->GetPropType()==eLuxPropType_Lever) {
+        auto* lever=static_cast<cLuxProp_Lever*>(prop);
+        if(lever->GetInteractionDisablesStuck(false)) lever->SetStuckState(0,true);
+    }
+    if(!abContact && prop && prop->GetPropType()==eLuxPropType_MultiSlider) {
+        auto* slider=static_cast<cLuxProp_MultiSlider*>(prop);
+        if(slider->GetInteractionDisablesStuck(false)) slider->SetStuckState(-1,true);
+    }
+    // A handoff begins with the state after the interaction's authoritative
+    // unlock, otherwise its baseline can re-lock the newly granted client.
+    if (alPeer != mpSession->GetLocalPeerId())
+    {
+        std::vector<Body> baseline;
+        for (uint64_t id : lease.bodies) baseline.push_back(CaptureBody(id, FindBody(id)));
+        SendBodyBatch(alPeer, false, baseline, true, true);
     }
     SendLease(lease, alRequest, 0, true);
     return true;
@@ -1322,7 +1440,7 @@ void cLuxMultiplayerWorld::EndLease(uint32_t alToken, bool abBroadcast)
             {
                 // Passive contact never overrides these flags. Preserve any
                 // newer native changes, such as a sticky area's attachment.
-                if (!lease.contact)
+                if (!lease.contact && body->GetMass()>0)
                 {
                     body->SetGravity(lease.originalGravity[lease.bodies[i]]);
                     body->SetCollide(lease.originalCollide[lease.bodies[i]]);
@@ -1363,7 +1481,7 @@ bool cLuxMultiplayerWorld::HandleMessage(uint32_t alPeer, const std::vector<uint
         player.gameplay = ReadPlayerState(reader);
         if (!reader.Done() || player.size.x < 0.1f || player.size.y < 0.1f || player.size.z < 0.1f ||
             (mpSession->IsHost() && peer != alPeer)) return false;
-        if (peer == mpSession->GetLocalPeerId()) return true; // Host also relays to the originator.
+        if (peer == mpSession->GetLocalPeerId() || mDepartedPlayers.count(peer)) return true;
         std::map<uint32_t, cLuxMultiplayerRemotePlayer>::iterator old = mPlayers.find(peer);
         if (old != mPlayers.end() && !Newer(sequence, old->second.sequence)) return true;
         player.sequence = sequence; player.renderPosition = old == mPlayers.end() ? player.position : old->second.renderPosition;
@@ -1401,6 +1519,7 @@ bool cLuxMultiplayerWorld::HandleMessage(uint32_t alPeer, const std::vector<uint
             {
                 std::map<uint64_t, uint32_t>::iterator lock = mBodyLeases.find(states[i].id);
                 if (lock == mBodyLeases.end() || lock->second != token) return false;
+                if(mBodies[states[i].id].generation!=states[i].generation) return true;
                 if((BodyWheel(FindBody(states[i].id))!=NULL)!=(states[i].wheel!=0)) return false;
                 if (cMath::Vector3Dist(Position(states[i]), player->second.position) > 12) return true;
             }
@@ -1422,7 +1541,8 @@ bool cLuxMultiplayerWorld::HandleMessage(uint32_t alPeer, const std::vector<uint
             // Sequence validation also protects relaying: delayed owner packets
             // must not be repackaged with a fresh host sequence and roll back peers.
             auto track = mBodies.find(state.id);
-            const bool fresh = track != mBodies.end() && (!track->second.received || Newer(sequence, track->second.receivedSequence));
+            const bool fresh = track != mBodies.end() && track->second.generation==state.generation &&
+                (!track->second.received || Newer(sequence, track->second.receivedSequence));
             ApplyBody(state, sequence, groundTruth != 0, mpSession->IsHost());
             if (mpSession->IsHost() && fresh) accepted.push_back(state);
         }
@@ -1521,6 +1641,19 @@ bool cLuxMultiplayerWorld::HandleMessage(uint32_t alPeer, const std::vector<uint
         if (request == mlPendingRequest) CancelPendingInteraction();
         return true;
     }
+    if(type==StickyState)
+    {
+        const int id=static_cast<int>(reader.U32());const uint8_t attached=reader.U8();
+        uint64_t bodyId=0;float mass=0;uint8_t gravity=0,canDetach=0;
+        if(attached) {bodyId=reader.U64();mass=reader.F32(1000000);gravity=reader.U8();canDetach=reader.U8();}
+        if(!reader.Done() || mpSession->IsHost() || attached>1 || mass<0 || gravity>1 || canDetach>1) return false;
+        iPhysicsBody* body=attached?FindBody(bodyId):NULL;
+        if(attached && !body) return true;
+        for(auto* area:mpMap->GetStickyAreas()) if(area->GetID()==id) {
+            area->ApplyNetworkAttachment(body,mass,gravity!=0,canDetach!=0);break;
+        }
+        return true;
+    }
     if (type == PeerGone)
     {
         uint32_t peer = reader.U32();
@@ -1533,6 +1666,7 @@ bool cLuxMultiplayerWorld::HandleMessage(uint32_t alPeer, const std::vector<uint
 void cLuxMultiplayerWorld::OnPeerDisconnected(uint32_t alPeer)
 {
     RefreshBodies();
+    mDepartedPlayers.insert(alPeer);
     std::map<uint32_t, std::deque<std::vector<uint8_t> > >::iterator pending = mInitialPackets.find(alPeer);
     if (pending != mInitialPackets.end())
     {

@@ -1,6 +1,7 @@
 #ifndef LUX_MULTIPLAYER_ENTITIES_H
 #define LUX_MULTIPLAYER_ENTITIES_H
 #include "LuxMultiplayerProtocol.h"
+#include "LuxMultiplayerEntityDefinition.h"
 #include <map>
 #include <set>
 #include <deque>
@@ -10,6 +11,7 @@ class iLuxEntity;
 class iLuxProp;
 class cLuxDiary;
 namespace hpl { class iPhysicsJoint; }
+namespace luxnet { struct PropDefinition; }
 
 // Native interactions have one host-approved winner. Entity snapshots carry
 // gameplay flags and joint constraints independently of the physics poses.
@@ -20,6 +22,9 @@ public:
     void Update(float dt);
     void OnPeerDisconnected(uint32_t peer);
     bool SendInitialState(uint32_t peer);
+    void CaptureMapBaseline();
+    bool SendMapBaseline(uint32_t peer);
+    bool ApplyDefinition(const std::vector<uint8_t>& data);
     void SyncRopes(uint32_t peer=UINT32_MAX);
     bool SeedCurrentMapItems(const std::vector<uint8_t>& mapBytes, std::string& error);
     bool HandleMessage(uint32_t peer, const std::vector<uint8_t>& data);
@@ -31,6 +36,11 @@ public:
     bool DeferDiaryPresentation(const std::string& name, cLuxDiary* diary);
     void RecordDiaryDecision(bool open);
 private:
+    luxnet::PropDefinition CaptureDefinition(iLuxProp* prop);
+    bool CaptureDefinitions(std::vector<std::vector<uint8_t> >& definitions);
+    std::vector<std::vector<uint8_t> > mvMapBaseline;
+    std::map<std::string,luxnet::PropIncarnationBinding> mDefinitionBindings;
+    bool mbMapBaselineValid=false;
     struct Claim { uint32_t peer, token; float age; uint64_t runtimeId; bool callbackOnly, diary; };
     struct PendingDiary { std::string name; cLuxDiary* diary; float age; };
     bool IsNative(iLuxEntity* entity) const;

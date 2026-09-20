@@ -85,6 +85,15 @@ public:
 
 	iPhysicsBody *GetAttachedBody(){ return mpAttachedBody;}
 	bool CanDetach(){ return mbCanDetach && mfSetMtxTime>=1;}
+	float GetAttachedBodyMass() const { return mfAttachedBodyMass; }
+	bool GetAttachedBodyGravity() const { return mbAttachedBodyGravity; }
+	void ApplyNetworkAttachment(iPhysicsBody* body, float mass, bool gravity, bool canDetach);
+	// Entity replacement destroys bodies outside this area's update. Clearing
+	// both references must happen before their storage can be reused.
+	void OnBodyDestroyed(iPhysicsBody* body) {
+		if(mpAttachedBody==body) mpAttachedBody=NULL;
+		if(mpLastAttachedBody==body) mpLastAttachedBody=NULL;
+	}
 
 	//////////////////////
 	//Connection callbacks

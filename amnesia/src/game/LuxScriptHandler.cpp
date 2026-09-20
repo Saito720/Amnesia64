@@ -19,6 +19,7 @@
 
 #include "LuxScriptHandler.h"
 #include "LuxMultiplayerScript.h"
+#include "LuxMultiplayerWorld.h"
 
 #include "LuxMap.h"
 #include "LuxPlayer.h"
@@ -1436,8 +1437,23 @@ void __stdcall cLuxScriptHandler::SetPlayerPos(float afX, float afY, float afZ)
 
 //-----------------------------------------------------------------------
 
+// Missing/disconnected remote players have neutral values. A delayed callback
+// must never silently start querying the host after its initiating peer leaves.
+static bool GetScriptRemotePlayer(const cLuxMultiplayerRemotePlayer*& player)
+{
+	player = NULL;
+	cLuxMultiplayer* session = gpBase->mpMultiplayer;
+	if(!session || !session->IsHost() || session->GetScriptPlayerPeer()==session->GetLocalPeerId()) return false;
+	const auto& players = session->GetWorld()->GetRemotePlayers();
+	auto found = players.find(session->GetScriptPlayerPeer());
+	if(found!=players.end()) player = &found->second;
+	return true;
+}
+
 float __stdcall cLuxScriptHandler::GetPlayerPosX()
 {
+	const cLuxMultiplayerRemotePlayer* player;
+	if(GetScriptRemotePlayer(player)) return player ? player->position.x : 0;
 	return gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition().x;
 }
 
@@ -1445,6 +1461,8 @@ float __stdcall cLuxScriptHandler::GetPlayerPosX()
 
 float __stdcall cLuxScriptHandler::GetPlayerPosY()
 {
+	const cLuxMultiplayerRemotePlayer* player;
+	if(GetScriptRemotePlayer(player)) return player ? player->position.y-player->size.y*0.5f : 0;
 	return gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition().y;
 }
 
@@ -1452,6 +1470,8 @@ float __stdcall cLuxScriptHandler::GetPlayerPosY()
 
 float __stdcall cLuxScriptHandler::GetPlayerPosZ()
 {
+	const cLuxMultiplayerRemotePlayer* player;
+	if(GetScriptRemotePlayer(player)) return player ? player->position.z : 0;
 	return gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition().z;
 }
 
@@ -1471,6 +1491,8 @@ void __stdcall cLuxScriptHandler::AddPlayerSanity(float afSanity)
 
 float __stdcall cLuxScriptHandler::GetPlayerSanity()
 {
+	const cLuxMultiplayerRemotePlayer* player;
+	if(GetScriptRemotePlayer(player)) return player ? player->gameplay.sanity : 0;
 	return gpBase->mpPlayer->GetSanity();
 }
 
@@ -1488,6 +1510,8 @@ void __stdcall cLuxScriptHandler::AddPlayerHealth(float afHealth)
 
 float __stdcall cLuxScriptHandler::GetPlayerHealth()
 {
+	const cLuxMultiplayerRemotePlayer* player;
+	if(GetScriptRemotePlayer(player)) return player ? player->gameplay.health : 0;
 	return gpBase->mpPlayer->GetHealth();
 }
 
@@ -1505,6 +1529,8 @@ void __stdcall cLuxScriptHandler::AddPlayerLampOil(float afOil)
 
 float __stdcall cLuxScriptHandler::GetPlayerLampOil()
 {
+	const cLuxMultiplayerRemotePlayer* player;
+	if(GetScriptRemotePlayer(player)) return player ? player->gameplay.lampOil : 0;
 	return gpBase->mpPlayer->GetLampOil();
 }
 
@@ -1512,6 +1538,8 @@ float __stdcall cLuxScriptHandler::GetPlayerLampOil()
 
 float __stdcall cLuxScriptHandler::GetPlayerSpeed()
 {
+	const cLuxMultiplayerRemotePlayer* player;
+	if(GetScriptRemotePlayer(player)) return player ? cVector3f(player->gameplay.velocity[0],player->gameplay.velocity[1],player->gameplay.velocity[2]).Length() : 0;
 	return gpBase->mpPlayer->GetCharacterBody()->GetVelocity(1.0f/60.0f).Length();
 }
 
@@ -1519,6 +1547,8 @@ float __stdcall cLuxScriptHandler::GetPlayerSpeed()
 
 float __stdcall cLuxScriptHandler::GetPlayerYSpeed()
 {
+	const cLuxMultiplayerRemotePlayer* player;
+	if(GetScriptRemotePlayer(player)) return player ? player->gameplay.velocity[1] : 0;
 	return gpBase->mpPlayer->GetCharacterBody()->GetVelocity(1.0f/60.0f).y;
 }
 
@@ -1935,8 +1965,10 @@ void __stdcall cLuxScriptHandler::SetInventoryMessage(string &asTextCategory, st
 
 void __stdcall cLuxScriptHandler::GiveItem(string& asName, string& asType, string& asSubTypeName, string& asImageName, float afAmount)
 {
-    cLuxMultiplayerScriptScope networkEffect(80, asName, asType, asSubTypeName, asImageName, afAmount);
 	eLuxItemType type = gpBase->mpInventory->GetItemTypeFromString(asType);
+    luxnet::InventoryItem item;item.name=asName;item.type=type;item.subtype=asSubTypeName;item.image=asImageName;item.amount=afAmount;
+    if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->RouteInventoryGive(item)) return;
+    cLuxMultiplayerScriptScope networkEffect(80, asName, asType, asSubTypeName, asImageName, afAmount);
 	gpBase->mpInventory->AddItem(asName,type,asSubTypeName,asImageName, afAmount, "", "");
     if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->RecordSharedItem(asName);
 }
@@ -1945,6 +1977,19 @@ void __stdcall cLuxScriptHandler::GiveItem(string& asName, string& asType, strin
 
 void __stdcall cLuxScriptHandler::GiveItemFromFile(string& asName, string& asFileName)
 {
+    if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsCombiningInventory()) {
+        cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();if(!map) return;
+        map->ResetLatestEntity();map->CreateEntity(asName,asFileName,cMatrixf::Identity,1);
+        iLuxEntity* entity=map->GetLatestEntity();
+        if(entity && entity->GetEntityType()==eLuxEntityType_Prop && static_cast<iLuxProp*>(entity)->GetPropType()==eLuxPropType_Item) {
+            auto* source=static_cast<cLuxProp_Item*>(entity);luxnet::InventoryItem item;
+            item.name=asName;item.type=source->GetItemType();item.subtype=source->GetSubItemTypeName();
+            item.image=source->GetImageFile();item.amount=source->GetAmount();
+            gpBase->mpMultiplayer->RouteInventoryGive(item);
+        }
+        if(entity) map->DestroyEntity(entity);
+        return;
+    }
     cLuxMultiplayerScriptScope networkEffect(81, asName, asFileName);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	if(pMap==NULL) return;
@@ -1973,6 +2018,7 @@ void __stdcall cLuxScriptHandler::GiveItemFromFile(string& asName, string& asFil
 
 void __stdcall cLuxScriptHandler::RemoveItem(string& asName)
 {
+    if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->RouteInventoryRemove(asName)) return;
     cLuxMultiplayerScriptScope networkEffect(82, asName);
     if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->ForgetRemoteItem(asName);
 	gpBase->mpInventory->RemoveItem(asName);
@@ -1980,6 +2026,9 @@ void __stdcall cLuxScriptHandler::RemoveItem(string& asName)
 
 bool __stdcall cLuxScriptHandler::HasItem(string& asName)
 {
+    if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsCombiningInventory())
+        return gpBase->mpMultiplayer->HasRemoteItem(asName) ||
+            (gpBase->mpMultiplayer->GetScriptPlayerPeer()==gpBase->mpMultiplayer->GetLocalPeerId() && gpBase->mpInventory->GetItem(asName));
     if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsHost() &&
        gpBase->mpMultiplayer->GetScriptPlayerPeer()!=gpBase->mpMultiplayer->GetLocalPeerId())
         return gpBase->mpMultiplayer->HasRemoteItem(asName);

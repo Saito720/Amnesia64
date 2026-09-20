@@ -26,6 +26,7 @@
 #include "LuxHelpFuncs.h"
 
 #include "LuxMap.h"
+#include "LuxMultiplayer.h"
 
 //////////////////////////////////////////////////////////////////////////
 // LOADER
@@ -83,17 +84,7 @@ cLuxChestMessageCallback::cLuxChestMessageCallback(cLuxProp_Chest *apChest)
 
 void cLuxChestMessageCallback::OnPress(bool abYes)
 {
-	if(abYes)
-	{
-		gpBase->mpPlayer->AddCoins(-mpChest->mlCoinsNeeded);
-		mpChest->SetLocked(false, true);
-
-		ProgLog(eLuxProgressLogLevel_Medium, "Opened chest "+ mpChest->msName);
-
-		mpChest->mpMap->AddCompletionAmount(gpBase->mpCompletionCountHandler->mlChestCompletionValue);
-
-		gpBase->mpHelpFuncs->PlayGuiSoundData("gameplay_open_chest", eSoundEntryType_Gui);
-	}
+    if(abYes) mpChest->Purchase();
 }
 
 //-----------------------------------------------------------------------
@@ -115,6 +106,7 @@ cLuxProp_Chest::cLuxProp_Chest(const tString &asName, int alID, cLuxMap *apMap) 
 
 cLuxProp_Chest::~cLuxProp_Chest()
 {
+	if(gpBase->mpMessageHandler) gpBase->mpMessageHandler->CancelPauseMessage(mpMessageCallback);
 	hplDelete(mpMessageCallback);
 }
 
@@ -153,6 +145,20 @@ bool cLuxProp_Chest::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 	
 	
 	return true;
+}
+
+void cLuxProp_Chest::Purchase()
+{
+    if(gpBase->mpMultiplayer && !gpBase->mpMultiplayer->BeginNativeInteraction(this)) return;
+    const bool accepted=mbLocked && gpBase->mpPlayer->GetCoins()>=mlCoinsNeeded && !gpBase->mpPlayer->IsDead();
+    if(accepted) {
+        gpBase->mpPlayer->AddCoins(-mlCoinsNeeded);
+        SetLocked(false,true);
+        ProgLog(eLuxProgressLogLevel_Medium,"Opened chest "+msName);
+        mpMap->AddCompletionAmount(gpBase->mpCompletionCountHandler->mlChestCompletionValue);
+        gpBase->mpHelpFuncs->PlayGuiSoundData("gameplay_open_chest",eSoundEntryType_Gui);
+    }
+    if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->CompleteNativeInteraction(this,accepted);
 }
 
 //-----------------------------------------------------------------------

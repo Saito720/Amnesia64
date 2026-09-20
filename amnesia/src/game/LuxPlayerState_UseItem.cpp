@@ -101,6 +101,14 @@ void cLuxPlayerState_UseItem::ImplementedUpdate(float afTimeStep)
 	mFlashOscill.Update(afTimeStep);
 }
 
+void cLuxPlayerState_UseItem::OnInventoryItemRemoved(cLuxInventory_Item* apItem)
+{
+    if(mpCurrentItem!=apItem) return;
+    mpCurrentItem=NULL;
+    if(mpPlayer->GetCurrentState()==eLuxPlayerState_UseItem)
+        mpPlayer->ChangeState(eLuxPlayerState_Normal);
+}
+
 //-----------------------------------------------------------------------
 
 cGuiGfxElement* cLuxPlayerState_UseItem::GetCrosshair()
@@ -114,7 +122,7 @@ cGuiGfxElement* cLuxPlayerState_UseItem::GetCrosshair()
 
 bool cLuxPlayerState_UseItem::OnDrawCrossHair(cGuiGfxElement *apGfx, const cVector3f& avPos, const cVector2f &avSize)
 {
-	if(mpEntityInFocus==NULL) return true;
+	if(mpCurrentItem==NULL || mpEntityInFocus==NULL) return true;
 
 	float fMaxFocusDistance = cMath::Max(mpEntityInFocus->GetMaxFocusDistance(), mfMinUseItemDistance);
 	if(mfFocusDistance > fMaxFocusDistance) return true;	

@@ -55,6 +55,7 @@ public:
 	bool ImplementedDoAction(eLuxPlayerAction aAction,bool abPressed);
 
 	void ImplementedUpdate(float afTimeStep);
+    void OnInventoryItemRemoved(cLuxInventory_Item* apItem);
 
 	cGuiGfxElement* GetCrosshair();
 	bool OnDrawCrossHair(cGuiGfxElement *apGfx, const cVector3f& avPos, const cVector2f &avSize);

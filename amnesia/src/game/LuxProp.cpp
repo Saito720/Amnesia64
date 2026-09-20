@@ -18,6 +18,7 @@
  */
 
 #include "LuxProp.h"
+#include "LuxArea_Sticky.h"
 
 #include "LuxMap.h"
 #include "LuxPlayer.h"
@@ -304,6 +305,8 @@ iLuxProp::~iLuxProp()
 		for(size_t i=0; i<mvBodies.size(); ++i)
 		{
 			iPhysicsBody *pBody = mvBodies[i];
+			if(mpMap && !mpMap->IsDeletingAllWorldEntities())
+				for(auto* area:mpMap->GetStickyAreas()) area->OnBodyDestroyed(pBody);
 				
 			pWorld->GetPhysicsWorld()->DestroyBody(pBody);
 		}
@@ -394,7 +397,9 @@ void iLuxProp::OnUpdate(float afTimeStep)
 	UpdateEffectFading(afTimeStep);
 	UpdateMeshFading(afTimeStep);
 	UpdateAnimation(afTimeStep);
-	UpdateAttachedProps(afTimeStep, false);
+    // A replicated parent can be corrected while Newton still considers it
+    // asleep. Its visual attachments must follow that authoritative transform.
+	UpdateAttachedProps(afTimeStep, gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient());
 
 	///////////////////////
 	// Connections
@@ -842,6 +847,15 @@ void iLuxProp::AddAndAttachProp(const tString& asName, const tString& asFileName
 	}
 
 	iLuxProp* pProp =  static_cast<iLuxProp*>(pEntity);
+	AttachExistingProp(pProp,a_mtxOffset);
+}
+
+bool iLuxProp::AttachExistingProp(iLuxProp* pProp,const cMatrixf& a_mtxOffset)
+{
+    if(!pProp || pProp==this || !GetMainBody() || pProp->GetMap()!=mpMap) return false;
+    // Reparenting must never turn the parent chain into a cycle.
+    for(iLuxProp* parent=this;parent;parent=parent->GetAttachmentParent()) if(parent==pProp) return false;
+    if(pProp->GetAttachmentParent()) pProp->GetAttachmentParent()->RemoveAttachedProp(pProp);
 
 	/////////////////////////////////
 	// This prop shall not be saved!
@@ -861,8 +875,8 @@ void iLuxProp::AddAndAttachProp(const tString& asName, const tString& asFileName
 	/////////////////////////////////
 	// Create attachment data
 	cLuxProp_AttachedProp *pAttachProp = hplNew(cLuxProp_AttachedProp, ());
-	pAttachProp->msName = asName;
-	pAttachProp->msFileName = asFileName;
+	pAttachProp->msName = pProp->GetName();
+	pAttachProp->msFileName = pProp->msFileName;
 	pAttachProp->m_mtxOffset = a_mtxOffset;
 	pAttachProp->mpProp = pProp;
 
@@ -872,6 +886,7 @@ void iLuxProp::AddAndAttachProp(const tString& asName, const tString& asFileName
 	//////////////////////////////////
 	// Update the attached prop matrix so it starts out properly!
 	UpdateAttachedProps(0, true);
+    return true;
 }
 
 //-------------------------------------------------------------------

@@ -11,6 +11,7 @@
 #include "LuxMultiplayerEntities.h"
 #undef private
 #include "DiaryRegression.h"
+#include "InventoryRemovalRegression.h"
 
 static std::map<std::string,unsigned> nativeCallbacks;
 static void __stdcall CodexNativeCallback(std::string& entity,std::string& event) {
@@ -30,6 +31,7 @@ class cNativeRegression {
     uint64_t recreationRuntimeID=0;
     cMatrixf tinderTransform;
     cNativeDiaryRegression diaryRegression;
+    cInventoryRemovalRegression inventoryRemovalRegression;
     void next() { ++phase;entered=SDL_GetTicks(); }
     bool both(const char* suffix) { return exists(tString("host-")+suffix) && exists(tString("client-")+suffix); }
     bool near(iLuxEntity* entity) {
@@ -351,7 +353,12 @@ public:
             if(auto* item=map->GetEntityByName(claimName)) map->DestroyEntity(item);
             next();return 0;
         }
-        if(phase==21) return diaryRegression.Update(tinderTransform,error);
+        if(phase==21) {
+            const int diary=diaryRegression.Update(tinderTransform,error);
+            if(diary<=0) return diary;
+            next();return 0;
+        }
+        if(phase==22) return inventoryRemovalRegression.Update(error);
         return 0;
     }
 };

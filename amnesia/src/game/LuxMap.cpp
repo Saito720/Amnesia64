@@ -1080,6 +1080,12 @@ void cLuxMap::AddTimer(const tString& asName, float afTime, const tString& asFun
 	pTimer->mfCount = afTime > 0 ? afTime : 0.001f; //Not allow 0 or lower for time!
 	pTimer->msFunction = asFunction;
 	pTimer->mbDestroyMe = false;
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsHost())
+	{
+		const uint32_t peer = gpBase->mpMultiplayer->GetScriptPlayerPeer();
+		if(peer!=gpBase->mpMultiplayer->GetLocalPeerId())
+			pTimer->mScriptPlayerTrigger = {true,peer,gpBase->mpMultiplayer->GetSessionSerial()};
+	}
 
 	mlstTimers.push_back(pTimer);
 }
@@ -1376,6 +1382,10 @@ void cLuxMap::UpdateTimers(float afTimeStep)
 
 		if(pTimer->mfCount <=0 && pTimer->mbDestroyMe==false)
 		{
+			const bool bHost = gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsHost();
+			const auto& origin = pTimer->mScriptPlayerTrigger;
+			const uint32_t peer = bHost ? origin.PeerInSession(gpBase->mpMultiplayer->GetSessionSerial()) : UINT32_MAX;
+			cLuxMultiplayerRemoteTriggerScope trigger(bHost && origin.remote,peer);
 			RunScript(pTimer->msFunction+"(\""+pTimer->msName+"\")");
 			it = mlstTimers.erase(it);
 			hplDelete(pTimer);

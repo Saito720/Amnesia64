@@ -1,6 +1,7 @@
 #ifndef LUX_MULTIPLAYER_H
 #define LUX_MULTIPLAYER_H
 #include "LuxBase.h"
+#include "LuxMultiplayerInventoryProtocol.h"
 #include "network/NetworkTransport.h"
 #include <cstdint>
 #include <map>
@@ -15,6 +16,7 @@ class cLuxMultiplayerEnemies;
 class iLuxEntity;
 class iLuxProp;
 class cLuxDiary;
+class cLuxProp_Item;
 
 enum eLuxMultiplayerLoadPhase {
     eLuxMultiplayerLoadPhase_None, eLuxMultiplayerLoadPhase_Connecting,
@@ -83,6 +85,7 @@ public:
     const cLuxMultiplayerSettings& GetSettings() const { return mSettings; }
     uint32_t GetLocalPeerId() const { return mlLocalPeer; }
     uint32_t GetMapEpoch() const { return mlMapEpoch; }
+    uint64_t GetSessionSerial() const { return mlSessionSerial; }
     cLuxMultiplayerWorld* GetWorld() { return mpWorld; }
     cLuxMultiplayerEntities* GetEntities() { return mpEntities; }
     cLuxMultiplayerEffects* GetEffects() { return mpEffects; }
@@ -102,7 +105,16 @@ public:
     bool RequestItemUse(const tString& item, const tString& entity, bool combine=false);
     void RecordSharedItem(const tString& item);
     bool SyncItemCallbacks(uint32_t peer=UINT32_MAX);
-    void RecordRemoteItem(uint32_t peer, const tString& item);
+    void RecordRemoteItem(uint32_t peer, cLuxProp_Item* item);
+    void RecoverRemoteItems(uint32_t peer);
+    void RecoverPendingItems();
+    bool GiveInventoryItem(uint32_t peer,const luxnet::InventoryItem& item);
+    bool RouteInventoryGive(const luxnet::InventoryItem& item);
+    bool RouteInventoryRemove(const tString& item);
+    bool HasGroupItem(const tString& item) const;
+    bool IsCombiningInventory() const { return mbCombiningInventory; }
+    bool CombineInventoryItems(uint32_t peer,const tString& a,const tString& b,bool automatic=false);
+    void AutoCombineInventory(uint32_t collector,const tString& acquired);
     void ForgetRemoteItem(const tString& item);
     bool HasRemoteItem(const tString& item) const;
     void BroadcastScriptEffect(const std::vector<uint8_t>& effect);
@@ -126,10 +138,16 @@ private:
         float interactionTokens=32;
         bool reliableSendFailed=false;
     };
-    std::map<uint32_t, std::set<tString> > mRemoteItems;
+    std::map<uint32_t, std::map<tString,luxnet::InventoryItem> > mRemoteItems;
     std::set<tString> mSharedScriptItems;
+    bool mbCombiningInventory=false, mbGroupInventory=false, mbAutoCombiningInventory=false;
+    uint32_t mlInventoryRecipient=0;
+    uint64_t mlInventoryMutation=0;
+    std::set<tString> mAutoCombineItems;
+    std::map<tString,luxnet::InventoryItem> mPendingRecoveredItems;
     void HandleEvent(const hpl::cNetworkEvent& event);
     void HandlePacket(uint32_t peer,const std::vector<uint8_t>& data);
+    bool ApplyInventoryPacket(const std::vector<uint8_t>& data);
     void SendMap(uint32_t peer,Peer& state);
     bool CaptureMap(cLuxMap* map,const tString& start,const std::vector<uint8_t>* verifiedSource=NULL);
     bool LoadReceivedMap();
@@ -156,6 +174,7 @@ private:
     size_t mlScriptHistoryBytes;
     uint32_t mlLocalPeer, mlMapEpoch, mlMapChecksum, mlExpectedMapBytes;
     uint32_t mlScriptPlayerPeer=UINT32_MAX;
+    uint64_t mlSessionSerial=0;
     uint32_t mlDownloadedMapBytes=0;
     uint64_t mlPendingSteamInvite;
     tString msStatus, msMapName, msStartPos, msReceivedMapPath;

@@ -64,6 +64,7 @@ public:
 	//////////////////////
 	//Properties
 	void SetSwitchedOn(bool abX, bool abUseEffects);
+    bool GetSwitchedOn() const { return mbSwitchedOn; }
 
 	//////////////////////
 	//Connection callbacks

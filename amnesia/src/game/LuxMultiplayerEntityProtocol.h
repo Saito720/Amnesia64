@@ -24,7 +24,7 @@ inline bool ReadRope(Reader& r,RopeSnapshot& s) {
         if(std::fabs(value)>100000) return false;
     return true;
 }
-enum EntityKind : uint8_t { PropState=0, LampState, DoorState };
+enum EntityKind : uint8_t { PropState=0, LampState, DoorState, ButtonState, ChestState };
 enum EntityFlags : uint8_t { EntityActive=1, InteractionDisabled=2, EffectsActive=4, StaticPhysics=8 };
 // kind 0 is a deleted authored joint slot; live hinge/slider states are 1/2.
 struct JointState { uint32_t index; uint8_t kind, flags; float min, max; };
@@ -50,8 +50,9 @@ inline bool ReadNativeState(Reader& r, NativeState& state) {
     state.epoch=r.U32();state.name=r.String(256);
     state.kind=r.U8();state.flags=r.U8();state.detail=r.U8();
     uint32_t count=r.U32();
-    if(!r.valid || state.name.empty() || state.kind>DoorState || state.flags>15 ||
+    if(!r.valid || state.name.empty() || state.kind>ChestState || state.flags>15 ||
        (state.kind==PropState && state.detail!=0) || (state.kind==LampState && state.detail>1) ||
+       ((state.kind==ButtonState || state.kind==ChestState) && state.detail>1) ||
        (state.kind==DoorState && state.detail>7) || count>128) return false;
     state.joints.clear();
     for(uint32_t i=0;i<count;++i) {

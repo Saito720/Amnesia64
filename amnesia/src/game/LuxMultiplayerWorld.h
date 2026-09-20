@@ -38,6 +38,8 @@ public:
     bool HandleMessage(uint32_t alPeer, const std::vector<uint8_t>& avMessage);
     void OnPeerDisconnected(uint32_t alPeer);
     bool SendInitialState(uint32_t alPeer);
+    uint32_t GetBodyGeneration(iPhysicsBody* body);
+    void BindBodyGeneration(iPhysicsBody* body, uint32_t generation);
 
     // A client returns false while waiting for the host. On grant, the pending
     // state is entered only if the interact button is still held in the game.
@@ -76,10 +78,10 @@ private:
         iPhysicsBody* body;
         uint64_t entityRuntimeId;
         LuxWorldWire::Body lastSent, target;
-        uint32_t receivedSequence;
+        uint32_t receivedSequence, generation;
         float targetAge;
         bool sent, received, hasTarget;
-        BodyTrack() : body(NULL), entityRuntimeId(0), receivedSequence(0), targetAge(0), sent(false), received(false), hasTarget(false) {}
+        BodyTrack() : body(NULL), entityRuntimeId(0), receivedSequence(0), generation(0), targetAge(0), sent(false), received(false), hasTarget(false) {}
     };
     struct Lease
     {
@@ -94,6 +96,7 @@ private:
     };
 
     void RefreshBodies();
+    void SyncStickyStates(uint32_t peer = UINT32_MAX);
     void UpdatePlayerColliders();
     void RemovePlayerCollider(uint32_t alPeer);
     void RemoveEnemyPlayerBody(uint32_t peer);
@@ -124,6 +127,12 @@ private:
     cLuxMultiplayer* mpSession;
     cLuxMap* mpMap;
     std::map<uint64_t, BodyTrack> mBodies;
+    // Retain lifetime/departure tombstones until the map epoch changes.
+    std::map<uint64_t, uint32_t> mBodyGenerations;
+    struct HostBodySnapshot { LuxWorldWire::Body body;uint32_t sequence; };
+    std::map<uint64_t, HostBodySnapshot> mHostBodySnapshots;
+    std::set<uint32_t> mDepartedPlayers;
+    std::map<int, std::vector<uint8_t> > mStickyStates;
     std::map<uint32_t, cLuxMultiplayerRemotePlayer> mPlayers;
     // Ordinary scene history keeps direct cylinder rendering and attached lights
     // on the same presentation timeline as the rest of the physics world.

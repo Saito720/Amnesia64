@@ -19,6 +19,9 @@
 
 #include "LuxEntity.h"
 #include "LuxMultiplayer.h"
+#include "LuxMultiplayerWorld.h"
+#include "LuxMultiplayerTriggerPolicy.h"
+#include "LuxMultiplayerTriggerGeometry.h"
 #include "LuxProp.h"
 
 #include "LuxMap.h"
@@ -218,6 +221,7 @@ void iLuxEntity::UpdateCheckCollideCallback(float afTimeStep)
 void iLuxEntity::UpdatePlayerLookAt(float afTimeStep)
 {
 	if(msLookAtCallback == "") return;
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return;
 
 	if(mfLookAtCount > 0)
 	{
@@ -228,71 +232,98 @@ void iLuxEntity::UpdatePlayerLookAt(float afTimeStep)
 
 	//////////////////////////////////////
 	// Iterate bodies and check frustum and then line of sight
-	bool bLookingAt=false;
-	cCamera *pCamera = gpBase->mpPlayer->GetCamera();
-	cFrustum *pFrustum = pCamera->GetFrustum();
-	for(int i = 0; i < GetBodyNum(); i++)
-	{
-		iPhysicsBody *pBody = GetBody(i);
-		cBoundingVolume *pBV = pBody->GetBoundingVolume();
-
-		/////////////////////////
-		// Frustum check
-		if(pFrustum->CollideBoundingVolume(pBV) == eCollision_Outside)
+	auto isObserved = [this](cCamera *pCamera) {
+		bool bLookingAt=false;
+		cFrustum *pFrustum = pCamera->GetFrustum();
+		for(int i = 0; i < GetBodyNum(); i++)
 		{
-			continue;
-		}
-		
-		/////////////////////////
-		// Set up line of sight check
-		cVector3f vStart = pCamera->GetPosition();
-		cVector3f vEnd = pBV->GetWorldCenter();
-		
-		cVector3f vDir = vEnd - vStart;
-		float fSqrDist = vDir.SqrLength();
-		
-		if(fSqrDist > 50*50) continue;
+			iPhysicsBody *pBody = GetBody(i);
+			cBoundingVolume *pBV = pBody->GetBoundingVolume();
 
-		/////////////////////////
-		// Check if center of screen is over object
-		cVector3f vIntersection;
-		cVector3f vCentreLineEnd = vStart + pCamera->GetForward() * 50;
-		if(cMath::CheckAABBLineIntersection(pBV->GetMin(), pBV->GetMax(), vStart, vCentreLineEnd,&vIntersection, NULL)==false)
-		{
-			continue;
-		}
-		
-		/////////////////////////
-		// If close enough then it is visible
-		float fSqrRadius = pBV->GetRadius()*pBV->GetRadius()+0.05f;
-		if(fSqrDist < fSqrRadius)
-		{
-			bLookingAt = true;
-			break;
-		}
+			/////////////////////////
+			// Frustum check
+			if(pFrustum->CollideBoundingVolume(pBV) == eCollision_Outside)
+			{
+				continue;
+			}
 
-		/////////////////////////
-		// Check line of sight
-		vDir.Normalize();
-		cVector3f vLineOfSightTestPos[5];
-		float fHalfRadius = pBV->GetRadius() * 0.5f;
+			/////////////////////////
+			// Set up line of sight check
+			cVector3f vStart = pCamera->GetPosition();
+			cVector3f vEnd = pBV->GetWorldCenter();
 
-		vLineOfSightTestPos[0] = vEnd - vDir*pBV->GetRadius();
-		vLineOfSightTestPos[1] = vLineOfSightTestPos[0] + pCamera->GetUp() * fHalfRadius;
-		vLineOfSightTestPos[2] = vLineOfSightTestPos[0] - pCamera->GetUp() * fHalfRadius;
-		vLineOfSightTestPos[3] = vLineOfSightTestPos[0] + pCamera->GetRight() * fHalfRadius;
-		vLineOfSightTestPos[4] = vLineOfSightTestPos[0] - pCamera->GetRight() * fHalfRadius;
-				
-		for(int i=0; i<5; ++i)
-		{
-			if(gpBase->mpMapHelper->CheckLineOfSight(vStart, vLineOfSightTestPos[i], false))
+			cVector3f vDir = vEnd - vStart;
+			float fSqrDist = vDir.SqrLength();
+
+			if(fSqrDist > 50*50) continue;
+
+			/////////////////////////
+			// Check if center of screen is over object
+			cVector3f vIntersection;
+			cVector3f vCentreLineEnd = vStart + pCamera->GetForward() * 50;
+			if(cMath::CheckAABBLineIntersection(pBV->GetMin(), pBV->GetMax(), vStart, vCentreLineEnd,&vIntersection, NULL)==false)
+			{
+				continue;
+			}
+
+			/////////////////////////
+			// If close enough then it is visible
+			float fSqrRadius = pBV->GetRadius()*pBV->GetRadius()+0.05f;
+			if(fSqrDist < fSqrRadius)
 			{
 				bLookingAt = true;
 				break;
 			}
+
+			/////////////////////////
+			// Check line of sight
+			vDir.Normalize();
+			cVector3f vLineOfSightTestPos[5];
+			float fHalfRadius = pBV->GetRadius() * 0.5f;
+
+			vLineOfSightTestPos[0] = vEnd - vDir*pBV->GetRadius();
+			vLineOfSightTestPos[1] = vLineOfSightTestPos[0] + pCamera->GetUp() * fHalfRadius;
+			vLineOfSightTestPos[2] = vLineOfSightTestPos[0] - pCamera->GetUp() * fHalfRadius;
+			vLineOfSightTestPos[3] = vLineOfSightTestPos[0] + pCamera->GetRight() * fHalfRadius;
+			vLineOfSightTestPos[4] = vLineOfSightTestPos[0] - pCamera->GetRight() * fHalfRadius;
+
+			for(int i=0; i<5; ++i)
+			{
+				if(gpBase->mpMapHelper->CheckLineOfSight(vStart, vLineOfSightTestPos[i], false))
+				{
+					bLookingAt = true;
+					break;
+				}
+			}
+			if(bLookingAt) break;
 		}
-		if(bLookingAt) break;
+
+		return bLookingAt;
+	};
+
+	const bool bLocalLookingAt = isObserved(gpBase->mpPlayer->GetCamera());
+	uint32_t lRemotePeer = UINT32_MAX;
+	if(!bLocalLookingAt && gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsHost() &&
+		gpBase->mpMultiplayer->GetSettings().allPlayersTriggerScripts)
+	{
+		for(const auto& remote : gpBase->mpMultiplayer->GetWorld()->GetRemotePlayers())
+		{
+			const auto& player = remote.second;
+			if(player.age>1 || !(player.gameplay.flags & LuxWorldWire::PlayerAlive)) continue;
+			cCamera camera;
+			camera.SetPosition(player.position + cVector3f(player.gameplay.eyeOffset[0],player.gameplay.eyeOffset[1],player.gameplay.eyeOffset[2]));
+			camera.SetYaw(player.yaw);
+			camera.SetPitch(player.gameplay.pitch);
+			camera.SetFOV(player.gameplay.fov);
+			camera.SetAspect(player.gameplay.aspect);
+			camera.SetFarClipPlane(gpBase->mpPlayer->GetCamera()->GetFarClipPlane());
+			if(isObserved(&camera)) {lRemotePeer=remote.first;break;}
+		}
 	}
+	const bool bLookingAt = bLocalLookingAt || lRemotePeer!=UINT32_MAX;
+	const uint64_t session = gpBase->mpMultiplayer ? gpBase->mpMultiplayer->GetSessionSerial() : 0;
+	const auto origin = luxnet::UpdatePlayerTriggerOrigin(bLocalLookingAt,lRemotePeer,session,mLookAtTrigger);
+	cLuxMultiplayerRemoteTriggerScope trigger(origin.remote,origin.PeerInSession(session));
 
 	//////////////////////////////////////
 	// Check if looking at
@@ -399,29 +430,12 @@ void iLuxEntity::PreloadEntityModel(const tString &asFile)
 
 //-----------------------------------------------------------------------
 
-bool iLuxEntity::CollidesWithPlayer()
+bool iLuxEntity::CollidesWithPlayer(bool abIncludeRemote)
 {
-	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->RemotePlayerTouches(this)) return true;
-	iPhysicsWorld *pPhysicsWorld = mpMap->GetPhysicsWorld();
-	cCollideData collideData;
-	collideData.SetMaxSize(1);
-
+	if(abIncludeRemote && gpBase->mpMultiplayer && gpBase->mpMultiplayer->RemotePlayerTouches(this)) return true;
 	iPhysicsBody *pPlayerBody = gpBase->mpPlayer->GetCharacterBody()->GetCurrentBody();
-
 	for(int i=0; i<GetBodyNum(); ++i)
-	{
-		iPhysicsBody *pBody = GetBody(i);
-
-		if(cMath::CheckBVIntersection(*pPlayerBody->GetBoundingVolume(), *pBody->GetBoundingVolume())==false)
-		{
-			continue;
-		}
-		
-		if(pPhysicsWorld->CheckShapeCollision(pBody->GetShape(), pBody->GetLocalMatrix(), pPlayerBody->GetShape(), pPlayerBody->GetLocalMatrix(), collideData,1, false))
-		{
-			return true;
-		}
-	}
+		if(LuxPlayerBodyTouches(mpMap->GetPhysicsWorld(),pPlayerBody,GetBody(i))) return true;
 	return false;
 }
 

@@ -1,6 +1,6 @@
 # Multiplayer campaign regression checks
 
-Use the same protocol-10 build on both peers. Keep **every player may trigger
+Use the same protocol-11 build on both peers. Keep **every player may trigger
 Player callbacks** enabled for the client interaction tests.
 
 ## Changes under test
@@ -71,8 +71,77 @@ running `tests/RunMultiplayerWorldTests.ps1`; that runner links `x64/Debug/HPL2.
 Building the game project directly uses a different output directory.
 
 `tests/RunMultiplayerProtocolTests.ps1` covers packet bounds, truncation, invalid
-wheel states, rope state round trips and non-finite values. The Newton smoke suite
-also covers multi-turn wheel initialization, owner relay, stale updates, handoff,
-and disabling/restoring rope tension, alongside existing physics regressions.
+wheel states, rope state round trips, entity reconstruction and attachment order,
+inventory transfer/recipe selection, trigger identity and non-finite values.
+The Newton smoke suite also covers multi-turn wheel initialization, owner relay,
+unlock-before-handoff for wheels/levers/sliders, sticky detachment, departed-player
+poses, replacement-body generations, rotated trigger shapes and disabling/restoring
+rope tension, alongside existing physics regressions.
 
 The automated tests do not replace the two-player campaign and visual checks above.
+
+## Multiplayer reliability follow-up
+
+This change addresses review items 1, 3–16, 18 and 19. Historical one-shot script
+replay (2), ordinary critter AI (17), and shared checkpoint recovery (20) remain
+outside this change. All peers must upgrade together because physics generations,
+player query values, inventory transfers and entity definitions change the wire format.
+
+- Disconnect a client carrying a progression key after moving to another map.
+  The host should receive that inventory entry, without a second world pickup
+  callback. Tinderboxes, oil, sanity/health potions and lanterns must not transfer.
+  Notes/diaries and coins are consumed into journal/currency state rather than held
+  inventory entries, so they are not transferred as physical items.
+- Split the three storage drill parts across three players. The player collecting
+  the final part should receive the drill, with all parts removed from their
+  actual holders. Repeat a two-part recipe with the host collecting last, and
+  verify an incomplete conditional recipe remains usable. Picking up an unrelated
+  item must not claim another player's crafting result.
+  Keep an ingredient equipped in UseItem while another player completes its recipe;
+  consuming it must safely return its owner to normal interaction. Separate recipes
+  using one generic callback must not claim unrelated crafting results.
+  Combine ingredients manually as host as well; consuming both items must leave
+  the output in the host's inventory and remove an auto-destroy recipe safely.
+- Spawn a puzzle prop through a script, leave the map, and return. Verify the
+  restored prop exists with matching physics and native state on clients. Repeat
+  with a replacement resource, a late join, and props attached to other props
+  (such as a bucket on a rope). Attachments must retain their parent and offset,
+  including when the parent is asleep. Definitions are sent before state;
+  this does not replay an earlier visit's scripts.
+  Include a moved prop saved with static physics and a same-resource replacement
+  whose earlier incarnation had broken joints. Deleting an attached parent during
+  a join must not invalidate the reconstruction roster.
+- Have only the client look at a scripted entity. Verify visibility, distance and
+  obstruction checks, both entry/exit callback identities, and the host-only
+  player-trigger option. Repeat while the host looks away behind a wall.
+- Use an area-exit callback and a timer callback that query player health, sanity,
+  oil, position, velocity and item ownership. The triggering client should remain
+  the query subject. Chain another timer from the first one and disconnect before
+  it fires; missing clients must not silently become the host for these getters.
+  Stop and rehost the current map before an old remote timer fires. A newly joined
+  player reusing its peer number must not inherit that timer or a remembered exit.
+- Grab a detachable sticky-area object from the client, including an object
+  restored already attached on a map revisit. Both peers must detach it and agree
+  on mass/gravity. A non-detachable attachment must remain locked.
+- Test interaction-unlocked wheels, levers and multi-sliders from the client.
+  Repeat ownership handoff and verify the unlocked limits reach both machines.
+- Enter slime as the client while the host stands elsewhere. Only the client
+  should lose health and receive screen shake; authored callbacks retain the
+  triggering player and shared effects still originate from the host.
+- Toggle a native button and buy a locked chest as either player. Repeat simultaneous
+  attempts; only the successful buyer pays, the unlock/toggle state converges, and
+  callbacks run once on the host. Cancel the chest confirmation without paying.
+  Replace or destroy a chest while its purchase question is open; the question must
+  close safely without charging the player or calling a destroyed chest.
+- Disable **every player may trigger Player callbacks**, then collect a scripted
+  diary as client. Its accepted pickup/diary completion callback must still run.
+  The separate **allow clients to trigger map changes** permission still applies.
+- In a custom map, use a level door whose destination is another start position
+  in the same map. A client use should fade/relocate that client, leave the host
+  in place, and preserve the world. Different-map doors still transition everyone.
+- Inject a delayed player pose after disconnect and an old body snapshot after
+  replacing an object. Neither the departed player nor the old object state should
+  return. New incarnations must accept their own snapshots normally.
+- Walk beside an angled thin script area (for example `AreaHelpMe` in prison north).
+  The client must enter the actual shape before its callback runs, matching host
+  detection rather than the larger axis-aligned bounding box.

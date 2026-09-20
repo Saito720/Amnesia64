@@ -18,6 +18,7 @@
  */
 
 #include "LuxArea_Sticky.h"
+#include "LuxMultiplayer.h"
 
 #include "LuxMap.h"
 #include "LuxPlayer.h"
@@ -154,6 +155,7 @@ void cLuxArea_Sticky::SetupAfterLoad(cWorld *apWorld)
 
 void cLuxArea_Sticky::OnUpdate(float afTimeStep)
 {
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return;
 	UpdateAttachBody(afTimeStep);
 	UpdateCollision(afTimeStep);
 }
@@ -201,6 +203,22 @@ void cLuxArea_Sticky::AttachBody(iPhysicsBody *apBody)
 }
 
 //-----------------------------------------------------------------------
+
+void cLuxArea_Sticky::ApplyNetworkAttachment(iPhysicsBody* body, float mass, bool gravity, bool canDetach)
+{
+	if(mpAttachedBody!=body)
+	{
+		DetachBody();
+		if(body) AttachBody(body);
+	}
+	if(body)
+	{
+		mfAttachedBodyMass=mass;mbAttachedBodyGravity=gravity;
+		// The authoritative body stream carries the actual attachment movement.
+		// Only availability for interaction belongs to the area replica.
+		mbCanDetach=canDetach;mfSetMtxTime=1.0f;
+	}
+}
 
 void cLuxArea_Sticky::DetachBody()
 {

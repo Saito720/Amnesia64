@@ -150,7 +150,7 @@ bool cLuxProp_MultiSlider::OnInteract(iPhysicsBody *apBody, const cVector3f &avP
 		}
 	}
 
-	if(mlStuckState !=0 && mbInteractionDisablesStuck)
+	if(mlStuckState >=0 && mbInteractionDisablesStuck)
 		SetStuckState(-1, true);
 
 	gpBase->mpHintHandler->Add("EntitySlide", kTranslate("Hints", "EntitySlide"), 0);

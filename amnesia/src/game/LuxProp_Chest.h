@@ -103,6 +103,7 @@ public:
 	
 	void SetLocked(bool abLocked, bool abEffects);
 	bool GetLocked(){ return mbLocked;}
+    void Purchase();
 	
 	//////////////////////
 	//Connection callbacks

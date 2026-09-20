@@ -17,16 +17,41 @@
 #define LUX_PROP_H
 #define LUX_PROP_SWING_DOOR_H
 #define LUX_PROP_WHEEL_H
+#define LUX_PROP_LEVER_H
+#define LUX_PROP_MULTI_SLIDER_H
+#define LUX_AREA_STICKY_H
 #define LUX_MULTIPLAYER_H
 #define LUX_ENEMY_H
 #define LUX_PLAYER_HELPERS_H
 
+class cLuxArea_Sticky
+{
+public:
+    iPhysicsBody* attached=NULL;float mass=2;bool gravity=true,detachable=true;
+    int GetID() const {return 99;}
+    iPhysicsBody* GetAttachedBody() {return attached;}
+    float GetAttachedBodyMass() const {return mass;}
+    bool GetAttachedBodyGravity() const {return gravity;}
+    bool CanDetach() {return detachable;}
+    void OnBodyDestroyed(iPhysicsBody* body) {if(attached==body) attached=NULL;}
+    void DetachBody() {if(attached){attached->SetMass(mass);attached->SetGravity(gravity);attached=NULL;}}
+    void ApplyNetworkAttachment(iPhysicsBody* body,float originalMass,bool originalGravity,bool canDetach) {
+        if(attached!=body) DetachBody();
+        attached=body;mass=originalMass;gravity=originalGravity;detachable=canDetach;
+        if(body){body->SetMass(0);body->SetGravity(false);}
+    }
+};
 class cLuxMap
 {
 public:
     iPhysicsWorld* physics;
     tLuxEnemyList enemies;
     unsigned heard=0;
+    std::vector<cLuxArea_Sticky*> sticky;
+    const std::vector<cLuxArea_Sticky*>& GetStickyAreas() const {return sticky;}
+    bool BodyIsInDetachableStickyArea(iPhysicsBody* body) {
+        for(auto* area:sticky) if(area->attached==body) return area->CanDetach();return false;
+    }
     iPhysicsWorld* GetPhysicsWorld() { return physics; }
     cWorld* GetWorld() { return NULL; }
     cLuxEnemyIterator GetEnemyIterator() { return cLuxEnemyIterator(&enemies); }
@@ -51,6 +76,8 @@ public:
     bool IsDead() const { return health<=0; }
     void GiveDamage(float amount,int,eLuxDamageType,bool,bool) { health-=amount; }
     float GetTerror() const { return terror; }
+    float GetSanity() const {return 35;}
+    float GetLampOil() const {return 25;}
     void SetTerror(float value) { terror=value; }
     void AddTerrorEnemy(iLuxEnemy*) {}
     void RemoveTerrorEnemy(iLuxEnemy*) {}
@@ -129,6 +156,20 @@ public:
     bool GetInteractionDisablesStuck(bool) {return unlock;}
     void SetStuckState(int value,bool) {stuck=value;}
 };
+class cLuxProp_Lever : public iLuxProp {
+public:
+    int stuck=1;bool unlock=true;
+    cLuxProp_Lever() {type=eLuxPropType_Lever;}
+    bool GetInteractionDisablesStuck(bool) {return unlock;}
+    void SetStuckState(int value,bool) {stuck=value;}
+};
+class cLuxProp_MultiSlider : public iLuxProp {
+public:
+    int stuck=0;bool unlock=true;
+    cLuxProp_MultiSlider() {type=eLuxPropType_MultiSlider;}
+    bool GetInteractionDisablesStuck(bool) {return unlock;}
+    void SetStuckState(int value,bool) {stuck=value;}
+};
 class cLuxMultiplayer
 {
 public:
@@ -156,6 +197,10 @@ public:
     void Broadcast(const std::vector<uint8_t>& bytes, bool reliable) { Send(UINT32_MAX, bytes, reliable); }
 };
 
+class cLuxMultiplayerRemoteTriggerScope {
+public:
+    cLuxMultiplayerRemoteTriggerScope(bool,uint32_t) {}
+};
 #include "../amnesia/src/game/LuxEnemyPlayer.h"
 cLuxEnemyPlayer cLuxEnemyPlayer::Local(uint32_t peer)
 {
@@ -226,6 +271,116 @@ static std::vector<uint8_t> PosePacket(uint32_t peer, uint32_t sequence, const c
 }
 
 #include "multiplayer_contact_newton_tests.h"
+#include "../amnesia/src/game/LuxMultiplayerTriggerGeometry.h"
+
+static void CheckDepartedPlayersAndReplacementSnapshots()
+{
+    Fixture client(false,1);
+    client.session.settings.playerCollision=true;
+    assert(client.replication.HandleMessage(0,PosePacket(2,20,0)));
+    Writer gone(PeerGone,7);gone.U32(2);
+    assert(client.replication.HandleMessage(0,gone.bytes));
+    assert(client.replication.GetRemotePlayers().empty());
+    assert(client.replication.HandleMessage(0,PosePacket(2,19,0)));
+    assert(client.replication.HandleMessage(0,PosePacket(2,21,0)));
+    assert(client.replication.GetRemotePlayers().empty());
+
+    auto snapshot=[](uint32_t generation,uint32_t sequence,float x) {
+        Body body={};body.id=BodyId("test_crate");body.generation=generation;
+        body.matrix[0]=body.matrix[5]=body.matrix[10]=1;body.matrix[3]=x;
+        body.flags=Awake|Active;
+        Writer packet(Bodies,7);packet.U32(sequence);packet.U32(0);packet.U8(1);packet.U8(1);WriteBody(packet,body);
+        return packet.bytes;
+    };
+    assert(client.replication.HandleMessage(0,snapshot(1,20,1)));
+    client.bodyProp.bodies.clear();client.physics.DestroyBody(client.body);
+    iLuxProp replacement;
+    client.body=client.physics.CreateBody("test_crate",client.physics.CreateBoxShape(cVector3f(0.5f),NULL));
+    client.body->SetMass(2);client.body->SetPosition(cVector3f(7,0,0));
+    client.body->SetGravity(true);client.body->SetCollide(true);client.body->SetUserData(&replacement);
+    replacement.bodies.push_back(client.body);
+    assert(client.replication.HandleMessage(0,snapshot(1,19,1)));
+    assert(client.replication.HandleMessage(0,snapshot(1,30,1)));
+    assert(client.body->GetLocalPosition().x==7 && client.body->GetGravity() && client.body->GetCollide());
+    assert(client.replication.HandleMessage(0,snapshot(2,31,6)));
+    assert(client.body->GetLocalPosition().x==6 && !client.body->GetGravity() && !client.body->GetCollide());
+    assert(client.replication.HandleMessage(0,snapshot(1,32,1)));
+    assert(client.body->GetLocalPosition().x==6);
+    // A late definition may rebuild an existing replica of the SAME host
+    // incarnation. Explicit binding must retain ordering but allow new poses.
+    replacement.bodies.clear();client.physics.DestroyBody(client.body);
+    client.body=client.physics.CreateBody("test_crate",client.physics.CreateBoxShape(cVector3f(0.5f),NULL));
+    client.body->SetMass(2);client.body->SetPosition(cVector3f(9,0,0));client.body->SetGravity(true);
+    iLuxProp rebuilt;rebuilt.bodies.push_back(client.body);client.body->SetUserData(&rebuilt);
+    client.replication.BindBodyGeneration(client.body,1); // Stale historical map baseline is harmless.
+    assert(client.replication.HandleMessage(0,snapshot(1,40,1)) && client.body->GetLocalPosition().x==9);
+    client.replication.BindBodyGeneration(client.body,2);
+    assert(client.body->GetLocalPosition().x==6 && !client.body->GetGravity());
+    assert(client.replication.HandleMessage(0,snapshot(2,30,1)) && client.body->GetLocalPosition().x==6);
+    assert(client.replication.HandleMessage(0,snapshot(2,33,4)) && client.body->GetLocalPosition().x==4);
+    // First observation by a late joiner may be any host generation.
+    Fixture late(false,3);
+    assert(late.replication.HandleMessage(0,snapshot(9,50,5)) && late.body->GetLocalPosition().x==5);
+    std::cout << "Departed peers cannot return through delayed poses; replacement bodies reject old generations and accept current baselines.\n";
+}
+
+static void CheckStickyAndControlHandoffs()
+{
+    Fixture host(true,0),client(false,1);
+    cLuxArea_Sticky hostArea,clientArea;
+    host.map.sticky.push_back(&hostArea);client.map.sticky.push_back(&clientArea);
+    // A saved map can first expose the body after it is already attached.
+    hostArea.ApplyNetworkAttachment(host.body,2,true,true);
+    host.Activate();host.replication.OnMapLoaded(&host.map);
+    assert(host.replication.SendInitialState(1));host.replication.Update(0.01f);Deliver(host,client);
+    assert(clientArea.attached==client.body && client.body->GetMass()==0);
+    host.Activate();assert(host.replication.HandleMessage(1,PosePacket(1,1,0)));
+    client.Activate();assert(!client.replication.RequestInteraction(client.body,eLuxPlayerState_InteractGrab,0));
+    assert(clientArea.attached==client.body && client.body->GetMass()==0);
+    Deliver(client,host);
+    assert(!hostArea.attached && host.body->GetMass()==2 && host.body->GetGravity());
+    Deliver(host,client);
+    assert(!clientArea.attached && client.body->GetMass()==2 && client.body->GetGravity());
+    assert(client.replication.OwnsInteraction(client.body) && client.player.state==eLuxPlayerState_InteractGrab);
+    client.replication.ReleaseInteraction();Deliver(client,host);Deliver(host,client);
+    // An attachment that cannot detach must remain fixed on every peer.
+    hostArea.ApplyNetworkAttachment(host.body,2,true,false);
+    host.Activate();host.replication.Update(0.05f);Deliver(host,client);
+    assert(!client.replication.RequestInteraction(client.body,eLuxPlayerState_InteractGrab,0));
+    Writer denied(LeaseRequest,7);denied.U32(9);denied.U64(BodyId("test_crate"));
+    host.Activate();host.session.sent.clear();assert(host.replication.HandleMessage(1,denied.bytes));
+    assert(hostArea.attached==host.body && host.body->GetMass()==0 && CountPackets(host,LeaseDenied)==1);
+    // Reconstruction/destruction clears area references before freeing bodies.
+    // The next authoritative snapshot then releases the other peer's replica.
+    hostArea.OnBodyDestroyed(host.body);host.bodyProp.bodies.clear();host.physics.DestroyBody(host.body);host.body=NULL;
+    host.replication.Update(0.05f);Deliver(host,client);
+    assert(!clientArea.attached && client.body->GetMass()==2 && client.body->GetGravity());
+
+    cLuxProp_Lever lever;cLuxProp_MultiSlider slider;
+    for(iLuxProp* prop:{static_cast<iLuxProp*>(&lever),static_cast<iLuxProp*>(&slider)}) {
+        Fixture control(true,0);prop->bodies={control.body};control.body->SetUserData(prop);
+        control.replication.OnMapLoaded(&control.map);
+        assert(control.replication.HandleMessage(1,PosePacket(1,1,0)));
+        assert(control.replication.HandleMessage(1,denied.bytes));
+        assert(CountPackets(control,LeaseGrant)==1);
+    }
+    assert(lever.stuck==0 && slider.stuck==-1);
+    std::cout << "Sticky attachments detach only on accepted authority, survive saved-map baselines; levers and sliders unlock on host grants.\n";
+}
+
+static void CheckRotatedTriggerShape()
+{
+    Fixture fixture(true,0);
+    auto* area=fixture.physics.CreateBody("angled_trigger",fixture.physics.CreateBoxShape(cVector3f(8,0.5f,0.1f),NULL));
+    area->SetMatrix(cMath::MatrixRotateY(40*kPif/180));
+    auto* player=fixture.physics.CreateCharacterBody("trigger_player",cVector3f(0.6f,1.8f,0.6f));
+    player->SetPosition(cVector3f(2,0,2));
+    assert(cMath::CheckBVIntersection(*player->GetCurrentBody()->GetBoundingVolume(),*area->GetBoundingVolume()));
+    assert(!LuxPlayerBodyTouches(&fixture.physics,player->GetCurrentBody(),area));
+    player->SetPosition(0);
+    assert(LuxPlayerBodyTouches(&fixture.physics,player->GetCurrentBody(),area));
+    std::cout << "Rotated trigger shapes reject AABB-only overlaps and accept actual character intersections.\n";
+}
 
 static void CheckEnemyQueriesAndEvents()
 {
@@ -516,18 +671,21 @@ static void CheckWheelState()
     host.Activate();assert(host.replication.SendInitialState(1));host.replication.Update(0.01f);
     Deliver(host,client);assert(clientWheel.angle==25);
     host.Activate();assert(host.replication.HandleMessage(1,PosePacket(1,1,cVector3f(0))));
-    Writer request(LeaseRequest,7);request.U32(1);request.U64(BodyId("test_crate"));
-    assert(host.replication.HandleMessage(1,request.bytes));
+    client.Activate();assert(!client.replication.RequestInteraction(client.body,eLuxPlayerState_InteractWheel,0));
+    Deliver(client,host);
     uint32_t owner=0,token=0;assert(host.replication.GetSimulationLease(host.body,owner,token) && owner==1);
     assert(hostWheel.stuck==0 && !host.replication.HasSimulationAuthority(host.body));
-    host.session.sent.clear();
+    Deliver(host,client);
+    assert(clientWheel.stuck==0 && client.replication.OwnsInteraction(client.body));
+    assert(client.player.state==eLuxPlayerState_InteractWheel);
     auto turn=[&](uint32_t sequence,float angle) {
         Body state={};state.id=BodyId("test_crate");state.matrix[0]=state.matrix[5]=state.matrix[10]=1;
         state.flags=Awake|Active;state.wheel=1;state.wheelAngle=angle;
         Writer packet(Bodies,7);packet.U32(sequence);packet.U32(token);packet.U8(0);packet.U8(1);WriteBody(packet,state);
         return packet.bytes;
     };
-    assert(host.replication.HandleMessage(1,turn(100,31)) && hostWheel.angle==31);
+    clientWheel.angle=31;
+    host.Activate();assert(host.replication.HandleMessage(1,turn(100,31)) && hostWheel.angle==31);
     Deliver(host,client);assert(clientWheel.angle==31);
     host.Activate();assert(host.replication.HandleMessage(1,turn(99,10)) && hostWheel.angle==31);
     Writer release(LeaseRelease,7);release.U32(token);release.U8(1);
@@ -566,6 +724,9 @@ int main()
     CheckContactOwnership();
     CheckSmoothCorrections();
     CheckWheelState();
+    CheckDepartedPlayersAndReplacementSnapshots();
+    CheckStickyAndControlHandoffs();
+    CheckRotatedTriggerShape();
     CheckRopeForceAuthority();
     Fixture host(true, 0), client(false, 1);
     client.body->SetPosition(cVector3f(20, 0, 0));
@@ -629,6 +790,7 @@ int main()
     // player the assembly. A delayed state with the revoked token is harmless.
     Body state = {}; // Filled from the current real Newton body below.
     state.id = BodyId("test_crate");
+    state.generation=2; // The test replaced its runtime prop owner with the door.
     for (int i = 0; i < 12; ++i) state.matrix[i] = host.body->GetLocalMatrix().v[i];
     Store(state.linear, cVector3f(4, 1, 0)); Store(state.angular, cVector3f(0, 1, 0)); state.flags = Awake | Active;
     Writer finalState(Bodies, 7); finalState.U32(100); finalState.U32(token); finalState.U8(0); finalState.U8(1); WriteBody(finalState, state);

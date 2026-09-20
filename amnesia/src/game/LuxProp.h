@@ -308,6 +308,7 @@ public:
 	void SetAttachmentParent(iLuxProp *apProp){mpAttachmentParent = apProp; }
 
 	void AddAndAttachProp(const tString& asName, const tString& asFileName, const cMatrixf& a_mtxOffset);
+    bool AttachExistingProp(iLuxProp* apProp,const cMatrixf& a_mtxOffset);
 	bool DestroyAttachedProp(const tString& asName);
 	void DestroyAttachedProp(cLuxProp_AttachedProp *pProp);
 	bool RemoveAttachedProp(iLuxProp *apProp);

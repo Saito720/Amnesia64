@@ -1,5 +1,7 @@
 #include "../amnesia/src/game/LuxMultiplayerProtocol.h"
 #include "../amnesia/src/game/LuxMultiplayerEntityProtocol.h"
+#include "../amnesia/src/game/LuxMultiplayerInventoryProtocol.h"
+#include "../amnesia/src/game/LuxMultiplayerInventoryPolicy.h"
 #include "../amnesia/src/game/LuxMultiplayerEffectsProtocol.h"
 #include "../amnesia/src/game/LuxMultiplayerTriggerPolicy.h"
 #include "../amnesia/src/game/LuxMultiplayerMapHash.h"
@@ -19,6 +21,77 @@ static std::vector<uint8_t> NativePacket(const NativeState& state) {
 static bool DecodeNative(const std::vector<uint8_t>& bytes) {
     Reader reader(bytes);NativeState result;
     return ReadNativeState(reader,result);
+}
+static void CheckInventoryTransfersAndRecipes() {
+    InventoryItem item;item.name="key_study_1";item.type=0;item.subtype="study_key";
+    item.image="study_key.tga";item.amount=1;item.value="key";item.extra="data";
+    const auto bytes=WriteInventoryItem(7,item);
+    auto decode=[](const std::vector<uint8_t>& data) {
+        Reader r(data);r.U32();InventoryItem restored;return ReadInventoryItem(r,restored,10);
+    };
+    Reader r(bytes);assert(r.U32()==7);InventoryItem restored;
+    assert(ReadInventoryItem(r,restored,10) && WriteInventoryItem(7,restored)==bytes);
+    for(size_t length=0;length<bytes.size();++length) assert(!decode({bytes.begin(),bytes.begin()+length}));
+    auto invalid=item;invalid.name="";assert(!decode(WriteInventoryItem(7,invalid)));
+    invalid=item;invalid.type=10;assert(!decode(WriteInventoryItem(7,invalid)));
+    invalid=item;invalid.amount=std::numeric_limits<float>::quiet_NaN();assert(!decode(WriteInventoryItem(7,invalid)));
+    invalid=item;invalid.image=std::string(1025,'x');assert(!decode(WriteInventoryItem(7,invalid)));
+    auto trailing=bytes;trailing.push_back(0);assert(!decode(trailing));
+
+    const std::vector<InventoryRecipe> recipes={
+        {"drill12","CombineDrill","part1","part2"},
+        {"drill13","CombineDrill","part1","part3"},
+        {"drill23","CombineDrill","part2","part3"},
+        {"hammer","CombineHammer","hammer","chisel"}};
+    InventoryOwners owners={{"part1",{1}},{"part2",{2}}};
+    InventoryRecipeAttempts attempted;
+    const auto* candidate=NextSplitRecipe(recipes,owners,{"part2"},attempted);
+    assert(candidate && candidate->name=="drill12");
+    // An authored recipe can reject until its third part exists. Do not retry
+    // the same registration against unchanged inventory.
+    attempted[candidate->name]=0;
+    assert(!NextSplitRecipe(recipes,owners,{"part2"},attempted));
+    // The campaign registers all drill pairs. Its final collector can be a
+    // third player; select a registered pair involving that third piece.
+    owners["part3"].insert(3);attempted.clear();
+    candidate=NextSplitRecipe(recipes,owners,{"part3"},attempted);
+    assert(candidate && candidate->name=="drill13");
+    assert(!NextSplitRecipe(recipes,owners,{"tinderbox"},attempted));
+    // Ordinary manual combinations and duplicated shared grants remain manual.
+    owners={{"part1",{1}},{"part2",{1}}};
+    assert(!NextSplitRecipe(recipes,owners,{"part2"},attempted));
+    owners={{"part1",{0,1}},{"part2",{0,2}}};
+    assert(!NextSplitRecipe(recipes,owners,{"part2"},attempted));
+    owners={{"hammer",{0}},{"chisel",{2}}};
+    candidate=NextSplitRecipe(recipes,owners,{"chisel"},attempted);
+    assert(candidate && candidate->name=="hammer");
+
+    // One handler may implement several successive stages. The intermediate
+    // output belongs to the last collector while the remaining ingredient is
+    // still held by another peer; it must continue without another pickup.
+    const std::vector<InventoryRecipe> stages={
+        {"first","Combine","a","b"},{"second","Combine","ab","c"}};
+    owners={{"a",{1}},{"b",{2}},{"c",{3}}};attempted.clear();
+    candidate=NextSplitRecipe(stages,owners,{"b"},attempted,10);
+    assert(candidate && candidate->name=="first");
+    attempted[candidate->name]=10;
+    assert(!NextSplitRecipe(stages,owners,{"b"},attempted,10));
+    owners.erase("a");owners.erase("b");owners["ab"].insert(2);
+    candidate=NextSplitRecipe(stages,owners,{"b","ab"},attempted,11);
+    assert(candidate && candidate->name=="second");
+    attempted[candidate->name]=11;
+    assert(!NextSplitRecipe(stages,owners,{"b","ab"},attempted,11));
+
+    const std::vector<InventoryRecipe> generic={
+        {"unrelated","Generic","x","y"},{"rejected","Generic","a","b"},{"accepted","Generic","a","c"}};
+    owners={{"x",{1}},{"y",{2}},{"a",{3}},{"b",{1}},{"c",{2}}};attempted.clear();
+    candidate=NextSplitRecipe(generic,owners,{"a"},attempted,20);
+    assert(candidate && candidate->name=="rejected"); // Shared function alone cannot select x+y.
+    attempted[candidate->name]=20;
+    candidate=NextSplitRecipe(generic,owners,{"a"},attempted,20);
+    assert(candidate && candidate->name=="accepted"); // A failed pair cannot mask another valid pair.
+    attempted[candidate->name]=20;
+    assert(!NextSplitRecipe(generic,owners,{"a"},attempted,20));
 }
 static void CheckWorldEffects() {
     using namespace luxfx;
@@ -70,9 +143,9 @@ static void CheckWorldEffects() {
 static void CheckNativeEntityStates() {
     NativeState basic={42,"bookshelf",PropState,EntityActive|EffectsActive,0,{}};
     assert(DecodeNative(NativePacket(basic)));
-    for(uint8_t kind=PropState;kind<=DoorState;++kind) {
+    for(uint8_t kind=PropState;kind<=ChestState;++kind) {
         NativeState state=basic;state.kind=kind;
-        state.detail=kind==DoorState ? 7 : kind==LampState ? 1 : 0;
+        state.detail=kind==DoorState ? 7 : kind==PropState ? 0 : 1;
         state.flags=15;assert(DecodeNative(NativePacket(state)));
         ++state.detail;assert(!DecodeNative(NativePacket(state)));
     }
@@ -99,7 +172,7 @@ static void CheckNativeEntityStates() {
         assert(!DecodeNative(std::vector<uint8_t>(valid.begin(),valid.begin()+n)));
     std::vector<uint8_t> trailing=valid;trailing.push_back(0);assert(!DecodeNative(trailing));
 
-    NativeState invalid=jointed;invalid.kind=3;assert(!DecodeNative(NativePacket(invalid)));
+    NativeState invalid=jointed;invalid.kind=ChestState+1;assert(!DecodeNative(NativePacket(invalid)));
     invalid=jointed;invalid.flags=16;assert(!DecodeNative(NativePacket(invalid)));
     for(const std::string& name:{std::string(),std::string(257,'x'),std::string("door\0hidden",11)}) {
         invalid=jointed;invalid.name=name;assert(!DecodeNative(NativePacket(invalid)));
@@ -192,10 +265,44 @@ static void CheckPlayerTriggerOrigins() {
         {{false,true,true},{false,true,true},{false,false,true}} // multiple remote samples remain remote
     };
     for(const auto& scenario:scenarios) {
-        bool previousRemoteOnly=false;
-        for(const auto& sample:scenario)
-            assert(UpdatePlayerTriggerOrigin(sample.host,sample.remote,previousRemoteOnly)==sample.remoteOrigin);
+        PlayerScriptOrigin previousRemote;
+        for(const auto& sample:scenario) {
+            const auto origin=UpdatePlayerTriggerOrigin(sample.host,sample.remote?7:UINT32_MAX,1,previousRemote);
+            assert(origin.remote==sample.remoteOrigin);
+            assert(origin.PeerInSession(1)==(sample.remoteOrigin?7:UINT32_MAX));
+        }
     }
+    // Entry/exit attribution is stable when no player currently overlaps, and
+    // follows the last peer still present when two clients trade occupancy.
+    PlayerScriptOrigin previous;
+    auto sample=[&](bool local,uint32_t remote) {
+        return UpdatePlayerTriggerOrigin(local,remote,1,previous).PeerInSession(1);
+    };
+    assert(sample(false,7)==7);
+    assert(sample(false,UINT32_MAX)==7);
+    assert(sample(false,UINT32_MAX)==UINT32_MAX);
+    assert(sample(false,7)==7);
+    assert(sample(false,9)==9);
+    assert(sample(false,UINT32_MAX)==9);
+    assert(sample(false,7)==7);
+    assert(sample(true,7)==UINT32_MAX);
+    assert(sample(false,UINT32_MAX)==UINT32_MAX);
+
+    // Timer origins and remembered overlaps are copied through in-memory map
+    // saves. Rehosting may reuse a peer number, but old events must not query
+    // the new peer or fall back to host-local script context.
+    const PlayerScriptOrigin timer={true,7,1};
+    const auto savedTimer=timer;
+    assert(savedTimer.remote && savedTimer.PeerInSession(1)==7);
+    assert(savedTimer.remote && savedTimer.PeerInSession(2)==UINT32_MAX);
+    previous=timer;
+    const auto exitAfterRehost=UpdatePlayerTriggerOrigin(false,UINT32_MAX,2,previous);
+    assert(exitAfterRehost.remote && exitAfterRehost.PeerInSession(2)==UINT32_MAX);
+    assert(!previous.remote);
+    const auto newOccupant=UpdatePlayerTriggerOrigin(false,7,2,previous);
+    assert(newOccupant.remote && newOccupant.PeerInSession(2)==7);
+    const PlayerScriptOrigin invalidChain={true,UINT32_MAX,2};
+    assert(invalidChain.remote && invalidChain.PeerInSession(2)==UINT32_MAX);
 }
 static void CheckMapHashes() {
     const auto textHash=[](const std::string& text) {
@@ -265,6 +372,7 @@ int main() {
     CheckMapHashes();
     CheckPlayerTriggerOrigins();
     CheckNativeEntityStates();
+    CheckInventoryTransfersAndRecipes();
     CheckJointBreakRequests();
     CheckWorldEffects();
     Writer w(MapBegin);w.U32(ProtocolVersion);w.String("00_rainy_hall.map");w.Float(3.5f);w.U8(1);

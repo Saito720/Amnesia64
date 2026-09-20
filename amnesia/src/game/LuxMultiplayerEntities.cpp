@@ -1,16 +1,20 @@
 #include "LuxMultiplayerEntities.h"
 #include "LuxMultiplayerContent.h"
 #include "LuxMultiplayerEntityProtocol.h"
+#include "LuxMultiplayerEntityDefinition.h"
 #include "LuxMultiplayer.h"
 #include "LuxMultiplayerWorld.h"
 #include "LuxMap.h"
 #include "LuxMapHandler.h"
 #include "LuxPlayer.h"
 #include "LuxJournal.h"
+#include "LuxCompletionCountHandler.h"
 #include "LuxProp.h"
 #include "LuxProp_Item.h"
 #include "LuxProp_Lamp.h"
 #include "LuxProp_SwingDoor.h"
+#include "LuxProp_Button.h"
+#include "LuxProp_Chest.h"
 #include "physics/PhysicsJointHinge.h"
 #include "physics/PhysicsJointSlider.h"
 #include "physics/PhysicsRope.h"
@@ -20,6 +24,8 @@ using namespace luxnet;
 
 cLuxMultiplayerEntities::cLuxMultiplayerEntities(cLuxMultiplayer* session):mpSession(session) { Reset(); }
 void cLuxMultiplayerEntities::Reset() {
+    mvMapBaseline.clear();mbMapBaselineValid=false;
+    mDefinitionBindings.clear();
     mLastRopes.clear();
     mClaims.clear();mLastStates.clear();mRemovedItems.clear();mInitial.clear();mJointBreakRequests.clear();
     mPendingDiaries.clear();mpDiaryDecision=NULL;
@@ -66,7 +72,7 @@ bool cLuxMultiplayerEntities::AllowPhysicsJointBreak(iLuxProp* prop,iPhysicsJoin
 bool cLuxMultiplayerEntities::IsNative(iLuxEntity* entity) const {
     if(!entity || entity->GetEntityType()!=eLuxEntityType_Prop) return false;
     eLuxPropType type=static_cast<iLuxProp*>(entity)->GetPropType();
-    return type==eLuxPropType_Item || type==eLuxPropType_Lamp;
+    return type==eLuxPropType_Item || type==eLuxPropType_Lamp || type==eLuxPropType_Button || type==eLuxPropType_Chest;
 }
 bool cLuxMultiplayerEntities::Eligible(iLuxEntity* entity) {
     if(!IsNative(entity) || !entity->IsActive() || entity->GetDestroyMe() || entity->GetInteractionDisabled() ||
@@ -79,6 +85,11 @@ bool cLuxMultiplayerEntities::Eligible(iLuxEntity* entity) {
     return true;
 }
 bool cLuxMultiplayerEntities::DeferCallback(iLuxEntity* entity) const {
+    // A chest's authored interact callback belongs to opening its question,
+    // including declining/cannot-afford cases. Its later purchase only changes
+    // the shared lock; preserve the existing generic callback path.
+    if(entity && entity->GetEntityType()==eLuxEntityType_Prop &&
+       static_cast<iLuxProp*>(entity)->GetPropType()==eLuxPropType_Chest) return false;
     return mpSession->IsActive() && IsNative(entity) && !mbCallback;
 }
 bool cLuxMultiplayerEntities::BeginInteraction(iLuxEntity* entity) {
@@ -104,7 +115,7 @@ void cLuxMultiplayerEntities::CompleteInteraction(iLuxEntity* entity,bool succee
     if(mpSession->IsHost()) {if(succeeded) Commit(entity,false);return;}
     if(msGranted!=entity->GetName()) return;
     Writer w(NativeResult);w.U32(mpSession->GetMapEpoch());w.String(msGranted);w.U32(mlGrantedToken);w.U8(succeeded);w.U32(mlDiaryIndex+1);
-    if(!mpSession->Send(0,w.data,true)) mpSession->RejectPeer(0,"Could not confirm the item or lamp interaction with the host.");
+    if(!mpSession->Send(0,w.data,true)) mpSession->RejectPeer(0,"Could not confirm the native interaction with the host.");
 }
 void cLuxMultiplayerEntities::RecordDiaryIndex(const std::string& name,int index) {
     if(mpSession->IsClient() && msGranted==name && index>=0 && index<4096) mlDiaryIndex=index;
@@ -118,7 +129,9 @@ void cLuxMultiplayerEntities::RecordDiaryDecision(bool open) {
     if(mpDiaryDecision) *mpDiaryDecision=open;
 }
 bool cLuxMultiplayerEntities::Commit(iLuxEntity* entity,bool remote,bool callbackOnly,int diaryIndex,uint32_t peer) {
-    const bool item=static_cast<iLuxProp*>(entity)->GetPropType()==eLuxPropType_Item;
+    cLuxMultiplayerRemoteTriggerScope actionTrigger(remote,peer);
+    const eLuxPropType kind=static_cast<iLuxProp*>(entity)->GetPropType();
+    const bool item=kind==eLuxPropType_Item;
     bool openDiary=true;
     // A callback's return decision belongs to this pickup, not to whichever
     // player's ReturnOpenJournal effect happened to arrive last on the client.
@@ -128,18 +141,26 @@ bool cLuxMultiplayerEntities::Commit(iLuxEntity* entity,bool remote,bool callbac
         ~DecisionScope() {slot=previous;}
     } decision(mpDiaryDecision,remote && item && diaryIndex>=0?&openDiary:NULL);
     if(item) {
-        // Consumables may be used locally or merged into a stack under another
-        // name; the persistent script ledger tracks puzzle inventory only.
-        if(remote && static_cast<cLuxProp_Item*>(entity)->GetItemType()==eLuxItemType_Puzzle)
-            mpSession->RecordRemoteItem(peer,entity->GetName());
+        if(remote) mpSession->RecordRemoteItem(peer,static_cast<cLuxProp_Item*>(entity));
         mRemovedItems[entity->GetName()]=entity->GetRuntimeID();
         entity->GetMap()->DestroyEntity(entity);
         Writer w(ItemRemoved);w.U32(mpSession->GetMapEpoch());w.String(entity->GetName());
         mpSession->Broadcast(w.data,true);
-    } else if(!callbackOnly) static_cast<cLuxProp_Lamp*>(entity)->SetLit(true,true);
+    } else if(!callbackOnly) {
+        if(kind==eLuxPropType_Lamp) static_cast<cLuxProp_Lamp*>(entity)->SetLit(true,true);
+        if(remote && kind==eLuxPropType_Button) {
+            auto* button=static_cast<cLuxProp_Button*>(entity);button->SetSwitchedOn(!button->GetSwitchedOn(),true);
+        }
+        if(remote && kind==eLuxPropType_Chest) {
+            static_cast<cLuxProp_Chest*>(entity)->SetLocked(false,true);
+            entity->GetMap()->AddCompletionAmount(gpBase->mpCompletionCountHandler->mlChestCompletionValue);
+        }
+    }
     // Run native callbacks exactly once, in the host VM, attributed to the collector.
     // The collector alone receives the item / pays the tinderbox cost.
-    if(!remote || mpSession->GetSettings().allPlayersTriggerScripts) {
+    // Accepted native actions must run their completion scripts even when
+    // passive Player-area triggers are restricted to the host.
+    {
         cLuxMultiplayerRemoteTriggerScope trigger(remote,peer);
         mbCallback=true;
         if(remote && item && diaryIndex>=0) {
@@ -147,15 +168,16 @@ bool cLuxMultiplayerEntities::Commit(iLuxEntity* entity,bool remote,bool callbac
             if(pickup->GetItemType()==eLuxItemType_Diary && !pickup->GetExtraStringVal().empty())
                 entity->GetMap()->RunScript(pickup->GetExtraStringVal()+"(\""+entity->GetName()+"\","+cString::ToString(diaryIndex)+")");
         }
-        if(!callbackOnly) entity->RunCallbackFunc(item?"OnPickup":"OnIgnite");
-        entity->RunInteractCallbackFunc();
+        if(!callbackOnly && (item || kind==eLuxPropType_Lamp)) entity->RunCallbackFunc(item?"OnPickup":"OnIgnite");
+        if(kind!=eLuxPropType_Chest) entity->RunInteractCallbackFunc();
         mbCallback=false;
     }
     if(!item) BroadcastState(entity);
+    else mpSession->AutoCombineInventory(remote?peer:mpSession->GetLocalPeerId(),entity->GetName());
     return openDiary;
 }
 void cLuxMultiplayerEntities::OnPeerDisconnected(uint32_t peer) {
-    mpSession->mRemoteItems.erase(peer);
+    mpSession->RecoverRemoteItems(peer);
     mInitial.erase(peer);
     for(auto it=mClaims.begin();it!=mClaims.end();) {
         if(it->second.peer==peer) it=mClaims.erase(it);else ++it;
@@ -164,12 +186,16 @@ void cLuxMultiplayerEntities::OnPeerDisconnected(uint32_t peer) {
 std::vector<uint8_t> cLuxMultiplayerEntities::Capture(iLuxProp* prop) {
     Writer w(EntityState);w.U32(mpSession->GetMapEpoch());w.String(prop->GetName());
     const uint8_t kind=prop->GetPropType()==eLuxPropType_Lamp?LampState:
-        prop->GetPropType()==eLuxPropType_SwingDoor?DoorState:PropState;
+        prop->GetPropType()==eLuxPropType_SwingDoor?DoorState:
+        prop->GetPropType()==eLuxPropType_Button?ButtonState:
+        prop->GetPropType()==eLuxPropType_Chest?ChestState:PropState;
     w.U8(kind);
     w.U8((prop->IsActive()?EntityActive:0) | (prop->GetInteractionDisabled()?InteractionDisabled:0) |
          (prop->mbEffectsActive?EffectsActive:0) | (prop->mbStaticPhysics?StaticPhysics:0));
     uint8_t detail=0;
     if(kind==LampState) detail=static_cast<cLuxProp_Lamp*>(prop)->GetLit()?1:0;
+    if(kind==ButtonState) detail=static_cast<cLuxProp_Button*>(prop)->GetSwitchedOn()?1:0;
+    if(kind==ChestState) detail=static_cast<cLuxProp_Chest*>(prop)->GetLocked()?1:0;
     if(kind==DoorState) {
         cLuxProp_SwingDoor* door=static_cast<cLuxProp_SwingDoor*>(prop);
         detail=(door->GetClosed()?1:0)|(door->GetLocked()?2:0)|(door->GetDisableAutoClose()?4:0);
@@ -209,7 +235,9 @@ bool cLuxMultiplayerEntities::Apply(const std::vector<uint8_t>& data) {
     if(entity->GetEntityType()!=eLuxEntityType_Prop) return false;
     iLuxProp* prop=static_cast<iLuxProp*>(entity);
     if((state.kind==LampState && prop->GetPropType()!=eLuxPropType_Lamp) ||
-       (state.kind==DoorState && prop->GetPropType()!=eLuxPropType_SwingDoor)) return false;
+       (state.kind==DoorState && prop->GetPropType()!=eLuxPropType_SwingDoor) ||
+       (state.kind==ButtonState && prop->GetPropType()!=eLuxPropType_Button) ||
+       (state.kind==ChestState && prop->GetPropType()!=eLuxPropType_Chest)) return false;
     // Validate all referenced constraints before changing any entity state.
     for(const auto& j:state.joints) {
         if(j.index>=prop->mvJoints.size()) return false;
@@ -227,6 +255,8 @@ bool cLuxMultiplayerEntities::Apply(const std::vector<uint8_t>& data) {
     prop->SetInteractionDisabled((state.flags&InteractionDisabled)!=0);
     if(prop->mbStaticPhysics!=((state.flags&StaticPhysics)!=0)) prop->SetStaticPhysics((state.flags&StaticPhysics)!=0);
     if(state.kind==LampState) static_cast<cLuxProp_Lamp*>(prop)->SetLit(state.detail!=0,true);
+    if(state.kind==ButtonState) static_cast<cLuxProp_Button*>(prop)->SetSwitchedOn(state.detail!=0,true);
+    if(state.kind==ChestState) static_cast<cLuxProp_Chest*>(prop)->SetLocked(state.detail!=0,true);
     // Lit and effects can differ after an authored fade or saved-state restore.
     // SetLit also does nothing when the lit bit already matches the snapshot.
     if(prop->mbEffectsActive!=((state.flags&EffectsActive)!=0)) prop->SetEffectsActive((state.flags&EffectsActive)!=0,true);
@@ -256,18 +286,161 @@ void cLuxMultiplayerEntities::BroadcastState(iLuxEntity* entity) {
     auto bytes=Capture(static_cast<iLuxProp*>(entity));
     mLastStates[entity->GetName()]=bytes;mpSession->Broadcast(bytes,true);
 }
+PropDefinition cLuxMultiplayerEntities::CaptureDefinition(iLuxProp* prop) {
+    PropDefinition definition;definition.epoch=mpSession->GetMapEpoch();
+    definition.incarnation=prop->GetRuntimeID();
+    definition.id=static_cast<uint32_t>(prop->GetID());definition.name=prop->GetName();
+    definition.file=cString::ReplaceCharTo(prop->msFileName,"\\","/");
+    if(!SafeRelativePath(definition.file)) definition.file=cString::GetFileName(definition.file);
+    for(int row=0;row<3;++row) for(int col=0;col<4;++col)
+        definition.matrix[row*4+col]=prop->m_mtxOnLoadTransform.m[row][col];
+    definition.scale[0]=prop->mvOnLoadScale.x;definition.scale[1]=prop->mvOnLoadScale.y;definition.scale[2]=prop->mvOnLoadScale.z;
+    if(auto* parent=prop->GetAttachmentParent()) {
+        definition.parent=parent->GetName();
+        for(const auto* attached:parent->mlstAttachedProps) if(attached->mpProp==prop) {
+            for(int row=0;row<3;++row) for(int col=0;col<4;++col)
+                definition.attachment[row*4+col]=attached->m_mtxOffset.m[row][col];
+            break;
+        }
+    }
+    for(int i=0;i<prop->GetBodyNum();++i) {
+        auto* body=prop->GetBody(i);if(!body) continue;
+        const uint32_t generation=mpSession->GetWorld()->GetBodyGeneration(body);
+        if(generation) definition.bodies.push_back({LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID()),generation});
+        else if(!prop->GetAttachmentParent() && body->GetMass()<=0) {
+            PropDefinition::StaticBodyPose pose;
+            pose.id=LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID());
+            pose.flags=(body->GetEnabled()?LuxWorldWire::Awake:0)|(body->IsActive()?LuxWorldWire::Active:0)|
+                (body->GetGravity()?LuxWorldWire::Gravity:0)|(body->GetCollide()?LuxWorldWire::Collide:0)|
+                (body->GetCollideCharacter()?LuxWorldWire::CollideCharacter:0);
+            for(int row=0;row<3;++row) for(int col=0;col<4;++col) pose.matrix[row*4+col]=body->GetLocalMatrix().m[row][col];
+            definition.staticBodies.push_back(pose);
+        }
+    }
+    return definition;
+}
+bool cLuxMultiplayerEntities::CaptureDefinitions(std::vector<std::vector<uint8_t> >& output) {
+    output.clear();
+    auto* map=gpBase->mpMapHandler->GetCurrentMap();if(!map) return false;
+    std::vector<PropDefinition> definitions;
+    auto it=map->GetEntityIterator();
+    while(it.HasNext()) {
+        auto* entity=it.Next();
+        if(entity->GetEntityType()!=eLuxEntityType_Prop) continue;
+        auto* prop=static_cast<iLuxProp*>(entity);
+        bool pendingDestruction=false;
+        for(auto* ancestor=prop;ancestor;ancestor=ancestor->GetAttachmentParent())
+            if(ancestor->GetDestroyMe()) {pendingDestruction=true;break;}
+        if(!pendingDestruction) definitions.push_back(CaptureDefinition(prop));
+    }
+    if(!OrderPropDefinitions(definitions)) return false;
+    for(const auto& definition:definitions) output.push_back(WritePropDefinition(definition));
+    return true;
+}
+void cLuxMultiplayerEntities::CaptureMapBaseline() {
+    if(!mpSession->IsHost()) return;
+    mbMapBaselineValid=CaptureDefinitions(mvMapBaseline);
+    if(!mbMapBaselineValid) Warning("Could not capture multiplayer prop reconstruction baseline.\n");
+}
+bool cLuxMultiplayerEntities::SendMapBaseline(uint32_t peer) {
+    if(!mbMapBaselineValid || mvMapBaseline.size()>8192) return false;
+    for(const auto& bytes:mvMapBaseline) if(!mpSession->Send(peer,bytes,true)) return false;
+    return true;
+}
+bool cLuxMultiplayerEntities::ApplyDefinition(const std::vector<uint8_t>& bytes) {
+    Reader reader(bytes);PropDefinition definition;
+    if(!ReadPropDefinition(reader,definition)) return false;
+    if(definition.epoch!=mpSession->GetMapEpoch()) return true;
+    auto* map=gpBase->mpMapHandler->GetCurrentMap();if(!map) return false;
+    const tString bindingName=cString::ToLowerCase(definition.name);
+    const auto bind=[&](iLuxProp* prop) {
+        if(!definition.parent.empty()) {
+            auto* entity=map->GetEntityByName(definition.parent,eLuxEntityType_Prop);
+            if(!entity || entity->GetDestroyMe()) return false;
+            cMatrixf offset=cMatrixf::Identity;
+            for(int row=0;row<3;++row) for(int col=0;col<4;++col) offset.m[row][col]=definition.attachment[row*4+col];
+            if(!static_cast<iLuxProp*>(entity)->AttachExistingProp(prop,offset)) return false;
+        } else if(prop->GetAttachmentParent()) {
+            prop->GetAttachmentParent()->RemoveAttachedProp(prop);
+        }
+        for(const auto& expected:definition.bodies) {
+            iPhysicsBody* matched=NULL;
+            for(int i=0;i<prop->GetBodyNum();++i) {
+                auto* body=prop->GetBody(i);
+                if(body && LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID())==expected.id) {matched=body;break;}
+            }
+            if(!matched) return false;
+            mpSession->GetWorld()->BindBodyGeneration(matched,expected.generation);
+        }
+        for(const auto& pose:definition.staticBodies) {
+            iPhysicsBody* matched=NULL;
+            for(int i=0;i<prop->GetBodyNum();++i) {
+                auto* body=prop->GetBody(i);
+                if(body && LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID())==pose.id) {matched=body;break;}
+            }
+            if(!matched) return false;
+            // A current dynamic pose may overtake a historical static recipe.
+            // Keep the bound simulation stream authoritative in that case.
+            if(mpSession->GetWorld()->GetBodyGeneration(matched)) continue;
+            cMatrixf matrix=cMatrixf::Identity;
+            for(int row=0;row<3;++row) for(int col=0;col<4;++col) matrix.m[row][col]=pose.matrix[row*4+col];
+            matched->SetMass(0);matched->SetMatrix(matrix);matched->ResetRenderInterpolation();
+            matched->SetActive((pose.flags&LuxWorldWire::Active)!=0);
+            matched->SetGravity((pose.flags&LuxWorldWire::Gravity)!=0);
+            matched->SetCollide((pose.flags&LuxWorldWire::Collide)!=0);
+            matched->SetCollideCharacter((pose.flags&LuxWorldWire::CollideCharacter)!=0);
+            if(pose.flags&LuxWorldWire::Awake) matched->Enable();
+        }
+        mDefinitionBindings[bindingName]={definition.incarnation,prop->GetRuntimeID()};
+        return true;
+    };
+    auto* existing=map->GetEntityByName(definition.name);
+    if(existing && !existing->GetDestroyMe() && existing->GetEntityType()==eLuxEntityType_Prop) {
+        auto* prop=static_cast<iLuxProp*>(existing);
+        auto previous=mDefinitionBindings.find(bindingName);
+        const bool differentIncarnation=previous!=mDefinitionBindings.end() &&
+            DefinitionChangesBoundIncarnation(previous->second,definition.incarnation,prop->GetRuntimeID());
+        tString file=cString::ReplaceCharTo(prop->msFileName,"\\","/");
+        if(!SafeRelativePath(file)) file=cString::GetFileName(file);
+        const bool sameScale=prop->mvOnLoadScale==cVector3f(definition.scale[0],definition.scale[1],definition.scale[2]);
+        if(!differentIncarnation && sameScale && existing->GetID()==static_cast<int>(definition.id) &&
+           cString::ToLowerCase(file)==cString::ToLowerCase(definition.file)) return bind(prop);
+    }
+    tString error;
+    if(!LuxValidateMultiplayerAsset(definition.file,"ent",error)) return false;
+    // Definitions are applied only from packet handling, between engine updates.
+    // Remove stale authored incarnations before loading the host's restored one.
+    if(existing) map->DestroyEntity(existing);
+    auto* sameId=map->GetEntityByID(static_cast<int>(definition.id));
+    if(sameId && sameId!=existing) map->DestroyEntity(sameId);
+    map->FlushNetworkEntityDestruction();
+    cMatrixf transform=cMatrixf::Identity;
+    for(int row=0;row<3;++row) for(int col=0;col<4;++col) transform.m[row][col]=definition.matrix[row*4+col];
+    cLuxMap* previousLoading=gpBase->mpCurrentMapLoading;gpBase->mpCurrentMapLoading=map;
+    map->ResetLatestEntity();
+    map->GetWorld()->CreateEntity(definition.name,transform,definition.file,static_cast<int>(definition.id),true,
+        cVector3f(definition.scale[0],definition.scale[1],definition.scale[2]));
+    gpBase->mpCurrentMapLoading=previousLoading;
+    auto* created=map->GetLatestEntity();
+    return created && created->GetName()==definition.name && created->GetEntityType()==eLuxEntityType_Prop && bind(static_cast<iLuxProp*>(created));
+}
 bool cLuxMultiplayerEntities::SendInitialState(uint32_t peer) {
     cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();if(!map) return false;
     // Saved-map restoration runs after OnMapLoaded. Reconcile at the ready
     // barrier against the restored host world, including every return visit.
     std::string error;
     if(!SeedCurrentMapItems(mpSession->mvMapBytes,error)) return false;
+    std::vector<std::vector<uint8_t> > definitions;
+    if(!CaptureDefinitions(definitions)) return false;
+    for(const auto& definition:definitions) if(!mpSession->Send(peer,definition,true)) return false;
     SyncRopes(peer);
     auto& queue=mInitial[peer];queue.clear();
     for(const auto& removed:mRemovedItems) queue.push_back(removed.first);
     auto it=map->GetEntityIterator();
     while(it.HasNext()) {
         auto* entity=it.Next();
+        // History may have created or replaced props since the restored baseline.
+        // Reconcile the current roster before any native/body snapshots arrive.
         if(entity->GetEntityType()==eLuxEntityType_Prop && !entity->GetDestroyMe() && !mRemovedItems.count(entity->GetName()))
             queue.push_back(entity->GetName());
         if(queue.size()>8192) {mInitial.erase(peer);return false;}
@@ -285,7 +458,7 @@ void cLuxMultiplayerEntities::Update(float dt) {
     std::set<uint32_t> expired;
     for(auto& claim:mClaims) if((claim.second.age+=dt)>20) expired.insert(claim.second.peer);
     // Never reassign an unanswered grant while its recipient remains connected.
-    for(uint32_t peer:expired) mpSession->RejectPeer(peer,"Timed out confirming an item or lamp interaction.");
+    for(uint32_t peer:expired) mpSession->RejectPeer(peer,"Timed out confirming a native interaction.");
     cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();if(!map) return;
     for(auto it=mRemovedItems.begin();it!=mRemovedItems.end();) {
         auto* entity=map->GetEntityByName(it->first);
@@ -309,6 +482,7 @@ void cLuxMultiplayerEntities::Update(float dt) {
     mfSnapshotTime+=dt;if(mfSnapshotTime<0.1f) return;mfSnapshotTime=0;
     SyncRopes();
     const bool groundTruth=mfGroundTruthTime>=2;if(groundTruth) mfGroundTruthTime=0;
+    if(groundTruth) mpSession->RecoverPendingItems();
     auto it=map->GetEntityIterator();
     while(it.HasNext()) {
         auto* entity=it.Next();
@@ -362,7 +536,8 @@ bool cLuxMultiplayerEntities::HandleMessage(uint32_t peer,const std::vector<uint
     if(mpSession->IsHost() && type==NativeRequest) {
         if(!r.Done()) return false;
         const auto& players=mpSession->GetWorld()->GetRemotePlayers();auto player=players.find(peer);
-        bool allow=Eligible(entity) && entity->GetName()==name && !mClaims.count(name) && player!=players.end() && player->second.age<=2;
+        bool allow=Eligible(entity) && entity->GetName()==name && !mClaims.count(name) && player!=players.end() &&
+            player->second.age<=2 && (player->second.gameplay.flags&LuxWorldWire::PlayerAlive);
         if(allow) {
             allow=false;
             for(int i=0;i<entity->GetBodyNum();++i)
@@ -370,6 +545,14 @@ bool cLuxMultiplayerEntities::HandleMessage(uint32_t peer,const std::vector<uint
         }
         // Each client may hold only one unresolved native interaction.
         for(const auto& claim:mClaims) if(claim.second.peer==peer) allow=false;
+        // Buttons have no local inventory cost or presentation decision. Apply
+        // their toggle directly on the authority so a later result cannot
+        // invert a newer script/other-player toggle.
+        if(allow && static_cast<iLuxProp*>(entity)->GetPropType()==eLuxPropType_Button) {
+            Commit(entity,true,false,-1,peer);
+            Writer response(NativeGrant);response.U32(epoch);response.String(name);response.U32(0);response.U8(0);
+            return mpSession->Send(peer,response.data,true);
+        }
         uint32_t token=0;bool callbackOnly=false;
         if(allow) {
             if(static_cast<iLuxProp*>(entity)->GetPropType()==eLuxPropType_Lamp) {
@@ -380,7 +563,7 @@ bool cLuxMultiplayerEntities::HandleMessage(uint32_t peer,const std::vector<uint
             if(!++mlToken) ++mlToken;token=mlToken;mClaims[name]={peer,token,0,entity->GetRuntimeID(),callbackOnly,diary};
         }
         Writer w(NativeGrant);w.U32(epoch);w.String(name);w.U32(token);w.U8(callbackOnly);
-        if(!mpSession->Send(peer,w.data,true)) mpSession->RejectPeer(peer,"Could not deliver the item or lamp interaction grant.");
+        if(!mpSession->Send(peer,w.data,true)) mpSession->RejectPeer(peer,"Could not deliver the native interaction grant.");
         return true;
     }
     if(mpSession->IsHost() && type==NativeResult) {
@@ -413,7 +596,9 @@ bool cLuxMultiplayerEntities::HandleMessage(uint32_t peer,const std::vector<uint
             return mpSession->Send(0,w.data,true);
         }
         msGranted=name;mlGrantedToken=token;mlDiaryIndex=-1;
-        entity->OnInteract(entity->GetBody(0),entity->GetBody(0)->GetWorldPosition());
+        if(static_cast<iLuxProp*>(entity)->GetPropType()==eLuxPropType_Chest)
+            static_cast<cLuxProp_Chest*>(entity)->Purchase();
+        else entity->OnInteract(entity->GetBody(0),entity->GetBody(0)->GetWorldPosition());
         msGranted.clear();mlGrantedToken=0;
         return true;
     }

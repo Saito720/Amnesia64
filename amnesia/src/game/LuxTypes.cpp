@@ -174,11 +174,13 @@ void iLuxCollideCallbackContainer::CheckCollisionCallback(const tString& asName,
 		{
 			lTriggerPeer=gpBase->mpMultiplayer->GetRemotePlayerTouching(pEntity);
 			const bool bRemoteCollide = lTriggerPeer!=UINT32_MAX;
-			bRemotePlayerTrigger = luxnet::UpdatePlayerTriggerOrigin(bCollide, bRemoteCollide,
-				pCallback->mbRemotePlayerColliding);
+			const auto origin = luxnet::UpdatePlayerTriggerOrigin(bCollide, lTriggerPeer,
+				gpBase->mpMultiplayer->GetSessionSerial(),pCallback->mRemotePlayerTrigger);
+			bRemotePlayerTrigger = origin.remote;
+			lTriggerPeer = origin.PeerInSession(gpBase->mpMultiplayer->GetSessionSerial());
 			bCollide = bCollide || bRemoteCollide;
 		}
-		else pCallback->mbRemotePlayerColliding = false;
+		else pCallback->mRemotePlayerTrigger = {};
 
 		/////////////////////
 		//Handle collision
@@ -288,7 +290,7 @@ void iLuxCollideCallbackContainer::AddCollideCallback(iLuxEntity *apEntity, cons
 	pCallback->msCallbackFunc = asCallbackFunc;
 	pCallback->mbDeleteWhenColliding = abRemoveAtCollide;
 	pCallback->mbColliding = false;
-	pCallback->mbRemotePlayerColliding = false;
+	pCallback->mRemotePlayerTrigger = {};
 	pCallback->mlStates = alStates;
 
 	apEntity->AddCollideCallbackParent(this);
@@ -531,6 +533,7 @@ void cLuxCollideCallback_SaveData::FromCallback(cLuxCollideCallback *apCallback)
 	mbDeleteWhenColliding = apCallback->mbDeleteWhenColliding;
 	mlStates = apCallback->mlStates;
 	mbColliding = apCallback->mbColliding;
+	mRemotePlayerTrigger = apCallback->mRemotePlayerTrigger;
 }
 
 //-----------------------------------------------------------------------
@@ -541,7 +544,7 @@ void cLuxCollideCallback_SaveData::ToCallback(cLuxMap *apMap, iLuxCollideCallbac
 	apCallback->mbDeleteWhenColliding = mbDeleteWhenColliding;
 	apCallback->mlStates = mlStates;
 	apCallback->mbColliding = mbColliding;
-	apCallback->mbRemotePlayerColliding = false;
+	apCallback->mRemotePlayerTrigger = mRemotePlayerTrigger;
 
 	apCallback->mpCollideEntity = apMap->GetEntityByID(mlCollideEntity);
 	if(apCallback->mpCollideEntity==NULL)

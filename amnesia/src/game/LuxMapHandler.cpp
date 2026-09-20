@@ -19,6 +19,7 @@
 
 #include "LuxMapHandler.h"
 #include "LuxMultiplayer.h"
+#include "LuxMultiplayerEntities.h"
 #include "LuxMultiplayerWorld.h"
 #include "LuxMultiplayerEffects.h"
 
@@ -714,6 +715,8 @@ void cLuxMapHandler::CheckMapChange(float afTimeStep)
 		//////////////////////
 		// Load new map data
 		mpSavedGame->LoadMap(mpCurrentMap);
+        if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsHost())
+            gpBase->mpMultiplayer->GetEntities()->CaptureMapBaseline();
 
 		//////////////////////
 		// Run enter script! (otherwise a save in oneter will not be correct!)

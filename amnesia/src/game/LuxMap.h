@@ -112,6 +112,8 @@ public:
 	 * Do not call this when IsDeletingAllWorldEntities is true!
 	 */
 	void DestroyEntity(iLuxEntity *apEntity);
+    // Network reconstruction runs between updates, outside entity/physics traversal.
+    void FlushNetworkEntityDestruction() { UpdateToBeDesotroyedEntities(true); }
 	iLuxEntity *GetEntityByName(const tString& asName, eLuxEntityType aType=eLuxEntityType_LastEnum, int alSubType=-1);
 	iLuxEntity *GetEntityByID(int alID, eLuxEntityType aType=eLuxEntityType_LastEnum, int alSubType=-1);
 	iLuxEntity *GetLatestEntity(){ return mpLatestAddedEntity;}
@@ -137,6 +139,7 @@ public:
 	int GetDoorState(int alID);
 
 	bool BodyIsInDetachableStickyArea(iPhysicsBody* apBody);
+	const tLuxArea_StickyList& GetStickyAreas() const { return mlstStickyAreas; }
 	bool DetachBodyFromStickyArea(iPhysicsBody* apBody);
 
     void DestroyAllRopes();

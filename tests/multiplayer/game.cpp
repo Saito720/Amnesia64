@@ -49,6 +49,7 @@ static void printStatus(const char* message) {
     std::printf("%s: %s\n",role.c_str(),message);std::fflush(stdout);
 }
 #include "NativeRegression.h"
+#include "ReconstructionRegression.h"
 #include "DrawerRegression.h"
 #include "SoundRegression.h"
 #include "IncidentalEffectsRegression.h"
@@ -82,6 +83,7 @@ class cGameSmoke : public iUpdateable, public iRendererCallback {
     Uint32 deathStarted=0;
     uint64_t steamLobby=0;
     cNativeRegression nativeRegression;
+    cReconstructionRegression reconstructionRegression;
     cDrawerRegression drawerRegression;
     cSoundRegression soundRegression;
     cIncidentalEffectsRegression incidentalRegression;
@@ -431,7 +433,16 @@ public:
             if(native>0) {
                 mark(role+"-native-passed.txt","PASS: exclusive host/client pickups and callbacks, failed/successful ignition, door states, static bookshelf movement, and late-join native baseline replay.");
                 printStatus("PASS: native pickup/ignition authority, door/mover replication, and late-join baseline replay");
-                state=41;
+                state=60;
+            }
+            return;
+        }
+        if(state==60) {
+            if(!exists("host-native-passed.txt") || !exists("client-native-passed.txt")) return;
+            tString error;const int reconstructed=reconstructionRegression.Update(error);
+            if(reconstructed<0) {fail(error);return;}
+            if(reconstructed>0) {
+                printStatus("PASS: restored props/attachments, repeated baselines, and client-only same-map teleport");state=41;
             }
             return;
         }

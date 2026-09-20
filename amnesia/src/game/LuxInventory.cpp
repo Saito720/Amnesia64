@@ -21,6 +21,7 @@
 #include "LuxMultiplayer.h"
 
 #include "LuxPlayer.h"
+#include "LuxPlayerState_UseItem.h"
 #include "LuxInputHandler.h"
 #include "LuxMapHandler.h"
 #include "LuxMap.h"
@@ -325,6 +326,11 @@ bool cLuxInventory_Slot::OnMouseUp(iWidget* apWidget, const cGuiMessageData& aDa
 			if(pComb)
 			{
                 if(gpBase->mpMultiplayer && !gpBase->mpMultiplayer->RequestItemUse(pItem->GetName(),pPickedItem->GetName(),true)) return true;
+				if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsHost()) {
+                    gpBase->mpMultiplayer->CombineInventoryItems(gpBase->mpMultiplayer->GetLocalPeerId(),pItem->GetName(),pPickedItem->GetName());
+                    mpInventory->SetPickedItem(NULL,0);
+                    return true;
+                }
 				bool bAutoDestroy = pComb->mbAutoDestroy;
 				tString sCombName = pComb->msName;
 				mpInventory->RunScript(pComb->msFunction+ "(\"" + pComb->msItemA + "\", \"" + pComb->msItemB + "\")" );
@@ -354,7 +360,6 @@ bool cLuxInventory_Slot::OnMouseUp(iWidget* apWidget, const cGuiMessageData& aDa
 		////////////////////////////////
 		// Set back the normal description,
 		// Need to get item again in case there have been changes.
-		iLuxItemType *pItemType = mpInventory->GetItemTypeData(pItem->GetType());
 		pItem = GetItem();
 		mpInventory->SetDescTextFromItem(pItem);
 	}
@@ -1052,7 +1057,7 @@ void cLuxInventory::LoadScript()
 cLuxInventory_Item * cLuxInventory::AddItem(const tString& asName, eLuxItemType aType,
 											const tString& asSubTypeName, const tString& asImageName,
 											float afAmount, const tString& asVal, const tString& asExtraVal,
-											bool* apRemoveItemProp)
+											bool* apRemoveItemProp, bool abPickupEffects)
 {
 	////////////
 	// First Init
@@ -1142,7 +1147,7 @@ cLuxInventory_Item * cLuxInventory::AddItem(const tString& asName, eLuxItemType 
 
 	//////////////////////////
 	//Check if something else should be done with the item (like adding to notebook).
-	if(pItemType->BeforeAddItem(pItem))
+	if(abPickupEffects && pItemType->BeforeAddItem(pItem))
 	{
 		if(apRemoveItemProp) *apRemoveItemProp = true;
 		hplDelete(pItem);
@@ -1169,6 +1174,17 @@ cLuxInventory_Item * cLuxInventory::AddItem(const tString& asName, eLuxItemType 
 
 //-----------------------------------------------------------------------
 
+void cLuxInventory::InvalidateItemReferences(cLuxInventory_Item* apItem)
+{
+    if(mpPickedItem==apItem) mpPickedItem=NULL;
+    if(mpEquippedItem==apItem) mpEquippedItem=NULL;
+    if(cLuxPlayerStateVars::mpInventoryItem==apItem) cLuxPlayerStateVars::mpInventoryItem=NULL;
+    // Shared crafting/removal can consume another player's equipped piece
+    // while that player is still aiming it at the world.
+    if(gpBase->mpPlayer && gpBase->mpPlayer->GetCurrentState()==eLuxPlayerState_UseItem)
+        static_cast<cLuxPlayerState_UseItem*>(gpBase->mpPlayer->GetCurrentStateData())->OnInventoryItemRemoved(apItem);
+}
+
 void cLuxInventory::RemoveItem(const tString& asName)
 {
 	std::vector<cLuxInventory_Item*>::iterator it = mvItems.begin();
@@ -1177,8 +1193,7 @@ void cLuxInventory::RemoveItem(const tString& asName)
 		cLuxInventory_Item *pItem = *it;
 		if(pItem->GetName() == asName)
 		{
-			if(mpPickedItem == pItem) mpPickedItem = NULL;
-			if(mpEquippedItem == pItem) mpEquippedItem = NULL;
+			InvalidateItemReferences(pItem);
 
 			hplDelete(pItem);
 			mvItems.erase(it);
@@ -1199,8 +1214,7 @@ void cLuxInventory::RemoveItem(cLuxInventory_Item *apItem)
 		if(apItem->GetCount()>0) return;
 	}
 
-	if(mpPickedItem == apItem) mpPickedItem = NULL;
-	if(mpEquippedItem == apItem) mpEquippedItem = NULL;
+	InvalidateItemReferences(apItem);
 
 	std::vector<cLuxInventory_Item*>::iterator it = mvItems.begin();
 	for(; it != mvItems.end(); ++it)

@@ -146,6 +146,16 @@ void cLuxMessageHandler::StartPauseMessage(const tWString& asText, bool abYesNo,
 	SetPauseMessageActive(true);
 }
 
+void cLuxMessageHandler::CancelPauseMessage(iLuxMessageCallback *apCallback)
+{
+	if(apCallback==NULL || mpCallback!=apCallback) return;
+	mpCallback = NULL;
+	mbMessageYesNo = false;
+	mvLines.clear();
+	mfPauseMessageAlpha = 0;
+	SetPauseMessageActive(false);
+}
+
 //-----------------------------------------------------------------------
 
 void cLuxMessageHandler::SetMessage(const tWString& asText, float afTime)
@@ -240,19 +250,23 @@ void cLuxMessageHandler::OnDraw(float afFrameTime)
 
 void cLuxMessageHandler::DoAction(eLuxPlayerAction aAction, bool abPressed)
 {
-    if(abPressed)
+	if(abPressed && mbPauseMessageActive)
 	{
+		// Answering may destroy the owner or open another question. Detach the
+		// old callback first and never clear the new message after invoking it.
+		iLuxMessageCallback *pCallback = mpCallback;
+		mpCallback = NULL;
 		SetPauseMessageActive(false);
 
 		if(mbMessageYesNo)
 		{
 			if(aAction == eLuxPlayerAction_Interact)
 			{
-				if(mpCallback) mpCallback->OnPress(true);
+				if(pCallback) pCallback->OnPress(true);
 			}
 			else if(aAction == eLuxPlayerAction_Attack)
 			{
-				if(mpCallback) mpCallback->OnPress(false);
+				if(pCallback) pCallback->OnPress(false);
 			}
 		}
 	}

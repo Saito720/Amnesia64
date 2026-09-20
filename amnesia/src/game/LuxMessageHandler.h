@@ -48,6 +48,8 @@ public:
 	void StarQuestAddedMessage();
 
 	void StartPauseMessage(const tWString& asText, bool abYesNo, iLuxMessageCallback *apCallback);
+	// Callback owners must cancel their question before releasing the callback.
+	void CancelPauseMessage(iLuxMessageCallback *apCallback);
 	
 	/**
 	* if time is <=0 then the life time is calculated based on string length.

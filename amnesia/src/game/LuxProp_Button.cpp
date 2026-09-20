@@ -22,6 +22,7 @@
 #include "LuxPlayer.h"
 #include "LuxPlayerState.h"
 #include "LuxMap.h"
+#include "LuxMultiplayer.h"
 
 //////////////////////////////////////////////////////////////////////////
 // LOADER
@@ -100,7 +101,9 @@ bool cLuxProp_Button::CanInteract(iPhysicsBody *apBody)
 
 bool cLuxProp_Button::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 {
+    if(gpBase->mpMultiplayer && !gpBase->mpMultiplayer->BeginNativeInteraction(this)) return false;
 	SetSwitchedOn(!mbSwitchedOn, true);
+    if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->CompleteNativeInteraction(this,true);
 
 	return true;
 }

@@ -5,10 +5,13 @@
 #include "LuxMultiplayerProtocol.h"
 #include "LuxMultiplayerUI.h"
 #include "LuxMultiplayerWorld.h"
+#include "LuxMultiplayerTriggerGeometry.h"
 #include "LuxMultiplayerEntities.h"
+#include "LuxMultiplayerEntityDefinition.h"
 #include "LuxMultiplayerEffects.h"
 #include "LuxMultiplayerEnemies.h"
 #include "LuxMultiplayerScript.h"
+#include "LuxMultiplayerInventoryPolicy.h"
 #include "LuxSteamLaunch.h"
 #include "LuxMap.h"
 #include "LuxMapHandler.h"
@@ -16,6 +19,7 @@
 #include "LuxEntity.h"
 #include "LuxProp_LevelDoor.h"
 #include "LuxProp_Object.h"
+#include "LuxProp_Item.h"
 #include "LuxInputHandler.h"
 #include "LuxMainMenu.h"
 #include "LuxDebugHandler.h"
@@ -127,6 +131,7 @@ bool cLuxMultiplayer::Host(const cLuxMultiplayerSettings& settings) {
         mTransport.HostSteam(settings.maxPlayers-1,settings.publicLobby,map,msStatus) :
         mTransport.Host(settings.port,settings.maxPlayers-1,msStatus);
     if(!listening) return false;
+    if(!++mlSessionSerial) ++mlSessionSerial;
     mbSessionWorld=true;
     mbRestoreFocusWait=gpBase->mpEngine->GetWaitIfAppOutOfFocus();
     gpBase->mpEngine->SetWaitIfAppOutOfFocus(false);
@@ -193,6 +198,7 @@ bool cLuxMultiplayer::HostCurrentMap(const cLuxMultiplayerSettings& settings) {
         mTransport.HostSteam(settings.maxPlayers-1,settings.publicLobby,cString::GetFileName(path),msStatus) :
         mTransport.Host(settings.port,settings.maxPlayers-1,msStatus);
     if(!listening) return false;
+    if(!++mlSessionSerial) ++mlSessionSerial;
     mSettings=settings;mSettings.map=path;mSettings.startPos.clear();
     mlLocalPeer=0;mlMapEpoch=0;mbReturnToMenu=false;
     cLuxMap* current=gpBase->mpMapHandler->GetCurrentMap();
@@ -202,6 +208,7 @@ bool cLuxMultiplayer::HostCurrentMap(const cLuxMultiplayerSettings& settings) {
     if(cLuxMultiplayerWorld::IsInteractionState(gpBase->mpPlayer->GetCurrentState()))
         gpBase->mpPlayer->ChangeState(eLuxPlayerState_Normal);
     mpWorld->OnMapLoaded(current);
+    mpEntities->CaptureMapBaseline();
     mpEnemies->OnMapLoaded(current);
     mpEffects->OnMapLoaded(current);
     mbSessionWorld=true;mbReady=true;
@@ -295,6 +302,7 @@ void cLuxMultiplayer::AcceptSteamInvite() {
     if(JoinSteamLobby(std::to_string(lobby))) mlPendingSteamInvite=0;
 }
 void cLuxMultiplayer::Stop(const tString& reason) {
+    mPendingRecoveredItems.clear();mAutoCombineItems.clear();mbCombiningInventory=mbGroupInventory=mbAutoCombiningInventory=false;
     mSharedScriptItems.clear();
     mRemoteItems.clear();
     bool client=IsClient();
@@ -329,6 +337,7 @@ void cLuxMultiplayer::RemoveReceivedMapFiles() {
     msReceivedMapPath.clear();
 }
 void cLuxMultiplayer::Reset() {
+    mPendingRecoveredItems.clear();mAutoCombineItems.clear();mbCombiningInventory=mbGroupInventory=mbAutoCombiningInventory=false;
     mSharedScriptItems.clear();
     mRemoteItems.clear();
     mpEnemies->Reset();mpEffects->Reset();mpWorld->Reset();mpEntities->Reset();
@@ -372,6 +381,7 @@ void cLuxMultiplayer::OnMapLoaded(cLuxMap* map,const tString& start) {
     mpWorld->OnMapLoaded(map);
     if(IsHost()) {
         if(!CaptureMap(map,start)) Stop("Could not read the new map for transfer; session stopped.");
+        else mpEntities->CaptureMapBaseline();
     }
     if(IsActive()) mpEnemies->OnMapLoaded(map);
     if(IsActive()) mpEffects->OnMapLoaded(map);
@@ -451,6 +461,7 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
             if(!state.endSent || state.ready) {RejectPeer(peer,"Unexpected map acknowledgement.");return;}
             if(!mbHistoryComplete) {RejectPeer(peer,"The session's initialization history exceeded its limit while joining.");return;}
             state.ready=true;state.age=0;
+            if(!mpEntities->SendMapBaseline(peer)) {RejectPeer(peer,"Could not initialize restored map entities.");return;}
             if(!SyncItemCallbacks(peer)) {RejectPeer(peer,"Could not initialize item callbacks.");return;}
             for(const auto& effect:mvScriptHistory) if(!Send(peer,effect,true)) {RejectPeer(peer,"Script state exceeded the connection queue.");return;}
             if(!mpEntities->SendInitialState(peer)) {RejectPeer(peer,"World has too many entities for initial synchronization.");return;}
@@ -501,9 +512,7 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
             cLuxMultiplayerRemoteTriggerScope trigger(true,peer);
             if(!HasRemoteItem(a) || !HasRemoteItem(b)) return;
             auto* callback=gpBase->mpInventory->GetCombineCallback(a,b);if(!callback) return;
-            const bool remove=callback->mbAutoDestroy;const tString name=callback->msName;
-            gpBase->mpInventory->RunScript(callback->msFunction+"(\""+callback->msItemA+"\", \""+callback->msItemB+"\")");
-            if(remove && gpBase->mpInventory->GetCombineCallback(a,b)==callback) gpBase->mpInventory->RemoveCombineCallback(name);
+            CombineInventoryItems(peer,a,b);
             return;
         }
         if(type==ItemUseRequest) {
@@ -598,6 +607,10 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
             std::vector<std::vector<uint8_t> > pending;
             pending.swap(mvPreparingPackets);mlPreparingPacketBytes=0;
             for(const auto& packet:pending) {
+                if(!packet.empty() && (packet.front()==InventoryGrant || packet.front()==InventoryRemove)) {
+                    if(!ApplyInventoryPacket(packet)) {RejectPeer(0,"Invalid inventory update before map change.");return;}
+                    continue;
+                }
                 if(packet.empty() || packet.front()!=ScriptEffect) continue;
                 Reader effect(packet);
                 if(effect.U32()!=mlMapEpoch) continue;
@@ -664,8 +677,28 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
     if(type==WorldEffect && mbReady) {
         tString error;if(!mpEffects->HandleMessage(0,data,error)) RejectPeer(0,error.empty()?"Invalid world effect update.":error);return;
     }
+    if(type==EntityDefinition && mbReady) {
+        if(!mpEntities->ApplyDefinition(data)) RejectPeer(0,"Invalid or unavailable restored map entity.");return;
+    }
+    if(type==SameMapTeleport && mbReady) {
+        const uint32_t epoch=r.U32();const tString mapName=r.String(256),start=r.String(128),a=r.String(256),b=r.String(256);
+        if(!r.Done() || !SafeRelativePath(mapName)) {RejectPeer(0,"Invalid same-map teleport.");return;}
+        auto* current=gpBase->mpMapHandler->GetCurrentMap();
+        if(epoch!=mlMapEpoch || !current) return;
+        if(!IsSameMapDestination(mapName,current->GetName()) || (!current->GetPlayerStart(start) && !current->GetFirstPlayerStart())) {
+            RejectPeer(0,"Same-map teleport has no matching destination.");return;
+        }
+        mbApplyingScriptEffect=true;
+        gpBase->mpMapHandler->ChangeMap(mapName,start,a,b);
+        mbApplyingScriptEffect=false;
+        return;
+    }
     if((type==NativeGrant || type==NativeDiaryResult || type==EntityState || type==ItemRemoved || type==RopeState) && mbReady) {
         if(!mpEntities->HandleMessage(0,data)) RejectPeer(0,"Invalid entity update from host.");return;
+    }
+    if((type==InventoryGrant || type==InventoryRemove) && mbReady) {
+        if(!ApplyInventoryPacket(data)) RejectPeer(0,"Invalid inventory update from host.");
+        return;
     }
     if(type==ItemCallbacks && mbReady) {
         const uint32_t epoch=r.U32(),count=r.U32();
@@ -708,6 +741,29 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
     // Unreliable old-map packets may arrive after the reliable next-map manifest.
     if(type>=64) {if(mbReady && !mpWorld->HandleMessage(0,data)) RejectPeer(0,"Invalid world update from host.");return;}
     RejectPeer(0,"Unexpected host packet.");
+}
+bool cLuxMultiplayer::ApplyInventoryPacket(const std::vector<uint8_t>& data) {
+    if(data.empty()) return false;
+    Reader r(data);const uint32_t epoch=r.U32();
+    if(data.front()==InventoryGrant) {
+        InventoryItem item;if(!ReadInventoryItem(r,item,eLuxItemType_LastEnum)) return false;
+        if(epoch==mlMapEpoch && !gpBase->mpInventory->GetItem(item.name)) {
+            bool accepted=false;
+            gpBase->mpInventory->AddItem(item.name,static_cast<eLuxItemType>(item.type),item.subtype,item.image,
+                item.amount,item.value,item.extra,&accepted);
+            // A consumed note/diary/currency entry can return no inventory item
+            // while still succeeding. Only actual rejection fails the session;
+            // the host then recovers the retained progression-item ledger.
+            if(!accepted) return false;
+        }
+        return true;
+    }
+    if(data.front()==InventoryRemove) {
+        const tString name=r.String(256);if(!r.Done() || name.empty()) return false;
+        if(epoch==mlMapEpoch && gpBase->mpInventory->GetItem(name)) gpBase->mpInventory->RemoveItem(name);
+        return true;
+    }
+    return false;
 }
 bool cLuxMultiplayer::FindMatchingMap() {
     std::vector<tWString> candidates;
@@ -862,7 +918,16 @@ void cLuxMultiplayer::UpdateBackgroundWorld(eUpdateableMessage phase,float dt) {
     }
 }
 bool cLuxMultiplayer::RequestMapChange(const tString& map,const tString& start,const tString& a,const tString& b) {
+    auto* current=gpBase->mpMapHandler->GetCurrentMap();
+    const bool sameMap=current && IsSameMapDestination(map,current->GetName());
+    if(IsClient() && mbApplyingScriptEffect && sameMap) return true;
     if(IsHost() && mbRemoteScriptTrigger && !mSettings.allowClientMapChanges) return false;
+    if(IsHost() && mbRemoteScriptTrigger && sameMap) {
+        if((!current->GetPlayerStart(start) && !current->GetFirstPlayerStart()) || mPeers.find(mlScriptPlayerPeer)==mPeers.end()) return false;
+        Writer w(SameMapTeleport);w.U32(mlMapEpoch);w.String(AuthoredMapFilename(map));w.String(start);w.String(a);w.String(b);
+        if(!Send(mlScriptPlayerPeer,w.data,true)) mPeers[mlScriptPlayerPeer].reliableSendFailed=true;
+        return false;
+    }
     if(!IsClient()) return true;
     if(!mSettings.allowClientMapChanges) {msStatus="The host has disabled client map changes.";return false;}
     const tString destination=AuthoredMapFilename(map);
@@ -877,11 +942,16 @@ uint32_t cLuxMultiplayer::GetRemotePlayerTouching(iLuxEntity* entity) {
     if(!IsHost() || !mSettings.allPlayersTriggerScripts || !entity) return UINT32_MAX;
     if(entity->GetEntityType()==eLuxEntityType_Area &&
        static_cast<iLuxArea*>(entity)->GetAreaType()==eLuxAreaType_Insanity) return UINT32_MAX;
-    for(const auto& p:mpWorld->GetRemotePlayers()) {
-        if(p.second.age>2.0f || !(p.second.gameplay.flags&LuxWorldWire::PlayerAlive)) continue;
-        cBoundingVolume bounds;bounds.SetSize(p.second.size);bounds.SetPosition(p.second.position);
-        for(int i=0;i<entity->GetBodyNum();++i)
-            if(cMath::CheckBVIntersection(bounds,*entity->GetBody(i)->GetBoundingVolume())) return p.first;
+    mpWorld->PrepareEnemyPlayers();
+    cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();
+    if(!map) return UINT32_MAX;
+    for(const auto& p:mpWorld->GetEnemyPlayers()) {
+        if(p.peer==GetLocalPeerId() || !p.alive || !p.body) continue;
+        iPhysicsBody* playerBody=p.body->GetCurrentBody();
+        for(int i=0;i<entity->GetBodyNum();++i) {
+            iPhysicsBody* body=entity->GetBody(i);
+            if(LuxPlayerBodyTouches(map->GetPhysicsWorld(),playerBody,body)) return p.peer;
+        }
     }
     return UINT32_MAX;
 }
@@ -927,7 +997,130 @@ bool cLuxMultiplayer::SyncItemCallbacks(uint32_t peer) {
     if(peer==UINT32_MAX) {Broadcast(w.data,true);return true;}
     return Send(peer,w.data,true);
 }
-void cLuxMultiplayer::RecordRemoteItem(uint32_t peer,const tString& item) {mRemoteItems[peer].insert(item);}
+namespace {
+bool RetainProgressionItem(uint32_t type) {
+    return type!=eLuxItemType_Tinderbox && type!=eLuxItemType_LampOil && type!=eLuxItemType_Sanity &&
+        type!=eLuxItemType_Health && type!=eLuxItemType_Lantern;
+}
+InventoryItem DescribeItem(cLuxProp_Item* item) {
+    InventoryItem result;result.name=item->GetName();result.type=item->GetItemType();
+    result.subtype=item->GetSubItemTypeName();result.image=item->GetImageFile();result.amount=item->GetAmount();
+    result.value=item->GetStringVal();result.extra=item->GetExtraStringVal();return result;
+}
+}
+void cLuxMultiplayer::RecordRemoteItem(uint32_t peer,cLuxProp_Item* item) {
+    // Notes, diaries and coins are consumed immediately by BeforeAddItem; they
+    // are journal/currency state, not entries the player still holds.
+    if(item->GetItemType()!=eLuxItemType_Puzzle && item->GetItemType()!=eLuxItemType_HandObject) return;
+    mRemoteItems[peer][item->GetName()]=DescribeItem(item);
+}
+bool cLuxMultiplayer::GiveInventoryItem(uint32_t peer,const InventoryItem& item) {
+    if(peer==GetLocalPeerId()) {
+        if(gpBase->mpInventory->GetItem(item.name)) return true;
+        bool accepted=false;
+        gpBase->mpInventory->AddItem(item.name,static_cast<eLuxItemType>(item.type),item.subtype,item.image,item.amount,item.value,item.extra,&accepted);
+        return accepted;
+    }
+    if(item.type==eLuxItemType_Puzzle || item.type==eLuxItemType_HandObject) mRemoteItems[peer][item.name]=item;
+    // A failed delivery disconnects the recipient; the ledger then recovers
+    // the output on the host instead of losing a completed recipe's result.
+    if(!Send(peer,WriteInventoryItem(mlMapEpoch,item),true)) mPeers[peer].reliableSendFailed=true;
+    return true;
+}
+void cLuxMultiplayer::RecoverRemoteItems(uint32_t peer) {
+    auto held=mRemoteItems.find(peer);if(held==mRemoteItems.end()) return;
+    const auto items=held->second;mRemoteItems.erase(held);
+    for(const auto& entry:items) if(RetainProgressionItem(entry.second.type)) mPendingRecoveredItems[entry.first]=entry.second;
+    RecoverPendingItems();
+    if(!mPendingRecoveredItems.empty())
+        Warning("Some disconnected-player items could not be loaded into the host inventory; their recovery data is retained and will be retried.\n");
+}
+void cLuxMultiplayer::RecoverPendingItems() {
+    if(!IsHost()) return;
+    for(auto it=mPendingRecoveredItems.begin();it!=mPendingRecoveredItems.end();) {
+        const auto item=it->second;bool accepted=gpBase->mpInventory->GetItem(item.name)!=NULL;
+        if(!accepted) gpBase->mpInventory->AddItem(item.name,static_cast<eLuxItemType>(item.type),item.subtype,item.image,
+            item.amount,item.value,item.extra,&accepted,false);
+        if(accepted) it=mPendingRecoveredItems.erase(it);else ++it;
+    }
+}
+bool cLuxMultiplayer::RouteInventoryGive(const InventoryItem& item) {
+    if(!IsHost() || !mbCombiningInventory) return false;
+    if(GiveInventoryItem(mlInventoryRecipient,item)) {
+        ++mlInventoryMutation;
+        if(mbAutoCombiningInventory) mAutoCombineItems.insert(item.name);
+    }
+    return true;
+}
+bool cLuxMultiplayer::RouteInventoryRemove(const tString& item) {
+    if(!IsHost() || !mbCombiningInventory) return false;
+    // Existing global GiveItem effects create shared copies on all peers.
+    // Consuming one of those logical entries must retain its original shared
+    // removal semantics, even when the recipe's output is privately owned.
+    if(mSharedScriptItems.count(item)) {
+        Writer w(InventoryRemove);w.U32(mlMapEpoch);w.String(item);Broadcast(w.data,true);
+        if(gpBase->mpInventory->GetItem(item)) gpBase->mpInventory->RemoveItem(item);
+        ForgetRemoteItem(item);++mlInventoryMutation;return true;
+    }
+    if((mbGroupInventory || mlInventoryRecipient==GetLocalPeerId()) && gpBase->mpInventory->GetItem(item)) {
+        gpBase->mpInventory->RemoveItem(item);++mlInventoryMutation;
+    }
+    for(auto& owner:mRemoteItems) if((mbGroupInventory || owner.first==mlInventoryRecipient) && owner.second.count(item)) {
+        Writer w(InventoryRemove);w.U32(mlMapEpoch);w.String(item);
+        if(!Send(owner.first,w.data,true)) mPeers[owner.first].reliableSendFailed=true;
+        owner.second.erase(item);++mlInventoryMutation;
+    }
+    mSharedScriptItems.erase(item);
+    return true;
+}
+bool cLuxMultiplayer::HasGroupItem(const tString& item) const {
+    if(gpBase->mpInventory->GetItem(item)) return true;
+    for(const auto& owner:mRemoteItems) if(owner.second.count(item)) return true;
+    return false;
+}
+bool cLuxMultiplayer::CombineInventoryItems(uint32_t peer,const tString& a,const tString& b,bool automatic) {
+    if(!IsHost() || mbCombiningInventory) return false;
+    auto* callback=gpBase->mpInventory->GetCombineCallback(a,b);if(!callback) return false;
+    const tString name=callback->msName,function=callback->msFunction,itemA=callback->msItemA,itemB=callback->msItemB;
+    const bool remove=callback->mbAutoDestroy;const uint64_t before=mlInventoryMutation;
+    mbCombiningInventory=true;mbGroupInventory=automatic;mlInventoryRecipient=peer;
+    {
+        cLuxMultiplayerRemoteTriggerScope trigger(peer!=GetLocalPeerId(),peer);
+        gpBase->mpInventory->RunScript(function+"(\""+itemA+"\", \""+itemB+"\")");
+    }
+    mbCombiningInventory=false;mbGroupInventory=false;
+    // Conditional recipes may only display a hint. Keep them available until
+    // the callback actually changes inventory during automatic attempts.
+    // GUI callers may pass references to names owned by consumed ingredients.
+    if(remove && (!automatic || before!=mlInventoryMutation) && gpBase->mpInventory->GetCombineCallback(itemA,itemB)==callback)
+        gpBase->mpInventory->RemoveCombineCallback(name);
+    return true;
+}
+void cLuxMultiplayer::AutoCombineInventory(uint32_t collector,const tString& acquired) {
+    if(!IsHost() || mbAutoCombiningInventory || mbCombiningInventory) return;
+    mbAutoCombiningInventory=true;
+    mAutoCombineItems.clear();mAutoCombineItems.insert(acquired);
+    InventoryRecipeAttempts attempted;
+    // Callbacks may remove themselves/register follow-up recipes. Reacquire
+    // the list after each call and bound work even for a cyclic custom script.
+    for(unsigned pass=0;pass<128;++pass) {
+        std::vector<InventoryRecipe> recipes;
+        for(auto* callback:gpBase->mpInventory->GetCombineCallbacks()) {
+            recipes.push_back({callback->msName,callback->msFunction,callback->msItemA,callback->msItemB});
+        }
+        InventoryOwners owners;
+        for(int i=0;i<gpBase->mpInventory->GetItemNum();++i) owners[gpBase->mpInventory->GetItem(i)->GetName()].insert(GetLocalPeerId());
+        for(const auto& owner:mRemoteItems) for(const auto& entry:owner.second) owners[entry.first].insert(owner.first);
+        const auto* recipe=NextSplitRecipe(recipes,owners,mAutoCombineItems,attempted,mlInventoryMutation);
+        if(!recipe) break;
+        // Generic callbacks can handle different pairs differently. Track the
+        // registration, allowing another pair after an unchanged failed recipe.
+        attempted[recipe->name]=mlInventoryMutation;
+        CombineInventoryItems(collector,recipe->a,recipe->b,true);
+    }
+    mbAutoCombiningInventory=false;
+    mAutoCombineItems.clear();
+}
 void cLuxMultiplayer::RecordSharedItem(const tString& item) {
     if(IsHost() && gpBase->mpInventory->GetItem(item)) mSharedScriptItems.insert(item);
 }
@@ -937,6 +1130,7 @@ void cLuxMultiplayer::ForgetRemoteItem(const tString& item) {
 }
 bool cLuxMultiplayer::HasRemoteItem(const tString& item) const {
     if(!IsHost()) return false;
+    if(mbCombiningInventory && mbGroupInventory) return HasGroupItem(item);
     if(mSharedScriptItems.count(item)) return true;
     if(mbRemoteScriptTrigger) {
         auto inventory=mRemoteItems.find(mlScriptPlayerPeer);

@@ -225,7 +225,7 @@ protected:
 	/////////////////
 	//Helper methods
 	void PreloadEntityModel(const tString &asFile);
-	bool CollidesWithPlayer();
+	bool CollidesWithPlayer(bool abIncludeRemote = true);
 
 	tString msName;
 	bool mbFullGameSave;
@@ -247,6 +247,7 @@ protected:
 	tString msLookAtCallback;
 	bool mbLookAtCallbackRemove;
 	float mfLookAtCount;
+	luxnet::PlayerScriptOrigin mLookAtTrigger;
 	bool mbIsLookedAt;
 
 	float mfMaxFocusDistance;

@@ -333,7 +333,9 @@ bool cLuxProp_Object::OnInteract(iPhysicsBody *apBody, const cVector3f &avPos)
 	iPhysicsBody *pBody = mpMainBody ? mpMainBody : apBody;
 	if(mObjectType==eLuxObjectType_Slide && pBody->GetJointNum()==0) return false;
 
-	mpMap->DetachBodyFromStickyArea(apBody);
+	// Multiplayer detaches only after the host accepts the ownership request.
+	if(!gpBase->mpMultiplayer || !gpBase->mpMultiplayer->IsActive())
+		mpMap->DetachBodyFromStickyArea(apBody);
 
 	////////////////////////
 	// Grab

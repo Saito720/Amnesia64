@@ -11,7 +11,7 @@
 
 namespace LuxWorldWire
 {
-    enum Type : uint8_t { Pose = 64, Bodies, LeaseRequest, LeaseGrant, LeaseRelease, LeaseDenied, PeerGone, ContactRequest };
+    enum Type : uint8_t { Pose = 64, Bodies, LeaseRequest, LeaseGrant, LeaseRelease, LeaseDenied, PeerGone, ContactRequest, StickyState };
     enum BodyFlags : uint8_t { Awake = 1, Active = 2, Gravity = 4, Collide = 8, CollideCharacter = 16 };
     const size_t MaxBodiesPerPacket = 12;
     const size_t MaxLeaseBodies = 64;
@@ -108,7 +108,7 @@ namespace LuxWorldWire
         uint8_t flags = PlayerAlive;
         uint32_t life = 1;
         float eyeOffset[3] = {}, forward[3] = {0,0,-1}, velocity[3] = {};
-        float pitch=0, fov=1.2f, aspect=4.0f/3.0f, speed=0, light=1, health=100;
+        float pitch=0, fov=1.2f, aspect=4.0f/3.0f, speed=0, light=1, health=100, sanity=100, lampOil=100;
     };
     inline void WritePlayerState(Writer& writer, const PlayerState& player)
     {
@@ -118,6 +118,7 @@ namespace LuxWorldWire
         for(float v : player.velocity) writer.F32(v);
         writer.F32(player.pitch); writer.F32(player.fov); writer.F32(player.aspect);
         writer.F32(player.speed); writer.F32(player.light); writer.F32(player.health);
+        writer.F32(player.sanity); writer.F32(player.lampOil);
     }
     inline PlayerState ReadPlayerState(Reader& reader)
     {
@@ -129,14 +130,16 @@ namespace LuxWorldWire
         for(float& v : player.velocity) v=reader.F32(100);
         player.pitch=reader.F32(100000); player.fov=reader.F32(3.14f); player.aspect=reader.F32(32);
         player.speed=reader.F32(100); player.light=reader.F32(1000); player.health=reader.F32(10000);
+        player.sanity=reader.F32(100);player.lampOil=reader.F32(100);
         if(!player.life || player.flags>15 || std::fabs(norm-1)>0.025f || player.fov<0.05f || player.aspect<0.02f ||
-           player.speed<0 || player.light<0 || player.health<0) reader.valid=false;
+           player.speed<0 || player.light<0 || player.health<0 || player.sanity<0 || player.lampOil<0) reader.valid=false;
         return player;
     }
 
     struct Body
     {
         uint64_t id;
+        uint32_t generation = 1;
         float matrix[12]; // 3 rows of a rigid affine transform; last row is 0,0,0,1.
         float linear[3], angular[3];
         uint8_t flags;
@@ -148,6 +151,7 @@ namespace LuxWorldWire
     inline void WriteBody(Writer& writer, const Body& body)
     {
         writer.U64(body.id);
+        writer.U32(body.generation);
         for (int i = 0; i < 12; ++i) writer.F32(body.matrix[i]);
         for (int i = 0; i < 3; ++i) writer.F32(body.linear[i]);
         for (int i = 0; i < 3; ++i) writer.F32(body.angular[i]);
@@ -156,9 +160,26 @@ namespace LuxWorldWire
         if(body.wheel) {writer.F32(body.wheelAngle);writer.U8(body.wheelStuck);}
     }
 
+    inline bool ValidRigidBodyMatrix(const float* m)
+    {
+        for(int row=0;row<3;++row) {
+            float norm=0;
+            for(int col=0;col<3;++col) norm+=m[4*row+col]*m[4*row+col];
+            if(std::fabs(norm-1)>0.025f) return false;
+            for(int other=row+1;other<3;++other) {
+                float dot=0;
+                for(int col=0;col<3;++col) dot+=m[4*row+col]*m[4*other+col];
+                if(std::fabs(dot)>0.025f) return false;
+            }
+        }
+        const float determinant=m[0]*(m[5]*m[10]-m[6]*m[9])-m[1]*(m[4]*m[10]-m[6]*m[8])+m[2]*(m[4]*m[9]-m[5]*m[8]);
+        return determinant>=0.97f && determinant<=1.03f;
+    }
+
     inline Body ReadBody(Reader& reader)
     {
         Body body = {}; body.id = reader.U64();
+        body.generation=reader.U32();if(!body.generation) reader.valid=false;
         for (int i = 0; i < 12; ++i) body.matrix[i] = reader.F32(i % 4 == 3 ? 100000.0f : 1.01f);
         for (int i = 0; i < 3; ++i) body.linear[i] = reader.F32(150.0f);
         for (int i = 0; i < 3; ++i) body.angular[i] = reader.F32(150.0f);
@@ -171,21 +192,7 @@ namespace LuxWorldWire
         }
         if (body.flags & ~(Awake | Active | Gravity | Collide | CollideCharacter)) reader.valid = false;
         // Reject scaled, singular or reflected matrices before Newton sees them.
-        for (int row = 0; row < 3; ++row)
-        {
-            float norm = 0;
-            for (int col = 0; col < 3; ++col) norm += body.matrix[4 * row + col] * body.matrix[4 * row + col];
-            if (std::fabs(norm - 1) > 0.025f) reader.valid = false;
-            for (int other = row + 1; other < 3; ++other)
-            {
-                float dot = 0;
-                for (int col = 0; col < 3; ++col) dot += body.matrix[4 * row + col] * body.matrix[4 * other + col];
-                if (std::fabs(dot) > 0.025f) reader.valid = false;
-            }
-        }
-        const float* m = body.matrix;
-        float determinant = m[0] * (m[5] * m[10] - m[6] * m[9]) - m[1] * (m[4] * m[10] - m[6] * m[8]) + m[2] * (m[4] * m[9] - m[5] * m[8]);
-        if (determinant < 0.97f || determinant > 1.03f) reader.valid = false;
+        if(!ValidRigidBodyMatrix(body.matrix)) reader.valid=false;
         return body;
     }
 

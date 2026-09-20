@@ -20,6 +20,7 @@
 #include "LuxArea_SlimeDamage.h"
 
 #include "LuxMap.h"
+#include "LuxMultiplayer.h"
 #include "LuxPlayer.h"
 #include "LuxPlayerHelpers.h"
 #include "LuxHelpFuncs.h"
@@ -118,14 +119,19 @@ void cLuxArea_SlimeDamage::OnUpdate(float afTimeStep)
 
 	//////////////////////////
 	// Check collision
-	if(CollidesWithPlayer())
+	// Damage and screen effects are personal. The host still observes remote
+	// occupancy for the area's authored callback and shared world presentation.
+	const bool bLocalCollision = CollidesWithPlayer(false);
+	const uint32_t lRemotePeer = !bLocalCollision && gpBase->mpMultiplayer ?
+		gpBase->mpMultiplayer->GetRemotePlayerTouching(this) : UINT32_MAX;
+	if(bLocalCollision || lRemotePeer!=UINT32_MAX)
 	{
 		// Hazard presentation follows the area simulated on this peer.
 		cWorldEffectSourceScope effectSource(mpMap->GetWorld(), mpBody);
 		/////////////////////////
 		//Damage player
 		float fDamage = cMath::RandRectf(mfMinAttackDamage, mfMaxAttackDamage);
-		gpBase->mpPlayer->GiveDamage(fDamage,1,eLuxDamageType_BloodSplat, true, false);
+		if(bLocalCollision) gpBase->mpPlayer->GiveDamage(fDamage,1,eLuxDamageType_BloodSplat, true, false);
 
 		/////////////////////////
 		//Sound
@@ -144,12 +150,13 @@ void cLuxArea_SlimeDamage::OnUpdate(float afTimeStep)
 		
 		/////////////////////////
 		//ScreenShake
-		gpBase->mpEffectHandler->GetScreenShake()->Start(mfScreenShakeAmount, 0.5f, 0.1f,0.3f);
+		if(bLocalCollision) gpBase->mpEffectHandler->GetScreenShake()->Start(mfScreenShakeAmount, 0.5f, 0.1f,0.3f);
 
 		/////////////////////////
 		//Run Callback
 		if(msCallback != "")
 		{
+			cLuxMultiplayerRemoteTriggerScope trigger(lRemotePeer!=UINT32_MAX,lRemotePeer);
 			mpMap->RunScript(msCallback+"(\""+msName+"\")");
 		}
 

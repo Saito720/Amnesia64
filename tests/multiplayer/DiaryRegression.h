@@ -30,7 +30,7 @@ public:
     int Update(const cMatrixf& transform,tString& error) {
         auto* mp=gpBase->mpMultiplayer;auto* map=gpBase->mpMapHandler->GetCurrentMap();
         const bool host=role=="host",actor=host==(trial==4);
-        const bool opens=trial!=0 && trial!=4;
+        const bool opens=trial==1 || trial==2;
         if(!mp->IsActive() || !mp->IsReady() || !map) return fail(error,"session/map is no longer ready");
         if(entered && SDL_GetTicks()-entered>10000) return fail(error,"pickup presentation timed out");
         if(phase==0) {
@@ -97,8 +97,8 @@ public:
             if((item && !item->GetDestroyMe()) || !mp->mpEntities->msPending.empty() ||
                !mp->mpEntities->mClaims.empty() || !mp->mpEntities->mPendingDiaries.empty()) return 0;
             if(actor && opens && !journal) return fail(error,"accepted true/default diary decision did not open the collector's journal");
-            const unsigned expected=host && trial!=1 && trial!=3?1:0;
-            if(diaryCallbacks[name]!=expected) return fail(error,"diary callback ignored host-only policy or ran more than once");
+            const unsigned expected=host && trial!=1?1:0;
+            if(diaryCallbacks[name]!=expected) return fail(error,"accepted diary callback was skipped or ran more than once");
             mark(role+"-"+marker("passed.txt"),opens?"collector journal opened after approved decision":"journal suppressed for scripted vision");
             next(3);return 0;
         }

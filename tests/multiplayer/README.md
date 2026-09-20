@@ -20,7 +20,7 @@ running Steam client with access to the configured AppID. The UI harness stubs
 Steam services and never sends invitations. Build and run with the same backend.
 Switching a test to Standalone changes the normal Debug game build too; rebuild
 the game without `/p:HplUseSteamworks=false` to return to Steam afterward.
-The current session/lobby protocol is **8**; all instances must use matching builds.
+The current session/lobby protocol is **11**; all instances must use matching builds.
 
 To separate builds from execution:
 
@@ -133,6 +133,11 @@ The full-game test links the current game objects except the normal entry
 point. Two hidden game instances run on loopback. It loads the retail campaign,
 starts hosting an already loaded offline world while preserving its player state,
 and verifies an offline-collected authored item does not return for a joining client.
+Native regression phases also exercise cross-player crafting, removal of an
+equipped ingredient, manual crafting with consumed item references, cancellation
+of destroyed chests' purchase questions, host-only diary completion, restored props and attachments,
+static saved poses, same-resource replacements with fresh joints, and a client-only
+same-map teleport. These use production inventory callbacks and network handlers.
 The offline fixture loads an isolated XML/script copy, verifies its loaded-source
 fingerprint rejects semantic edits but accepts formatting changes, and retains
 Hard Mode until both peers confirm the joined difficulty.

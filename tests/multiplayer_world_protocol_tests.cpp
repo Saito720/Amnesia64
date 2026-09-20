@@ -40,7 +40,7 @@ int main()
         player=ReadPlayerState(reader);return reader.Done();
     };
     PlayerState player,decodedPlayer;player.flags=PlayerAlive|PlayerCrouching|PlayerLantern;player.life=27;
-    player.eyeOffset[1]=0.7f;player.velocity[0]=2;player.speed=2;player.health=73;
+    player.eyeOffset[1]=0.7f;player.velocity[0]=2;player.speed=2;player.health=73;player.sanity=19;player.lampOil=26;
     const auto playerBytes=encodePlayer(player);
     assert(decodePlayer(playerBytes,decodedPlayer) && encodePlayer(decodedPlayer)==playerBytes);
     for(size_t length=0;length<playerBytes.size();++length)
@@ -49,6 +49,8 @@ int main()
     invalidPlayer=player;invalidPlayer.flags=16;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
     invalidPlayer=player;invalidPlayer.forward[2]=0;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
     invalidPlayer=player;invalidPlayer.health=-1;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
+    invalidPlayer=player;invalidPlayer.sanity=-1;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
+    invalidPlayer=player;invalidPlayer.lampOil=101;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
     invalidPlayer=player;invalidPlayer.aspect=0;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
     invalidPlayer=player;invalidPlayer.fov=0;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
     invalidPlayer=player;invalidPlayer.eyeOffset[0]=9;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
@@ -126,6 +128,7 @@ int main()
     malformed = Sample(); malformed.matrix[4] = 1; assert(!Decode(Encode(malformed), bodies));
     malformed = Sample(); malformed.matrix[3] = 100001; assert(!Decode(Encode(malformed), bodies));
     malformed = Sample(); malformed.flags = 0x80; assert(!Decode(Encode(malformed), bodies));
+    malformed = Sample(); malformed.generation = 0; assert(!Decode(Encode(malformed), bodies));
 
     Writer packet(Bodies, 0x12345678); packet.U32(1); packet.U32(0); packet.U8(0); packet.U8(MaxBodiesPerPacket);
     for (size_t i = 0; i < MaxBodiesPerPacket; ++i) WriteBody(packet, Sample(i));

@@ -23,6 +23,7 @@
 //----------------------------------------------
 
 #include "StdAfx.h"
+#include "LuxMultiplayerTriggerPolicy.h"
 
 //----------------------------------------------
 
@@ -656,7 +657,7 @@ public:
 
 	bool mbColliding;
 	// Runtime attribution only; remote players do not persist in offline saves.
-	bool mbRemotePlayerColliding = false;
+	luxnet::PlayerScriptOrigin mRemotePlayerTrigger;
 };
 
 typedef std::list<cLuxCollideCallback*> tLuxCollideCallbackList;
@@ -733,6 +734,8 @@ public:
 	tString msFunction;
 	float mfCount;
 	bool mbDestroyMe;
+	// Session-only attribution survives in-memory map saves, never offline saves.
+	luxnet::PlayerScriptOrigin mScriptPlayerTrigger;
 };
 
 typedef std::list<cLuxEventTimer*> tLuxEventTimerList;
@@ -854,6 +857,8 @@ public:
 	bool mbDeleteWhenColliding;
 	int mlStates;
 	bool mbColliding;
+	// Copied for map revisits in this process; omitted from offline serialization.
+	luxnet::PlayerScriptOrigin mRemotePlayerTrigger;
 };
 
 

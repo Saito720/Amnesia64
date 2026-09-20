@@ -207,7 +207,7 @@ public:
 	cLuxInventory_Item* AddItem(const tString& asName, eLuxItemType aType,
 								const tString& asSubTypeName, const tString& asImageName,
 								float afAmount, const tString & asVal,const tString& asExtraVal,
-								bool* apRemoveItemProp=NULL);
+								bool* apRemoveItemProp=NULL, bool abPickupEffects=true);
 	void RemoveItem(const tString& asName);
 	void RemoveItem(cLuxInventory_Item *apItem);
 	void RemoveItemOfType(eLuxItemType aType);
@@ -273,6 +273,7 @@ public:
 private:
 	///////////////////////
 	// Helper methods
+    void InvalidateItemReferences(cLuxInventory_Item* apItem);
 	void DrawDescTextRow(const tWString& asText, const cColor& aCol);
 
 	void ResetSessionVars();

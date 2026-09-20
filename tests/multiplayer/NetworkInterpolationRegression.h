@@ -95,7 +95,7 @@ inline bool RunNetworkInterpolationRegression(tString& error)
     replication->mBodies.erase(id);
     physics->DestroyBody(body);
 
-    // Exercise the same scene node used by direct cylinder rendering and the
+    // Exercise the body-center scene node used by fallback rendering and the
     // actual point light created by production multiplayer code.
     uint32_t peer = UINT32_MAX;
     while (replication->mPlayers.count(peer)) --peer;
@@ -123,9 +123,9 @@ inline bool RunNetworkInterpolationRegression(tString& error)
             iEntity3D::BeginRenderInterpolation(alpha);
             const cVector3f position = node->GetRenderWorldPosition();
             require(nearVector(position, remote.renderPosition + cVector3f(alpha, 0, 0)),
-                "remote cylinder still advances only at fixed simulation steps");
+                "remote presentation node still advances only at fixed simulation steps");
             require(nearVector(light->GetRenderWorldPosition(), position + remote.renderLanternOffset),
-                "remote lantern and player cylinder use different presentation timelines");
+                "remote lantern and player center use different presentation timelines");
             require(nearVector(replication->mPlayers[peer].position, remote.position),
                 "remote render samples changed the received network pose");
             iEntity3D::EndRenderInterpolation();

@@ -17,6 +17,12 @@ namespace hpl
         unsigned players = 0, maxPlayers = 0;
     };
 
+    struct cSteamAvatarImage
+    {
+        uint32_t width = 0, height = 0;
+        std::vector<uint8_t> rgba;
+    };
+
     struct cNetworkEvent
     {
         eNetworkEventType type;
@@ -51,6 +57,13 @@ namespace hpl
         bool JoinSteamLobby(uint64_t lobby, std::string& error);
         bool IsSteamSession() const;
         uint64_t GetSteamLobbyID() const;
+        // Authenticated direct connection identity only (peer 0 is the host).
+        // Direct-IP and standalone sessions have no Steam player identity.
+        uint64_t GetSteamPeerID(uint32_t peer) const;
+        // Nonblocking optional avatar fetch for a current lobby member. Null
+        // means pending, unavailable, or failed. Copy immediately: cached
+        // images are invalidated by Stop/Shutdown or membership cleanup.
+        const cSteamAvatarImage* GetSteamAvatar(uint64_t steamID);
         void SetSteamMapName(const std::string& map);
         bool RequestSteamLobbies(std::string& error);
         bool IsSteamLobbySearchPending() const;

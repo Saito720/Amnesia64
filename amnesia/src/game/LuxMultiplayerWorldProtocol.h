@@ -102,10 +102,14 @@ namespace LuxWorldWire
 
     // Gameplay information accompanies the owning player's pose. It never uses
     // interpolated draw transforms. Terror is computed by the host, not sent here.
-    enum PlayerFlags : uint8_t { PlayerAlive=1, PlayerCrouching=2, PlayerLantern=4, PlayerProtected=8 };
+    enum PlayerFlags : uint8_t
+    {
+        PlayerAlive=1, PlayerCrouching=2, PlayerLantern=4, PlayerProtected=8,
+        PlayerRunning=16, PlayerJumping=32, PlayerOnGround=64
+    };
     struct PlayerState
     {
-        uint8_t flags = PlayerAlive;
+        uint8_t flags = PlayerAlive | PlayerOnGround;
         uint32_t life = 1;
         float eyeOffset[3] = {}, forward[3] = {0,0,-1}, velocity[3] = {};
         float pitch=0, fov=1.2f, aspect=4.0f/3.0f, speed=0, light=1, health=100, sanity=100, lampOil=100;
@@ -131,7 +135,8 @@ namespace LuxWorldWire
         player.pitch=reader.F32(100000); player.fov=reader.F32(3.14f); player.aspect=reader.F32(32);
         player.speed=reader.F32(100); player.light=reader.F32(1000); player.health=reader.F32(10000);
         player.sanity=reader.F32(100);player.lampOil=reader.F32(100);
-        if(!player.life || player.flags>15 || std::fabs(norm-1)>0.025f || player.fov<0.05f || player.aspect<0.02f ||
+        if(!player.life || (player.flags & ~(PlayerAlive|PlayerCrouching|PlayerLantern|PlayerProtected|PlayerRunning|PlayerJumping|PlayerOnGround)) ||
+           std::fabs(norm-1)>0.025f || player.fov<0.05f || player.aspect<0.02f ||
            player.speed<0 || player.light<0 || player.health<0 || player.sanity<0 || player.lampOil<0) reader.valid=false;
         return player;
     }

@@ -85,6 +85,8 @@ public:
 
 	bool IsRunning(){ return mbRunning;}
 	bool IsCrouching(){ return mbCrouching;}
+	// Presentation tracks the full flight, beyond the short physics boost.
+	bool IsJumping(){ return mbJumpInFlight;}
 
 	void SetCrouch(bool abActive);
 	void ResetJumping();
@@ -131,6 +133,7 @@ private:
 	bool mbCrouching;
 
 	bool mbJumping;
+	bool mbJumpInFlight;
 	float mfJumpStartForce;
 	float mfJumpCrouchStartForce;
 	float mfMaxJumpCount;

@@ -39,14 +39,34 @@ int main()
         Reader reader(bytes);if(reader.U8()!=Pose || reader.U32()!=7) return false;
         player=ReadPlayerState(reader);return reader.Done();
     };
-    PlayerState player,decodedPlayer;player.flags=PlayerAlive|PlayerCrouching|PlayerLantern;player.life=27;
+    PlayerState player,decodedPlayer;
+    assert(player.flags==(PlayerAlive|PlayerOnGround));
+    player.flags=PlayerAlive|PlayerCrouching|PlayerLantern|PlayerOnGround;player.life=27;
     player.eyeOffset[1]=0.7f;player.velocity[0]=2;player.speed=2;player.health=73;player.sanity=19;player.lampOil=26;
     const auto playerBytes=encodePlayer(player);
     assert(decodePlayer(playerBytes,decodedPlayer) && encodePlayer(decodedPlayer)==playerBytes);
+    // Keep running intent, full jump flight and landing independent of measured
+    // speed: a slowed run still runs, and a jump continues through descent.
+    const struct { uint8_t flags; float verticalSpeed; } locomotion[] = {
+        {PlayerAlive|PlayerRunning|PlayerOnGround,0},
+        {PlayerAlive|PlayerRunning|PlayerJumping,3},
+        {PlayerAlive|PlayerRunning|PlayerJumping,-3},
+        {PlayerAlive|PlayerRunning,-3},
+        {PlayerAlive|PlayerOnGround,0},
+        {PlayerAlive|PlayerCrouching|PlayerOnGround,0},
+        {PlayerAlive|PlayerCrouching|PlayerRunning|PlayerOnGround,0}
+    };
+    for(const auto& movement : locomotion)
+    {
+        auto state=player;state.flags=movement.flags;state.velocity[0]=0.2f;state.velocity[1]=movement.verticalSpeed;
+        const auto bytes=encodePlayer(state);
+        assert(bytes.size()==playerBytes.size());
+        assert(decodePlayer(bytes,decodedPlayer) && decodedPlayer.flags==movement.flags && encodePlayer(decodedPlayer)==bytes);
+    }
     for(size_t length=0;length<playerBytes.size();++length)
         assert(!decodePlayer(std::vector<uint8_t>(playerBytes.begin(),playerBytes.begin()+length),decodedPlayer));
     auto invalidPlayer=player;invalidPlayer.life=0;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
-    invalidPlayer=player;invalidPlayer.flags=16;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
+    invalidPlayer=player;invalidPlayer.flags|=128;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
     invalidPlayer=player;invalidPlayer.forward[2]=0;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
     invalidPlayer=player;invalidPlayer.health=-1;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));
     invalidPlayer=player;invalidPlayer.sanity=-1;assert(!decodePlayer(encodePlayer(invalidPlayer),decodedPlayer));

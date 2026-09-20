@@ -3,6 +3,7 @@
 #include "LuxMultiplayerCache.h"
 #include "LuxMultiplayerMapHash.h"
 #include "LuxMultiplayerProtocol.h"
+#include "LuxMultiplayerIdentityProtocol.h"
 #include "LuxMultiplayerUI.h"
 #include "LuxMultiplayerWorld.h"
 #include "LuxMultiplayerTriggerGeometry.h"
@@ -307,7 +308,7 @@ void cLuxMultiplayer::Stop(const tString& reason) {
     mRemoteItems.clear();
     bool client=IsClient();
     if(IsActive()) gpBase->mpEngine->SetWaitIfAppOutOfFocus(mbRestoreFocusWait);
-    mpEnemies->Reset();mpEffects->Reset();mpWorld->Shutdown();mpEntities->Reset();mTransport.Stop();mPeers.clear();
+    mpEnemies->Reset();mpEffects->Reset();mpWorld->Shutdown();mpEntities->Reset();mTransport.Stop();mPeers.clear();mSteamPeerIdentities.clear();
     mvMapBytes.clear();mvScriptHistory.clear();mlScriptHistoryBytes=0;
     msPendingHostMap.clear();
     mbMapPreparing=false;mbResumeReady=false;mlMapTransition=0;
@@ -353,6 +354,31 @@ void cLuxMultiplayer::ShowWindow(bool campaign) {mpUI->Show(campaign);}
 void cLuxMultiplayer::ToggleWindow() {mpUI->Toggle();}
 bool cLuxMultiplayer::IsWindowVisible() const {return mpUI->IsVisible();}
 bool cLuxMultiplayer::IsSteamOverlayActive() const {return hpl::cNetworkTransport::SteamOverlayActive();}
+const hpl::cSteamAvatarImage* cLuxMultiplayer::GetPlayerSteamAvatar(uint32_t peer) {
+    if(!IsSteamSession()) return NULL;
+    uint64_t identity=0;
+    if(IsHost()) identity=mTransport.GetSteamPeerID(peer);
+    else {
+        const auto found=mSteamPeerIdentities.find(peer);
+        if(found!=mSteamPeerIdentities.end()) identity=found->second;
+    }
+    return identity?mTransport.GetSteamAvatar(identity):NULL;
+}
+void cLuxMultiplayer::BroadcastPlayerIdentities() {
+    if(!IsHost() || !IsSteamSession()) return;
+    PeerSteamIdentities identities;
+    const uint64_t host=mTransport.GetSteamPeerID(0);
+    if(!host) return;
+    identities[0]=host;
+    for(const auto& peer:mPeers) if(peer.second.greeted) {
+        const uint64_t identity=mTransport.GetSteamPeerID(peer.first);
+        if(identity) identities[peer.first]=identity;
+    }
+    const auto packet=WritePlayerIdentities(identities);
+    // Send to greeted peers even while their map is loading. This roster comes
+    // only from identities authenticated by the host's Steam connections.
+    for(auto& peer:mPeers) if(peer.second.greeted && !Send(peer.first,packet,true)) peer.second.reliableSendFailed=true;
+}
 bool cLuxMultiplayer::Send(uint32_t peer,const std::vector<uint8_t>& data,bool reliable) {return mTransport.Send(peer,data,reliable);}
 void cLuxMultiplayer::Broadcast(const std::vector<uint8_t>& data,bool reliable) {
     if(!IsHost()) return;
@@ -387,7 +413,7 @@ void cLuxMultiplayer::OnMapLoaded(cLuxMap* map,const tString& start) {
     if(IsActive()) mpEffects->OnMapLoaded(map);
 }
 void cLuxMultiplayer::RejectPeer(uint32_t peer,const tString& reason) {
-    if(IsHost()) {mTransport.Disconnect(peer,reason);mpWorld->OnPeerDisconnected(peer);mpEntities->OnPeerDisconnected(peer);mpEffects->OnPeerDisconnected(peer);mpEnemies->OnPeerDisconnected(peer);mPeers.erase(peer);}
+    if(IsHost()) {mTransport.Disconnect(peer,reason);mpWorld->OnPeerDisconnected(peer);mpEntities->OnPeerDisconnected(peer);mpEffects->OnPeerDisconnected(peer);mpEnemies->OnPeerDisconnected(peer);mPeers.erase(peer);BroadcastPlayerIdentities();}
     else {Stop(reason);ShowWindow();}
 }
 void cLuxMultiplayer::HandleEvent(const hpl::cNetworkEvent& event) {
@@ -400,7 +426,7 @@ void cLuxMultiplayer::HandleEvent(const hpl::cNetworkEvent& event) {
         if(IsHost()) {mPeers[event.peer]=Peer();}
         else {Writer w(Hello);w.U32(ProtocolVersion);Send(0,w.data,true);SetLoadPhase(eLuxMultiplayerLoadPhase_Preparing,"Connected. Waiting for the host's map...");}
     } else if(event.type==hpl::eNetworkEventType::Disconnected) {
-        if(IsHost()) {mPeers.erase(event.peer);mpWorld->OnPeerDisconnected(event.peer);mpEntities->OnPeerDisconnected(event.peer);mpEffects->OnPeerDisconnected(event.peer);mpEnemies->OnPeerDisconnected(event.peer);}
+        if(IsHost()) {mPeers.erase(event.peer);mpWorld->OnPeerDisconnected(event.peer);mpEntities->OnPeerDisconnected(event.peer);mpEffects->OnPeerDisconnected(event.peer);mpEnemies->OnPeerDisconnected(event.peer);BroadcastPlayerIdentities();}
         else {Stop("Disconnected: "+event.reason);ShowWindow();}
     } else if(event.type==hpl::eNetworkEventType::Message) HandlePacket(event.peer,event.data);
 }
@@ -440,6 +466,7 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
             if(!r.Done() || state.greeted || version!=ProtocolVersion) {RejectPeer(peer,"Multiplayer protocol mismatch. Use the same Amnesia build as the host.");return;}
             if(!mbHistoryComplete) {RejectPeer(peer,"This session has exceeded the late-join script history limit. Join after the next map change.");return;}
             state.greeted=true;
+            BroadcastPlayerIdentities();
             if(mbMapPreparing) SendMapPreparation(peer,state);
             return;
         }
@@ -562,6 +589,13 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
         RejectPeer(peer,"Unexpected client packet.");return;
     }
     if(!IsClient() || peer!=0) return;
+    if(type==PlayerIdentities) {
+        PeerSteamIdentities identities;
+        if(!IsSteamSession() || !ReadPlayerIdentities(r,identities) || identities[0]!=mTransport.GetSteamPeerID(0)) {
+            RejectPeer(0,"Invalid Steam player identities from host.");return;
+        }
+        mSteamPeerIdentities.swap(identities);return;
+    }
     if(type==MapPreparing) {
         const uint32_t epoch=r.U32(),transition=r.U32();const tString name=r.String(256);
         if(!r.Done() || !epoch || !transition || !SafeRelativePath(name) || cString::GetFileName(name)!=name) {

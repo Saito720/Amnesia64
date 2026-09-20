@@ -13,7 +13,8 @@ struct cLuxEnemyPlayer
     cVector3f position = 0, feet = 0, eyes = 0, size = 0, velocity = 0, forward = cVector3f(0,0,-1);
     float yaw = 0, pitch = 0, fov = 1.2f, aspect = 4.0f/3.0f;
     float speed = 0, lightLevel = 1, terror = 0, health = 0;
-    bool alive = false, crouching = false, lantern = false, protectedFromEnemies = false;
+    bool alive = false, crouching = false, running = false, jumping = false, onGround = false;
+    bool lantern = false, protectedFromEnemies = false;
     iCharacterBody* body = NULL;
 
     static cLuxEnemyPlayer Local(uint32_t peer = 0);

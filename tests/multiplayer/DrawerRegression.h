@@ -27,12 +27,47 @@ class cDrawerRegression {
     cVector3f initialDrawerPosition;
     cVector3f contactStart,contactPrevious;
     bool attempted=false;
+    cLuxMap* lookAtMap=NULL;
+    cLuxPlayerLookAt* suspendedLookAt=NULL;
+    bool originalLookAtActive=false;
+    cVector3f originalLookAtTarget,originalLookAtSpeed;
+    float originalLookAtSpeedMul=1,originalLookAtMaxSpeed=0;
+    tString originalLookAtCallback;
+    void suspendLookAt(cLuxMap* map) {
+        auto* lookAt=gpBase->mpPlayer->GetHelperLookAt();
+        if(!suspendedLookAt) {
+            suspendedLookAt=lookAt;lookAtMap=map;
+            originalLookAtActive=lookAt->IsActive();
+            originalLookAtTarget=lookAt->mvTargetPos;
+            originalLookAtSpeed=lookAt->mvCurrentSpeed;
+            originalLookAtSpeedMul=lookAt->mfSpeedMul;
+            originalLookAtMaxSpeed=lookAt->mfMaxSpeed;
+            originalLookAtCallback=lookAt->msAtTargetCallback;
+        }
+        // This fixture owns the player's heading. Campaign look-at callbacks
+        // otherwise overwrite both camera and body yaw during native movement.
+        // Suppress later scripted reactivation until the fixture releases input.
+        lookAt->SetActive(false);
+    }
+    void restoreLookAt() {
+        if(!suspendedLookAt) return;
+        if(gpBase && gpBase->mpPlayer && gpBase->mpMapHandler &&
+           gpBase->mpMapHandler->GetCurrentMap()==lookAtMap &&
+           gpBase->mpPlayer->GetHelperLookAt()==suspendedLookAt) {
+            suspendedLookAt->SetTarget(originalLookAtTarget,originalLookAtSpeedMul,
+                originalLookAtMaxSpeed,originalLookAtCallback);
+            suspendedLookAt->SetActive(originalLookAtActive);
+            suspendedLookAt->mvCurrentSpeed=originalLookAtSpeed;
+        }
+        suspendedLookAt=NULL;lookAtMap=NULL;
+    }
     void next() { ++phase;entered=SDL_GetTicks();attempted=false; }
     tString marker(const char* suffix) {
         return "drawer-"+cString::ToString(static_cast<int>(trial))+"-"+suffix;
     }
     bool both(const tString& suffix) { return exists("host-"+suffix) && exists("client-"+suffix); }
     int fail(tString& error,const char* message) {
+        restoreLookAt();
         error="drawer trial "+cString::ToString(static_cast<int>(trial))+" phase "+
             cString::ToString(static_cast<int>(phase))+": "+message;return -1;
     }
@@ -219,11 +254,13 @@ class cDrawerRegression {
             if((body->GetWorldPosition()-contactStart).Length()<0.25f) return fail(error,"contact-pushed box returned to its original position");
             mark(role+"-contact-passed.txt","native contact force gate, ownership grace, release and replicated displacement passed");
             if(!both("contact-passed.txt")) return 0;
-            stopMovement();player->SetPosition(originalPlayerPosition);player->SetGravityActive(originalGravity);return 1;
+            stopMovement();player->SetPosition(originalPlayerPosition);player->SetGravityActive(originalGravity);
+            restoreLookAt();return 1;
         }
         return 0;
     }
 public:
+    ~cDrawerRegression() { restoreLookAt(); }
     int Update(tString& error) {
         cLuxMultiplayer* mp=gpBase->mpMultiplayer;
         cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();
@@ -231,6 +268,7 @@ public:
         const bool host=role=="host",actor=host==(trial==0);
         const Uint32 age=SDL_GetTicks()-entered;
         if(phase && age>10000) return fail(error,"timed out waiting for drawer interaction/replication");
+        suspendLookAt(map);
         if(phase>=10) return UpdateContact(error,map,host,age);
         if(phase>=6) return UpdateDrops(error,map,actor,age);
         if(phase==0) {

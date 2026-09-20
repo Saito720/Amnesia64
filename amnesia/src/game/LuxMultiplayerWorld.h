@@ -8,20 +8,23 @@
 #include <set>
 #include <deque>
 #include <memory>
+#include <array>
 
 class cLuxMultiplayer;
 class cLuxMap;
 class iLuxProp;
 class iLuxEnemy;
+namespace hpl { struct cSteamAvatarImage; }
 
 struct cLuxMultiplayerRemotePlayer
 {
-    cVector3f position, size, renderPosition, renderLanternOffset;
-    float yaw, age;
+    cVector3f position, size, renderPosition, renderFeetPosition, renderLanternOffset;
+    float yaw, renderYaw, age;
+    bool resetModelPose;
     uint32_t sequence;
     LuxWorldWire::Lantern lantern;
     LuxWorldWire::PlayerState gameplay;
-    cLuxMultiplayerRemotePlayer() : position(0), size(0), renderPosition(0), renderLanternOffset(0), yaw(0), age(0), sequence(0) {}
+    cLuxMultiplayerRemotePlayer() : position(0), size(0), renderPosition(0), renderFeetPosition(0), renderLanternOffset(0), yaw(0), renderYaw(0), age(0), resetModelPose(true), sequence(0) {}
 };
 
 // All Newton access runs on the game thread. The host owns the world, with an
@@ -72,6 +75,7 @@ public:
     void OnLocalPlayerRespawn();
 
 private:
+    struct PlayerModel;
     struct BodyTrack
     {
         tString name;
@@ -107,6 +111,11 @@ private:
     bool MarkEnemyInfluence(iPhysicsBody* body);
     void UpdatePlayerLights();
     void RemovePlayerLight(uint32_t alPeer);
+    void UpdatePlayerModels(float dt = 0);
+    void RemovePlayerModel(uint32_t peer);
+    static float MeasurePlayerStrideSpeed(cMeshEntity* mesh, const char* clipName);
+    void UpdatePlayerModelAim(PlayerModel& visual, const cLuxMultiplayerRemotePlayer& player, float dt, bool reset);
+    bool CreatePlayerAvatarMask(uint32_t peer, PlayerModel& visual, const hpl::cSteamAvatarImage& avatar);
     iPhysicsBody* FindBody(uint64_t alId) const;
     LuxWorldWire::Body CaptureBody(uint64_t alId, iPhysicsBody* apBody) const;
     void SendBodyBatch(uint32_t alPeer, bool abBroadcast, const std::vector<LuxWorldWire::Body>& avBodies,
@@ -134,9 +143,33 @@ private:
     std::set<uint32_t> mDepartedPlayers;
     std::map<int, std::vector<uint8_t> > mStickyStates;
     std::map<uint32_t, cLuxMultiplayerRemotePlayer> mPlayers;
-    // Ordinary scene history keeps direct cylinder rendering and attached lights
+    // Ordinary scene history keeps the fallback cylinders and attached lights
     // on the same presentation timeline as the rest of the physics world.
     std::map<uint32_t, std::unique_ptr<cNode3D> > mPlayerRenderNodes;
+    enum PlayerAnimation {
+        AnimationIdle, AnimationWalking, AnimationRunning, AnimationJumping,
+        AnimationCrouchedIdle, AnimationCrouchedWalking, AnimationCount
+    };
+    struct PlayerModel {
+        cMeshEntity* mesh = NULL; // Owned by the map's world.
+        std::unique_ptr<cNode3D> node;
+        bool moving = false, jumping = false;
+        PlayerAnimation animation = AnimationIdle;
+        std::array<float, AnimationCount> weights = {}, blendFrom = {};
+        float blendTime = 0, blendDuration = 0.25f;
+        float bodyYaw = 0, lookYaw = 0, headYaw = 0, headPitch = 0;
+        float lookYawTarget = 0;
+        bool turningBody = false;
+        cBillboard* avatarMask = NULL; // Owned by the map's world.
+        iTexture* avatarTexture = NULL; // Owned by graphics, outlives the mask material.
+        float avatarRetryTime = 0;
+        bool avatarMaskFailed = false;
+    };
+    std::map<uint32_t, PlayerModel> mPlayerModels;
+    bool mbPlayerModelFailed = false;
+    bool mbPlayerAnimationWarning = false;
+    bool mbPlayerStrideReferencesMeasured = false;
+    std::array<float, AnimationCount> mfPlayerStrideReferenceSpeeds = {};
     std::map<uint32_t, iCharacterBody*> mPlayerColliders;
     std::map<uint32_t, iCharacterBody*> mEnemyPlayerBodies;
     iCharacterBody* mpMaskedPlayer = NULL;

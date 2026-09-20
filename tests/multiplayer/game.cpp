@@ -3,7 +3,6 @@
 #include "LuxInputHandler.h"
 #include "LuxInventory.h"
 #include "LuxJournal.h"
-#include "LuxPlayer.h"
 #include "LuxSaveHandler.h"
 #include <map>
 #include <set>
@@ -11,6 +10,8 @@
 #include <deque>
 #include <filesystem>
 #define private public
+#include "LuxPlayer.h"
+#include "LuxMoveState_Normal.h"
 #define protected public
 #include "LuxEnemy.h"
 #undef protected
@@ -68,6 +69,7 @@ static void printStatus(const char* message) {
 #include "FPSSettingsRegression.h"
 #include "BorderlessSettingsRegression.h"
 #include "NetworkInterpolationRegression.h"
+#include "PlayerModelRegression.h"
 #include "EnemyRegression.h"
 class cGameSmoke : public iUpdateable, public iRendererCallback {
     int state=0;
@@ -93,6 +95,8 @@ class cGameSmoke : public iUpdateable, public iRendererCallback {
     cWindowResizeRegression resizeRegression;
     bool resizeTests=std::getenv("CODEX_MP_RESIZE")!=NULL;
     bool uncappedTests=std::getenv("CODEX_MP_UNCAPPED")!=NULL;
+    bool playerModelsOnly=std::getenv("CODEX_MP_PLAYER_MODELS_ONLY")!=NULL;
+    cPlayerModelScreenshot playerModelScreenshot;
     cFrameCadenceRegression cadenceRegression;
     cFPSSettingsRegression fpsSettingsRegression;
     cBorderlessSettingsRegression borderlessSettingsRegression;
@@ -194,6 +198,7 @@ public:
     void OnPostSolidDraw(cRendererCallbackFunctions*) { ++renderedWorldFrames; }
     void OnPostTranslucentDraw(cRendererCallbackFunctions*) {}
     void fail(const tString& error) {
+        playerModelScreenshot.Reset();
         printStatus(("FAIL: "+error).c_str());
         mark(role+"-failed.txt",error);
         result=2;gpBase->mpEngine->Exit();state=99;
@@ -299,6 +304,8 @@ public:
             }
             if(!cachePathIsValid()) return;
             if(uncappedTests && !RunNetworkInterpolationRegression(loadingError)) {fail(loadingError);return;}
+            if(!RunPlayerModelRegression(loadingError,playerModelsOnly)) {fail(loadingError);return;}
+            if(playerModelsOnly) {state=71;return;}
             if(gpBase->mpSaveHandler->AutoSave()) {fail("offline autosave was accepted during an active multiplayer session");return;}
             uint64_t bodyHash=0;
             for(const auto& body:mp->GetWorld()->mBodies) bodyHash+=body.first;
@@ -312,6 +319,18 @@ public:
             mp->ShowWindow();
             sequence=mp->GetWorld()->mlSequence;
             readyAt=SDL_GetTicks();state=3;return;
+        }
+        if(state==71) {
+            const int screenshots=playerModelScreenshot.Update(loadingError);
+            if(screenshots<0) {fail(loadingError);return;}
+            if(screenshots>0) {mark(role+"-player-model-images.txt","front/side views and 96 native idle/walking transition frames with clip telemetry saved");state=72;}
+            return;
+        }
+        if(state==72) {
+            if(!exists("host-player-model-images.txt") || !exists("client-player-model-images.txt")) return;
+            mp->Stop("Player model regression complete.");
+            mark(role+"-passed.txt","PASS: six locomotion clips, measured cadence, native movement, smooth blends, head aim, idle body following, avatar orientation/occlusion, feet anchoring, interpolation, lifecycle and rendered sequence.");
+            result=0;state=99;gpBase->mpEngine->Exit();return;
         }
         if(state==3) {
             if(!mp->IsActive()) {fail("session disconnected while menu was open: "+mp->GetStatus());return;}
@@ -620,6 +639,7 @@ public:
     }
     void OnPostRender(float dt) {
         tString loadingError;
+        if(playerModelsOnly && !playerModelScreenshot.OnPostRender(loadingError)) {fail(loadingError);return;}
         if(enemiesOnly && !enemyRegression.OnPostRender(loadingError)) {fail(loadingError);return;}
         if(uncappedTests && !cadenceRegression.Render(loadingError)) {fail(loadingError);return;}
         if(!fpsSettingsRegression.OnPostRender(loadingError)) {fail(loadingError);return;}

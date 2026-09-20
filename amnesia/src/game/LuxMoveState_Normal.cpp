@@ -79,6 +79,7 @@ cLuxMoveState_Normal::cLuxMoveState_Normal(cLuxPlayer *apPlayer) : iLuxMoveState
 	mbRunning = false;
 	mbCrouching = false;
 	mbJumping = false;
+	mbJumpInFlight = false;
 
 	////////////////////////////
 	// Sounds
@@ -199,6 +200,7 @@ void cLuxMoveState_Normal::OnEnterState(eLuxMoveState aPrevState)
 	////////////////////////////
 	// Set up variables
 	mbRunning = false;
+	mbJumpInFlight = false;
 	
 	mbWasMoving = false;
 	mbWasOnGround = false;
@@ -341,6 +343,7 @@ void cLuxMoveState_Normal::Jump()
 
 	pCharBody->AddForce(cVector3f(0, fStartForce * mpPlayer->GetDefaultMass(),0));		
 	mbJumping = true;
+	mbJumpInFlight = true;
 	mfJumpCount = 0;
 }
 
@@ -425,6 +428,7 @@ void cLuxMoveState_Normal::SetCrouch(bool abActive)
 void cLuxMoveState_Normal::ResetJumping()
 {
 	mbJumping = false;
+	mbJumpInFlight = false;
 }
 
 //-----------------------------------------------------------------------
@@ -576,6 +580,10 @@ void cLuxMoveState_Normal::UpdateJumpAndGroundCheck(float afTimeStep)
 		float fMul = 0.4f + 0.5f * (1 - mfJumpCount / mfMaxJumpCount);
 		pCharBody->AddForce(cVector3f(0,-vGravity.y * pCharBody->GetMass() * fMul,0));		
 	}
+	// Keep actual jump identity through descent so a newly observed player can
+	// choose the correct pose. This flag never changes native jump forces.
+	if(!mbJumping && pCharBody->IsOnGround() && pCharBody->GetForceVelocity().y <= 0.1f)
+		mbJumpInFlight = false;
 }
 
 //-----------------------------------------------------------------------

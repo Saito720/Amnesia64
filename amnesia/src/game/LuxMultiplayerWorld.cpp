@@ -35,6 +35,116 @@ namespace
     const float ContactGrace = 1.0f;
     const float ContactRetry = 0.25f;
     const size_t MaxContactLeases = 4;
+    const char* PlayerModelFile = "entities/character/ritual_prisoner/player_model.ent";
+    const float PlayerAnimationBlendTime = 0.25f;
+    const float PlayerJumpBlendTime = 0.12f;
+    const float PlayerWalkStartSpeed = 0.12f;
+    const float PlayerWalkStopSpeed = 0.06f;
+    // Keep the order in sync with cLuxMultiplayerWorld::PlayerAnimation.
+    const char* const PlayerAnimationNames[] = {
+        "idle", "walking", "running", "jumping", "crouched_idle", "crouched_walking"
+    };
+    // This clip includes anticipation and landing. Enter at takeoff, then hold
+    // its final flight pose until the character controller actually lands.
+    const float PlayerJumpTakeoffPhase = 4.0f / 15.0f;
+    const float PlayerJumpHoldPhase = 0.56f;
+    const float PlayerHeadYawLimit = 45.0f * kPif / 180.0f;
+    const float PlayerHeadPitchLimit = 50.0f * kPif / 180.0f;
+    const float PlayerBodyTurnStart = 35.0f * kPif / 180.0f;
+    const float PlayerBodyTurnStop = 5.0f * kPif / 180.0f;
+    const float PlayerYawSmoothingLag = 20.0f * kPif / 180.0f;
+
+    void LoadPlayerAnimations(cResources* resources, cXmlElement* model, cMeshEntity* entity)
+    {
+        cXmlElement* animations = model->GetFirstElement("Animations");
+        if (!animations) return;
+        cXmlNodeListIterator iterator = animations->GetChildIterator();
+        while (iterator.HasNext())
+        {
+            cXmlElement* element = iterator.Next()->ToElement();
+            if (!element) continue;
+            tString name = element->GetAttributeString("Name");
+            if (name == "crouching_idle") name = "crouched_idle";
+            if (std::find(std::begin(PlayerAnimationNames), std::end(PlayerAnimationNames), name) ==
+                std::end(PlayerAnimationNames) || entity->GetAnimationStateFromName(name)) continue;
+            tString file = element->GetAttributeString("File");
+            if (file.empty()) continue;
+            if (cString::GetFilePath(file).empty())
+                file = cString::SetFilePath(file, cString::GetFilePath(PlayerModelFile));
+            // Resolve through the resource searcher, as the native loader does:
+            // editor-authored absolute paths can point at a different install.
+            cAnimation* animation = resources->GetAnimationManager()->CreateAnimation(file);
+            if (!animation) continue;
+            if (!std::isfinite(animation->GetLength()) || animation->GetLength() <= 0 || animation->GetTrackNum() == 0)
+            {
+                resources->GetAnimationManager()->Destroy(animation);
+                continue;
+            }
+            const float authoredSpeed = element->GetAttributeFloat("Speed", 1.0f);
+            cAnimationState* state = entity->AddAnimation(animation, name,
+                std::isfinite(authoredSpeed) && authoredSpeed > 0 ? authoredSpeed : 1.0f);
+            state->SetLoop(name != "jumping");
+            // Animation events stay out of this visual-only representation;
+            // player footsteps are already carried by the multiplayer effects.
+        }
+    }
+
+    cMeshEntity* LoadPlayerModel(cWorld* world, uint32_t peer)
+    {
+        cResources* resources = world->GetResources();
+        iXmlDocument* document = resources->LoadXmlDocument(PlayerModelFile);
+        if (!document) return NULL;
+        cXmlElement* model = document->GetFirstElement("ModelData");
+        cXmlElement* meshElement = model ? model->GetFirstElement("Mesh") : NULL;
+        tString meshFile = meshElement ? meshElement->GetAttributeString("Filename") : "";
+        if (!meshFile.empty() && cString::GetFilePath(meshFile).empty())
+            meshFile = cString::SetFilePath(meshFile, cString::GetFilePath(PlayerModelFile));
+        cMesh* mesh = meshFile.empty() ? NULL : resources->GetMeshManager()->CreateMesh(meshFile);
+        cMeshEntity* entity = mesh ? world->CreateMeshEntity("MultiplayerPlayerModel_" + cString::ToString((int)peer), mesh, false) : NULL;
+        if (entity)
+        {
+            // Only load the visual definition. The ordinary prop loader starts
+            // the first authored animation and may create physics/script state.
+            entity->Stop();
+            // Advance this visual once in the multiplayer fixed update, after
+            // setting its feet transform and blend weights. The scene must not
+            // also advance it, including while a local menu is open.
+            entity->SetActive(false);
+            entity->SetIsSaved(false);
+            entity->SetRenderFlagBit(eRenderableFlag_ShadowCaster, true);
+            cXmlNodeListIterator submeshes = meshElement->GetChildIterator();
+            while (submeshes.HasNext())
+            {
+                cXmlElement* element = submeshes.Next()->ToElement();
+                if (!element) continue;
+                cSubMeshEntity* submesh = entity->GetSubMeshEntityName(element->GetAttributeString("Name"));
+                if (!submesh) continue;
+                submesh->SetVisible(element->GetAttributeBool("Active", true));
+                const tString material = element->GetAttributeString("Material");
+                if (!material.empty())
+                    if (cMaterial* custom = resources->GetMaterialManager()->CreateMaterial(material))
+                        submesh->SetCustomMaterial(custom);
+            }
+            if (!entity->GetBoneStateFromName("Armature_root"))
+            {
+                world->DestroyMeshEntity(entity);
+                entity = NULL;
+            }
+            else
+            {
+                LoadPlayerAnimations(resources, model, entity);
+                // Root motion must not compete with the character controller.
+                // Keep the root and its ancestors in their imported bind pose;
+                // the hips and the rest of the skeleton still animate normally.
+                for (cNode3D* bone = entity->GetBoneStateFromName("Armature_root");
+                     bone && bone != entity->GetBoneStateRoot(); bone = bone->GetParent())
+                    bone->SetActive(false);
+                entity->SetNormalizeAnimationWeights(true);
+            }
+        }
+        resources->DestroyXmlDocument(document);
+        return entity;
+    }
     // Query cylinders remain physical obstacles for authoritative enemies even
     // when players may walk through one another. Only the local player excludes
     // this reserved category; all ordinary world collision bits stay intact.
@@ -107,6 +217,84 @@ cLuxMultiplayerWorld::cLuxMultiplayerWorld(cLuxMultiplayer* apSession) : mpSessi
     Reset();
 }
 
+float cLuxMultiplayerWorld::MeasurePlayerStrideSpeed(cMeshEntity* mesh, const char* clipName)
+{
+    cAnimationState* walk = mesh->GetAnimationStateFromName(clipName);
+    cNode3D* toes[2] = { mesh->GetBoneStateFromName("Armature_mixamorig_LeftToeBase"),
+                        mesh->GetBoneStateFromName("Armature_mixamorig_RightToeBase") };
+    if (!walk || !toes[0] || !toes[1] || !std::isfinite(walk->GetLength()) || walk->GetLength() <= 0) return 0;
+
+    // Only called on a freshly loaded, unparented mesh with inactive clips and
+    // its motion root already pinned. Sample the native evaluator in source
+    // animation seconds, independent of the entity's authored speed multiplier.
+    const int intervals = 120;
+    cVector3f positions[2][intervals + 1];
+    walk->SetActive(true);
+    for (int sample = 0; sample <= intervals; ++sample)
+    {
+        walk->SetTimePosition(walk->GetLength() * sample / intervals);
+        mesh->UpdateLogic(0);
+        for (int foot = 0; foot < 2; ++foot) positions[foot][sample] = toes[foot]->GetWorldPosition();
+    }
+    // Evaluate zero weight before stopping, restoring bind pose as well as the
+    // initial clock. Stop alone would leave the last sampled skeleton behind.
+    walk->SetTimePosition(0);
+    walk->SetWeight(0);
+    mesh->UpdateLogic(0);
+    walk->SetActive(false);
+    walk->SetWeight(1);
+
+    auto median = [](const std::vector<float>& sorted) {
+        const size_t middle = sorted.size() / 2;
+        return sorted.size() % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) * 0.5f;
+    };
+    float footSpeed[2];
+    std::vector<float> combined;
+    for (int foot = 0; foot < 2; ++foot)
+    {
+        float height[intervals], speed[intervals];
+        float minimumZ = positions[foot][0].z, maximumZ = minimumZ;
+        for (int sample = 0; sample <= intervals; ++sample)
+        {
+            const cVector3f& position = positions[foot][sample];
+            if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z)) return 0;
+            minimumZ = std::min(minimumZ, position.z);
+            maximumZ = std::max(maximumZ, position.z);
+            if (sample == intervals) break;
+            height[sample] = (position.y + positions[foot][sample + 1].y) * 0.5f;
+            // This rig faces -Z. During support, the toe travels backward (+Z)
+            // relative to the body at the speed needed to keep it on the floor.
+            speed[sample] = (positions[foot][sample + 1].z - position.z) * intervals / walk->GetLength();
+        }
+        if (maximumZ - minimumZ < 0.02f) return 0; // Reject idle/no-stride clips.
+        const float low = *std::min_element(height, height + intervals);
+        const float high = *std::max_element(height, height + intervals);
+        const float contactHeight = low + (high - low) * 0.15f;
+        std::vector<float> supported;
+        for (int sample = 0; sample < intervals; ++sample)
+            if (height[sample] <= contactHeight && speed[sample] > 0)
+                supported.push_back(speed[sample]);
+        if (supported.size() < intervals * 0.15f) return 0;
+        std::sort(supported.begin(), supported.end());
+        footSpeed[foot] = median(supported);
+        if (!std::isfinite(footSpeed[foot]) || footSpeed[foot] < 0.05f) return 0;
+        // Some running contacts include a short, slower toe roll. Use the same
+        // robust center for dispersion as for speed instead of rejecting that
+        // minority of samples with an interquartile-range threshold.
+        std::vector<float> deviations;
+        for (float value : supported) deviations.push_back(std::fabs(value - footSpeed[foot]));
+        std::sort(deviations.begin(), deviations.end());
+        if (median(deviations) > footSpeed[foot] * 0.25f) return 0;
+        combined.insert(combined.end(), supported.begin(), supported.end());
+    }
+    // Swing arcs and noisy/mismatched clips must not masquerade as a useful
+    // stride measurement. Both feet need a sustained, consistent support phase.
+    const float ratio = footSpeed[0] / footSpeed[1];
+    if (ratio < 0.67f || ratio > 1.5f) return 0;
+    std::sort(combined.begin(), combined.end());
+    return median(combined);
+}
+
 void cLuxMultiplayerWorld::Reset()
 {
     RestorePlayerCollisionMask();
@@ -117,10 +305,18 @@ void cLuxMultiplayerWorld::Reset()
         while (!mPlayerColliders.empty()) RemovePlayerCollider(mPlayerColliders.begin()->first);
         while (!mEnemyPlayerBodies.empty()) RemoveEnemyPlayerBody(mEnemyPlayerBodies.begin()->first);
         while (!mPlayerLights.empty()) RemovePlayerLight(*mPlayerLights.begin());
+        while (!mPlayerModels.empty()) RemovePlayerModel(mPlayerModels.begin()->first);
     }
     mPlayerColliders.clear();
     mEnemyPlayerBodies.clear(); mEnemyTerror.clear();
     mPlayerLights.clear();
+    // If map teardown already destroyed the billboards, their materials no
+    // longer refer to these graphics-owned textures. Normal removal below
+    // clears the map first, so each texture is released exactly once.
+    for (auto& entry : mPlayerModels)
+        if (entry.second.avatarTexture) gpBase->mpEngine->GetGraphics()->DestroyTexture(entry.second.avatarTexture);
+    mPlayerModels.clear(); mbPlayerModelFailed = false; mbPlayerAnimationWarning = false;
+    mbPlayerStrideReferencesMeasured = false; mfPlayerStrideReferenceSpeeds.fill(0);
     mPlayerRenderNodes.clear();
     // The map may already have been destroyed; never dereference cached bodies
     // here. Normal disconnect releases the interaction before resetting.
@@ -401,7 +597,9 @@ void cLuxMultiplayerWorld::SendPose()
     PlayerState gameplay;
     gameplay.life=mlLocalPlayerLife;
     gameplay.flags = (sample.alive ? PlayerAlive : 0) | (sample.crouching ? PlayerCrouching : 0) |
-        (sample.lantern ? PlayerLantern : 0) | (sample.protectedFromEnemies ? PlayerProtected : 0);
+        (sample.lantern ? PlayerLantern : 0) | (sample.protectedFromEnemies ? PlayerProtected : 0) |
+        (sample.running ? PlayerRunning : 0) | (sample.jumping ? PlayerJumping : 0) |
+        (sample.onGround ? PlayerOnGround : 0);
     Store(gameplay.eyeOffset, Limit(sample.eyes-position,8));
     Store(gameplay.forward,sample.forward); Store(gameplay.velocity,Limit(sample.velocity,100));
     gameplay.pitch=sample.pitch; gameplay.fov=cMath::Clamp(sample.fov,0.05f,3.14f);
@@ -447,6 +645,15 @@ void cLuxMultiplayerWorld::Update(float afTimeStep)
     {
         it->second.age += dt;
         it->second.renderPosition += (it->second.position - it->second.renderPosition) * std::min(1.0f, dt * 15);
+        // Smooth feet independently of the body center: crouching changes the
+        // center and height together, and must never lift or sink the model.
+        const cVector3f feet = it->second.position - cVector3f(0, it->second.size.y * 0.5f, 0);
+        it->second.renderFeetPosition += (feet - it->second.renderFeetPosition) * std::min(1.0f, dt * 15);
+        // Packet reception keeps target and presentation on the same angular
+        // branch. Bound the remaining lag so rapid turns cannot lap smoothing.
+        const float yawLag = (it->second.yaw - it->second.renderYaw) * (1.0f - std::min(1.0f, dt * 15));
+        if (dt > 0)
+            it->second.renderYaw = it->second.yaw - cMath::Clamp(yawLag, -PlayerYawSmoothingLag, PlayerYawSmoothingLag);
         const auto& light = it->second.lantern;
         it->second.renderLanternOffset += (cVector3f(light.offset[0],light.offset[1],light.offset[2]) -
             it->second.renderLanternOffset) * std::min(1.0f, dt * 15);
@@ -456,6 +663,7 @@ void cLuxMultiplayerWorld::Update(float afTimeStep)
     PrepareEnemyPlayers();
     UpdateEnemyTerror(dt);
     UpdatePlayerLights();
+    UpdatePlayerModels(dt);
     if (mlPendingRequest)
     {
         mfPendingTime += dt;
@@ -978,6 +1186,8 @@ std::vector<cLuxEnemyPlayer> cLuxMultiplayerWorld::GetEnemyPlayers() const
         player.speed=remote.gameplay.speed;player.lightLevel=remote.gameplay.light;player.health=remote.gameplay.health;
         player.terror=GetEnemyTerror(entry.first);
         player.alive=(remote.gameplay.flags&PlayerAlive)!=0;player.crouching=(remote.gameplay.flags&PlayerCrouching)!=0;
+        player.running=(remote.gameplay.flags&PlayerRunning)!=0;player.jumping=(remote.gameplay.flags&PlayerJumping)!=0;
+        player.onGround=(remote.gameplay.flags&PlayerOnGround)!=0;
         player.lantern=(remote.gameplay.flags&PlayerLantern)!=0;player.protectedFromEnemies=(remote.gameplay.flags&PlayerProtected)!=0;
         auto body=mEnemyPlayerBodies.find(entry.first);
         if(body!=mEnemyPlayerBodies.end()) player.body=body->second;
@@ -1111,6 +1321,287 @@ void cLuxMultiplayerWorld::RemovePlayerLight(uint32_t peer)
     mPlayerLights.erase(peer);
 }
 
+void cLuxMultiplayerWorld::RemovePlayerModel(uint32_t peer)
+{
+    auto model = mPlayerModels.find(peer);
+    if (model == mPlayerModels.end()) return;
+    if (model->second.avatarMask) mpMap->GetWorld()->DestroyBillboard(model->second.avatarMask);
+    mpMap->GetWorld()->DestroyMeshEntity(model->second.mesh);
+    if (model->second.avatarTexture) gpBase->mpEngine->GetGraphics()->DestroyTexture(model->second.avatarTexture);
+    mPlayerModels.erase(model);
+}
+
+bool cLuxMultiplayerWorld::CreatePlayerAvatarMask(uint32_t peer, PlayerModel& visual, const hpl::cSteamAvatarImage& avatar)
+{
+    cNode3D* head = visual.mesh->GetBoneStateFromName("Armature_mixamorig_Head");
+    if (visual.avatarMask || !head || !avatar.width || !avatar.height || avatar.width > 256 || avatar.height > 256 ||
+        avatar.rgba.size() != size_t(avatar.width) * avatar.height * 4) return false;
+    cGraphics* graphics = gpBase->mpEngine->GetGraphics();
+    cWorld* world = mpMap->GetWorld();
+    iMaterialType* type = graphics->GetMaterialType("translucent");
+    if (!type) return false;
+    const tString name = "MultiplayerAvatar_" + cString::ToString((int)peer);
+    iTexture* texture = graphics->CreateTexture(name, eTextureType_2D, eTextureUsage_Normal);
+    if (!texture) return false;
+    // Steam supplies top-down RGBA; the native billboard's upper edge uses V=1.
+    std::vector<uint8_t> pixels(avatar.rgba.size());
+    const size_t rowBytes = size_t(avatar.width) * 4;
+    for (size_t y = 0; y < avatar.height; ++y)
+        std::copy_n(avatar.rgba.data() + y * rowBytes, rowBytes,
+                    pixels.data() + (avatar.height - 1 - y) * rowBytes);
+    texture->SetUseMipMaps(true);
+    if (!texture->CreateFromRawData(cVector3l(avatar.width, avatar.height, 1), ePixelFormat_RGBA, pixels.data()))
+    {
+        graphics->DestroyTexture(texture);
+        return false;
+    }
+    texture->SetWrapSTR(eTextureWrap_ClampToEdge);
+    texture->SetFilter(eTextureFilter_Trilinear);
+    cMaterial* material = world->GetResources()->GetMaterialManager()->CreateCustomMaterial(name, type);
+    cResourceVarsObject defaults;
+    material->LoadVariablesFromVarsObject(&defaults);
+    material->SetAutoDestroyTextures(false);
+    material->SetTexture(eMaterialTexture_Diffuse, texture);
+    material->SetBlendMode(eMaterialBlendMode_Alpha);
+    material->SetDepthTest(true);
+    material->Compile();
+    cBillboard* mask = world->CreateBillboard(name, cVector2f(0.23f, 0.25f), eBillboardType_FixedAxis, "", false);
+    mask->SetMaterial(material); // Transfers the material's one manager reference.
+    mask->SetIsSaved(false);
+    mask->SetRenderFlagBit(eRenderableFlag_ShadowCaster, false);
+    // FixedAxis preserves the head's orientation instead of facing the camera.
+    // This point clears the animated sack face by at least six millimetres.
+    head->AddEntity(mask);
+    mask->SetMatrix(cMath::MatrixTranslate(cVector3f(0, 0.095f, 0.16f)));
+    mask->ResetRenderInterpolation();
+    visual.avatarMask = mask;
+    visual.avatarTexture = texture;
+    return true;
+}
+
+void cLuxMultiplayerWorld::UpdatePlayerModelAim(PlayerModel& visual, const cLuxMultiplayerRemotePlayer& player, float dt, bool reset)
+{
+    const auto difference = [](float target, float current) {
+        return std::atan2(std::sin(target - current), std::cos(target - current));
+    };
+    const float* forward = player.gameplay.forward;
+    const float lookYaw = forward[0] * forward[0] + forward[2] * forward[2] > 0.0001f ?
+        std::atan2(-forward[0], -forward[2]) : difference(player.renderYaw, 0);
+    const float pitch = cMath::Clamp(player.gameplay.pitch, -PlayerHeadPitchLimit, PlayerHeadPitchLimit);
+    if (reset)
+    {
+        visual.bodyYaw = lookYaw - difference(lookYaw, player.renderYaw);
+        visual.lookYaw = lookYaw;
+        visual.lookYawTarget = lookYaw;
+        visual.headPitch = pitch;
+        visual.turningBody = false;
+    }
+    else
+    {
+        // Choose the branch from successive input directions, never from the
+        // lagging pose. Rebase both angles together when atan2 wraps at +/-pi.
+        const float inputTurn = lookYaw - visual.lookYawTarget;
+        const float branch = inputTurn > kPif ? 2.0f * kPif : inputTurn < -kPif ? -2.0f * kPif : 0;
+        visual.lookYaw += branch;
+        visual.bodyYaw += branch;
+        visual.lookYawTarget = lookYaw;
+        const float smoothing = 1.0f - std::exp(-15.0f * dt);
+        float lookLag = (lookYaw - visual.lookYaw) * (1.0f - smoothing);
+        if (dt > 0) lookLag = cMath::Clamp(lookLag, -PlayerYawSmoothingLag, PlayerYawSmoothingLag);
+        visual.lookYaw = lookYaw - lookLag;
+        visual.headPitch += (pitch - visual.headPitch) * smoothing;
+        const float gaze = visual.lookYaw - visual.bodyYaw;
+        if (std::fabs(gaze) > PlayerBodyTurnStart) visual.turningBody = true;
+        else if (std::fabs(gaze) < PlayerBodyTurnStop) visual.turningBody = false;
+        if (visual.moving || visual.turningBody)
+        {
+            const float target = visual.lookYaw + (visual.moving ? difference(player.renderYaw, visual.lookYaw) : 0);
+            const float turn = (target - visual.bodyYaw) * (1.0f - std::exp(-8.0f * dt));
+            visual.bodyYaw += cMath::Clamp(turn, -kPif * dt, kPif * dt);
+        }
+        // The normal turn speed is a preference, not a hard limit. Carry the
+        // body with fast looks instead of letting hidden neck rotation build
+        // past half a turn and make the visible head flip to the opposite side.
+        if (dt > 0)
+            visual.bodyYaw = visual.lookYaw - cMath::Clamp(visual.lookYaw - visual.bodyYaw, -PlayerHeadYawLimit, PlayerHeadYawLimit);
+    }
+    visual.headYaw = cMath::Clamp(visual.lookYaw - visual.bodyYaw, -PlayerHeadYawLimit, PlayerHeadYawLimit);
+    if (cNode3D* head = visual.mesh->GetBoneStateFromName("Armature_mixamorig_Head"))
+    {
+        // Head-local +Z faces forward and +Y points up. A right-multiplied
+        // rotation preserves the imported head pivot and authored animation.
+        head->SetUsePreTransform(true);
+        head->SetPreTransform(cMath::MatrixMul(cMath::MatrixRotateY(visual.headYaw), cMath::MatrixRotateX(-visual.headPitch)));
+    }
+}
+
+void cLuxMultiplayerWorld::UpdatePlayerModels(float dt)
+{
+    cWorld* world = mpMap->GetWorld();
+    if (!world) return;
+    dt = std::max(0.0f, std::min(dt, 0.25f));
+    for (auto& entry : mPlayers)
+    {
+        auto& player = entry.second;
+        if (player.age > 2 || !(player.gameplay.flags & PlayerAlive))
+        {
+            RemovePlayerModel(entry.first);
+            continue;
+        }
+        auto model = mPlayerModels.find(entry.first);
+        bool created = false;
+        if (model == mPlayerModels.end())
+        {
+            if (mbPlayerModelFailed) continue;
+            cMeshEntity* mesh = LoadPlayerModel(world, entry.first);
+            if (!mesh)
+            {
+                Warning("Multiplayer player model '%s' is unavailable or has no Armature_root; using placeholder cylinders for this map.\n", PlayerModelFile);
+                mbPlayerModelFailed = true;
+                continue;
+            }
+            if (!mbPlayerStrideReferencesMeasured)
+            {
+                for (PlayerAnimation gait : {AnimationWalking, AnimationRunning, AnimationCrouchedWalking})
+                {
+                    const char* name = PlayerAnimationNames[gait];
+                    const float speed = mfPlayerStrideReferenceSpeeds[gait] = MeasurePlayerStrideSpeed(mesh, name);
+                    if (speed > 0)
+                        Log("Multiplayer %s animation measured %.3f m/s from planted toes.\n", name, speed);
+                    else if (mesh->GetAnimationStateFromName(name))
+                        Warning("Multiplayer %s animation has no reliable planted-toe speed; keeping its authored playback rate for this map.\n", name);
+                }
+                mbPlayerStrideReferencesMeasured = true;
+            }
+            const cVector3f rootOffset = mesh->GetBoneStateFromName("Armature_root")->GetWorldPosition();
+            PlayerModel& visual = mPlayerModels[entry.first];
+            visual.mesh = mesh;
+            visual.node.reset(new cNode3D("MultiplayerPlayerFeet", false));
+            visual.node->AddEntity(mesh);
+            // A constant child offset keeps the root exactly at the interpolated
+            // feet even when the authored root is away from the mesh origin.
+            // Preserve the root's bind rotation and the authored rig scale.
+            mesh->SetPosition(rootOffset * -1.0f);
+            model = mPlayerModels.find(entry.first);
+            created = true;
+        }
+        PlayerModel& visual = model->second;
+        cAnimationState* clips[AnimationCount];
+        bool missing = false;
+        for (int i = 0; i < AnimationCount; ++i)
+        {
+            clips[i] = visual.mesh->GetAnimationStateFromName(PlayerAnimationNames[i]);
+            missing |= clips[i] == NULL;
+        }
+        if (missing && !mbPlayerAnimationWarning)
+        {
+            Warning("Multiplayer player model is missing a locomotion clip; using the nearest available pose for this map.\n");
+            mbPlayerAnimationWarning = true;
+        }
+        const bool reset = created || player.resetModelPose;
+        const float speedSquared = player.gameplay.velocity[0] * player.gameplay.velocity[0] +
+                                   player.gameplay.velocity[2] * player.gameplay.velocity[2];
+        for (PlayerAnimation gait : {AnimationWalking, AnimationRunning, AnimationCrouchedWalking})
+        {
+            // Body velocity already includes collisions and scripted slowdowns.
+            // Compensate for the base multiplier: effective playback must equal
+            // actual m/s divided by m/source-second, without rewinding phase.
+            if (clips[gait] && mfPlayerStrideReferenceSpeeds[gait] > 0)
+                clips[gait]->SetSpeed(std::sqrt(speedSquared) / (mfPlayerStrideReferenceSpeeds[gait] * clips[gait]->GetBaseSpeed()));
+        }
+        // Run intent is separate from speed: slowing down a run must not select
+        // walking. Crouch takes precedence over run, and a stationary run is idle.
+        const float threshold = !reset && visual.moving ? PlayerWalkStopSpeed : PlayerWalkStartSpeed;
+        visual.moving = speedSquared > threshold * threshold;
+        const bool crouching = (player.gameplay.flags & PlayerCrouching) != 0;
+        const bool running = (player.gameplay.flags & PlayerRunning) != 0;
+        // The owner retains this flag through the whole flight. Inferring a
+        // jump from upward velocity would also animate ladders and elevators.
+        const bool jumping = (player.gameplay.flags & PlayerJumping) != 0;
+        const bool takeoff = jumping && (reset || !visual.jumping);
+        visual.jumping = jumping;
+        PlayerAnimation target = crouching ? (visual.moving ? AnimationCrouchedWalking : AnimationCrouchedIdle) :
+            !visual.moving ? AnimationIdle : running ? AnimationRunning : AnimationWalking;
+        // Fall back within the requested posture before using a standing pose.
+        if (!clips[target]) target = target == AnimationCrouchedWalking && clips[AnimationCrouchedIdle] ?
+            AnimationCrouchedIdle : visual.moving && clips[AnimationWalking] ? AnimationWalking : AnimationIdle;
+        if (jumping && clips[AnimationJumping]) target = AnimationJumping;
+        if (!clips[target])
+            for (int i = 0; i < AnimationCount; ++i)
+                if (clips[i]) { target = static_cast<PlayerAnimation>(i); break; }
+        if (reset)
+        {
+            visual.weights.fill(0);
+            if (clips[target]) visual.weights[target] = 1;
+            visual.blendFrom = visual.weights;
+            visual.blendTime = visual.blendDuration = PlayerAnimationBlendTime;
+            for (auto* clip : clips) if (clip) clip->SetTimePosition(0);
+        }
+        else if (target != visual.animation)
+        {
+            // Capture the full current mix so any transition can be interrupted
+            // by another state without dropping a contributing animation.
+            visual.blendFrom = visual.weights;
+            visual.blendTime = 0;
+            visual.blendDuration = target == AnimationJumping ? PlayerJumpBlendTime : PlayerAnimationBlendTime;
+        }
+        if (takeoff && clips[AnimationJumping] && (reset || visual.weights[AnimationJumping] == 0))
+            clips[AnimationJumping]->SetRelativeTimePosition(PlayerJumpTakeoffPhase);
+        visual.animation = target;
+        visual.blendTime = std::min(visual.blendDuration, visual.blendTime + dt);
+        const float t = visual.blendTime / visual.blendDuration;
+        const float blend = t * t * (3.0f - 2.0f * t);
+        for (int i = 0; i < AnimationCount; ++i)
+        {
+            visual.weights[i] = visual.blendFrom[i] + ((i == target && clips[i] ? 1.0f : 0.0f) - visual.blendFrom[i]) * blend;
+            if (!clips[i]) continue;
+            clips[i]->SetWeight(visual.weights[i]);
+            clips[i]->SetActive(i != AnimationJumping || jumping || visual.weights[i] > 0);
+        }
+        if (auto* jump = clips[AnimationJumping])
+        {
+            // Freeze the flight pose during landing's crossfade as well. A
+            // quick second jump can reuse it without rewinding a visible layer.
+            const float remaining = jump->GetLength() * PlayerJumpHoldPhase - jump->GetTimePosition();
+            jump->SetSpeed(jumping && remaining > 0 ?
+                (dt > 0 ? std::min(1.0f, remaining / (dt * jump->GetBaseSpeed())) : 1.0f) : 0.0f);
+        }
+        if (cNode3D* hips = visual.mesh->GetBoneStateFromName("Armature_mixamorig_Hips"))
+        {
+            cMatrixf correction = cMatrixf::Identity;
+            if (auto* jump = clips[AnimationJumping])
+                if (auto* track = jump->GetAnimation()->GetTrackByName("Armature_mixamorig_Hips"))
+                {
+                    const float lift = track->GetInterpolatedKeyFrame(jump->GetTimePosition(), false).trans.y -
+                                       track->GetInterpolatedKeyFrame(0, false).trans.y;
+                    correction.SetTranslation(cVector3f(0, -std::max(0.0f, lift) * visual.weights[AnimationJumping], 0));
+                }
+            // The clip bakes its flight height into the hips, below the pinned
+            // root. Remove that lift before skinning; preserve the knee tuck and
+            // downward compression while the character body carries the jump.
+            hips->SetUsePostTransform(true);
+            hips->SetPostTransform(correction);
+        }
+        UpdatePlayerModelAim(visual, player, dt, reset);
+        cMatrixf transform = cMath::MatrixRotateY(visual.bodyYaw);
+        transform.SetTranslation(player.renderFeetPosition);
+        visual.node->SetMatrix(transform);
+        visual.mesh->UpdateLogic(dt);
+        if (!visual.avatarMask && !visual.avatarMaskFailed)
+        {
+            visual.avatarRetryTime -= dt;
+            if (visual.avatarRetryTime <= 0)
+            {
+                visual.avatarRetryTime = 1.0f;
+                if (const auto* avatar = mpSession->GetPlayerSteamAvatar(entry.first))
+                    visual.avatarMaskFailed = !CreatePlayerAvatarMask(entry.first, visual, *avatar);
+            }
+        }
+        if (reset) visual.node->ResetRenderInterpolation();
+        player.resetModelPose = false;
+    }
+}
+
 void cLuxMultiplayerWorld::UpdatePlayerLights()
 {
     cWorld* world = mpMap->GetWorld();
@@ -1175,7 +1666,7 @@ void cLuxMultiplayerWorld::UpdatePlayerColliders()
             mPlayerColliders[it->first] = collider;
         }
         // Physics and hit testing use the same latest simulation pose. The
-        // rendered cylinder and lantern keep their independent smooth history.
+        // rendered model and lantern keep their independent smooth history.
         collider->SetPosition(player.position);
         collider->GetCurrentBody()->SetActive(true);
     }
@@ -1484,13 +1975,30 @@ bool cLuxMultiplayerWorld::HandleMessage(uint32_t alPeer, const std::vector<uint
         if (peer == mpSession->GetLocalPeerId() || mDepartedPlayers.count(peer)) return true;
         std::map<uint32_t, cLuxMultiplayerRemotePlayer>::iterator old = mPlayers.find(peer);
         if (old != mPlayers.end() && !Newer(sequence, old->second.sequence)) return true;
-        player.sequence = sequence; player.renderPosition = old == mPlayers.end() ? player.position : old->second.renderPosition;
+        const cVector3f feet = player.position - cVector3f(0, player.size.y * 0.5f, 0);
+        const bool resetPose = old == mPlayers.end() || old->second.age > 2 ||
+            old->second.gameplay.life != player.gameplay.life ||
+            ((old->second.gameplay.flags ^ player.gameplay.flags) & PlayerAlive) ||
+            cMath::Vector3Dist(player.position, old->second.renderPosition) > 8;
+        player.sequence = sequence;
+        player.renderPosition = resetPose ? player.position : old->second.renderPosition;
+        player.renderFeetPosition = resetPose ? feet : old->second.renderFeetPosition;
+        player.renderYaw = resetPose ? player.yaw : old->second.renderYaw;
+        if (!resetPose)
+        {
+            // Preserve the previous presentation offset while aligning it to
+            // the new packet's angle branch. Comparing the packet to the old
+            // packet (rather than the smoothed angle) retains turn direction.
+            const float turn = std::atan2(std::sin(player.yaw - old->second.yaw),
+                                          std::cos(player.yaw - old->second.yaw));
+            player.renderYaw += player.yaw - old->second.yaw - turn;
+        }
+        player.resetModelPose = resetPose || old->second.resetModelPose;
         player.renderLanternOffset = old != mPlayers.end() && old->second.lantern.active ?
             old->second.renderLanternOffset : cVector3f(player.lantern.offset[0],player.lantern.offset[1],player.lantern.offset[2]);
-        if (old != mPlayers.end() && cMath::Vector3Dist(player.position, player.renderPosition) > 8) player.renderPosition = player.position;
         auto& renderNode = mPlayerRenderNodes[peer];
         if (!renderNode) renderNode.reset(new cNode3D("MultiplayerPlayerRender", false));
-        if (old == mPlayers.end() || player.renderPosition != old->second.renderPosition)
+        if (resetPose)
         {
             renderNode->SetPosition(player.renderPosition);
             renderNode->ResetRenderInterpolation();
@@ -1678,6 +2186,7 @@ void cLuxMultiplayerWorld::OnPeerDisconnected(uint32_t alPeer)
     mEnemyTerror.erase(alPeer);
     mHearingBudgets.erase(alPeer);
     RemovePlayerLight(alPeer);
+    RemovePlayerModel(alPeer);
     mPlayerRenderNodes.erase(alPeer);
     mPlayers.erase(alPeer);
     std::vector<uint32_t> leases;
@@ -1701,7 +2210,7 @@ void cLuxMultiplayerWorld::RenderSolid(cRendererCallbackFunctions* apFunctions)
     for (std::map<uint32_t, cLuxMultiplayerRemotePlayer>::const_iterator it = mPlayers.begin(); it != mPlayers.end(); ++it)
     {
         const cLuxMultiplayerRemotePlayer& player = it->second;
-        if (player.age > 10) continue;
+        if (player.age > 2 || !(player.gameplay.flags & PlayerAlive) || mPlayerModels.count(it->first)) continue;
         float radius = player.size.x * 0.5f, height = player.size.y;
         cVector3f base = mPlayerRenderNodes[it->first]->GetRenderWorldPosition() - cVector3f(0, height * 0.5f, 0);
         cVector3f top = base + cVector3f(0, height, 0);

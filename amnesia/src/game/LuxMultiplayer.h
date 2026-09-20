@@ -61,6 +61,9 @@ public:
     tString GetSteamStatus() const { return hpl::cNetworkTransport::SteamStatus(); }
     bool IsSteamSession() const { return mTransport.IsSteamSession(); }
     uint64_t GetSteamLobbyID() const { return mTransport.GetSteamLobbyID(); }
+    // Optional nonblocking image; callers copy pixels before the session or
+    // lobby membership changes. No authenticated Steam identity means no mask.
+    const hpl::cSteamAvatarImage* GetPlayerSteamAvatar(uint32_t peer);
     void RefreshSteamLobbies();
     void RetrySteam();
     bool IsSteamLobbySearchPending() const { return mTransport.IsSteamLobbySearchPending(); }
@@ -147,6 +150,7 @@ private:
     std::map<tString,luxnet::InventoryItem> mPendingRecoveredItems;
     void HandleEvent(const hpl::cNetworkEvent& event);
     void HandlePacket(uint32_t peer,const std::vector<uint8_t>& data);
+    void BroadcastPlayerIdentities();
     bool ApplyInventoryPacket(const std::vector<uint8_t>& data);
     void SendMap(uint32_t peer,Peer& state);
     bool CaptureMap(cLuxMap* map,const tString& start,const std::vector<uint8_t>* verifiedSource=NULL);
@@ -169,6 +173,7 @@ private:
     cLuxMultiplayerEnemies* mpEnemies;
     cLuxMultiplayerSettings mSettings;
     std::map<uint32_t,Peer> mPeers;
+    std::map<uint32_t,uint64_t> mSteamPeerIdentities;
     std::vector<uint8_t> mvMapBytes;
     std::vector<std::vector<uint8_t> > mvScriptHistory;
     size_t mlScriptHistoryBytes;

@@ -175,6 +175,13 @@ namespace hpl
         HSteamNetPollGroup group = k_HSteamNetPollGroup_Invalid;
         std::map<uint32_t, HSteamNetConnection> peers;
         std::map<uint32_t, uint64_t> identities;
+        struct cAvatarRequest
+        {
+            cSteamAvatarImage image;
+            bool waitingForUser = false, failed = false;
+            cSteamClock::time_point deadline, nextPoll;
+        };
+        std::map<uint64_t, cAvatarRequest> avatars;
         std::set<uint64_t> rejected;
         std::vector<cNetworkEvent> pending;
         std::vector<cSteamLobbyInfo> lobbies;
@@ -369,9 +376,38 @@ namespace hpl
         CCallback<cCallbacks, SteamNetConnectionStatusChangedCallback_t> status;
         CCallback<cCallbacks, GameLobbyJoinRequested_t> invite;
         CCallback<cCallbacks, GameOverlayActivated_t> overlay;
-        cCallbacks() : status(this, &cCallbacks::Status), invite(this, &cCallbacks::Invite), overlay(this, &cCallbacks::Overlay) {}
+        CCallback<cCallbacks, PersonaStateChange_t> persona;
+        CCallback<cCallbacks, AvatarImageLoaded_t> avatar;
+        cCallbacks() : status(this, &cCallbacks::Status), invite(this, &cCallbacks::Invite), overlay(this, &cCallbacks::Overlay),
+            persona(this, &cCallbacks::Persona), avatar(this, &cCallbacks::Avatar) {}
         void Status(SteamNetConnectionStatusChangedCallback_t* info) { cImpl::StatusChanged(info); }
         void Overlay(GameOverlayActivated_t* info) { gSteamOverlayActive = info && info->m_bActive != 0; }
+        void AvatarReady(uint64_t player, bool imageAvailable = false)
+        {
+            // These callbacks are process-wide and can arrive after a session
+            // ended. Only wake requests still owned by a live transport.
+            for(cImpl* instance : instances)
+            {
+                auto found = instance->avatars.find(player);
+                if(found == instance->avatars.end()) continue;
+                found->second.waitingForUser = false;
+                found->second.nextPoll = cSteamClock::time_point::min();
+                // A successful image callback may arrive after our optional
+                // request timed out. Give that image a fresh bounded read attempt.
+                if(imageAvailable && found->second.image.rgba.empty())
+                {
+                    found->second.failed = false;
+                    found->second.deadline = cSteamClock::now() + std::chrono::seconds(20);
+                }
+            }
+        }
+        void Persona(PersonaStateChange_t* info) { if(info) AvatarReady(info->m_ulSteamID); }
+        void Avatar(AvatarImageLoaded_t* info)
+        {
+            if(info) AvatarReady(info->m_steamID.ConvertToUint64(),
+                info->m_iImage > 0 && info->m_iWide > 0 && info->m_iWide <= 256 &&
+                info->m_iTall > 0 && info->m_iTall <= 256);
+        }
         void Invite(GameLobbyJoinRequested_t* info)
         {
             if(info && info->m_steamIDLobby.IsValid() && info->m_steamIDLobby.IsLobby())
@@ -463,7 +499,7 @@ namespace hpl
                 SteamMatchmaking()->LeaveLobby(CSteamID(lobby));
             }
         }
-        peers.clear(); identities.clear(); rejected.clear();
+        peers.clear(); identities.clear(); rejected.clear(); avatars.clear();
         listen = k_HSteamListenSocket_Invalid; group = k_HSteamNetPollGroup_Invalid;
         active = false; host = false; steam = false; failed = false;
         lobby = 0; expectedHost = 0; nextPeer = 1; maxPeers = 0;
@@ -538,6 +574,50 @@ namespace hpl
     }
     bool cNetworkTransport::IsSteamSession() const { return mpImpl->active && mpImpl->steam; }
     uint64_t cNetworkTransport::GetSteamLobbyID() const { return mpImpl->lobby; }
+    uint64_t cNetworkTransport::GetSteamPeerID(uint32_t peer) const
+    {
+        if(!IsSteamSession() || !SteamAvailable() || !mpImpl->lobby) return 0;
+        if(IsHost() && peer == 0) return SteamUser()->GetSteamID().ConvertToUint64();
+        const auto found = mpImpl->identities.find(peer);
+        return found == mpImpl->identities.end() ? 0 : found->second;
+    }
+    const cSteamAvatarImage* cNetworkTransport::GetSteamAvatar(uint64_t steamID)
+    {
+        if(!IsSteamSession() || !SteamAvailable() || !IsPlayer(steamID) || !LobbyContains(mpImpl->lobby, steamID)) return nullptr;
+        const auto now = cSteamClock::now();
+        auto found = mpImpl->avatars.find(steamID);
+        if(found == mpImpl->avatars.end())
+        {
+            // A long-lived lobby may have many departed players. Keep the
+            // optional image cache bounded by the maximum current membership.
+            for(auto entry = mpImpl->avatars.begin(); entry != mpImpl->avatars.end();)
+                if(!LobbyContains(mpImpl->lobby, entry->first)) entry = mpImpl->avatars.erase(entry); else ++entry;
+            if(mpImpl->avatars.size() >= 64) return nullptr;
+            cImpl::cAvatarRequest request;
+            request.deadline = now + std::chrono::seconds(20);
+            request.nextPoll = now;
+            request.waitingForUser = SteamFriends()->RequestUserInformation(CSteamID(steamID), false);
+            found = mpImpl->avatars.emplace(steamID, std::move(request)).first;
+        }
+        cImpl::cAvatarRequest& request = found->second;
+        if(!request.image.rgba.empty()) return &request.image;
+        if(request.failed) return nullptr;
+        if(now >= request.deadline) { request.failed = true; return nullptr; }
+        if(request.waitingForUser || now < request.nextPoll) return nullptr;
+        request.nextPoll = now + std::chrono::milliseconds(250);
+        const int image = SteamFriends()->GetLargeFriendAvatar(CSteamID(steamID));
+        if(image < 0) return nullptr; // Steam finishes through AvatarImageLoaded.
+        uint32_t width = 0, height = 0;
+        if(!image || !SteamUtils()->GetImageSize(image, &width, &height) ||
+            !width || !height || width > 256 || height > 256)
+        { request.failed = true; return nullptr; }
+        std::vector<uint8_t> rgba(static_cast<size_t>(width) * height * 4);
+        if(!SteamUtils()->GetImageRGBA(image, rgba.data(), static_cast<int>(rgba.size())))
+        { request.failed = true; return nullptr; }
+        request.image.width = width; request.image.height = height;
+        request.image.rgba.swap(rgba);
+        return &request.image;
+    }
     void cNetworkTransport::SetSteamMapName(const std::string& map)
     {
         mpImpl->mapName = steam_detail::DisplayText(map.c_str(), 255);

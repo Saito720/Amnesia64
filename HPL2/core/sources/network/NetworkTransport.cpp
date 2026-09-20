@@ -335,6 +335,8 @@ namespace hpl
     { return InitializeSteam(error); }
     bool cNetworkTransport::IsSteamSession() const { return false; }
     uint64_t cNetworkTransport::GetSteamLobbyID() const { return 0; }
+    uint64_t cNetworkTransport::GetSteamPeerID(uint32_t) const { return 0; }
+    const cSteamAvatarImage* cNetworkTransport::GetSteamAvatar(uint64_t) { return nullptr; }
     void cNetworkTransport::SetSteamMapName(const std::string&) {}
     bool cNetworkTransport::RequestSteamLobbies(std::string& error) { return InitializeSteam(error); }
     bool cNetworkTransport::IsSteamLobbySearchPending() const { return false; }

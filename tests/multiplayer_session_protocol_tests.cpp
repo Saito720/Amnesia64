@@ -1,4 +1,5 @@
 #include "../amnesia/src/game/LuxMultiplayerProtocol.h"
+#include "../amnesia/src/game/LuxMultiplayerIdentityProtocol.h"
 #include "../amnesia/src/game/LuxMultiplayerEntityProtocol.h"
 #include "../amnesia/src/game/LuxMultiplayerInventoryProtocol.h"
 #include "../amnesia/src/game/LuxMultiplayerInventoryPolicy.h"
@@ -9,6 +10,29 @@
 #include <iostream>
 #include <limits>
 using namespace luxnet;
+static void CheckPlayerIdentities() {
+    const PeerSteamIdentities expected={{0,76561198000000001ULL},{7,76561198000000002ULL},{18,76561198000000003ULL}};
+    const auto packet=WritePlayerIdentities(expected);
+    auto decode=[](const std::vector<uint8_t>& bytes) {Reader r(bytes);PeerSteamIdentities output;return ReadPlayerIdentities(r,output);};
+    Reader r(packet);PeerSteamIdentities output;assert(ReadPlayerIdentities(r,output) && output==expected);
+    for(size_t length=0;length<packet.size();++length) assert(!decode({packet.begin(),packet.begin()+length}));
+    auto trailing=packet;trailing.push_back(0);assert(!decode(trailing));
+    assert(!decode(WritePlayerIdentities({})));
+    assert(!decode(WritePlayerIdentities({{1,123}}))); // The host must be present.
+    assert(!decode(WritePlayerIdentities({{0,123},{UINT32_MAX,456}})));
+    assert(!decode(WritePlayerIdentities({{0,123},{1,0}})));
+    assert(!decode(WritePlayerIdentities({{0,123},{1,123}})));
+    auto duplicatePeer=packet;
+    for(size_t i=14;i<18;++i) duplicatePeer[i]=0;
+    assert(!decode(duplicatePeer));
+    PeerSteamIdentities full;
+    for(uint32_t peer=0;peer<16;++peer) full[peer]=76561198000000001ULL+peer;
+    assert(decode(WritePlayerIdentities(full)));
+    full[16]=76561198000000017ULL;assert(!decode(WritePlayerIdentities(full)));
+    // Invalid replacements never partially overwrite a previously trusted roster.
+    Reader invalid(trailing);output=expected;
+    assert(!ReadPlayerIdentities(invalid,output) && output==expected);
+}
 static std::vector<uint8_t> NativePacket(const NativeState& state) {
     Writer w(EntityState);w.U32(state.epoch);w.String(state.name);
     w.U8(state.kind);w.U8(state.flags);w.U8(state.detail);
@@ -346,6 +370,7 @@ static void CheckMapHashes() {
     std::string embedded=textHash("abc");embedded[32]='\0';assert(!ValidMapHash(embedded));
 }
 int main() {
+    CheckPlayerIdentities();
     const std::string destination="26_torture_nave_redux.map";
     assert(AuthoredMapFilename("G:/amnesia/redist/maps/main/ch03/26_torture_nave_redux.map")==destination);
     assert(AuthoredMapFilename("G:\\amnesia\\redist\\maps\\main\\ch03\\26_TORTURE_NAVE_REDUX.MAP")==destination);
@@ -403,5 +428,5 @@ int main() {
         Reader fuzz(bytes);fuzz.U32();fuzz.String(512);fuzz.Float();fuzz.U8();
         assert(fuzz.pos<=bytes.size());
     }
-    std::cout<<"Session protocol: SHA-256 known vectors, Player trigger attribution, native entity/joint states (10000 mutations), joint break requests (5000 mutations), world effect lifecycle, bounds, truncation, strings, finite floats, paths, CRC and 30000 malformed packets passed.\n";
+    std::cout<<"Session protocol: Steam player identity rosters, SHA-256 known vectors, Player trigger attribution, native entity/joint states (10000 mutations), joint break requests (5000 mutations), world effect lifecycle, bounds, truncation, strings, finite floats, paths, CRC and 30000 malformed packets passed.\n";
 }

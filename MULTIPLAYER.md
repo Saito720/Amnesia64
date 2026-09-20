@@ -122,7 +122,7 @@ or cached maps skip the download phase. Every waiting frame clears the viewport;
 blocking verification and loading also present their screen before starting work.
 Cancelled or failed host map changes return clients to the previous map, preserving
 in-flight world events. Same-map start-position changes do not put clients into a
-map-loading state. The session uses protocol **9**; all players need
+map-loading state. The session uses protocol **13**; all players need
 the updated build.
 The client cannot open the game debug menu; F3/fast-forward is disabled for everyone
 in a session. Host debug map loads/reloads use a queued session-preserving path.
@@ -144,8 +144,66 @@ menus retain input control, and the global scene/physics update is not repeated.
 Joining/changing-map
 clients enter a waiting container until their verified map has loaded.
 
-Remote players render as solid, depth-tested cylinders using the standing/crouching
-character dimensions. Positions interpolate for rendering. The host can enable
+Remote players use the visual mesh defined by
+`entities/character/ritual_prisoner/player_model.ent`. The imported `Armature_root`
+stays at the character's feet and the model retains its authored scale.
+The entity supplies `idle`, `walking`, `running`, `jumping`, `crouched_idle` and
+`crouched_walking`; the installed `crouching_idle` name is accepted as an alias.
+Replicated movement state selects the pose: crouch takes precedence over running,
+and holding run while stationary remains idle. An eased 0.25-second crossfade keeps
+the full current mixture when a transition is interrupted; jump entry uses 0.12 seconds.
+A small movement threshold with hysteresis avoids switching on contact jitter.
+Once per map, the native evaluator samples both toe-base bones over each ground
+locomotion cycle. Their backward speed during the lowest 15% of the foot's height
+range estimates the speed needed to keep a planted foot on the floor. Combined
+median speeds are about 1.946 m/s walking, 6.106 m/s running and 1.402 m/s crouched
+walking. Playback scales by actual horizontal body speed divided by that clip's
+measured speed, accounting for its authored base multiplier. This follows collisions
+and scripted slowdowns, including flashbacks, without changing the selected gait.
+Ground locomotion phases hold at rest; both idle clips retain their authored speeds.
+Calibration rejects insufficient support or inconsistent foot motion using bilateral
+agreement and median absolute deviation, retaining authored playback if measurement fails.
+
+Jump state follows actual takeoff through landing, independently of the shorter native
+jump-force timer. The non-looping clip starts at its takeoff section (about 0.50 s),
+holds its final flight pose (about 1.05 s) if still airborne, and blends back to ground
+locomotion on landing. A quick repeat during that blend reuses the contributing pose
+without rewinding a visible layer. Positive baked jump height in the hips is removed
+with a weighted per-instance bone transform, leaving the character body responsible
+for elevation while preserving the leg tuck. Ordinary falls without a jump retain
+ground locomotion. Directional locomotion clips are not implemented.
+The root and its ancestors remain anchored while the hips and limbs animate.
+The local player retains the first-person view.
+
+The replicated camera direction drives additive head yaw and pitch without replacing
+the authored animation. Head pitch is limited to 50 degrees up/down and head yaw to
+45 degrees. While stationary, the body remains still for small glances; a gaze beyond
+35 degrees starts a smooth body turn, which finishes within 5 degrees of the look
+direction. Moving players turn their bodies toward the reported character yaw.
+Yaw smoothing follows successive input directions across angle wraps, with at
+most 20 degrees of look/presentation lag. Ordinary body turns ease at up to 180
+degrees per second, but rapid turns carry the body along as needed to keep its
+actual separation from the head within 45 degrees. This prevents continuous
+spins from lapping the smoothing and reversing its chosen turn direction.
+These offsets affect only the visual representation, not movement, collision or AI
+perception. Teleports, respawns and stale-pose recovery reset the aiming history.
+
+Steam sessions optionally display the player's avatar as a 0.23-by-0.25-metre
+FixedAxis billboard attached to the head's face. It follows the animated/aimed head,
+uses ordinary depth testing and fog, and does not glow as a halo or cast shadows.
+Steam's RGBA rows are flipped for the billboard's UV orientation. The host distributes
+peer identities from authenticated Steam connections; clients fetch avatars only for
+current lobby members. Avatar requests are asynchronous and cached, with a bounded
+timeout. Missing avatars, failed requests and direct-IP sessions simply omit the mask.
+Masks and their private textures are released with their player models.
+
+Feet and facing interpolate for rendering, with placement reset on teleport,
+respawn, or recovery from stale poses. Models are removed on death, stale poses,
+disconnect, and map teardown. Each machine needs the custom entity and its mesh and
+material and animation dependencies in its game resources; these assets are not distributed by
+the map transfer. Missing or invalid rigs log a warning once per map and retain
+the placeholder cylinders. Missing animation clips retain the available clip or bind
+pose and produce one animation warning per map. The host can enable
 character collision in the advanced window; the matching Newton character proxies
 do not push shared dynamic objects. Their collision surfaces also participate in
 NPC character sweeps. Stale, disconnected and previous-map proxies are removed.
@@ -469,7 +527,7 @@ have exercised that path; each new build still needs a two-account playtest for
 latency, disconnects and campaign behavior beyond the controlled regression suite.
 Full-game smoke tests use isolated test configurations/profiles and a bounded run;
 they must not share a live player's configuration or overwrite retail assets.
-The current session/lobby protocol is version **9**; all testers must use the new build.
+The current session/lobby protocol is version **13**; all testers must use the new build.
 See `tests/multiplayer/README.md` for profile cleanup, output paths and runner options.
 
 ## Source layout

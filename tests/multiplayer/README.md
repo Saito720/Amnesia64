@@ -64,6 +64,74 @@ This still uses two real instances, the normal transport, replicated player
 poses, native sound entities and particle systems, and the player sound helper.
 The normal full run includes these same cases.
 
+For the animated remote player model alone, install the custom
+`entities/character/ritual_prisoner/player_model.ent` asset and its referenced
+mesh, materials, and idle, walking, running, jumping, crouched idle and crouched
+walking animation files in the retail directory, then run:
+
+```powershell
+$env:CODEX_MP_PLAYER_MODELS_ONLY='1'
+try { ./tests/multiplayer/run-game.ps1 -Backend Steamworks -SkipBuild }
+finally { Remove-Item Env:CODEX_MP_PLAYER_MODELS_ONLY -ErrorAction SilentlyContinue }
+```
+
+The fixture loads all six clips and checks the installed `crouching_idle` alias
+as the canonical `crouched_idle` state. Independent authored-foot measurements
+validate walking, running and crouched-walking stride speeds. Cadence checks span
+0.25x through 1.8x, diagonal/vertical velocity handling, unchanged idle playback,
+and compensation for the authored animation base multiplier. Fresh native rig
+probes reject missing/idle-only walking clips and restore the sampled bind pose.
+A temporary native character and normal controller run on an isolated floor
+through production movement limits, acceleration/deceleration and the same state
+sampler used for outgoing poses. The configured flashback multiplier must slow
+movement and cadence together, while retaining running intent. Native crouch,
+uncrouch, jump takeoff, descent and landing must select the corresponding clip.
+The fixture does not start a flashback's audio or visual effects.
+Six normalized blend weights and five continuously running animation clocks are
+checked through interrupted walk/run/crouch transitions. Jumping starts at the
+authored takeoff pose, holds in flight, and blends back on landing. Ordinary
+falling or ladder-like ascent without a jump flag must not trigger jumping.
+`Armature_root` stays at the body feet throughout animation, crouching and jumps;
+body yaw/scale, native rendering, teleport/life/stale resets, death/recovery and
+physics-free visual teardown remain covered.
+Head aiming is checked against the actual authored bone matrix in all six clips,
+including pitch/yaw limits, short-angle wrapping and teleport interpolation reset.
+Small stationary gaze changes leave the body fixed; larger changes trigger a
+bounded turn with separate start/stop dead zones. Moving bodies follow their
+reported heading. Continuous-turn trials cover both directions at 360, 720 and
+1440 degrees per second, with 20/30 Hz held network samples and 60/120 Hz updates,
+both stationary and moving. A second input mode supplies a separately smoothed
+body heading. These trials reject wrong-way rotations and head flips, check
+bounded look/body lag, and reverse and stop each turn; `*-player-turns.csv`
+records all 96 cases. Synthetic top-down RGBA pixels use the same private mask-creation
+helper as the Steam provider. The fixture checks optional/malformed avatar
+handling, head attachment, fixed orientation, depth-tested material, texture size,
+and billboard cleanup on death, staleness and reset. Dedicated close captures
+verify all four image quadrants render in the correct orientation and disappear
+behind opaque native geometry. The synthetic image avoids relying on a particular
+Steam account's avatar during a repeatable local test.
+The native packet decoder also receives repeated turns across both yaw wrap
+boundaries and must retain its previous presentation offset on the correct branch.
+It saves front and side views plus 576 numbered native animation frames at 24 fps
+per peer, covering all six states, slow walking, posture changes, two jumps and
+six seconds of head aim and idle body following, then six seconds of rapid idle
+and moving spins, reversals and stops.
+If the bundled DevIL saver reports failure, the fixture requires an exact pixel
+readback before accepting the frame: that library truncates PNG byte counts to
+one byte and misreports complete files whose size is divisible by 256.
+Ground locomotion stays in place for comparison; jump captures include a body arc.
+The capture temporarily detaches campaign post effects and GUI overlays so intro
+fades and image trails cannot hide the transition, then restores the viewport.
+The `*-player-animation-frames.csv` file records target state, network flags,
+horizontal speed, feet height and each clip's weight, time and playback rate for each
+corresponding `*-player-animation-NNN.png` image, plus body/look/head angles.
+The `*-player-avatar-visible.png` and `*-player-avatar-occluded.png` images and
+matching text files retain the orientation and depth-test evidence. The `*-player-walk-speed.txt`
+file records native normal/slow/recovered speeds. Both real peers
+must load the rig; the focused mode rejects a missing asset. Normal game tests
+run these checks when the custom model is present and retain cylinder fallback
+coverage for an unmodified retail install.
+
 For the remote lantern, menu updates, and broken-joint lifecycle cases alone,
 use `CODEX_MP_LIFECYCLE_ONLY` in place of `CODEX_MP_INCIDENTAL_ONLY` above. This
 also starts in Old Archives and runs both peers through the native lantern
@@ -84,7 +152,7 @@ instances to obtain extra rendered frames. It checks that those extra frames
 neither advance the controlled character nor send additional network poses.
 Native Graphics-menu tests cover labels/layout, gamepad navigation, Cancel, OK,
 save/reload and restoration. Interpolation fixtures cover hard network corrections,
-ownership immunity, remote cylinder/lantern alignment, and native hand bones and
+ownership immunity, remote center/lantern alignment, and native hand bones and
 vertex buffers across moving and stationary render samples. Normal runs explicitly
 retain capped rendering for comparison. Both modes continue through the existing
 two-instance physics, menus, map/cache transitions and disconnect tests.
@@ -174,6 +242,8 @@ suppression on an overlapping drop until the native player-clearance check resto
 A native movement trial pushes a retail wooden box: collision must stay solid while
 ownership is pending, client contact must acquire simulation authority, and a short
 separation must retain ownership before release and host/client convergence.
+These trials suspend campaign look-at steering while they control the player's
+heading, then restore its target, callback, active state and angular speed.
 The sound regression sends all ten reported retail `PreloadSound` hints, two
 trailing-space variants, and a valid sound entity through the host's actual
 script entry point. A following reliable effect checks that the client processed

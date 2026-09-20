@@ -299,6 +299,7 @@
     <ClInclude Include="LuxMultiplayerEntityProtocol.h" />
     <ClInclude Include="LuxMultiplayerScript.h" />
     <ClInclude Include="LuxMultiplayerProtocol.h" />
+    <ClInclude Include="LuxMultiplayerIdentityProtocol.h" />
     <ClInclude Include="LuxMultiplayerUI.h" />
     <ClInclude Include="LuxMultiplayerWorld.h" />
     <ClInclude Include="LuxMultiplayerWorldProtocol.h" />

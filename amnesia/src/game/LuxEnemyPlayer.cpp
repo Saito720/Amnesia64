@@ -19,6 +19,9 @@ cLuxEnemyPlayer cLuxEnemyPlayer::Local(uint32_t peer)
     sample.feet = sample.body->GetFeetPosition();
     sample.size = sample.body->GetSize();
     sample.velocity = sample.body->GetVelocity(gpBase->mpEngine->GetStepSize());
+    // Ground contact has a short grace period after takeoff. The force
+    // velocity distinguishes a rising jump from native stair stepping.
+    sample.onGround = sample.body->IsOnGround() && sample.body->GetForceVelocity().y <= 0.1f;
     cCamera* camera = player->GetCamera();
     sample.eyes = camera->GetPosition();
     sample.forward = camera->GetForward();
@@ -32,6 +35,11 @@ cLuxEnemyPlayer cLuxEnemyPlayer::Local(uint32_t peer)
     sample.lightLevel = player->GetHelperLightLevel()->GetNormalLightLevel();
     sample.terror = player->GetTerror();
     if(player->GetCurrentMoveState() == eLuxMoveState_Normal)
-        sample.crouching = static_cast<cLuxMoveState_Normal*>(player->GetCurrentMoveStateData())->IsCrouching();
+    {
+        auto* movement = static_cast<cLuxMoveState_Normal*>(player->GetCurrentMoveStateData());
+        sample.crouching = movement->IsCrouching();
+        sample.running = movement->IsRunning();
+        sample.jumping = movement->IsJumping();
+    }
     return sample;
 }

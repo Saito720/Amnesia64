@@ -93,6 +93,8 @@ public:
 
 	void SetAngle(float afX, bool abAutoMoveToAngle);
 	float GetAngle(){ return mfAngle;}
+    iPhysicsBody* GetWheelBody() const { return mpWheelBody; }
+    void ApplyNetworkAngle(float angle,int stuck);
 
 	float GetMinLimit(){ return mfMinLimit;}
 	float GetMaxLimit(){ return mfMaxLimit;}
@@ -170,6 +172,7 @@ private:
 
 	float mfJointAngle;
 	float mfPrevJointAngle;
+    bool mbNetworkAnglePending=false;
 
 	bool mbAutoMoving;
 	float mfAutoMoveGoal;

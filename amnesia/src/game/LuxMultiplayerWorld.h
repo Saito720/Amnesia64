@@ -45,6 +45,7 @@ public:
     void ReleaseInteraction();
     bool OwnsInteraction(iPhysicsBody* apBody) const;
     bool OwnsSimulation(iPhysicsBody* apBody) const;
+    bool HasSimulationAuthority(iPhysicsBody* body) const;
     bool GetSimulationLease(iPhysicsBody* body, uint32_t& owner, uint32_t& token) const;
     bool AllowPlayerContact(iPhysicsBody* apBody);
     // Called during character collision traversal: lease changes are queued and

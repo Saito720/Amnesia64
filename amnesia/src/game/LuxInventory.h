@@ -222,6 +222,8 @@ public:
 							const tString& asFunction, bool abAutoDestroy);
 	void RemoveCombineCallback(const tString& asName);
 	cLuxCombineItemsCallback* GetCombineCallback(const tString& asItemA, const tString& asItemB);
+    const tLuxCombineItemsCallbackList& GetCombineCallbacks() const { return mlstCombineCallbacks; }
+    void ClearCombineCallbacks() { STLDeleteAll(mlstCombineCallbacks); }
 
 	void RunScript(const tString& asCommand);
 	bool RecompileScript(tString *apOutput);

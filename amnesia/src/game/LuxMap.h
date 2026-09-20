@@ -166,6 +166,8 @@ public:
 	 */
 	void RemoveUseItemCallback( cLuxUseItemCallback * apCallback, const tString& asName="");
 	cLuxUseItemCallback* GetUseItemCallback(const tString& asItem, const tString& asEntity);
+    const tLuxUseItemCallbackList& GetUseItemCallbacks() const { return mlstUseItemCallbacks; }
+    void ClearUseItemCallbacks() { STLDeleteAll(mlstUseItemCallbacks); }
 
 	void AddTimer(const tString& asName, float afTime, const tString& asFunction);
 	void RemoveTimer(const tString& asName);

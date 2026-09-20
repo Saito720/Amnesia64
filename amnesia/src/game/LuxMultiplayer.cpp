@@ -31,12 +31,20 @@
 #include "LuxCompletionCountHandler.h"
 #include "LuxLoadScreenHandler.h"
 #include "LuxHelpFuncs.h"
+#include "LuxInventory.h"
+#include "LuxArea.h"
 #include <algorithm>
 #include <cstdio>
 
 using namespace luxnet;
 
 namespace {
+bool WithinInteractionReach(iPhysicsBody* body,const cLuxMultiplayerRemotePlayer& player,float reach) {
+    const cVector3f eyes=player.position+cVector3f(player.gameplay.eyeOffset[0],player.gameplay.eyeOffset[1],player.gameplay.eyeOffset[2]);
+    const cVector3f min=body->GetBoundingVolume()->GetMin(),max=body->GetBoundingVolume()->GetMax();
+    const cVector3f nearest(cMath::Clamp(eyes.x,min.x,max.x),cMath::Clamp(eyes.y,min.y,max.y),cMath::Clamp(eyes.z,min.z,max.z));
+    return (eyes-nearest).Length()<=reach+0.5f;
+}
 bool EmptyDirectory(const tWString& path) {
     tWStringList files,folders;
     cPlatform::FindFilesInDir(files,path,_W("*"),true);
@@ -287,6 +295,8 @@ void cLuxMultiplayer::AcceptSteamInvite() {
     if(JoinSteamLobby(std::to_string(lobby))) mlPendingSteamInvite=0;
 }
 void cLuxMultiplayer::Stop(const tString& reason) {
+    mSharedScriptItems.clear();
+    mRemoteItems.clear();
     bool client=IsClient();
     if(IsActive()) gpBase->mpEngine->SetWaitIfAppOutOfFocus(mbRestoreFocusWait);
     mpEnemies->Reset();mpEffects->Reset();mpWorld->Shutdown();mpEntities->Reset();mTransport.Stop();mPeers.clear();
@@ -319,6 +329,8 @@ void cLuxMultiplayer::RemoveReceivedMapFiles() {
     msReceivedMapPath.clear();
 }
 void cLuxMultiplayer::Reset() {
+    mSharedScriptItems.clear();
+    mRemoteItems.clear();
     mpEnemies->Reset();mpEffects->Reset();mpWorld->Reset();mpEntities->Reset();
     if(!mbLoading && IsActive()) Stop("Session ended.");
     else if(!mbLoading) mbSessionWorld=false;
@@ -439,6 +451,7 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
             if(!state.endSent || state.ready) {RejectPeer(peer,"Unexpected map acknowledgement.");return;}
             if(!mbHistoryComplete) {RejectPeer(peer,"The session's initialization history exceeded its limit while joining.");return;}
             state.ready=true;state.age=0;
+            if(!SyncItemCallbacks(peer)) {RejectPeer(peer,"Could not initialize item callbacks.");return;}
             for(const auto& effect:mvScriptHistory) if(!Send(peer,effect,true)) {RejectPeer(peer,"Script state exceeded the connection queue.");return;}
             if(!mpEntities->SendInitialState(peer)) {RejectPeer(peer,"World has too many entities for initial synchronization.");return;}
             if(!mpWorld->SendInitialState(peer)) {RejectPeer(peer,"World is too large for initial synchronization (32 MiB limit).");return;}
@@ -458,39 +471,80 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
         }
         if(type==MapChangeRequest) {
             uint32_t epoch=r.U32();tString map=r.String(512),start=r.String(128),a=r.String(256),b=r.String(256);
-            if(!r.Done() || !SafeRelativePath(map)) {RejectPeer(peer,"Invalid map change request.");return;}
+            if(!r.Done() || !SafeRelativePath(map) || map!=AuthoredMapFilename(map)) {RejectPeer(peer,"Invalid map change request.");return;}
             if(epoch!=mlMapEpoch || !mSettings.allowClientMapChanges || state.requestCooldown>0) return;
             // Resolve and validate an unlocked level door in the host's authoritative map.
             cLuxMap* current=gpBase->mpMapHandler->GetCurrentMap();
             const auto& poses=mpWorld->GetRemotePlayers();auto pose=poses.find(peer);
-            if(!current || pose==poses.end() || pose->second.age>2) return;
+            if(!current || pose==poses.end() || pose->second.age>2 || !(pose->second.gameplay.flags&LuxWorldWire::PlayerAlive)) return;
             cLuxProp_LevelDoor* door=NULL;
             cLuxEntityIterator entities=current->GetEntityIterator();
             while(entities.HasNext()) {
                 iLuxEntity* ent=entities.Next();
                 if(ent->GetEntityType()!=eLuxEntityType_Prop || static_cast<iLuxProp*>(ent)->GetPropType()!=eLuxPropType_LevelDoor) continue;
                 cLuxProp_LevelDoor* candidate=static_cast<cLuxProp_LevelDoor*>(ent);
-                if(!candidate->IsActive() || candidate->GetLocked() || cString::SetFileExt(candidate->GetMapFile(),"map")!=cString::SetFileExt(map,"map") || candidate->GetStartPos()!=start) continue;
-                for(int i=0;i<candidate->GetBodyNum();++i) if((candidate->GetBody(i)->GetWorldPosition()-pose->second.position).Length()<4.0f) door=candidate;
+                if(!candidate->IsActive() || candidate->GetDestroyMe() || candidate->GetInteractionDisabled() || candidate->GetLocked() ||
+                   AuthoredMapFilename(candidate->GetMapFile())!=map || candidate->GetStartPos()!=start) continue;
+                for(int i=0;i<candidate->GetBodyNum();++i)
+                    if(candidate->CanInteract(candidate->GetBody(i)) && WithinInteractionReach(candidate->GetBody(i),pose->second,candidate->GetMaxFocusDistance())) door=candidate;
             }
             if(!door) return;
             state.requestCooldown=2.0f;
             cLuxMultiplayerRemoteTriggerScope remoteTrigger(true,peer);
             door->OnInteract(door->GetBody(0),pose->second.position);return;
         }
+        if(type==ItemCombineRequest) {
+            const uint32_t epoch=r.U32();const tString a=r.String(256),b=r.String(256);
+            if(!r.Done() || a.empty() || b.empty()) {RejectPeer(peer,"Invalid item combination.");return;}
+            if(epoch!=mlMapEpoch || !mSettings.allPlayersTriggerScripts || state.interactionTokens<1) return;
+            state.interactionTokens-=1;
+            cLuxMultiplayerRemoteTriggerScope trigger(true,peer);
+            if(!HasRemoteItem(a) || !HasRemoteItem(b)) return;
+            auto* callback=gpBase->mpInventory->GetCombineCallback(a,b);if(!callback) return;
+            const bool remove=callback->mbAutoDestroy;const tString name=callback->msName;
+            gpBase->mpInventory->RunScript(callback->msFunction+"(\""+callback->msItemA+"\", \""+callback->msItemB+"\")");
+            if(remove && gpBase->mpInventory->GetCombineCallback(a,b)==callback) gpBase->mpInventory->RemoveCombineCallback(name);
+            return;
+        }
+        if(type==ItemUseRequest) {
+            const uint32_t epoch=r.U32();const tString item=r.String(256),name=r.String(256);
+            if(!r.Done() || item.empty() || name.empty()) {RejectPeer(peer,"Invalid item use request.");return;}
+            if(epoch!=mlMapEpoch || !mSettings.allPlayersTriggerScripts) return;
+            if(state.interactionTokens<1) return;state.interactionTokens-=1;
+            cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();
+            iLuxEntity* ent=map?map->GetEntityByName(name):NULL;
+            auto pose=mpWorld->GetRemotePlayers().find(peer);
+            if(!ent || !ent->IsActive() || ent->GetDestroyMe() || ent->GetInteractionDisabled() ||
+               pose==mpWorld->GetRemotePlayers().end() || pose->second.age>2 ||
+               !(pose->second.gameplay.flags&LuxWorldWire::PlayerAlive)) return;
+            cLuxMultiplayerRemoteTriggerScope trigger(true,peer);
+            if(!HasRemoteItem(item)) return;
+            bool near=false;
+            const float reach=cMath::Max(ent->GetMaxFocusDistance(),gpBase->mpGameCfg->GetFloat("Player_Interaction","MinUseItemDistance",0));
+            for(int i=0;i<ent->GetBodyNum();++i) {
+                if(WithinInteractionReach(ent->GetBody(i),pose->second,reach)) near=true;
+            }
+            cLuxUseItemCallback* callback=map->GetUseItemCallback(item,name);
+            if(!near || !callback) return;
+            const bool remove=callback->mbAutoDestroy;const tString callbackName=callback->msName;
+            map->RunScript(callback->msFunction+"(\""+callback->msItem+"\", \""+callback->msEntity+"\")");
+            if(remove) map->RemoveUseItemCallback(callback,callbackName);
+            return;
+        }
         if(type==EntityInteract) {
             uint32_t epoch=r.U32();tString name=r.String(256);uint32_t index=r.U32();
             if(!r.Done()) {RejectPeer(peer,"Invalid interaction request.");return;}
-            if(epoch!=mlMapEpoch || state.requestCooldown>0 || !mSettings.allPlayersTriggerScripts) return;
+            if(epoch!=mlMapEpoch || !mSettings.allPlayersTriggerScripts) return;
+            if(state.interactionTokens<1) return;state.interactionTokens-=1;
             cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();
             iLuxEntity* ent=map?map->GetEntityByName(name):NULL;
             const auto& poses=mpWorld->GetRemotePlayers();auto pose=poses.find(peer);
             if(!ent || !ent->IsActive() || index>=uint32_t(ent->GetBodyNum()) || pose==poses.end()) return;
             iPhysicsBody* body=ent->GetBody(index);
             if(pose->second.age>2 || ent->GetDestroyMe() || ent->GetInteractionDisabled() ||
+               !(pose->second.gameplay.flags&LuxWorldWire::PlayerAlive) ||
                mpWorld->IsInteractionOwnedByOther(body,peer) ||
-               (body->GetWorldPosition()-pose->second.position).Length()>4.0f || !ent->CanInteract(body)) return;
-            state.requestCooldown=0.2f;
+               !WithinInteractionReach(body,pose->second,ent->GetMaxFocusDistance()) || !ent->CanInteract(body)) return;
             // Interactive physics controllers are handled by leases, never through the host's player state.
             cLuxMultiplayerRemoteTriggerScope remoteTrigger(true,peer);
             ent->RunInteractCallbackFunc();return;
@@ -610,8 +664,31 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
     if(type==WorldEffect && mbReady) {
         tString error;if(!mpEffects->HandleMessage(0,data,error)) RejectPeer(0,error.empty()?"Invalid world effect update.":error);return;
     }
-    if((type==NativeGrant || type==NativeDiaryResult || type==EntityState || type==ItemRemoved) && mbReady) {
+    if((type==NativeGrant || type==NativeDiaryResult || type==EntityState || type==ItemRemoved || type==RopeState) && mbReady) {
         if(!mpEntities->HandleMessage(0,data)) RejectPeer(0,"Invalid entity update from host.");return;
+    }
+    if(type==ItemCallbacks && mbReady) {
+        const uint32_t epoch=r.U32(),count=r.U32();
+        if(count>4096) {RejectPeer(0,"Too many item callbacks.");return;}
+        struct Callback {tString name,item,entity;bool remove;};std::vector<Callback> callbacks;
+        for(uint32_t i=0;i<count && r.valid;++i) {
+            Callback c;c.name=r.String(4096);c.item=r.String(4096);c.entity=r.String(4096);
+            const uint8_t remove=r.U8();if(remove>1) r.valid=false;c.remove=remove!=0;callbacks.push_back(c);
+        }
+        const uint32_t combineCount=r.U32();std::vector<Callback> combinations;
+        if(combineCount>4096) {RejectPeer(0,"Too many item combinations.");return;}
+        for(uint32_t i=0;i<combineCount && r.valid;++i) {
+            Callback c;c.name=r.String(4096);c.item=r.String(4096);c.entity=r.String(4096);
+            const uint8_t remove=r.U8();if(remove>1) r.valid=false;c.remove=remove!=0;combinations.push_back(c);
+        }
+        if(!r.Done()) {RejectPeer(0,"Invalid item callbacks.");return;}
+        cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();
+        if(epoch!=mlMapEpoch || !map) return;
+        map->ClearUseItemCallbacks();
+        for(const auto& c:callbacks) map->AddUseItemCallback(c.name,c.item,c.entity,"",c.remove);
+        gpBase->mpInventory->ClearCombineCallbacks();
+        for(const auto& c:combinations) gpBase->mpInventory->AddCombineCallback(c.name,c.item,c.entity,"",c.remove);
+        return;
     }
     if(type==ScriptEffect && mbReady) {
         uint32_t epoch=r.U32();if(epoch!=mlMapEpoch) return;
@@ -747,6 +824,7 @@ void cLuxMultiplayer::Update(float dt) {
         std::vector<uint32_t> expired;
         for(auto& p:mPeers) {
             p.second.age+=dt;p.second.requestCooldown=std::max(0.0f,p.second.requestCooldown-dt);
+            p.second.interactionTokens=std::min(32.0f,p.second.interactionTokens+32.0f*dt);
             if(p.second.reliableSendFailed || (!p.second.ready && p.second.age>120)) expired.push_back(p.first);
             else SendMap(p.first,p.second);
         }
@@ -787,8 +865,9 @@ bool cLuxMultiplayer::RequestMapChange(const tString& map,const tString& start,c
     if(IsHost() && mbRemoteScriptTrigger && !mSettings.allowClientMapChanges) return false;
     if(!IsClient()) return true;
     if(!mSettings.allowClientMapChanges) {msStatus="The host has disabled client map changes.";return false;}
-    if(!mbReady || !SafeRelativePath(map)) return false;
-    Writer w(MapChangeRequest);w.U32(mlMapEpoch);w.String(map);w.String(start);w.String(a);w.String(b);Send(0,w.data,true);
+    const tString destination=AuthoredMapFilename(map);
+    if(!mbReady || destination.empty()) return false;
+    Writer w(MapChangeRequest);w.U32(mlMapEpoch);w.String(destination);w.String(start);w.String(a);w.String(b);Send(0,w.data,true);
     msStatus="Map change requested from host.";return false;
 }
 bool cLuxMultiplayer::RemotePlayerTouches(iLuxEntity* entity) {
@@ -796,6 +875,8 @@ bool cLuxMultiplayer::RemotePlayerTouches(iLuxEntity* entity) {
 }
 uint32_t cLuxMultiplayer::GetRemotePlayerTouching(iLuxEntity* entity) {
     if(!IsHost() || !mSettings.allPlayersTriggerScripts || !entity) return UINT32_MAX;
+    if(entity->GetEntityType()==eLuxEntityType_Area &&
+       static_cast<iLuxArea*>(entity)->GetAreaType()==eLuxAreaType_Insanity) return UINT32_MAX;
     for(const auto& p:mpWorld->GetRemotePlayers()) {
         if(p.second.age>2.0f || !(p.second.gameplay.flags&LuxWorldWire::PlayerAlive)) continue;
         cBoundingVolume bounds;bounds.SetSize(p.second.size);bounds.SetPosition(p.second.position);
@@ -823,6 +904,55 @@ bool cLuxMultiplayer::AllowObjectBreak(const tString& name) {
     if(IsClient()) return mbApplyingScriptEffect;
     if(IsHost()) {Writer w(ObjectBreak);w.U32(mlMapEpoch);w.String(name);BroadcastScriptEffect(w.data);}
     return true;
+}
+bool cLuxMultiplayer::RequestItemUse(const tString& item,const tString& entity,bool combine) {
+    if(!IsClient()) return true;
+    if(mbReady && mSettings.allPlayersTriggerScripts) {
+        Writer w(combine?ItemCombineRequest:ItemUseRequest);w.U32(mlMapEpoch);w.String(item);w.String(entity);Send(0,w.data,true);
+    }
+    return false;
+}
+bool cLuxMultiplayer::SyncItemCallbacks(uint32_t peer) {
+    if(!IsHost()) return true;
+    cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();if(!map) return true;
+    const auto& callbacks=map->GetUseItemCallbacks();
+    if(callbacks.size()>4096) return false;
+    Writer w(ItemCallbacks);w.U32(mlMapEpoch);w.U32(static_cast<uint32_t>(callbacks.size()));
+    for(const auto* c:callbacks) {w.String(c->msName);w.String(c->msItem);w.String(c->msEntity);w.U8(c->mbAutoDestroy);}
+    const auto& combinations=gpBase->mpInventory->GetCombineCallbacks();
+    if(combinations.size()>4096) return false;
+    w.U32(static_cast<uint32_t>(combinations.size()));
+    for(const auto* c:combinations) {w.String(c->msName);w.String(c->msItemA);w.String(c->msItemB);w.U8(c->mbAutoDestroy);}
+    if(w.data.size()>hpl::cNetworkTransport::MaxMessageBytes) return false;
+    if(peer==UINT32_MAX) {Broadcast(w.data,true);return true;}
+    return Send(peer,w.data,true);
+}
+void cLuxMultiplayer::RecordRemoteItem(uint32_t peer,const tString& item) {mRemoteItems[peer].insert(item);}
+void cLuxMultiplayer::RecordSharedItem(const tString& item) {
+    if(IsHost() && gpBase->mpInventory->GetItem(item)) mSharedScriptItems.insert(item);
+}
+void cLuxMultiplayer::ForgetRemoteItem(const tString& item) {
+    mSharedScriptItems.erase(item);
+    for(auto& inventory:mRemoteItems) inventory.second.erase(item);
+}
+bool cLuxMultiplayer::HasRemoteItem(const tString& item) const {
+    if(!IsHost()) return false;
+    if(mSharedScriptItems.count(item)) return true;
+    if(mbRemoteScriptTrigger) {
+        auto inventory=mRemoteItems.find(mlScriptPlayerPeer);
+        return inventory!=mRemoteItems.end() && inventory->second.count(item)!=0;
+    }
+    for(const auto& inventory:mRemoteItems) if(inventory.second.count(item)) return true;
+    return false;
+}
+void cLuxMultiplayer::OnDraw(float dt) {
+    if(!IsActive() || !mbReady || !gpBase->mpMapHandler->MapIsLoaded()) return;
+    const tString container=gpBase->mpEngine->GetUpdater()->GetCurrentContainerName();
+    if(container!="MainMenu" && container!="Inventory" && container!="Journal") return;
+    // Hurt tint, sanity and flashes belong beneath the menu's dimming layer.
+    gpBase->mpPlayer->RunHelperMessage(eUpdateableMessage_OnDraw,dt);
+    gpBase->mpEffectHandler->OnDraw(dt);
+    gpBase->mpInsanityHandler->OnDraw(dt);
 }
 bool cLuxMultiplayer::AllowPhysicsJointBreak(iLuxProp* prop,iPhysicsJoint* joint) {
     return mpEntities->AllowPhysicsJointBreak(prop,joint);

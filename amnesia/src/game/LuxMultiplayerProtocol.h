@@ -8,14 +8,14 @@
 #include <vector>
 
 namespace luxnet {
-static const uint32_t ProtocolVersion = 9;
+static const uint32_t ProtocolVersion = 10;
 static const uint32_t MaxMapBytes = 16 * 1024 * 1024;
 static const uint32_t MapChunkBytes = 32 * 1024;
 enum Packet : uint8_t { Hello=1, MapBegin, MapChunk, MapEnd, Ready, Reject,
     MapChangeRequest, ScriptEffect, EntityInteract, ObjectBreak,
     NativeRequest, NativeGrant, NativeResult, EntityState, ItemRemoved, MapRequest,
     MapPreparing, MapCancelled, NativeDiaryResult, WorldEffect, JointBreakRequest,
-    EnemyState, EnemyRemoved, EnemyDamage, EnemyTerror, EnemyStimulus };
+    EnemyState, EnemyRemoved, EnemyDamage, EnemyTerror, EnemyStimulus, ItemUseRequest, RopeState, ItemCallbacks, ItemCombineRequest };
 
 struct Writer {
     std::vector<uint8_t> data;
@@ -58,6 +58,20 @@ inline bool SafeRelativePath(const std::string& path) {
         }
     }
     return true;
+}
+// Authored level doors can retain an editor's absolute path. Only the map
+// filename identifies the destination; never use this to sanitize peer paths.
+inline std::string AuthoredMapFilename(const std::string& path) {
+    if(path.empty() || path.find('\0')!=std::string::npos) return "";
+    const size_t slash=path.find_last_of("/\\");
+    std::string name=path.substr(slash==std::string::npos?0:slash+1);
+    if(!SafeRelativePath(name)) return "";
+    const size_t extension=name.find_last_of('.');
+    if(extension!=std::string::npos) name.resize(extension);
+    if(name.empty()) return "";
+    name+=".map";
+    for(char& ch:name) if(ch>='A' && ch<='Z') ch=char(ch-'A'+'a');
+    return name;
 }
 }
 #endif

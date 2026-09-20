@@ -140,6 +140,9 @@ namespace LuxWorldWire
         float matrix[12]; // 3 rows of a rigid affine transform; last row is 0,0,0,1.
         float linear[3], angular[3];
         uint8_t flags;
+        uint8_t wheel = 0;
+        float wheelAngle = 0;
+        uint8_t wheelStuck = 1; // -1, 0, 1 encoded as 0, 1, 2.
     };
 
     inline void WriteBody(Writer& writer, const Body& body)
@@ -149,6 +152,8 @@ namespace LuxWorldWire
         for (int i = 0; i < 3; ++i) writer.F32(body.linear[i]);
         for (int i = 0; i < 3; ++i) writer.F32(body.angular[i]);
         writer.U8(body.flags);
+        writer.U8(body.wheel);
+        if(body.wheel) {writer.F32(body.wheelAngle);writer.U8(body.wheelStuck);}
     }
 
     inline Body ReadBody(Reader& reader)
@@ -158,6 +163,12 @@ namespace LuxWorldWire
         for (int i = 0; i < 3; ++i) body.linear[i] = reader.F32(150.0f);
         for (int i = 0; i < 3; ++i) body.angular[i] = reader.F32(150.0f);
         body.flags = reader.U8();
+        body.wheel = reader.U8();
+        if(body.wheel>1) reader.valid=false;
+        if(body.wheel) {
+            body.wheelAngle=reader.F32(100000.0f);body.wheelStuck=reader.U8();
+            if(body.wheelStuck>2) reader.valid=false;
+        }
         if (body.flags & ~(Awake | Active | Gravity | Collide | CollideCharacter)) reader.valid = false;
         // Reject scaled, singular or reflected matrices before Newton sees them.
         for (int row = 0; row < 3; ++row)

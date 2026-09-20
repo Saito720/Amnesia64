@@ -211,19 +211,7 @@ bool cScriptResourceValidation::Read(luxnet::Reader& r) {
         if(!r.Done()) return false;
         return resources.Invoke([&] { cLuxScriptHandler::SetInsanitySetEnabled(asSet, abX); });
     }
-    case 26: { // StartRandomInsanityEvent
-        if(!r.Done()) return false;
-        return resources.Invoke([&] { cLuxScriptHandler::StartRandomInsanityEvent(); });
-    }
-    case 27: { // StartInsanityEvent
-        std::string asEventName = r.String(4096);
-        if(!r.Done()) return false;
-        return resources.Invoke([&] { cLuxScriptHandler::StartInsanityEvent(asEventName); });
-    }
-    case 28: { // StopCurrentInsanityEvent
-        if(!r.Done()) return false;
-        return resources.Invoke([&] { cLuxScriptHandler::StopCurrentInsanityEvent(); });
-    }
+    // 26-28 are reserved: insanity event playback is local to each player.
     case 29: { // PlayGuiSound
         std::string asSoundEntFile = r.String(4096);
         float afVolume = r.Float();

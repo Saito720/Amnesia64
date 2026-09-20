@@ -93,6 +93,15 @@ int main()
     assert(!Newer(42, 42));
     assert(!Newer(0x80000000, 0));
     std::vector<Body> bodies;
+    Body wheel=Sample();wheel.wheel=1;wheel.wheelAngle=25.0f;
+    const auto wheelBytes=Encode(wheel);
+    assert(Decode(wheelBytes,bodies) && bodies[0].wheel && bodies[0].wheelAngle==25.0f);
+    for(size_t length=0;length<wheelBytes.size();++length)
+        assert(!Decode(std::vector<uint8_t>(wheelBytes.begin(),wheelBytes.begin()+length),bodies));
+    wheel.wheelAngle=std::numeric_limits<float>::quiet_NaN();assert(!Decode(Encode(wheel),bodies));
+    wheel.wheelAngle=100001;assert(!Decode(Encode(wheel),bodies));
+    wheel.wheel=2;wheel.wheelAngle=1;assert(!Decode(Encode(wheel),bodies));
+    wheel.wheel=1;wheel.wheelStuck=3;assert(!Decode(Encode(wheel),bodies));
     std::vector<uint8_t> bytes = Encode(Sample());
     assert(bytes[1] == 0x78 && bytes[2] == 0x56 && bytes[3] == 0x34 && bytes[4] == 0x12);
     assert(Decode(bytes, bodies) && bodies.size() == 1);

@@ -62,6 +62,9 @@ namespace hpl {
 		// General
 		void UpdateBeforeSimulate(float afTimeStep);
 		void UpdateAfterSimulate(float afTimeStep);
+        // Network followers animate the rope but cannot push authoritative bodies.
+        void SetApplyForces(bool abX) { mbApplyForces[0]=mbApplyForces[1]=abX; }
+        void SetAttachmentForces(int index,bool enabled) { mbApplyForces[index]=enabled; }
 
 		void RemoveAttachedBody(iPhysicsBody *apBody, bool abRemoveContainerFromBody=true);
 
@@ -201,6 +204,7 @@ namespace hpl {
 		float mfStiffness;
 		
 		bool mbHasUpdated;
+        bool mbApplyForces[2]={true,true};
 	};
 };
 #endif // HPL_PHYSICS_ROPE_H

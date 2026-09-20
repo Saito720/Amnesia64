@@ -18,6 +18,8 @@
  */
 
 #include "LuxProp_Wheel.h"
+#include "LuxMultiplayer.h"
+#include "LuxMultiplayerWorld.h"
 
 #include "LuxPlayer.h"
 #include "LuxPlayerState.h"
@@ -242,6 +244,17 @@ void cLuxProp_Wheel::OnSetupAfterLoad(cWorld *apWorld)
 void cLuxProp_Wheel::UpdatePropSpecific(float afTimeStep)
 {
 	if(!mpHingeJoint) return;
+    if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive() &&
+       !gpBase->mpMultiplayer->GetWorld()->HasSimulationAuthority(mpWheelBody)) {
+        // A corrected hinge pose is not a local turn. Keep the angle unwrap
+        // baseline current for a later ownership handoff.
+        mfPrevJointAngle=mpHingeJoint->GetAngle();
+        return;
+    }
+    // Newton refreshes its hinge angle on simulation, not SetMatrix. Rebase on
+    // the first local update after a handoff rather than counting that correction
+    // a second time as player input.
+    if(mbNetworkAnglePending) {mfPrevJointAngle=mpHingeJoint->GetAngle();mbNetworkAnglePending=false;}
 	if(mfStuckSoundTimer >0) mfStuckSoundTimer-=afTimeStep; 
 
 	UpdateAngle(afTimeStep);
@@ -254,6 +267,22 @@ void cLuxProp_Wheel::UpdatePropSpecific(float afTimeStep)
 void cLuxProp_Wheel::OnPropJointDestroyed(iPhysicsJoint *apJoint)
 {
 	if(mpHingeJoint==apJoint) mpHingeJoint=NULL;
+}
+void cLuxProp_Wheel::ApplyNetworkAngle(float angle,int stuck)
+{
+    if(!mpHingeJoint) return;
+    mfPrevAngle=mfAngle;
+    mfAngle=(mfMinLimit==0 && mfMaxLimit==0)?angle:cMath::Clamp(angle,mfMinLimit,mfMaxLimit);
+    mfPrevJointAngle=mpHingeJoint->GetAngle();
+    mbNetworkAnglePending=true;
+    ResetAutoMove();
+    if(gpBase->mpMultiplayer->IsHost()) {
+        if(mfMinLimit!=0 || mfMaxLimit!=0) InteractConnectionTurn(mfAngle,mfPrevAngle,mfMinLimit,mfMaxLimit);
+        UpdateCheckLimit(0);
+    }
+    mlStuckState=stuck;
+    mfLastToMax=cMath::Max(mfLastToMax,mfAngle);
+    mfLastToMin=cMath::Min(mfLastToMin,mfAngle);
 }
 
 //-----------------------------------------------------------------------

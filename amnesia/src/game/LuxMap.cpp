@@ -1006,6 +1006,7 @@ void cLuxMap::AddUseItemCallback(	const tString& asName, const tString& asItem, 
 	pCallback->mbAutoDestroy = abAutoCallback;
 	
 	mlstUseItemCallbacks.push_back(pCallback);
+    if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->SyncItemCallbacks();
 }
 
 void cLuxMap::RemoveUseItemCallback( const tString& asName)
@@ -1019,6 +1020,7 @@ void cLuxMap::RemoveUseItemCallback( const tString& asName)
 		{
 			hplDelete(pCallback);
 			mlstUseItemCallbacks.erase(it);
+			if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->SyncItemCallbacks();
 			return;
 		}
 	}
@@ -1043,6 +1045,7 @@ void cLuxMap::RemoveUseItemCallback(cLuxUseItemCallback * apCallback, const tStr
 
 			hplDelete(apCallback);
 			mlstUseItemCallbacks.erase(it);
+			if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->SyncItemCallbacks();
 			break;
 		}
 	}

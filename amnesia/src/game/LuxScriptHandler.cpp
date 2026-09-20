@@ -1282,19 +1282,16 @@ void __stdcall cLuxScriptHandler::SetInsanitySetEnabled(string& asSet, bool abX)
 
 void __stdcall cLuxScriptHandler::StartRandomInsanityEvent()
 {
-    cLuxMultiplayerScriptScope networkEffect(26);
 	gpBase->mpInsanityHandler->StartEvent();
 }
 
 void __stdcall cLuxScriptHandler::StartInsanityEvent(string& asEventName)
 {
-    cLuxMultiplayerScriptScope networkEffect(27, asEventName);
 	gpBase->mpInsanityHandler->StartEvent(asEventName);
 }
 
 void __stdcall cLuxScriptHandler::StopCurrentInsanityEvent()
 {
-    cLuxMultiplayerScriptScope networkEffect(28);
 	gpBase->mpInsanityHandler->StopCurrentEvent();
 }
 
@@ -1941,6 +1938,7 @@ void __stdcall cLuxScriptHandler::GiveItem(string& asName, string& asType, strin
     cLuxMultiplayerScriptScope networkEffect(80, asName, asType, asSubTypeName, asImageName, afAmount);
 	eLuxItemType type = gpBase->mpInventory->GetItemTypeFromString(asType);
 	gpBase->mpInventory->AddItem(asName,type,asSubTypeName,asImageName, afAmount, "", "");
+    if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->RecordSharedItem(asName);
 }
 
 //-----------------------------------------------------------------------
@@ -1963,6 +1961,7 @@ void __stdcall cLuxScriptHandler::GiveItemFromFile(string& asName, string& asFil
 			{
 				cLuxProp_Item *pItem = static_cast<cLuxProp_Item*>(pProp);
 				gpBase->mpInventory->AddItem(	asName, pItem->GetItemType(), pItem->GetSubItemTypeName(), pItem->GetImageFile(), pItem->GetAmount(), "", "");
+                if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->RecordSharedItem(asName);
 			}
 		}
 		
@@ -1975,12 +1974,17 @@ void __stdcall cLuxScriptHandler::GiveItemFromFile(string& asName, string& asFil
 void __stdcall cLuxScriptHandler::RemoveItem(string& asName)
 {
     cLuxMultiplayerScriptScope networkEffect(82, asName);
+    if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->ForgetRemoteItem(asName);
 	gpBase->mpInventory->RemoveItem(asName);
 }
 
 bool __stdcall cLuxScriptHandler::HasItem(string& asName)
 {
-	return gpBase->mpInventory->GetItem(asName)!=NULL;
+    if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsHost() &&
+       gpBase->mpMultiplayer->GetScriptPlayerPeer()!=gpBase->mpMultiplayer->GetLocalPeerId())
+        return gpBase->mpMultiplayer->HasRemoteItem(asName);
+	return gpBase->mpInventory->GetItem(asName)!=NULL ||
+        (gpBase->mpMultiplayer && gpBase->mpMultiplayer->HasRemoteItem(asName));
 }
 
 //-----------------------------------------------------------------------

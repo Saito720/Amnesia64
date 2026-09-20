@@ -20,6 +20,7 @@ public:
     void Update(float dt);
     void OnPeerDisconnected(uint32_t peer);
     bool SendInitialState(uint32_t peer);
+    void SyncRopes(uint32_t peer=UINT32_MAX);
     bool SeedCurrentMapItems(const std::vector<uint8_t>& mapBytes, std::string& error);
     bool HandleMessage(uint32_t peer, const std::vector<uint8_t>& data);
     bool AllowPhysicsJointBreak(iLuxProp* prop,hpl::iPhysicsJoint* joint);
@@ -41,6 +42,7 @@ private:
     cLuxMultiplayer* mpSession;
     std::map<std::string, Claim> mClaims;
     std::map<std::string, std::vector<uint8_t> > mLastStates;
+    std::map<std::string, std::vector<uint8_t> > mLastRopes;
     std::map<std::string, uint64_t> mRemovedItems;
     std::map<std::pair<uint64_t,uint32_t>,uint32_t> mJointBreakRequests;
     std::map<uint32_t, std::deque<std::string> > mInitial;

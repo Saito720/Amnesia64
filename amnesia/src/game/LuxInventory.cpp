@@ -324,6 +324,7 @@ bool cLuxInventory_Slot::OnMouseUp(iWidget* apWidget, const cGuiMessageData& aDa
 			cLuxCombineItemsCallback *pComb = mpInventory->GetCombineCallback(pItem->GetName(), pPickedItem->GetName());
 			if(pComb)
 			{
+                if(gpBase->mpMultiplayer && !gpBase->mpMultiplayer->RequestItemUse(pItem->GetName(),pPickedItem->GetName(),true)) return true;
 				bool bAutoDestroy = pComb->mbAutoDestroy;
 				tString sCombName = pComb->msName;
 				mpInventory->RunScript(pComb->msFunction+ "(\"" + pComb->msItemA + "\", \"" + pComb->msItemB + "\")" );
@@ -338,6 +339,7 @@ bool cLuxInventory_Slot::OnMouseUp(iWidget* apWidget, const cGuiMessageData& aDa
 						{
 							mpInventory->mlstCombineCallbacks.erase(combIt);
 							hplDelete(pComb);
+                            if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->SyncItemCallbacks();
 							break;
 						}
 					}
@@ -1293,18 +1295,20 @@ void cLuxInventory::AddCombineCallback(	const tString& asName,
 	pCombCallback->mbAutoDestroy = abAutoDestroy;
 
 	mlstCombineCallbacks.push_back(pCombCallback);
+    if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->SyncItemCallbacks();
 }
 
 void cLuxInventory::RemoveCombineCallback(const tString& asName)
 {
 	tLuxCombineItemsCallbackListIt it = mlstCombineCallbacks.begin(); 
-	for(; it != mlstCombineCallbacks.begin(); ++it)
+	for(; it != mlstCombineCallbacks.end(); ++it)
 	{
 		cLuxCombineItemsCallback *pCombCallback = *it;
         if(pCombCallback->msName == asName)
 		{
 			hplDelete(pCombCallback);
 			mlstCombineCallbacks.erase(it);
+            if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->SyncItemCallbacks();
 			return;
 		}
 	}
@@ -1333,6 +1337,7 @@ cLuxCombineItemsCallback*  cLuxInventory::GetCombineCallback(const tString& asIt
 
 void cLuxInventory::RunScript(const tString& asCommand)
 {
+    if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return;
 	if(mpScript==NULL) return;
 
     mpScript->Run(asCommand);

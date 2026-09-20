@@ -401,7 +401,8 @@ void iLuxProp::OnUpdate(float afTimeStep)
 	for(size_t i=0; i<mvInteractConnections.size(); ++i)
 	{
 		mvInteractConnections[i]->Update(afTimeStep);
-		mvInteractConnections[i]->UpdateProp(afTimeStep);
+        if(!gpBase->mpMultiplayer || !gpBase->mpMultiplayer->IsClient())
+		    mvInteractConnections[i]->UpdateProp(afTimeStep);
 	}
 
 	//////////////////////
@@ -948,6 +949,7 @@ void iLuxProp::DestroyInteractConnection(iLuxInteractConnection *apConnection)
 
 void iLuxProp::InteractConnectionLimit(int alState)
 {
+    if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return;
 	for(size_t i=0; i<mvInteractConnections.size(); ++i)
 	{
 		iLuxInteractConnection *pConnection = mvInteractConnections[i];
@@ -960,6 +962,7 @@ void iLuxProp::InteractConnectionLimit(int alState)
 
 void iLuxProp::InteractConnectionTurn(float afAngle, float afPrevAngle, float afMinAngle, float afMaxAngle)
 {
+    if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return;
 	//if(abs(afAngle - afPrevAngle) < 0.001f) return;
 
 	float fT = (afAngle-afMinAngle)/(afMaxAngle - afMinAngle);

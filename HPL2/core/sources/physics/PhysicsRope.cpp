@@ -466,6 +466,7 @@ namespace hpl {
 	{
 		for(int i=0; i<2; ++i)
 		{
+            if(!mbApplyForces[i]) { mForcePid[i].Reset(); continue; }
 			if(mvAttachedBody[i].mpBody==NULL) continue;
 
 			//Log("%s Updating body %d\n",msName.c_str() ,i);

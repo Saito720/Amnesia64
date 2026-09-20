@@ -3,6 +3,27 @@
 #include "LuxMultiplayerProtocol.h"
 
 namespace luxnet {
+struct RopeSnapshot {
+    uint32_t epoch=0;
+    std::string name;
+    float length=0,min=0,max=0,wanted=0,mul=0,minSpeed=0,maxSpeed=0,speed=0,acc=0,maxAuto=0;
+    uint8_t motor=0,autoMove=0;
+};
+inline std::vector<uint8_t> WriteRope(const RopeSnapshot& s) {
+    Writer w(RopeState);w.U32(s.epoch);w.String(s.name);
+    w.Float(s.length);w.Float(s.min);w.Float(s.max);w.U8(s.motor);w.U8(s.autoMove);
+    w.Float(s.wanted);w.Float(s.mul);w.Float(s.minSpeed);w.Float(s.maxSpeed);
+    w.Float(s.speed);w.Float(s.acc);w.Float(s.maxAuto);return w.data;
+}
+inline bool ReadRope(Reader& r,RopeSnapshot& s) {
+    s.epoch=r.U32();s.name=r.String(256);s.length=r.Float();s.min=r.Float();s.max=r.Float();
+    s.motor=r.U8();s.autoMove=r.U8();s.wanted=r.Float();s.mul=r.Float();s.minSpeed=r.Float();s.maxSpeed=r.Float();
+    s.speed=r.Float();s.acc=r.Float();s.maxAuto=r.Float();
+    if(!r.Done() || s.name.empty() || s.motor>1 || s.autoMove>1 || s.min<0 || s.max<s.min || s.length<0) return false;
+    for(float value:{s.length,s.min,s.max,s.wanted,s.mul,s.minSpeed,s.maxSpeed,s.speed,s.acc,s.maxAuto})
+        if(std::fabs(value)>100000) return false;
+    return true;
+}
 enum EntityKind : uint8_t { PropState=0, LampState, DoorState };
 enum EntityFlags : uint8_t { EntityActive=1, InteractionDisabled=2, EffectsActive=4, StaticPhysics=8 };
 // kind 0 is a deleted authored joint slot; live hinge/slider states are 1/2.

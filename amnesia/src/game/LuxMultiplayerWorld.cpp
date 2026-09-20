@@ -7,6 +7,9 @@
 #include "LuxInputHandler.h"
 #include "LuxProp.h"
 #include "LuxProp_SwingDoor.h"
+#include "LuxProp_Wheel.h"
+#include "physics/PhysicsRope.h"
+#include "scene/RopeEntity.h"
 #include "LuxEnemy.h"
 #include "LuxPlayerHelpers.h"
 #include "LuxMultiplayerProtocol.h"
@@ -17,6 +20,13 @@ using namespace LuxWorldWire;
 
 namespace
 {
+    cLuxProp_Wheel* BodyWheel(iPhysicsBody* body) {
+        auto* entity=body?static_cast<iLuxEntity*>(body->GetUserData()):NULL;
+        if(!entity || entity->GetEntityType()!=eLuxEntityType_Prop ||
+           static_cast<iLuxProp*>(entity)->GetPropType()!=eLuxPropType_Wheel) return NULL;
+        auto* wheel=static_cast<cLuxProp_Wheel*>(entity);
+        return wheel->GetWheelBody()==body?wheel:NULL;
+    }
     const float SnapshotStep = 1.0f / 20.0f;
     const float LeaseDuration = 2.0f;
     const float ContactGrace = 1.0f;
@@ -74,6 +84,7 @@ namespace
     }
     bool Changed(const Body& a, const Body& b)
     {
+        if(a.wheel!=b.wheel || a.wheelStuck!=b.wheelStuck || std::fabs(a.wheelAngle-b.wheelAngle)>0.0001f) return true;
         if (a.flags != b.flags) return true;
         for (int i = 0; i < 12; ++i) if (std::fabs(a.matrix[i] - b.matrix[i]) > 0.002f) return true;
         for (int i = 0; i < 3; ++i)
@@ -135,6 +146,10 @@ void cLuxMultiplayerWorld::Shutdown()
             gpBase->mpPlayer->ChangeState(eLuxPlayerState_Normal);
         ReleaseInteraction();
         while (!mLeases.empty()) EndLease(mLeases.begin()->first, false);
+        if(mpMap->GetWorld()) {
+            auto ropes=mpMap->GetWorld()->GetRopeEntityIterator();
+            while(ropes.HasNext()) ropes.Next()->GetPhysicsRope()->SetApplyForces(true);
+        }
     }
     Reset();
 }
@@ -142,6 +157,16 @@ void cLuxMultiplayerWorld::Shutdown()
 void cLuxMultiplayerWorld::RefreshBodies()
 {
     if (!mpMap || !mpMap->GetPhysicsWorld()) return;
+    if(mpMap->GetWorld()) {
+        auto ropes=mpMap->GetWorld()->GetRopeEntityIterator();
+        while(ropes.HasNext()) {
+            auto* rope=ropes.Next()->GetPhysicsRope();
+            for(int i=0;i<2;++i) {
+                auto* body=i?rope->GetAttachedEndBody():rope->GetAttachedStartBody();
+                rope->SetAttachmentForces(i,!body || HasSimulationAuthority(body));
+            }
+        }
+    }
     std::set<uint64_t> present;
     std::set<uint64_t> collisions;
     cPhysicsBodyIterator iterator = mpMap->GetPhysicsWorld()->GetBodyIterator();
@@ -210,6 +235,7 @@ iPhysicsBody* cLuxMultiplayerWorld::FindBody(uint64_t alId) const
 Body cLuxMultiplayerWorld::CaptureBody(uint64_t alId, iPhysicsBody* apBody) const
 {
     Body state = {};
+    if(auto* wheel=BodyWheel(apBody)) {state.wheel=1;state.wheelAngle=wheel->GetAngle();state.wheelStuck=uint8_t(wheel->GetStuckState()+1);}
     state.id = alId;
     const cMatrixf& matrix = apBody->GetLocalMatrix();
     for (int i = 0; i < 12; ++i) state.matrix[i] = matrix.v[i];
@@ -440,6 +466,7 @@ void cLuxMultiplayerWorld::ApplyBody(const Body& aState, uint32_t alSequence, bo
     const bool initial = !track.received;
     track.received = true; track.receivedSequence = alSequence;
     if (!abFromOwner && OwnsSimulation(body)) return;
+    if(aState.wheel) if(auto* wheel=BodyWheel(body)) wheel->ApplyNetworkAngle(aState.wheelAngle,int(aState.wheelStuck)-1);
     track.target = aState; track.targetAge = 0; track.hasTarget = true;
     body->SetActive((aState.flags & Active) != 0);
     body->SetGravity((aState.flags & Gravity) != 0);
@@ -673,6 +700,13 @@ void cLuxMultiplayerWorld::OnLocalPlayerRespawn()
     if(gpBase->mpPlayer) gpBase->mpPlayer->SetTerror(0);
     // Send the new life on the next tick, before normal snapshot cadence.
     mfSendTime=SnapshotStep;
+}
+bool cLuxMultiplayerWorld::HasSimulationAuthority(iPhysicsBody* body) const
+{
+    uint32_t owner=0,token=0;
+    if(!mpSession->IsActive()) return true;
+    if(!GetSimulationLease(body,owner,token)) return mpSession->IsHost();
+    return owner==mpSession->GetLocalPeerId();
 }
 
 void cLuxMultiplayerWorld::DamageEnemyPlayer(uint32_t peer,float amount,int strength,eLuxDamageType type,bool lethal,const cVector3f& force)
@@ -1205,6 +1239,10 @@ bool cLuxMultiplayerWorld::GrantLease(uint32_t alPeer, uint64_t alBody, uint32_t
         if (!door->GetLocked()) door->SetClosed(false, true);
         door->SetDisableAutoClose(false);
     }
+    if(!abContact && prop && prop->GetPropType()==eLuxPropType_Wheel) {
+        auto* wheel=static_cast<cLuxProp_Wheel*>(prop);
+        if(wheel->GetInteractionDisablesStuck(false)) wheel->SetStuckState(0,true);
+    }
     SendLease(lease, alRequest, 0, true);
     return true;
 }
@@ -1363,6 +1401,7 @@ bool cLuxMultiplayerWorld::HandleMessage(uint32_t alPeer, const std::vector<uint
             {
                 std::map<uint64_t, uint32_t>::iterator lock = mBodyLeases.find(states[i].id);
                 if (lock == mBodyLeases.end() || lock->second != token) return false;
+                if((BodyWheel(FindBody(states[i].id))!=NULL)!=(states[i].wheel!=0)) return false;
                 if (cMath::Vector3Dist(Position(states[i]), player->second.position) > 12) return true;
             }
             // A simulation stream is not evidence of continuing player contact.

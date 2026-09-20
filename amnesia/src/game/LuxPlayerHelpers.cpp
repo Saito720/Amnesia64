@@ -1953,9 +1953,16 @@ void cLuxPlayerDeath::Reset()
 
 void cLuxPlayerDeath::Start()
 {
-	if(mbActive) return;
+	// Health is restored in ResetGame before states 2/3 finish fading in.
+	// A new lethal hit during that recovery must start another death. Ignoring
+	// it leaves health <= 0 after the old fade ends, with no respawn pending.
+	if(mbActive && mlState != 2 && mlState != 3) return;
 
 	mbActive = true;
+	mfTextAlpha1 = 0;
+	mfTextAlpha2 = 0;
+	mfTextOnScreenCount = 0;
+	mfT = 0;
 
 	// Multiplayer keeps simulating behind menus. Death must leave their updater
 	// container as well as changing input, otherwise the dead player is trapped

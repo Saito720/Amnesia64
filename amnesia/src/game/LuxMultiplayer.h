@@ -44,6 +44,7 @@ public:
     void PreUpdate(float afTimeStep);
     void Update(float afTimeStep);
     void PostUpdate(float afTimeStep);
+    void OnDraw(float afFrameTime);
     void Reset();
     void OnQuit();
     void OnMapLeave(cLuxMap* apMap);
@@ -98,6 +99,12 @@ public:
     bool RemotePlayerTouches(iLuxEntity* entity);
     uint32_t GetRemotePlayerTouching(iLuxEntity* entity);
     bool RequestEntityInteraction(iLuxEntity* entity, iPhysicsBody* body, const cVector3f& pos);
+    bool RequestItemUse(const tString& item, const tString& entity, bool combine=false);
+    void RecordSharedItem(const tString& item);
+    bool SyncItemCallbacks(uint32_t peer=UINT32_MAX);
+    void RecordRemoteItem(uint32_t peer, const tString& item);
+    void ForgetRemoteItem(const tString& item);
+    bool HasRemoteItem(const tString& item) const;
     void BroadcastScriptEffect(const std::vector<uint8_t>& effect);
     bool AllowObjectBreak(const tString& name);
     bool AllowPhysicsJointBreak(iLuxProp* prop, iPhysicsJoint* joint);
@@ -116,8 +123,11 @@ private:
         bool greeted=false, ready=false, beginSent=false, endSent=false, transferRequested=false;
         uint32_t offset=0;
         float age=0, requestCooldown=0;
+        float interactionTokens=32;
         bool reliableSendFailed=false;
     };
+    std::map<uint32_t, std::set<tString> > mRemoteItems;
+    std::set<tString> mSharedScriptItems;
     void HandleEvent(const hpl::cNetworkEvent& event);
     void HandlePacket(uint32_t peer,const std::vector<uint8_t>& data);
     void SendMap(uint32_t peer,Peer& state);

@@ -16,6 +16,7 @@
 #define LUX_INPUT_HANDLER_H
 #define LUX_PROP_H
 #define LUX_PROP_SWING_DOOR_H
+#define LUX_PROP_WHEEL_H
 #define LUX_MULTIPLAYER_H
 #define LUX_ENEMY_H
 #define LUX_PLAYER_HELPERS_H
@@ -117,6 +118,17 @@ public:
     void SetDisableAutoClose(bool value) { disableAutoClose = value; }
 };
 struct cLuxMultiplayerSettings { bool playerCollision = false; };
+class cLuxProp_Wheel : public iLuxProp {
+public:
+    float angle=0;int stuck=1;bool unlock=true;
+    cLuxProp_Wheel() { type=eLuxPropType_Wheel; }
+    iPhysicsBody* GetWheelBody() const {return bodies.empty()?NULL:bodies[0];}
+    float GetAngle() {return angle;}
+    void ApplyNetworkAngle(float value,int state) {angle=value;stuck=state;}
+    int GetStuckState() {return stuck;}
+    bool GetInteractionDisablesStuck(bool) {return unlock;}
+    void SetStuckState(int value,bool) {stuck=value;}
+};
 class cLuxMultiplayer
 {
 public:
@@ -489,6 +501,58 @@ static void CheckDuplicateNamedDrawers()
     host.Activate(); assert(!host.replication.IsInteractionOwnedByOther(frames[0]));
 }
 
+static void CheckWheelState()
+{
+    cLuxProp_Wheel hostWheel,clientWheel;
+    Fixture host(true,0),client(false,1);
+    hostWheel.bodies.push_back(host.body);clientWheel.bodies.push_back(client.body);
+    host.body->SetUserData(&hostWheel);client.body->SetUserData(&clientWheel);
+    host.Activate();host.replication.OnMapLoaded(&host.map);
+    client.Activate();client.replication.OnMapLoaded(&client.map);
+    assert(host.replication.HasSimulationAuthority(host.body));
+    assert(!client.replication.HasSimulationAuthority(client.body));
+    // Multiple turns cannot be reconstructed from the rigid transform alone.
+    hostWheel.angle=25;
+    host.Activate();assert(host.replication.SendInitialState(1));host.replication.Update(0.01f);
+    Deliver(host,client);assert(clientWheel.angle==25);
+    host.Activate();assert(host.replication.HandleMessage(1,PosePacket(1,1,cVector3f(0))));
+    Writer request(LeaseRequest,7);request.U32(1);request.U64(BodyId("test_crate"));
+    assert(host.replication.HandleMessage(1,request.bytes));
+    uint32_t owner=0,token=0;assert(host.replication.GetSimulationLease(host.body,owner,token) && owner==1);
+    assert(hostWheel.stuck==0 && !host.replication.HasSimulationAuthority(host.body));
+    host.session.sent.clear();
+    auto turn=[&](uint32_t sequence,float angle) {
+        Body state={};state.id=BodyId("test_crate");state.matrix[0]=state.matrix[5]=state.matrix[10]=1;
+        state.flags=Awake|Active;state.wheel=1;state.wheelAngle=angle;
+        Writer packet(Bodies,7);packet.U32(sequence);packet.U32(token);packet.U8(0);packet.U8(1);WriteBody(packet,state);
+        return packet.bytes;
+    };
+    assert(host.replication.HandleMessage(1,turn(100,31)) && hostWheel.angle==31);
+    Deliver(host,client);assert(clientWheel.angle==31);
+    host.Activate();assert(host.replication.HandleMessage(1,turn(99,10)) && hostWheel.angle==31);
+    Writer release(LeaseRelease,7);release.U32(token);release.U8(1);
+    assert(host.replication.HandleMessage(1,release.bytes));
+    assert(host.replication.HasSimulationAuthority(host.body) && hostWheel.angle==31);
+    assert(host.replication.HandleMessage(1,turn(101,40)) && hostWheel.angle==31);
+    std::cout << "Wheel state: multi-turn late join, owner relay, stale packets, unlock and authority handoff passed.\n";
+}
+static void CheckRopeForceAuthority()
+{
+    Fixture follower(false,1);
+    follower.body->SetPosition(cVector3f(0,-2,0));
+    auto* rope=follower.physics.CreateRope("rope",cVector3f(0),cVector3f(0,-2,0));
+    rope->SetAttachedEndBody(follower.body);
+    follower.body->SetPosition(cVector3f(0,-4,0));
+    rope->SetApplyForces(false);
+    for(int i=0;i<5;++i) {rope->UpdateBeforeSimulate(1.0f/60);follower.physics.Simulate(1.0f/60);}
+    assert(follower.body->GetLinearVelocity().Length()<0.0001f);
+    // Enabling the authoritative endpoint restores the physical rope tension.
+    rope->SetAttachmentForces(1,true);
+    for(int i=0;i<5;++i) {rope->UpdateBeforeSimulate(1.0f/60);follower.physics.Simulate(1.0f/60);}
+    assert(follower.body->GetLinearVelocity().y>0.001f);
+    std::cout << "Rope authority: visual follower applies no tension; authoritative endpoint restores tension.\n";
+}
+
 int main()
 {
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
@@ -501,6 +565,8 @@ int main()
     CheckDuplicateNamedDrawers();
     CheckContactOwnership();
     CheckSmoothCorrections();
+    CheckWheelState();
+    CheckRopeForceAuthority();
     Fixture host(true, 0), client(false, 1);
     client.body->SetPosition(cVector3f(20, 0, 0));
     host.Activate(); host.session.blocked = true;

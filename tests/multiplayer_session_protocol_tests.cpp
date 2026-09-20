@@ -239,6 +239,29 @@ static void CheckMapHashes() {
     std::string embedded=textHash("abc");embedded[32]='\0';assert(!ValidMapHash(embedded));
 }
 int main() {
+    const std::string destination="26_torture_nave_redux.map";
+    assert(AuthoredMapFilename("G:/amnesia/redist/maps/main/ch03/26_torture_nave_redux.map")==destination);
+    assert(AuthoredMapFilename("G:\\amnesia\\redist\\maps\\main\\ch03\\26_TORTURE_NAVE_REDUX.MAP")==destination);
+    assert(AuthoredMapFilename("main/ch03/26_torture_nave_redux")==destination);
+    assert(AuthoredMapFilename(destination)==destination);
+    for(const auto& path:{std::string(""),std::string("G:/maps/"),std::string(".."),std::string(".map"),std::string("bad:map"),std::string("map\0x",5)})
+        assert(AuthoredMapFilename(path).empty());
+    // Network requests must already be canonical filenames, even though local
+    // authored references may contain editor paths.
+    assert(AuthoredMapFilename("../"+destination)!="../"+destination);
+    assert(!SafeRelativePath("G:/maps/"+destination));
+    RopeSnapshot rope;rope.epoch=7;rope.name="rope";rope.length=5;rope.min=1;rope.max=10;
+    rope.motor=1;rope.wanted=3;rope.mul=8;rope.minSpeed=2;rope.maxSpeed=2;
+    const auto ropeBytes=WriteRope(rope);
+    auto validRope=[](const std::vector<uint8_t>& bytes) {Reader r(bytes);RopeSnapshot s;return ReadRope(r,s);};
+    Reader ropeReader(ropeBytes);RopeSnapshot restored;
+    assert(ReadRope(ropeReader,restored) && WriteRope(restored)==ropeBytes);
+    for(size_t length=0;length<ropeBytes.size();++length)
+        assert(!validRope(std::vector<uint8_t>(ropeBytes.begin(),ropeBytes.begin()+length)));
+    auto badRope=rope;badRope.max=0;assert(!validRope(WriteRope(badRope)));
+    badRope=rope;badRope.motor=2;assert(!validRope(WriteRope(badRope)));
+    badRope=rope;badRope.speed=std::numeric_limits<float>::infinity();assert(!validRope(WriteRope(badRope)));
+    badRope=rope;badRope.length=-1;assert(!validRope(WriteRope(badRope)));
     CheckMapHashes();
     CheckPlayerTriggerOrigins();
     CheckNativeEntityStates();

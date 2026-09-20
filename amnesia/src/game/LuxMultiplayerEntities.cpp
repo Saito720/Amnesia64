@@ -13,11 +13,14 @@
 #include "LuxProp_SwingDoor.h"
 #include "physics/PhysicsJointHinge.h"
 #include "physics/PhysicsJointSlider.h"
+#include "physics/PhysicsRope.h"
+#include "scene/RopeEntity.h"
 
 using namespace luxnet;
 
 cLuxMultiplayerEntities::cLuxMultiplayerEntities(cLuxMultiplayer* session):mpSession(session) { Reset(); }
 void cLuxMultiplayerEntities::Reset() {
+    mLastRopes.clear();
     mClaims.clear();mLastStates.clear();mRemovedItems.clear();mInitial.clear();mJointBreakRequests.clear();
     mPendingDiaries.clear();mpDiaryDecision=NULL;
     msPending.clear();msGranted.clear();mlToken=mlGrantedToken=0;
@@ -125,6 +128,10 @@ bool cLuxMultiplayerEntities::Commit(iLuxEntity* entity,bool remote,bool callbac
         ~DecisionScope() {slot=previous;}
     } decision(mpDiaryDecision,remote && item && diaryIndex>=0?&openDiary:NULL);
     if(item) {
+        // Consumables may be used locally or merged into a stack under another
+        // name; the persistent script ledger tracks puzzle inventory only.
+        if(remote && static_cast<cLuxProp_Item*>(entity)->GetItemType()==eLuxItemType_Puzzle)
+            mpSession->RecordRemoteItem(peer,entity->GetName());
         mRemovedItems[entity->GetName()]=entity->GetRuntimeID();
         entity->GetMap()->DestroyEntity(entity);
         Writer w(ItemRemoved);w.U32(mpSession->GetMapEpoch());w.String(entity->GetName());
@@ -148,6 +155,7 @@ bool cLuxMultiplayerEntities::Commit(iLuxEntity* entity,bool remote,bool callbac
     return openDiary;
 }
 void cLuxMultiplayerEntities::OnPeerDisconnected(uint32_t peer) {
+    mpSession->mRemoteItems.erase(peer);
     mInitial.erase(peer);
     for(auto it=mClaims.begin();it!=mClaims.end();) {
         if(it->second.peer==peer) it=mClaims.erase(it);else ++it;
@@ -230,6 +238,10 @@ bool cLuxMultiplayerEntities::Apply(const std::vector<uint8_t>& data) {
     for(const auto& j:state.joints) {
         auto* joint=prop->mvJoints[j.index];
         if(!joint || j.kind==0) continue;
+        // A wheel's current owner computes its changing angular constraints.
+        if(prop->GetPropType()==eLuxPropType_Wheel &&
+           mpSession->GetWorld()->IsEntityLeased(prop) &&
+           mpSession->GetWorld()->OwnsSimulation(prop->GetMainBody())) continue;
         if(j.kind==1) {
             auto* hinge=static_cast<iPhysicsJointHinge*>(joint);hinge->SetMinAngle(j.min);hinge->SetMaxAngle(j.max);
         } else {
@@ -246,6 +258,11 @@ void cLuxMultiplayerEntities::BroadcastState(iLuxEntity* entity) {
 }
 bool cLuxMultiplayerEntities::SendInitialState(uint32_t peer) {
     cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();if(!map) return false;
+    // Saved-map restoration runs after OnMapLoaded. Reconcile at the ready
+    // barrier against the restored host world, including every return visit.
+    std::string error;
+    if(!SeedCurrentMapItems(mpSession->mvMapBytes,error)) return false;
+    SyncRopes(peer);
     auto& queue=mInitial[peer];queue.clear();
     for(const auto& removed:mRemovedItems) queue.push_back(removed.first);
     auto it=map->GetEntityIterator();
@@ -290,6 +307,7 @@ void cLuxMultiplayerEntities::Update(float dt) {
     }
     mfGroundTruthTime+=dt;
     mfSnapshotTime+=dt;if(mfSnapshotTime<0.1f) return;mfSnapshotTime=0;
+    SyncRopes();
     const bool groundTruth=mfGroundTruthTime>=2;if(groundTruth) mfGroundTruthTime=0;
     auto it=map->GetEntityIterator();
     while(it.HasNext()) {
@@ -304,6 +322,17 @@ bool cLuxMultiplayerEntities::HandleMessage(uint32_t peer,const std::vector<uint
     Reader r(data);const uint8_t type=data[0];uint32_t epoch=r.U32();
     if(!r.valid) return false;
     if(epoch!=mpSession->GetMapEpoch()) return true;
+    if(type==RopeState && mpSession->IsClient()) {
+        Reader reader(data);RopeSnapshot s;if(!ReadRope(reader,s)) return false;
+        auto* map=gpBase->mpMapHandler->GetCurrentMap();
+        auto* rope=map?map->GetPhysicsWorld()->GetRope(s.name):NULL;
+        if(!rope) return true;
+        rope->SetMinTotalLength(s.min);rope->SetMaxTotalLength(s.max);rope->SetTotalLength(s.length);
+        rope->SetMotorWantedLength(s.wanted);rope->SetMotorSpeedMul(s.mul);
+        rope->SetMotorMinSpeed(s.minSpeed);rope->SetMotorMaxSpeed(s.maxSpeed);rope->SetMotorActive(s.motor!=0);
+        rope->SetAutoMoveAcc(s.acc);rope->SetAutoMoveMaxSpeed(s.maxAuto);rope->SetAutoMoveSpeed(s.speed);rope->SetAutoMoveActive(s.autoMove!=0);
+        return true;
+    }
     if(type==JointBreakRequest) {
         Reader requestReader(data);JointBreakState request;
         if(!mpSession->IsHost() || !ReadJointBreak(requestReader,request)) return false;
@@ -412,4 +441,22 @@ bool cLuxMultiplayerEntities::HandleMessage(uint32_t peer,const std::vector<uint
         return true;
     }
     return false;
+}
+void cLuxMultiplayerEntities::SyncRopes(uint32_t peer) {
+    auto* map=gpBase->mpMapHandler->GetCurrentMap();if(!map || !mpSession->IsHost()) return;
+    auto it=map->GetWorld()->GetRopeEntityIterator();
+    while(it.HasNext()) {
+        auto* rope=it.Next()->GetPhysicsRope();
+        RopeSnapshot s;s.epoch=mpSession->GetMapEpoch();s.name=rope->GetName();
+        s.length=rope->GetTotalLength();s.min=rope->GetMinTotalLength();s.max=rope->GetMaxTotalLength();
+        s.motor=rope->GetMotorActive();s.autoMove=rope->GetAutoMoveActive();
+        s.wanted=rope->GetMotorWantedLength();s.mul=rope->GetMotorSpeedMul();
+        s.minSpeed=rope->GetMotorMinSpeed();s.maxSpeed=rope->GetMotorMaxSpeed();
+        s.speed=rope->GetAutoMoveSpeed();s.acc=rope->GetAutoMoveAcc();s.maxAuto=rope->GetAutoMoveMaxSpeed();
+        const auto bytes=WriteRope(s);
+        if(peer!=UINT32_MAX) mpSession->Send(peer,bytes,true);
+        else if(mLastRopes[rope->GetName()]!=bytes) {
+            mLastRopes[rope->GetName()]=bytes;mpSession->Broadcast(bytes,true);
+        }
+    }
 }

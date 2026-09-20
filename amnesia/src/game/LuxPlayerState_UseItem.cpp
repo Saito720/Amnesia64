@@ -18,6 +18,7 @@
  */
 
 #include "LuxPlayerState_UseItem.h"
+#include "LuxMultiplayer.h"
 
 #include "LuxPlayer.h"
 #include "LuxInventory.h"
@@ -202,6 +203,7 @@ void cLuxPlayerState_UseItem::UseItem()
 		cLuxUseItemCallback *pCallback = pMap->GetUseItemCallback(mpCurrentItem->GetName(), pEntity->GetName());
 		if(pCallback)
 		{
+            if(gpBase->mpMultiplayer && !gpBase->mpMultiplayer->RequestItemUse(mpCurrentItem->GetName(),pEntity->GetName())) return;
             // Running the script MAY destroy this item so "Backup" the check flag.
             bool bAutoDestroy = pCallback->mbAutoDestroy;
 			tString sName = pCallback->msName;

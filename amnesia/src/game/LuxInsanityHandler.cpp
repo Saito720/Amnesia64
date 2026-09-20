@@ -70,7 +70,7 @@ void iLuxInstanityEvent::Start()
 										_W("set: '")+cString::To16Char(msSet)+_W("'") , false);
 
 	// Hallucinations are presented relative to this player's view, including
-	// when the event was started by a replicated script.
+	// when the event was started by a script.
 	cLuxMap* pMap = gpBase->mpMapHandler->GetCurrentMap();
 	cWorldEffectLocalScope localEffects(pMap ? pMap->GetWorld() : NULL);
 	OnStart();

@@ -1,4 +1,4 @@
-param([string]$RetailDirectory,[int]$Port=27843,[ValidateSet('Standalone','Steamworks')][string]$Backend='Standalone',[switch]$SteamHostOnly,[switch]$SettingsOnly,[switch]$EnemiesOnly,[ValidateSet('Auto','Bordered','Borderless')][string]$BorderMode='Auto',[switch]$SkipBuild,[switch]$KeepProfiles,[ValidateRange(320,8192)][int]$Width=800,[ValidateRange(240,8192)][int]$Height=600)
+param([string]$RetailDirectory,[int]$Port=27843,[ValidateSet('Standalone','Steamworks')][string]$Backend='Standalone',[switch]$SteamHostOnly,[switch]$SettingsOnly,[switch]$EnemiesOnly,[switch]$BackHallOnly,[switch]$QuitOnly,[switch]$QuitDirectly,[switch]$DoorBreakOnly,[ValidateSet('Auto','Bordered','Borderless')][string]$BorderMode='Auto',[switch]$SkipBuild,[switch]$KeepProfiles,[ValidateRange(320,8192)][int]$Width=800,[ValidateRange(240,8192)][int]$Height=600)
 $ErrorActionPreference='Stop'
 if(-not $PSBoundParameters.ContainsKey('BorderMode') -and -not $SettingsOnly) { $BorderMode='Bordered' }
 . (Join-Path $PSScriptRoot 'TestSupport.ps1')
@@ -7,6 +7,10 @@ $retail=Find-AmnesiaRetailDirectory $RetailDirectory
 if($SteamHostOnly -and $Backend -ne 'Steamworks') { throw '-SteamHostOnly requires -Backend Steamworks and a signed-in account with access to the configured AppID.' }
 if($SteamHostOnly -and $SettingsOnly) { throw '-SteamHostOnly and -SettingsOnly select different tests.' }
 if($EnemiesOnly -and ($SteamHostOnly -or $SettingsOnly)) { throw '-EnemiesOnly cannot be combined with another focused test mode.' }
+if($BackHallOnly -and ($SteamHostOnly -or $SettingsOnly -or $EnemiesOnly)) { throw '-BackHallOnly cannot be combined with another focused test mode.' }
+if(($QuitOnly -or $QuitDirectly) -and ($SteamHostOnly -or $SettingsOnly -or $EnemiesOnly -or $BackHallOnly)) { throw 'Quit tests cannot be combined with another focused test mode.' }
+if($QuitOnly -and $QuitDirectly) { throw '-QuitOnly and -QuitDirectly select different affirmative exit paths.' }
+if($DoorBreakOnly -and ($SteamHostOnly -or $SettingsOnly -or $EnemiesOnly -or $BackHallOnly -or $QuitOnly -or $QuitDirectly)) { throw '-DoorBreakOnly cannot be combined with another focused test mode.' }
 $roles=if($SettingsOnly) { @('settings') } elseif($SteamHostOnly) { @('steam-host') } else { @('host','client') }
 if(-not $SkipBuild) { & (Join-Path $PSScriptRoot 'build.ps1') -Kind game -Backend $Backend }
 if($Port -lt 1 -or $Port -gt 65535) { throw 'Port must be from 1 to 65535.' }
@@ -48,8 +52,16 @@ foreach($role in $roles) {
 $processes=@()
 $savedEnemyMode=$env:CODEX_MP_ENEMIES
 $savedEnemyMap=$env:CODEX_MP_ENEMY_MAP
+$savedBackHallMode=$env:CODEX_MP_BACK_HALL
+$savedQuitMode=$env:CODEX_MP_QUIT
+$savedQuitDirectlyMode=$env:CODEX_MP_QUIT_DIRECTLY
+$savedDoorBreakMode=$env:CODEX_MP_DOOR_BREAK
 try {
     if($EnemiesOnly) { $env:CODEX_MP_ENEMIES='1'; $env:CODEX_MP_ENEMY_MAP=$enemyMap }
+    if($BackHallOnly) { $env:CODEX_MP_BACK_HALL='1' }
+    if($DoorBreakOnly) { $env:CODEX_MP_DOOR_BREAK='1' }
+    if($QuitOnly -or $QuitDirectly) { $env:CODEX_MP_QUIT='1' }
+    if($QuitDirectly) { $env:CODEX_MP_QUIT_DIRECTLY='1' } elseif($QuitOnly) { Remove-Item Env:CODEX_MP_QUIT_DIRECTLY -ErrorAction SilentlyContinue }
     foreach($role in $roles) {
         $arguments=Join-TestProcessArguments @($role,(Join-Path $run "$role-init.cfg"),$run,[string]$Port)
         $processes += Start-Process -FilePath (Join-Path $context.Output 'smoke.exe') -ArgumentList $arguments -WorkingDirectory $retail -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $run "$role-stdout.txt") -RedirectStandardError (Join-Path $run "$role-stderr.txt")
@@ -74,6 +86,10 @@ try {
 } finally {
     $env:CODEX_MP_ENEMIES=$savedEnemyMode
     $env:CODEX_MP_ENEMY_MAP=$savedEnemyMap
+    $env:CODEX_MP_BACK_HALL=$savedBackHallMode
+    $env:CODEX_MP_QUIT=$savedQuitMode
+    $env:CODEX_MP_QUIT_DIRECTLY=$savedQuitDirectlyMode
+    $env:CODEX_MP_DOOR_BREAK=$savedDoorBreakMode
     Stop-TestProcesses $processes
     if($enemyCache -and (Test-Path -LiteralPath $enemyCache)) {
         $item=Get-Item -LiteralPath $enemyCache

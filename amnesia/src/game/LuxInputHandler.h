@@ -81,6 +81,7 @@ public:
 	
 	void OnStart();
 	void Update(float afTimeStep);
+	void OnQuit();
 	void Reset();
 	void OnPostRender(float afFrameTime);
 
@@ -168,6 +169,7 @@ private:
 	bool mbSmoothMouse;
 	bool mbInvertMouse;
 	bool mbMultiplayerCapturing;
+	bool mbQuitRequested;
 
 	double mfMouseActiveAt;
 

@@ -3,6 +3,7 @@
 // No renderer, retail content, sockets or Amnesia configuration is required.
 #include "../amnesia/src/game/LuxTypes.h"
 #include "impl/PhysicsWorldNewton.h"
+#include "network/NetworkTransport.h"
 #include <cassert>
 #include <iostream>
 #include <cstdint>
@@ -88,7 +89,12 @@ public:
     eLuxInputState GetState() { return eLuxInputState_Game; }
 };
 struct SmokeInput { bool pressed = true; bool IsTriggerd(int) { return pressed; } };
-struct SmokeEngine { SmokeInput input; SmokeInput* GetInput() { return &input; } };
+struct SmokeEngine {
+    SmokeInput input;
+    SmokeInput* GetInput() { return &input; }
+    // This physics fixture has no renderer; visual paths remain inactive.
+    cGraphics* GetGraphics() { return NULL; }
+};
 struct SmokeConfig { float GetFloat(const tString&,const tString&,float fallback) { return fallback; } };
 struct SmokeBase
 {
@@ -187,6 +193,8 @@ public:
     bool IsHost() const { return host; }
     bool IsClient() const { return !host; }
     bool IsWindowVisible() const { return false; }
+    // Avatar lookup is optional and unavailable in the headless fixture.
+    const hpl::cSteamAvatarImage* GetPlayerSteamAvatar(uint32_t) { return NULL; }
     uint32_t GetLocalPeerId() const { return peer; }
     uint32_t GetMapEpoch() const { return 7; }
     bool Send(uint32_t destination, const std::vector<uint8_t>& bytes, bool reliable)

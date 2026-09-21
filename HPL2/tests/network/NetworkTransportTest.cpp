@@ -71,10 +71,38 @@ int main()
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     Require(disconnected, "client observes disconnect");
-    client.Stop(); overflow.Stop(); host.Stop();
+    Require(host.IsActive() && host.IsHost(), "rejecting one connection keeps the listener alive");
+    client.Stop(); overflow.Stop();
+    Require(client.Join("127.0.0.1", port, error), "can retry after host rejection: " + error);
+    const uint32_t previousPeer = clientPeer;
+    hostConnected = clientConnected = reliableReceived = false;
+    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+    while(std::chrono::steady_clock::now() < deadline && !(hostConnected && clientConnected))
+    {
+        std::vector<cNetworkEvent> hostEvents, clientEvents;
+        host.Poll(hostEvents); client.Poll(clientEvents);
+        for(const auto& event : hostEvents) if(event.type == eNetworkEventType::Connected)
+        { hostConnected = true; clientPeer = event.peer; }
+        for(const auto& event : clientEvents) if(event.type == eNetworkEventType::Connected) clientConnected = true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    Require(hostConnected && clientConnected && clientPeer > previousPeer, "retry uses a fresh peer ID without restarting the host");
+    Require(!host.Send(previousPeer, reliable, true), "retired peer ID cannot address the replacement connection");
+    Require(client.Send(0, reliable, true), "retry queues reliable traffic");
+    deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while(std::chrono::steady_clock::now() < deadline && !reliableReceived)
+    {
+        std::vector<cNetworkEvent> hostEvents, clientEvents;
+        host.Poll(hostEvents); client.Poll(clientEvents);
+        for(const auto& event : hostEvents) if(event.type == eNetworkEventType::Message)
+        { Require(event.peer == clientPeer && event.data == reliable, "retry routes payload through the new peer"); reliableReceived = true; }
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    Require(reliableReceived, "reconnected client can exchange world state");
+    client.Stop(); host.Stop();
     Require(!client.IsActive() && !host.IsActive(), "Stop releases state");
     Require(host.Host(port, 2, error), "transport can restart after last library user stops: " + error);
     host.Stop();
     cNetworkTransport::ShutdownSteam();
-    std::cout << "PASS: connect, peer IDs, reliable fragmentation, unreliable delivery, capacity, disconnect, cleanup, restart" << std::endl;
+    std::cout << "PASS: connect, peer IDs, reliable fragmentation, unreliable delivery, capacity, disconnect, reconnect without host restart, cleanup, restart" << std::endl;
 }

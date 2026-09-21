@@ -20,6 +20,7 @@
 #include "LuxMap.h"
 #include "LuxMultiplayer.h"
 #include "LuxMultiplayerWorld.h"
+#include "LuxMultiplayerEntities.h"
 
 #include "LuxConfigHandler.h"
 
@@ -1306,17 +1307,14 @@ void cLuxMap::CalculateTotalCompletionAmount()
 int cLuxMap::GetFreeEntityID()
 {
 	int lEntId =0;
-
-	//Iterate the IDs until a free is found
-	tLuxEntityIDMapIt it = m_mapEntitiesByID.begin();
-	for(; it != m_mapEntitiesByID.end(); ++it)
-	{
-		int lId = it->first;
-		
-		if(lId != lEntId) return lEntId;
+	const bool bReplica = gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient() &&
+		gpBase->mpMapHandler->GetCurrentMap()==this;
+	// A local break may finish before the host's destruction callback. Do not
+	// reuse its ID until the host publishes removal; callback-created entities
+	// must make the same allocation on both peers.
+	while(m_mapEntitiesByID.count(lEntId) ||
+		(bReplica && gpBase->mpMultiplayer->GetEntities()->IsEntityIDReserved(lEntId)))
 		++lEntId;
-	}
-	
 	return lEntId;
 }
 

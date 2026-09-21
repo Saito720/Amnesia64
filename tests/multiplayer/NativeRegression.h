@@ -27,12 +27,13 @@ class cNativeRegression {
     bool callbackRequested=false;
     bool lampEffectsBaselineRequested=false;
     bool recreationRequested=false;
+    bool fixtureCreated=false,claimPrepared=false;
     int recreationEntityID=-1, recreationTinderboxes=0;
     uint64_t recreationRuntimeID=0;
     cMatrixf tinderTransform;
     cNativeDiaryRegression diaryRegression;
     cInventoryRemovalRegression inventoryRemovalRegression;
-    void next() { ++phase;entered=SDL_GetTicks(); }
+    void next() { ++phase;entered=SDL_GetTicks();fixtureCreated=false; }
     bool both(const char* suffix) { return exists(tString("host-")+suffix) && exists(tString("client-")+suffix); }
     bool near(iLuxEntity* entity) {
         if(!entity || !entity->GetBodyNum()) return false;
@@ -47,6 +48,13 @@ class cNativeRegression {
     }
     bool callbackCount(const char* name,const char* event,unsigned count) {
         return nativeCallbacks[tString(name)+":"+event]==count;
+    }
+    void createReplacement(cLuxMap* map,const tString& name) {
+        // The host deliberately reuses a canonical ID for these lifetime tests.
+        // Client replicas are created only by authoritative definitions.
+        auto* previousLoading=gpBase->mpCurrentMapLoading;gpBase->mpCurrentMapLoading=map;
+        map->GetWorld()->CreateEntity(name,tinderTransform,"tinderbox.ent",recreationEntityID,true,1);
+        gpBase->mpCurrentMapLoading=previousLoading;
     }
 public:
     // 0 pending, 1 complete, -1 failed.
@@ -256,8 +264,11 @@ public:
         const uint32_t claimToken=0x1234abcd;
         if(phase==13) {
             if(!both("native-baseline.txt")) return 0;
-            map->CreateEntity(recreatedName,"tinderbox.ent",tinderTransform,1);
+            if(host && !fixtureCreated) {
+                map->CreateEntity(recreatedName,"tinderbox.ent",tinderTransform,1);fixtureCreated=true;
+            }
             auto* item=map->GetEntityByName(recreatedName);
+            if(!host && !item) return 0;
             if(!item) return fail(error,"recreated pickup fixture could not be loaded");
             item->SetCallbackFunc("CodexNativeCallback");
             recreationEntityID=item->GetID();recreationRuntimeID=item->GetRuntimeID();
@@ -274,10 +285,15 @@ public:
             mark(role+"-native-reuse-collected.txt","first instance collected and removed");next();return 0;
         }
         if(phase==15) {
-            if(!both("native-reuse-collected.txt") || map->GetEntityByName(recreatedName)) return 0;
-            // CreateEntity deliberately reuses the lowest free authored ID.
-            map->CreateEntity(recreatedName,"tinderbox.ent",tinderTransform,1);
+            if(!both("native-reuse-collected.txt")) return 0;
+            if(host && !fixtureCreated) {
+                if(map->GetEntityByName(recreatedName)) return 0;
+                createReplacement(map,recreatedName);fixtureCreated=true;
+            }
             auto* item=map->GetEntityByName(recreatedName);
+            // An authoritative replacement can arrive before the client enters
+            // this phase. Accept it rather than waiting for the name to vanish.
+            if(!host && (!item || item->GetRuntimeID()==recreationRuntimeID)) return 0;
             if(!item || item->GetID()!=recreationEntityID || item->GetRuntimeID()==recreationRuntimeID)
                 return fail(error,"replacement did not reuse the authored ID with a new lifetime identity");
             item->SetCallbackFunc("CodexNativeCallback");
@@ -298,23 +314,42 @@ public:
             mark(role+"-native-reuse-passed.txt","host collected original; client collected same-ID replacement exactly once");next();return 0;
         }
         if(phase==17) {
-            if(!both("native-reuse-passed.txt") || map->GetEntityByName(recreatedName)) return 0;
-            map->CreateEntity(claimName,"tinderbox.ent",tinderTransform,1);
-            auto* item=map->GetEntityByName(claimName);
-            if(!item) return fail(error,"stale-claim fixture could not be loaded");
-            recreationEntityID=item->GetID();recreationRuntimeID=item->GetRuntimeID();
-            recreationTinderboxes=gpBase->mpPlayer->GetTinderboxes();recreationRequested=false;
+            if(!both("native-reuse-passed.txt")) return 0;
+            if(host && !fixtureCreated) {
+                if(map->GetEntityByName(recreatedName)) return 0;
+                createReplacement(map,claimName);fixtureCreated=true;
+            }
+            if(!claimPrepared) {
+                auto* item=map->GetEntityByName(claimName);
+                if(!host && !item) return 0;
+                if(!item) return fail(error,"stale-claim fixture could not be loaded");
+                if(item->GetID()!=recreationEntityID) return fail(error,"stale-claim original changed its canonical ID");
+                recreationRuntimeID=item->GetRuntimeID();
+                recreationTinderboxes=gpBase->mpPlayer->GetTinderboxes();recreationRequested=false;
+                claimPrepared=true;
+                mark(role+"-native-claim-original-ready.txt","canonical original lifetime recorded before destruction");
+                return 0;
+            }
+            if(!both("native-claim-original-ready.txt")) return 0;
             // Hold an approved transaction across destruction. Its grant is
             // delivered below through the production decoder after replacement.
-            if(host) mp->mpEntities->mClaims[claimName]={mp->mPeers.begin()->first,claimToken,0,recreationRuntimeID,false};
-            else {mp->mpEntities->msPending=claimName;mp->mpEntities->mlPendingRuntimeID=recreationRuntimeID;}
-            map->DestroyEntity(item);
+            if(host) mp->mpEntities->mClaims[recreationEntityID]={mp->mPeers.begin()->first,claimToken,0,recreationRuntimeID,false};
+            else {mp->mpEntities->msPending=claimName;mp->mpEntities->mlPendingEntityID=recreationEntityID;mp->mpEntities->mlPendingRuntimeID=recreationRuntimeID;}
+            if(host) {
+                auto* item=map->GetEntityByName(claimName);
+                if(!item || item->GetRuntimeID()!=recreationRuntimeID) return fail(error,"stale-claim original vanished before destruction");
+                map->DestroyEntity(item);
+            }
             mark(role+"-native-claim-held.txt","transaction refers to original lifetime");next();return 0;
         }
         if(phase==18) {
-            if(!both("native-claim-held.txt") || map->GetEntityByName(claimName)) return 0;
-            map->CreateEntity(claimName,"tinderbox.ent",tinderTransform,1);
+            if(!both("native-claim-held.txt")) return 0;
+            if(host && !fixtureCreated) {
+                if(map->GetEntityByName(claimName)) return 0;
+                createReplacement(map,claimName);fixtureCreated=true;
+            }
             auto* item=map->GetEntityByName(claimName);
+            if(!host && (!item || item->GetRuntimeID()==recreationRuntimeID)) return 0;
             if(!item || item->GetID()!=recreationEntityID || item->GetRuntimeID()==recreationRuntimeID)
                 return fail(error,"stale-claim replacement did not reuse its authored ID");
             if(host) {
@@ -322,12 +357,12 @@ public:
                 // claim needed for the client's real failure acknowledgement.
                 cLuxMultiplayerEntities isolated(mp);
                 const uint32_t peer=mp->mPeers.begin()->first;
-                isolated.mClaims[claimName]={peer,claimToken,0,recreationRuntimeID,false};
-                luxnet::Writer wrong(luxnet::NativeResult);wrong.U32(mp->GetMapEpoch());wrong.String(claimName);
+                isolated.mClaims[recreationEntityID]={peer,claimToken,0,recreationRuntimeID,false};
+                luxnet::Writer wrong(luxnet::NativeResult);wrong.U32(mp->GetMapEpoch());wrong.String(claimName);wrong.U32(recreationEntityID);
                 wrong.U32(claimToken+1);wrong.U8(1);wrong.U32(0);
-                if(isolated.HandleMessage(peer,wrong.data) || !isolated.mClaims.count(claimName) || item->GetDestroyMe())
+                if(isolated.HandleMessage(peer,wrong.data) || !isolated.mClaims.count(recreationEntityID) || item->GetDestroyMe())
                     return fail(error,"forged native result consumed the outstanding claim");
-                luxnet::Writer stale(luxnet::NativeResult);stale.U32(mp->GetMapEpoch());stale.String(claimName);
+                luxnet::Writer stale(luxnet::NativeResult);stale.U32(mp->GetMapEpoch());stale.String(claimName);stale.U32(recreationEntityID);
                 stale.U32(claimToken);stale.U8(1);stale.U32(0);
                 if(!isolated.HandleMessage(peer,stale.data) || !isolated.mClaims.empty() || item->GetDestroyMe())
                     return fail(error,"old successful claim collected the replacement instance");
@@ -338,7 +373,7 @@ public:
             if(!both("native-claim-replaced.txt")) return 0;
             auto* item=map->GetEntityByName(claimName);
             if(!host && !recreationRequested) {
-                luxnet::Writer grant(luxnet::NativeGrant);grant.U32(mp->GetMapEpoch());grant.String(claimName);
+                luxnet::Writer grant(luxnet::NativeGrant);grant.U32(mp->GetMapEpoch());grant.String(claimName);grant.U32(recreationEntityID);
                 grant.U32(claimToken);grant.U8(0);
                 if(!mp->mpEntities->HandleMessage(0,grant.data)) return fail(error,"replaced client grant was treated as malformed");
                 recreationRequested=true;
@@ -350,7 +385,7 @@ public:
         }
         if(phase==20) {
             if(!both("native-claim-passed.txt")) return 0;
-            if(auto* item=map->GetEntityByName(claimName)) map->DestroyEntity(item);
+            if(host) if(auto* item=map->GetEntityByName(claimName)) map->DestroyEntity(item);
             next();return 0;
         }
         if(phase==21) {

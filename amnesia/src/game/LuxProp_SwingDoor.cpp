@@ -144,6 +144,7 @@ cLuxProp_SwingDoor::~cLuxProp_SwingDoor()
 
 bool cLuxProp_SwingDoor::CanInteract(iPhysicsBody *apBody)
 {
+	if(mbBroken) return false;
 	if(mvJointData.empty()) return false;
 	if(	apBody->GetMass()==0 && mbCanInteractWithStaticBody==false && mpMap->BodyIsInDetachableStickyArea(apBody)==false) 
 	{
@@ -306,12 +307,13 @@ void cLuxProp_SwingDoor::OnResetProperties()
 		mbBroken = false;
 		if(mlBrokenEntityID >=0)
 		{
-			iLuxEntity *pEntity = mpMap->GetEntityByID(mlBrokenEntityID);
+			iLuxEntity *pEntity = mpMap->GetEntityByID(GetBrokenEntityID());
 			if(pEntity)
 			{
 				mpMap->DestroyEntity(pEntity);
 			}
 		}
+		mlBrokenEntityID = -1;
 	}
 	
 	SetupDoorPhysics(0.0f);
@@ -409,12 +411,21 @@ void cLuxProp_SwingDoor::ImplementedOnSetActive(bool abX)
 			mpDamageMeshEntity[i]->SetActive(bActive);
 		}
 	}
+	if(mbBroken)
+	{
+		SetDoorLeafVisible(false);
+		for(auto* body:mvBodies) if(body->GetMass()!=0) body->SetActive(false);
+	}
 }
 
 //-----------------------------------------------------------------------
 
 void cLuxProp_SwingDoor::OnHealthChange()
 {
+	// Local client physics cannot decide damage transitions. Typed script
+	// replay retains its existing effects; native snapshots apply silently.
+	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient() &&
+		!gpBase->mpMultiplayer->IsApplyingScriptEffect()) return;
 	if(mbBreakable==false || mbDisableBreakable) return;
 	if(mbBroken) return;
 
@@ -666,12 +677,60 @@ void cLuxProp_SwingDoor::SetCurrentDamageLevel(int alX)
 	{
 		if(mpDamageMeshEntity[i])
 		{
-			bool bActive = mlCurrentMeshEntity==i;
+			bool bActive = IsActive() && mlCurrentMeshEntity==i;
 
 			mpDamageMeshEntity[i]->SetVisible(bActive);
 			mpDamageMeshEntity[i]->SetActive(bActive);
 		}
 	}
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxProp_SwingDoor::SetDoorLeafVisible(bool abVisible)
+{
+	// The original mesh also contains the fixed frame. Only the submeshes
+	// parented to a dynamic door body disappear when the leaf breaks.
+	for(auto* body:mvBodies)
+	{
+		if(body->GetMass()==0) continue;
+		auto children=body->GetChildIterator();
+		while(children.HasNext())
+		{
+			auto* child=children.Next();
+			for(int i=0;i<mpMeshEntity->GetSubMeshEntityNum();++i)
+			{
+				auto* mesh=mpMeshEntity->GetSubMeshEntity(i);
+				if(mesh==child) {mesh->SetVisible(abVisible);mesh->SetActive(abVisible);}
+			}
+		}
+	}
+}
+
+int cLuxProp_SwingDoor::GetBrokenEntityID() const
+{
+	// Debris can expire and the map can reuse its ID for another prop.
+	auto* debris=mlBrokenEntityID>=0?mpMap->GetEntityByID(mlBrokenEntityID):NULL;
+	return debris && !debris->GetDestroyMe() && debris->GetName()==msName+"_broken" ? mlBrokenEntityID : -1;
+}
+
+void cLuxProp_SwingDoor::ApplyNetworkState(float afHealth, int alDamageLevel, bool abBroken,
+	bool abDisableBreakable, int alBrokenEntityID)
+{
+	if(mbBroken && (!abBroken || mlBrokenEntityID!=alBrokenEntityID) && mlBrokenEntityID>=0)
+	{
+		// ResetProp can repair the host before the client received its break.
+		// Retire only this door's previous debris, never a reused authored ID.
+		auto* debris=mpMap->GetEntityByID(mlBrokenEntityID);
+		if(debris && debris->GetName()==msName+"_broken") mpMap->DestroyEntity(debris);
+	}
+	mfHealth = afHealth;
+	mbDisableBreakable = abDisableBreakable;
+	mbBroken = abBroken;
+	mlBrokenEntityID = alBrokenEntityID;
+	SetCurrentDamageLevel(alDamageLevel);
+	ImplementedOnSetActive(IsActive());
+	SetDoorLeafVisible(!mbBroken && IsActive());
 }
 
 //-----------------------------------------------------------------------

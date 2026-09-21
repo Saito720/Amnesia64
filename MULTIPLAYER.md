@@ -122,7 +122,7 @@ or cached maps skip the download phase. Every waiting frame clears the viewport;
 blocking verification and loading also present their screen before starting work.
 Cancelled or failed host map changes return clients to the previous map, preserving
 in-flight world events. Same-map start-position changes do not put clients into a
-map-loading state. The session uses protocol **13**; all players need
+map-loading state. The session uses protocol **14**; all players need
 the updated build.
 The client cannot open the game debug menu; F3/fast-forward is disabled for everyone
 in a session. Host debug map loads/reloads use a queued session-preserving path.
@@ -536,7 +536,7 @@ have exercised that path; each new build still needs a two-account playtest for
 latency, disconnects and campaign behavior beyond the controlled regression suite.
 Full-game smoke tests use isolated test configurations/profiles and a bounded run;
 they must not share a live player's configuration or overwrite retail assets.
-The current session/lobby protocol is version **13**; all testers must use the new build.
+The current session/lobby protocol is version **14**; all testers must use the new build.
 See `tests/multiplayer/README.md` for profile cleanup, output paths and runner options.
 
 ## Source layout

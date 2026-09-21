@@ -345,6 +345,7 @@ cLuxInputHandler::cLuxInputHandler() : iLuxUpdateable("LuxInputHandler")
 	// Variable init
 	mState = eLuxInputState_Game;
 	mbMultiplayerCapturing = false;
+	mbQuitRequested = false;
 	mfMouseActiveAt = -1;
 }
 
@@ -487,6 +488,10 @@ void cLuxInputHandler::OnStart()
 
 void cLuxInputHandler::Update(float afTimeStep)
 {
+	// Window-close is a request, not a teardown notification. Keep it pending
+	// while a map transition or another modal owns the menu.
+	if(mbQuitRequested && gpBase->mpMainMenu->RequestQuit()) mbQuitRequested = false;
+
 	const bool bCapture = gpBase->mpMultiplayer &&
 		(gpBase->mpMultiplayer->IsWindowVisible() || gpBase->mpMultiplayer->IsSteamOverlayActive() ||
 		 (gpBase->mpMultiplayer->IsClient() && !gpBase->mpMultiplayer->IsReady()));
@@ -537,6 +542,11 @@ void cLuxInputHandler::Update(float afTimeStep)
 }
 
 //-----------------------------------------------------------------------
+
+void cLuxInputHandler::OnQuit()
+{
+	mbQuitRequested = true;
+}
 
 void cLuxInputHandler::Reset()
 {

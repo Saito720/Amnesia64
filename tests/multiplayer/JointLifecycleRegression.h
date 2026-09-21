@@ -110,10 +110,10 @@ public:
             // Repeated reliable deletion is harmless on a client that has
             // already processed it (including joints other than hinge/slider).
             if(!host) {
-                luxnet::Writer packet(luxnet::EntityState);packet.U32(session->GetMapEpoch());packet.String(prop->GetName());
-                packet.U8(luxnet::PropState);packet.U8(luxnet::EntityActive|luxnet::EffectsActive);packet.U8(0);packet.U32(1);
-                packet.U32(0);packet.U8(0);packet.U8(0);packet.Float(0);packet.Float(0);
-                if(!session->GetEntities()->HandleMessage(0,packet.data) || !session->GetEntities()->HandleMessage(0,packet.data))
+                luxnet::NativeState state;state.epoch=session->GetMapEpoch();state.name=prop->GetName();state.id=prop->GetID();
+                state.kind=luxnet::PropState;state.flags=luxnet::EntityActive|luxnet::EffectsActive;state.detail=0;state.health=prop->GetHealth();
+                state.joints.push_back({0,0,0,0,0});const auto packet=luxnet::WriteNativeState(state);
+                if(!session->GetEntities()->HandleMessage(0,packet) || !session->GetEntities()->HandleMessage(0,packet))
                     return fail(error,"repeated deleted-slot state was rejected");
             }
             player->SetPosition(originalPosition);player->SetGravityActive(originalGravity);player->SetForceVelocity(0);
@@ -142,15 +142,16 @@ public:
                 auto* saved=static_cast<cLuxProp_Object_SaveData*>(data);uint32_t slot=128;
                 for(size_t i=0;i<saved->mvJoints.Size();++i) if(saved->mvJoints[i].msName==joint->GetName()) slot=static_cast<uint32_t>(i);
                 hplDelete(data);if(slot==128) return fail(error,"authored slider slot not found");
-                luxnet::Writer oldState(luxnet::EntityState);oldState.U32(session->GetMapEpoch());oldState.String(cabinet->GetName());
-                oldState.U8(luxnet::PropState);oldState.U8(luxnet::EntityActive|luxnet::EffectsActive);oldState.U8(0);oldState.U32(1);
-                oldState.U32(slot);oldState.U8(2);oldState.U8(0);oldState.Float(joint->GetMinDistance());oldState.Float(joint->GetMaxDistance());
+                luxnet::NativeState state;state.epoch=session->GetMapEpoch();state.name=cabinet->GetName();state.id=cabinet->GetID();
+                state.kind=luxnet::PropState;state.flags=luxnet::EntityActive|luxnet::EffectsActive;state.detail=0;state.health=cabinet->GetHealth();
+                state.joints.push_back({slot,2,0,joint->GetMinDistance(),joint->GetMaxDistance()});
+                const auto oldState=luxnet::WriteNativeState(state);
                 input->held=true;gpBase->mpEngine->GetInput()->GetAction(eLuxAction_Interact)->ResetToCurrentState();
                 if(world->RequestInteraction(drawer,eLuxPlayerState_InteractSlide,drawer->GetWorldPosition()) || !world->mlPendingRequest)
                     return fail(error,"client did not wait for an interaction grant");
                 const uint32_t request=world->mlPendingRequest;
                 physics->DestroyJoint(joint);
-                if(!session->GetEntities()->HandleMessage(0,oldState.data)) return fail(error,"stale live slider state rejected after local deletion");
+                if(!session->GetEntities()->HandleMessage(0,oldState)) return fail(error,"stale live slider state rejected after local deletion");
                 // Deliver a delayed grant through the public decoder before
                 // the real round trip. It must release authority, never enter
                 // a slide controller whose constraint no longer exists.
@@ -207,7 +208,7 @@ public:
                     joint->SetBreakForce(0);
                     if(joint->CheckBreakage()) return fail(error,"host follower broke a client-owned joint");
                     joint->SetBreakForce(1000000000.0f);
-                    luxnet::JointBreakState request;request.epoch=session->GetMapEpoch();request.name=owned->GetName();
+                    luxnet::JointBreakState request;request.epoch=session->GetMapEpoch();request.name=owned->GetName();request.id=owned->GetID();
                     request.index=0;request.body=LuxWorldWire::BodyId(ownedBody->GetName(),ownedBody->GetUniqueID());request.token=token+1;
                     if(!session->GetEntities()->HandleMessage(owner,luxnet::WriteJointBreak(request)) || !ownedBody->GetJointNum())
                         return fail(error,"stale lease token could break the painting");

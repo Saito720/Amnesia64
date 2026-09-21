@@ -87,7 +87,6 @@ public:
 	void OnStart();
 	void Update(float afTimeStep);
 	void Reset();
-    void OnQuit();
 
 	void LoadUserConfig();
 	void SaveUserConfig();
@@ -107,6 +106,7 @@ public:
 	void ChangeMap(const tString& asMapName, const tString& asStartPos, const tString& asStartSound, const tString& asEndSound);
 
 	bool MapIsLoaded(){ return mpCurrentMap != NULL;}
+	bool IsMapChanging() const { return mMapChangeData.mbActive; }
 
 	cLuxMap* LoadMap(const tString& asName, bool abLoadEntities);
 	void DestroyMap(cLuxMap* apMap, bool abRunScript);

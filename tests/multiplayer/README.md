@@ -20,7 +20,24 @@ running Steam client with access to the configured AppID. The UI harness stubs
 Steam services and never sends invitations. Build and run with the same backend.
 Switching a test to Standalone changes the normal Debug game build too; rebuild
 the game without `/p:HplUseSteamworks=false` to return to Steam afterward.
-The current session/lobby protocol is **11**; all instances must use matching builds.
+The current session/lobby protocol is **14**; all instances must use matching builds.
+
+For the duplicate-name reconstruction and reconnect regression, run:
+
+```powershell
+./tests/multiplayer/run-game.ps1 -Backend Steamworks -BackHallOnly
+```
+
+This loads the unchanged retail Back Hall on two real instances. Its authored
+slime props include repeated names with distinct IDs. The test checks that each
+survives initial reconstruction, receives its own native state, and remains
+intact across repeated baselines and a client reconnect to the same host.
+It also makes a normal trip to Study and back, verifying the saved per-ID states
+before departure from Study and after reconstruction on both peers. Old Archives
+is unsuitable for this persistence check because its script clears saved maps.
+The transport suite separately covers Steam lobby lifecycle and direct-IP
+reconnects; authenticated two-account retry instructions are in
+[the transport checks](../../HPL2/tests/network/README.md).
 
 To separate builds from execution:
 
@@ -30,6 +47,50 @@ To separate builds from execution:
 ./tests/multiplayer/build.ps1 -Kind game
 ./tests/multiplayer/run-game.ps1 -SkipBuild -Port 27843
 ```
+
+For enemy-damaged doors and native prop creation/removal, run:
+
+```powershell
+./tests/multiplayer/run-game.ps1 -Backend Steamworks -DoorBreakOnly
+```
+
+This uses Daniel's Room's retail Grunt and crowbar door. Real attack animation
+events must replicate both damaged meshes, the broken leaf, surviving hinges,
+and exactly one debris prop. Repeated baselines, reconnects and a Study roundtrip
+must retain the broken door. The debris's authored four-second lifetime is
+respected, including removal on connected clients and absence after rejoining.
+The final phases check scripted damage sound/particle creation, rapid
+break/reset/break, and props created by host-only break callbacks. A native
+object destruction callback also creates and configures a prop before its
+source's ID is retired; both peers must retain one instance with the same ID,
+health, and interaction state after replication settles.
+
+Steamworks Debug x64 run `fe8282df9884` passed the focused door checks. Full
+two-instance multiplayer run `bc8637bf98b0` and all protocol suites also passed
+with protocol 13. These live runs use local UDP peers, not separate-account
+Steam relay connections.
+
+For native window-close confirmation, run both destinations:
+
+```powershell
+./tests/multiplayer/run-game.ps1 -Backend Steamworks -QuitOnly
+./tests/multiplayer/run-game.ps1 -Backend Steamworks -QuitDirectly -SkipBuild
+```
+
+Both modes send actual SDL quit and Escape events to host and client. They
+exercise gameplay, pause, inventory, journal, options, the multiplayer overlay,
+both pause-menu Exit choices, existing modal questions, repeated close requests,
+the return-to-game fade, GUI recreation and container replacement. Selecting No
+must preserve the session, map and inventory. An accepted Yes must survive a
+container replacement without asking again. `-QuitOnly` checks that
+`ExitMenuDirectly=false` returns to the main menu, then confirms a title-screen
+close exits the application. `-QuitDirectly` checks that
+`ExitMenuDirectly=true` exits the application from a live session. Success is
+recorded only after the real engine loop returns.
+
+Verified with the Steamworks Debug x64 build: return-to-menu run `e16056fdb5c2`,
+direct-exit run `a843a6449e1b`, and UI run `4855c75b6a07` passed. The native
+quit runs use two local UDP peers with the Steamworks networking backend.
 
 For a focused native Graphics-menu test, use one isolated instance and exit
 before loading a campaign or starting a session:
@@ -238,13 +299,15 @@ entity baseline against a deliberately stale client to verify collected items
 stay removed and current lamp/door state is restored without duplicate callbacks.
 Replacement-item trials reuse both the name and authored ID, checking that stale
 claims cannot consume a replacement and a legitimate new pickup still succeeds.
+The host creates these fixtures and clients await their canonical replicas,
+including replacements that arrive before the client advances its test phase.
 The lamp baseline also repairs mismatched light effects when its lit flag already matches.
 Retail diary trials check suppressed, default, and explicit journal-opening decisions,
 host-only trigger policy, and unchanged host pickup behavior. Responses must match
 the pending pickup's token and name, and cannot reopen a waiting client.
-It then loads two unchanged retail `chest_of_drawers_nice.ent` instances on each
-peer, verifies that their identically named bodies have distinct network IDs,
-and opens a drawer through the real slide controller first as host and then as
+It then creates two unchanged retail `chest_of_drawers_nice.ent` instances on the
+host, awaits their client replicas, verifies that their identically named bodies
+have distinct network IDs, and opens a drawer through the real slide controller first as host and then as
 client. It checks exclusive ownership across each cabinet's three drawers,
 replicated movement, and lease release. Host/client grab trials preserve collision
 suppression on an overlapping drop until the native player-clearance check restores it.

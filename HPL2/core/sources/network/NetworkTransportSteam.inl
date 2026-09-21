@@ -182,7 +182,6 @@ namespace hpl
             cSteamClock::time_point deadline, nextPoll;
         };
         std::map<uint64_t, cAvatarRequest> avatars;
-        std::set<uint64_t> rejected;
         std::vector<cNetworkEvent> pending;
         std::vector<cSteamLobbyInfo> lobbies;
         cSteamClock::time_point sessionDeadline = cSteamClock::time_point::max();
@@ -499,7 +498,7 @@ namespace hpl
                 SteamMatchmaking()->LeaveLobby(CSteamID(lobby));
             }
         }
-        peers.clear(); identities.clear(); rejected.clear(); avatars.clear();
+        peers.clear(); identities.clear(); avatars.clear();
         listen = k_HSteamListenSocket_Invalid; group = k_HSteamNetPollGroup_Invalid;
         active = false; host = false; steam = false; failed = false;
         lobby = 0; expectedHost = 0; nextPeer = 1; maxPeers = 0;
@@ -656,9 +655,12 @@ namespace hpl
             if(owner->steam)
             {
                 std::string error;
-                if(!owner->ValidateLobby(error) || !IsPlayer(remote) || remote == owner->expectedHost ||
-                    !LobbyContains(owner->lobby, remote) || owner->rejected.count(remote))
-                { api->CloseConnection(info->m_hConn, 1003, "Only current members of this Steam lobby may connect.", false); return; }
+                if(!owner->ValidateLobby(error))
+                { api->CloseConnection(info->m_hConn, 1003, error.c_str(), false); return; }
+                if(!IsPlayer(remote) || remote == owner->expectedHost)
+                { api->CloseConnection(info->m_hConn, 1003, "A separate authenticated Steam player is required to join the host.", false); return; }
+                if(!LobbyContains(owner->lobby, remote))
+                { api->CloseConnection(info->m_hConn, 1003, "The connecting Steam player is not a current member of this lobby.", false); return; }
                 for(const auto& item : owner->identities) if(item.second == remote)
                 { api->CloseConnection(info->m_hConn, 1003, "This Steam player is already connected.", false); return; }
             }
@@ -791,12 +793,10 @@ namespace hpl
         if(found == mpImpl->peers.end()) return;
         SteamNetworkingSockets()->CloseConnection(found->second, 1000, reason.substr(0, 127).c_str(), false);
         cImpl::connections.erase(found->second); mpImpl->peers.erase(found);
-        auto identity = mpImpl->identities.find(peer);
-        if(identity != mpImpl->identities.end())
-        {
-            if(mpImpl->steam && mpImpl->host) mpImpl->rejected.insert(identity->second);
-            mpImpl->identities.erase(identity);
-        }
+        // A failed map initialization or a full reliable queue closes this
+        // connection; it must not ban the Steam account from retrying. Admission
+        // still validates the current lobby contract, membership and identity.
+        mpImpl->identities.erase(peer);
         mpImpl->Queue(eNetworkEventType::Disconnected, peer, reason);
     }
     bool cNetworkTransport::IsHost() const { return mpImpl->active && mpImpl->host; }

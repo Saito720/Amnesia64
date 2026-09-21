@@ -226,6 +226,9 @@ cLuxMainMenu::cLuxMainMenu() : iLuxUpdateable("LuxDebugHandler")
 
 	mbExiting = false;
 	mbRecreateGui = false;
+	mpQuitConfirmation = NULL;
+	mbQuitAccepted = false;
+	mQuitExitMessage = eLuxMainMenuExit_QuitGame;
 
 	mCurrentWindow = eLuxMainMenuWindow_LastEnum;
 
@@ -246,24 +249,38 @@ cLuxMainMenu::~cLuxMainMenu()
 	}
 }
 
-void cLuxMainMenu::OnQuit()
+bool cLuxMainMenu::RequestQuit()
 {
-    cLuxMapHandler *mpMapHandler = gpBase->mpMapHandler;
-    if(mpMapHandler->GetCurrentMap())
-    {
-        //Save
-        gpBase->mpSaveHandler->AutoSave();
-        // Destroy Map
-        mpMapHandler->DestroyMap(mpMapHandler->GetCurrentMap(),false);
+	const tString sContainer = gpBase->mpEngine->GetUpdater()->GetCurrentContainerName();
+	cLuxMultiplayer* pMultiplayer = gpBase->mpMultiplayer;
+	if(sContainer == "MainMenu")
+	{
+		if(mpQuitConfirmation) return true;
+		if(mbExiting)
+			return mExitMessage == eLuxMainMenuExit_QuitGame || mExitMessage == eLuxMainMenuExit_QuitToMenu ||
+				mExitMessage == eLuxMainMenuExit_QuitAndSave;
+	}
 
-        //Reset game
-        gpBase->mpEngine->GetUpdater()->BroadcastMessageToAll(eUpdateableMessage_Reset);
-        gpBase->SetCustomStory(NULL);
-    }
-    
-    //Quit Game
-    mExitMessage = eLuxMainMenuExit_QuitGame;
-    OnMenuExit();
+	// Loading owns the container and input until the new map is ready. Keep
+	// the request pending rather than replacing its UI midway through a load.
+	if(gpBase->mpMapHandler->IsMapChanging() ||
+		(pMultiplayer && (pMultiplayer->GetLoadPhase() != eLuxMultiplayerLoadPhase_None ||
+			pMultiplayer->IsSteamOverlayActive())) ||
+		sContainer == "PreMenu" || sContainer == "LoadScreen" || sContainer == "MultiplayerLoading")
+		return false;
+	if(sContainer == "MainMenu" && mpGuiSet->PopUpIsActive()) return false;
+
+	if(pMultiplayer && pMultiplayer->IsWindowVisible()) pMultiplayer->ToggleWindow();
+	if(sContainer != "MainMenu") gpBase->mpEngine->GetUpdater()->SetContainer("MainMenu");
+	if(mbRecreateGui) return false;
+	if(mbQuitAccepted)
+	{
+		ExitMenu(mQuitExitMessage);
+		return true;
+	}
+
+	return ShowQuitConfirmation(gpBase->mpMapHandler->MapIsLoaded() && !gpBase->mbExitMenuDirectly ?
+		eLuxMainMenuExit_QuitToMenu : eLuxMainMenuExit_QuitGame);
 }
 
 //-----------------------------------------------------------------------
@@ -405,6 +422,15 @@ void cLuxMainMenu::OnEnterContainer(const tString& asOldContainer)
 
 void cLuxMainMenu::OnLeaveContainer(const tString& asNewContainer)
 {
+	// A multiplayer transition can replace the menu before the player answers.
+	if(mpQuitConfirmation)
+	{
+		gpBase->mpInputHandler->OnQuit();
+		mpGuiSet->DestroyPopUp(mpQuitConfirmation);
+		mpQuitConfirmation = NULL;
+	}
+	if(mbQuitAccepted) gpBase->mpInputHandler->OnQuit();
+
 	//Unlock input if not in window
 	if (gpBase->mpDebugHandler->GetDebugWindowActive()==false)
 	{
@@ -570,6 +596,8 @@ void cLuxMainMenu::SetWindowActive(eLuxMainMenuWindow aWindow)
 
 void cLuxMainMenu::ExitPressed()
 {
+	if(mbExiting || mpGuiSet->PopUpIsActive()) return;
+
 	/////////////////////////
 	//Top menu is active
 	if(mCurrentWindow == eLuxMainMenuWindow_LastEnum)
@@ -639,6 +667,14 @@ void cLuxMainMenu::ExitMenu(eLuxMainMenuExit aMessage)
 	SetTopMenuVisible(false);
 	mbExiting = true;
 	mExitMessage = aMessage;
+	if(aMessage == eLuxMainMenuExit_QuitGame || aMessage == eLuxMainMenuExit_QuitToMenu ||
+		aMessage == eLuxMainMenuExit_QuitAndSave)
+	{
+		// Keep an accepted decision if the live multiplayer world changes maps
+		// before the menu fade completes.
+		mbQuitAccepted = true;
+		mQuitExitMessage = aMessage;
+	}
 	gpBase->mpInputHandler->ChangeState(eLuxInputState_Null);
 
 	mpGuiSet->SetDrawMouse(false);
@@ -651,7 +687,8 @@ void cLuxMainMenu::ExitMenu(eLuxMainMenuExit aMessage)
 			gpBase->mpEngine->GetSound()->GetSoundHandler()->PlayGui(msZoomSound, false,1.0f);
 	}
 
-	if (aMessage == eLuxMainMenuExit_QuitToMenu || aMessage == eLuxMainMenuExit_QuitAndSave)
+	if ((aMessage == eLuxMainMenuExit_QuitToMenu || aMessage == eLuxMainMenuExit_QuitAndSave) &&
+		gpBase->mpMapHandler->GetCurrentMap())
 	{
 		tString mapName = gpBase->mpMapHandler->GetCurrentMap()->GetName();
 		if (mapName == "00_rainy_hall" || mapName == "01_old_archives")
@@ -665,6 +702,7 @@ void cLuxMainMenu::ExitMenu(eLuxMainMenuExit aMessage)
 
 void cLuxMainMenu::OnMenuExit()
 {
+	mbQuitAccepted = false;
 	switch(mExitMessage)
 	{
 	////////////////
@@ -929,6 +967,13 @@ void cLuxMainMenu::SetTopMenuVisible(bool abVisible)
 
 void cLuxMainMenu::CreateGui()
 {
+	if(mpQuitConfirmation)
+	{
+		gpBase->mpInputHandler->OnQuit();
+		mpGuiSet->DestroyPopUp(mpQuitConfirmation);
+		mpQuitConfirmation = NULL;
+	}
+
 	/////////////////////////////
 	//If Gui is already created, then delete all widget before creating them again
 	if(mbGuiCreated)
@@ -1672,6 +1717,16 @@ bool cLuxMainMenu::PressExit(iWidget* apWidget, const cGuiMessageData& aData)
 	if(mbTopMenuVisible==false)
 		return true;
 
+	return ShowQuitConfirmation(eLuxMainMenuExit_QuitGame);
+}
+kGuiCallbackDeclaredFuncEnd(cLuxMainMenu, PressExit);
+
+bool cLuxMainMenu::ShowQuitConfirmation(eLuxMainMenuExit aMessage)
+{
+	if(mbExiting || mpQuitConfirmation) return true;
+	if(mpGuiSet->PopUpIsActive()) return false;
+
+	mQuitExitMessage = aMessage;
 	SetTopMenuVisible(false);
 	
 	mpGuiSet->SetDrawFocus(gpBase->mpInputHandler->IsGamepadPresent());
@@ -1679,25 +1734,26 @@ bool cLuxMainMenu::PressExit(iWidget* apWidget, const cGuiMessageData& aData)
 									kTranslate("MainMenu", "Yes"), kTranslate("MainMenu", "No"),
 									this,
 									kGuiCallback(ClickedExitPopup));
+	mpQuitConfirmation = pPopUp;
 	pPopUp->GetGuiSet()->SetDrawFocus(mpGuiSet->GetDrawFocus());
 	pPopUp->SetKillOnEscapeKey(false);
 
 	return true;
 }
-kGuiCallbackDeclaredFuncEnd(cLuxMainMenu, PressExit);
 
 bool cLuxMainMenu::ClickedExitPopup(iWidget* apWidget, const cGuiMessageData& aData)
 {
 	bool bExit = aData.mlVal ==0 ? true : false;
+	mpQuitConfirmation = NULL;
 	mpGuiSet->SetDrawFocus(false);
 
 	if(bExit)
 	{
-		ExitMenu(eLuxMainMenuExit_QuitGame);
+		ExitMenu(mQuitExitMessage);
 	}
 	else
 	{
-		SetTopMenuVisible(true);
+		SetTopMenuVisible(mCurrentWindow == eLuxMainMenuWindow_LastEnum);
 	}
 
 	return true;
@@ -1711,37 +1767,9 @@ bool cLuxMainMenu::PressExitToMainMenu(iWidget* apWidget, const cGuiMessageData&
 	if(mbTopMenuVisible==false)
 		return true;
 
-	SetTopMenuVisible(false);
-
-	mpGuiSet->SetDrawFocus(gpBase->mpInputHandler->IsGamepadPresent());
-	cGuiPopUpMessageBox *pPopUp = mpGuiSet->CreatePopUpMessageBox(_W(""),kTranslate("MainMenu", "Sure you want to exit to main menu?"),
-																kTranslate("MainMenu", "Yes"), kTranslate("MainMenu", "No"),
-																this,
-																kGuiCallback(ClickedExitToMainMenuPopup));
-	pPopUp->GetGuiSet()->SetDrawFocus(mpGuiSet->GetDrawFocus());
-	pPopUp->SetKillOnEscapeKey(false);
-		
-	return true;
+	return ShowQuitConfirmation(eLuxMainMenuExit_QuitToMenu);
 }
 kGuiCallbackDeclaredFuncEnd(cLuxMainMenu, PressExitToMainMenu);
-
-bool cLuxMainMenu::ClickedExitToMainMenuPopup(iWidget* apWidget, const cGuiMessageData& aData)
-{
-	bool bExit = aData.mlVal ==0 ? true : false;
-	mpGuiSet->SetDrawFocus(false);
-
-	if(bExit)
-	{
-		ExitMenu(eLuxMainMenuExit_QuitToMenu);
-	}
-	else
-	{
-		SetTopMenuVisible(true);
-	}
-
-	return true;
-}
-kGuiCallbackDeclaredFuncEnd(cLuxMainMenu, ClickedExitToMainMenuPopup);
 
 //-----------------------------------------------------------------------
 

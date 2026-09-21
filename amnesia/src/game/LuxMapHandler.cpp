@@ -308,34 +308,6 @@ void cLuxMapHandler::Reset()
 
 //-----------------------------------------------------------------------
 
-void cLuxMapHandler::OnQuit()
-{
-    gpBase->mpEngine->GetUpdater()->SetContainer("MainMenu");
-
-    gpBase->mpLoadScreenHandler->DrawMenuScreen();
-    
-    //Destroy map
-    cLuxMapHandler *mpMapHandler = gpBase->mpMapHandler;
-    if(mpMapHandler->GetCurrentMap())
-    {
-        //Save
-        gpBase->mpSaveHandler->AutoSave();
-        
-        mpMapHandler->DestroyMap(mpMapHandler->GetCurrentMap(),false);
-
-        //Reset game
-        gpBase->mpEngine->GetUpdater()->BroadcastMessageToAll(eUpdateableMessage_Reset);
-        gpBase->SetCustomStory(NULL);
-    }
-
-    //Start up menu again
-    gpBase->mpMainMenu->OnLeaveContainer("");
-    gpBase->mpMainMenu->OnEnterContainer("");
-}
-
-
-//-----------------------------------------------------------------------
-
 void cLuxMapHandler::LoadUserConfig()
 {
 	mbShowCommentary = gpBase->mpUserConfig->GetBool("Game","ShowCommentary", false);

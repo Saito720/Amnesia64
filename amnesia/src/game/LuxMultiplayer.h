@@ -48,7 +48,6 @@ public:
     void PostUpdate(float afTimeStep);
     void OnDraw(float afFrameTime);
     void Reset();
-    void OnQuit();
     void OnMapLeave(cLuxMap* apMap);
     void OnMapLoaded(cLuxMap* apMap, const tString& asStartPos);
     bool Host(const cLuxMultiplayerSettings& settings);

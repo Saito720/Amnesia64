@@ -10,13 +10,7 @@
 #include <limits>
 using namespace luxnet;
 static std::vector<uint8_t> NativePacket(const NativeState& state) {
-    Writer w(EntityState);w.U32(state.epoch);w.String(state.name);
-    w.U8(state.kind);w.U8(state.flags);w.U8(state.detail);
-    w.U32(static_cast<uint32_t>(state.joints.size()));
-    for(const auto& j:state.joints) {
-        w.U32(j.index);w.U8(j.kind);w.U8(j.flags);w.Float(j.min);w.Float(j.max);
-    }
-    return w.data;
+    return WriteNativeState(state);
 }
 static bool DecodeNative(const std::vector<uint8_t>& bytes) {
     Reader reader(bytes);NativeState result;
@@ -142,19 +136,49 @@ static void CheckWorldEffects() {
 }
 static void CheckNativeEntityStates() {
     NativeState basic={42,"bookshelf",PropState,EntityActive|EffectsActive,0,{}};
+    basic.id=1030;
     assert(DecodeNative(NativePacket(basic)));
     for(uint8_t kind=PropState;kind<=ChestState;++kind) {
         NativeState state=basic;state.kind=kind;
         state.detail=kind==DoorState ? 7 : kind==PropState ? 0 : 1;
         state.flags=15;assert(DecodeNative(NativePacket(state)));
-        ++state.detail;assert(!DecodeNative(NativePacket(state)));
+        if(kind==DoorState) state.detail=128;else ++state.detail;
+        assert(!DecodeNative(NativePacket(state)));
+    }
+    NativeState door=basic;door.kind=DoorState;
+    for(unsigned level=0;level<=2;++level) for(bool broken:{false,true}) {
+        door.detail=static_cast<uint8_t>(DoorClosed|DoorLocked|DoorAutoCloseDisabled|DoorDisableBreakable|
+            (level<<DoorDamageShift)|(broken?DoorBroken:0));
+        door.brokenEntityId=broken?9123:UINT32_MAX;
+        door.health=broken?-25.0f:100.0f-float(level)*35;
+        const auto bytes=NativePacket(door);Reader reader(bytes);NativeState decoded;
+        assert(ReadNativeState(reader,decoded) && NativePacket(decoded)==bytes);
+        assert(decoded.detail==door.detail && decoded.health==door.health && decoded.brokenEntityId==door.brokenEntityId);
+        for(size_t length=0;length<bytes.size();++length) assert(!DecodeNative({bytes.begin(),bytes.begin()+length}));
+    }
+    // Native damage can leave negative health, and scripts can restore it.
+    // A snapshot is absolute state; the codec imposes no monotonic damage rule.
+    for(float health:{100.0f,25.0f,-50.0f,75.0f,1000000000.0f,-1000000000.0f}) {
+        door.health=health;
+        const auto bytes=NativePacket(door);Reader stable(bytes);NativeState decoded;
+        assert(ReadNativeState(stable,decoded) && decoded.health==health);
+    }
+    auto badDoor=door;badDoor.detail=3<<DoorDamageShift;assert(!DecodeNative(NativePacket(badDoor)));
+    badDoor=door;badDoor.detail=128;assert(!DecodeNative(NativePacket(badDoor)));
+    badDoor=door;badDoor.brokenEntityId=0x80000000u;assert(!DecodeNative(NativePacket(badDoor)));
+    badDoor=door;badDoor.brokenEntityId=0xfffffffeu;assert(!DecodeNative(NativePacket(badDoor)));
+    for(float health:{1000000064.0f,-1000000064.0f,std::numeric_limits<float>::infinity(),
+                      -std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()}) {
+        badDoor=door;badDoor.health=health;assert(!DecodeNative(NativePacket(badDoor)));
     }
     NativeState jointed=basic;
     jointed.joints={{0,1,0,-1.5f,1.5f},{3,2,7,-100000,100000}};
     const std::vector<uint8_t> valid=NativePacket(jointed);
     Reader roundTrip(valid);NativeState decoded;
     assert(ReadNativeState(roundTrip,decoded) && roundTrip.Done());
-    assert(decoded.epoch==42 && decoded.name=="bookshelf" && decoded.joints.size()==2);
+    assert(decoded.epoch==42 && decoded.id==1030 && decoded.name=="bookshelf" && decoded.joints.size()==2);
+    auto sibling=basic;sibling.id=1040;
+    assert(NativePacket(sibling)!=NativePacket(basic) && DecodeNative(NativePacket(sibling)));
     assert(decoded.joints[1].index==3 && decoded.joints[1].max==100000);
     NativeState deleted=jointed;deleted.joints[0]={0,0,0,0,0};
     auto deletion=NativePacket(deleted);Reader deletionReader(deletion);NativeState deletionState;
@@ -173,6 +197,7 @@ static void CheckNativeEntityStates() {
     std::vector<uint8_t> trailing=valid;trailing.push_back(0);assert(!DecodeNative(trailing));
 
     NativeState invalid=jointed;invalid.kind=ChestState+1;assert(!DecodeNative(NativePacket(invalid)));
+    invalid=jointed;invalid.id=UINT32_MAX;assert(!DecodeNative(NativePacket(invalid)));
     invalid=jointed;invalid.flags=16;assert(!DecodeNative(NativePacket(invalid)));
     for(const std::string& name:{std::string(),std::string(257,'x'),std::string("door\0hidden",11)}) {
         invalid=jointed;invalid.name=name;assert(!DecodeNative(NativePacket(invalid)));
@@ -195,8 +220,8 @@ static void CheckNativeEntityStates() {
     for(uint32_t i=0;i<128;++i) maximum.joints.push_back({i,1,7,-1,1});
     assert(DecodeNative(NativePacket(maximum)));
     maximum.joints.push_back({128,1,0,0,1});assert(!DecodeNative(NativePacket(maximum)));
-    Writer hugeCount(EntityState);hugeCount.U32(42);hugeCount.String("door");
-    hugeCount.U8(DoorState);hugeCount.U8(15);hugeCount.U8(7);hugeCount.U32(0xffffffffu);
+    Writer hugeCount(EntityState);hugeCount.U32(42);hugeCount.String("door");hugeCount.U32(123);
+    hugeCount.U8(DoorState);hugeCount.U8(15);hugeCount.U8(7);hugeCount.Float(100);hugeCount.U32(UINT32_MAX);hugeCount.U32(0xffffffffu);
     assert(!DecodeNative(hugeCount.data));
 
     // Mutating valid states reaches joint decoding as well as header validation.
@@ -208,6 +233,7 @@ static void CheckNativeEntityStates() {
         Reader reader(bytes);NativeState state;
         if(ReadNativeState(reader,state)) {
             assert(reader.Done() && state.joints.size()<=128 && !state.name.empty() && state.name.size()<=256);
+            assert(std::isfinite(state.health) && std::fabs(state.health)<=1000000000.0f);
             uint32_t previous=0;
             for(size_t n=0;n<state.joints.size();++n) {
                 const auto& j=state.joints[n];
@@ -219,13 +245,13 @@ static void CheckNativeEntityStates() {
     }
 }
 static void CheckJointBreakRequests() {
-    const JointBreakState base={42,0,17,0x0123456789abcdefULL,"painting03_dynamic_2"};
+    const JointBreakState base={42,0,17,0x0123456789abcdefULL,"painting03_dynamic_2",1040};
     auto valid=[](const std::vector<uint8_t>& bytes) {Reader r(bytes);JointBreakState state;return ReadJointBreak(r,state);};
     const auto packet=WriteJointBreak(base);assert(packet.front()==JointBreakRequest);
     Reader reader(packet);JointBreakState decoded;
     assert(ReadJointBreak(reader,decoded) && reader.Done());
     assert(decoded.epoch==base.epoch && decoded.index==base.index && decoded.token==base.token &&
-           decoded.body==base.body && decoded.name==base.name);
+           decoded.body==base.body && decoded.name==base.name && decoded.id==1040);
     for(size_t n=0;n<packet.size();++n) assert(!valid({packet.begin(),packet.begin()+n}));
     auto trailing=packet;trailing.push_back(0);assert(!valid(trailing));
     trailing=packet;trailing.resize(513);assert(!valid(trailing));
@@ -236,6 +262,7 @@ static void CheckJointBreakRequests() {
             assert(ReadJointBreak(r,result) && result.body==body && result.index==index && result.token==token && result.name==state.name);
         }
     auto invalid=base;invalid.token=0;assert(!valid(WriteJointBreak(invalid)));
+    invalid=base;invalid.id=UINT32_MAX;assert(!valid(WriteJointBreak(invalid)));
     for(uint32_t index:{128u,0xffffffffu}) {invalid=base;invalid.index=index;assert(!valid(WriteJointBreak(invalid)));}
     for(const std::string& name:{std::string(),std::string(257,'x'),std::string("joint\0hidden",12)}) {
         invalid=base;invalid.name=name;assert(!valid(WriteJointBreak(invalid)));

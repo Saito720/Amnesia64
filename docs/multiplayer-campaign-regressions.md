@@ -1,6 +1,6 @@
 # Multiplayer campaign regression checks
 
-Use the same protocol-11 build on both peers. Keep **every player may trigger
+Use the same protocol-13 build on both peers. Keep **every player may trigger
 Player callbacks** enabled for the client interaction tests.
 
 ## Changes under test
@@ -145,3 +145,37 @@ player query values, inventory transfers and entity definitions change the wire 
 - Walk beside an angled thin script area (for example `AreaHelpMe` in prison north).
   The client must enter the actual shape before its callback runs, matching host
   detection rather than the larger axis-aligned bounding box.
+
+## Duplicate names and failed-join recovery
+
+- Host the unchanged `09_back_hall.map`, join, and revisit it after a map change.
+  Both instances of `Even01Slime04` (IDs 1030 and 1040) and `Even01Slime02_3`
+  (IDs 1047 and 1055) must remain distinct. Reconstruction, attachments, native
+  state, and interactions use entity IDs so repeated names do not reject a map
+  or overwrite a sibling prop.
+- After a host-side initialization rejection, retry from the same Steam account
+  without restarting the host. A transient disconnect must not ban that account
+  from the still-valid lobby. Normal membership and identity checks still apply.
+- Check both instances' `hpl.log` when initialization fails. Session lifecycle
+  messages identify the role, map, epoch, peer, and reason; reconstruction failures
+  additionally identify the entity and failed operation. The rejection status
+  carries the specific reconstruction error instead of only a generic failure.
+
+## Enemy-damaged doors and native debris
+
+- In `10_daniels_room.map`, let the Grunt damage and destroy the crowbar door
+  (`mansion_1`). Both peers must show each damage stage, then hide the broken
+  leaf while retaining the hinges. The client must not retain a visible door
+  over its disabled collision body.
+- Debris must appear once on each peer and disappear after its authored lifetime
+  (four seconds for this door). Reconnect and visit Study and back: the door
+  remains broken and expired debris must not reappear.
+- Use scripted health changes and `ResetProp` on a breakable door, including two
+  breaks around a reset within one update. Check matching damage meshes, one
+  surviving debris instance, and exactly one sound/particle pair per transition.
+  Break callbacks run on the host; any props they create must reach the client.
+  Resetting a door after debris expires must not delete another prop reusing its ID.
+- Break an object whose destruction callback creates and configures another prop.
+  The client must retain one copy with the host's ID and configured state. An
+  early local destruction must not let that callback reuse the source's ID while
+  the host still holds it during the callback.

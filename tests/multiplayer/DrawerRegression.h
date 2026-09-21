@@ -27,6 +27,7 @@ class cDrawerRegression {
     cVector3f initialDrawerPosition;
     cVector3f contactStart,contactPrevious;
     bool attempted=false;
+    bool startupPrepared=false;
     void next() { ++phase;entered=SDL_GetTicks();attempted=false; }
     tString marker(const char* suffix) {
         return "drawer-"+cString::ToString(static_cast<int>(trial))+"-"+suffix;
@@ -126,6 +127,9 @@ class cDrawerRegression {
         auto* player=gpBase->mpPlayer->GetCharacterBody();
         auto* prop=static_cast<cLuxProp_Object*>(map->GetEntityByName("codex_contact_box",eLuxEntityType_Prop,eLuxPropType_Object));
         if(phase==10) {
+            // Campaign look-at effects can outlive the earlier interactions.
+            // This movement fixture supplies its own direction toward the box.
+            gpBase->mpPlayer->GetHelperLookAt()->SetActive(false);
             cMatrixf matrix=cMatrixf::Identity;matrix.SetTranslation(cVector3f(6,40,-3));
             map->CreateEntity("codex_contact_box","entities/container/wood_box01/wood_box01.ent",matrix,1);
             prop=static_cast<cLuxProp_Object*>(map->GetEntityByName("codex_contact_box",eLuxEntityType_Prop,eLuxPropType_Object));
@@ -234,28 +238,35 @@ public:
         if(phase>=10) return UpdateContact(error,map,host,age);
         if(phase>=6) return UpdateDrops(error,map,actor,age);
         if(phase==0) {
-            originalPlayerPosition=gpBase->mpPlayer->GetCharacterBody()->GetPosition();
-            originalGravity=gpBase->mpPlayer->GetCharacterBody()->GravityIsActive();
-            gpBase->mpPlayer->GetCharacterBody()->SetGravityActive(false);
-            input=hplNew(cDrawerHeldInput,());
-            gpBase->mpEngine->GetInput()->GetAction(eLuxAction_Interact)->AddSubAction(input);
-            // World::Compile bounds Newton to retail static geometry. Include
-            // our airborne fixtures explicitly; outside that box Newton does
-            // not integrate them even when their active/enabled flags are set.
-            cVector3f minimum=map->GetPhysicsWorld()->GetWorldSizeMin();
-            cVector3f maximum=map->GetPhysicsWorld()->GetWorldSizeMax();
-            std::printf("%s retail physics bounds before drawer fixtures: min=(%.6g %.6g %.6g) max=(%.6g %.6g %.6g)\n",
-                role.c_str(),minimum.x,minimum.y,minimum.z,maximum.x,maximum.y,maximum.z);
-            minimum.x=std::min(minimum.x,-10.0f);minimum.y=std::min(minimum.y,35.0f);minimum.z=std::min(minimum.z,-5.0f);
-            maximum.x=std::max(maximum.x,10.0f);maximum.y=std::max(maximum.y,45.0f);maximum.z=std::max(maximum.z,5.0f);
-            map->GetPhysicsWorld()->SetWorldSize(minimum,maximum);
-            // Put the intact props above the level so existing room geometry
-            // cannot obstruct the drawers or affect the measured movement.
+            if(!startupPrepared) {
+                originalPlayerPosition=gpBase->mpPlayer->GetCharacterBody()->GetPosition();
+                originalGravity=gpBase->mpPlayer->GetCharacterBody()->GravityIsActive();
+                gpBase->mpPlayer->GetCharacterBody()->SetGravityActive(false);
+                input=hplNew(cDrawerHeldInput,());
+                gpBase->mpEngine->GetInput()->GetAction(eLuxAction_Interact)->AddSubAction(input);
+                // World::Compile bounds Newton to retail static geometry. Include
+                // our airborne fixtures explicitly; outside that box Newton does
+                // not integrate them even when their active/enabled flags are set.
+                cVector3f minimum=map->GetPhysicsWorld()->GetWorldSizeMin();
+                cVector3f maximum=map->GetPhysicsWorld()->GetWorldSizeMax();
+                std::printf("%s retail physics bounds before drawer fixtures: min=(%.6g %.6g %.6g) max=(%.6g %.6g %.6g)\n",
+                    role.c_str(),minimum.x,minimum.y,minimum.z,maximum.x,maximum.y,maximum.z);
+                minimum.x=std::min(minimum.x,-10.0f);minimum.y=std::min(minimum.y,35.0f);minimum.z=std::min(minimum.z,-5.0f);
+                maximum.x=std::max(maximum.x,10.0f);maximum.y=std::max(maximum.y,45.0f);maximum.z=std::max(maximum.z,5.0f);
+                map->GetPhysicsWorld()->SetWorldSize(minimum,maximum);
+                // The preceding reconstruction test just retired low IDs.
+                // Only the host allocates the new cabinets; clients await their
+                // real definitions instead of racing the removal tombstones.
+                if(host) for(unsigned i=0;i<2;++i) {
+                    cMatrixf transform=cMatrixf::Identity;transform.SetTranslation(cVector3f(float(i)*4,40,0));
+                    map->CreateEntity(i?"codex_drawers_b":"codex_drawers_a",
+                        "entities/furniture/chest_of_drawers_nice/chest_of_drawers_nice.ent",transform,1);
+                }
+                startupPrepared=true;
+            }
             for(unsigned i=0;i<2;++i) {
-                cMatrixf transform=cMatrixf::Identity;transform.SetTranslation(cVector3f(float(i)*4,40,0));
-                map->CreateEntity(i?"codex_drawers_b":"codex_drawers_a",
-                    "entities/furniture/chest_of_drawers_nice/chest_of_drawers_nice.ent",transform,1);
                 cLuxProp_Object* prop=cabinet(map,i);
+                if(!host && !prop) return 0;
                 if(!prop || prop->GetBodyNum()!=4) return fail(error,"retail chest did not load its four bodies");
                 for(int j=0;j<prop->GetBodyNum();++j) prop->GetBody(j)->SetGravity(false);
             }

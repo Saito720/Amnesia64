@@ -26,34 +26,55 @@ inline bool ReadRope(Reader& r,RopeSnapshot& s) {
 }
 enum EntityKind : uint8_t { PropState=0, LampState, DoorState, ButtonState, ChestState };
 enum EntityFlags : uint8_t { EntityActive=1, InteractionDisabled=2, EffectsActive=4, StaticPhysics=8 };
+enum DoorDetails : uint8_t {
+    DoorClosed=1, DoorLocked=2, DoorAutoCloseDisabled=4, DoorBroken=8,
+    DoorDamageMask=48, DoorDisableBreakable=64
+};
+static const unsigned DoorDamageShift=4;
 // kind 0 is a deleted authored joint slot; live hinge/slider states are 1/2.
 struct JointState { uint32_t index; uint8_t kind, flags; float min, max; };
-struct JointBreakState { uint32_t epoch, index, token; uint64_t body; std::string name; };
+struct JointBreakState { uint32_t epoch, index, token; uint64_t body; std::string name; uint32_t id=0; };
 inline std::vector<uint8_t> WriteJointBreak(const JointBreakState& state) {
-    Writer w(JointBreakRequest);w.U32(state.epoch);w.String(state.name);w.U32(state.index);
+    Writer w(JointBreakRequest);w.U32(state.epoch);w.String(state.name);w.U32(state.id);w.U32(state.index);
     w.U32(static_cast<uint32_t>(state.body));w.U32(static_cast<uint32_t>(state.body>>32));w.U32(state.token);
     return w.data;
 }
 inline bool ReadJointBreak(Reader& r,JointBreakState& state) {
     if(r.data.size()>512) return false;
-    state.epoch=r.U32();state.name=r.String(256);state.index=r.U32();
+    state.epoch=r.U32();state.name=r.String(256);state.id=r.U32();state.index=r.U32();
     state.body=r.U32();state.body|=uint64_t(r.U32())<<32;state.token=r.U32();
-    return r.Done() && !state.name.empty() && state.index<128 && state.token!=0;
+    return r.Done() && !state.name.empty() && state.id<=0x7fffffffu && state.index<128 && state.token!=0;
 }
 struct NativeState {
     uint32_t epoch;
     std::string name;
     uint8_t kind, flags, detail;
     std::vector<JointState> joints;
+    uint32_t id=0;
+    float health=100;
+    uint32_t brokenEntityId=UINT32_MAX;
 };
+inline std::vector<uint8_t> WriteNativeState(const NativeState& state) {
+    Writer w(EntityState);w.U32(state.epoch);w.String(state.name);w.U32(state.id);
+    w.U8(state.kind);w.U8(state.flags);w.U8(state.detail);w.Float(state.health);
+    if(state.kind==DoorState) w.U32(state.brokenEntityId);
+    w.U32(static_cast<uint32_t>(state.joints.size()));
+    for(const auto& joint:state.joints) {
+        w.U32(joint.index);w.U8(joint.kind);w.U8(joint.flags);w.Float(joint.min);w.Float(joint.max);
+    }
+    return w.data;
+}
 inline bool ReadNativeState(Reader& r, NativeState& state) {
-    state.epoch=r.U32();state.name=r.String(256);
+    state.epoch=r.U32();state.name=r.String(256);state.id=r.U32();
     state.kind=r.U8();state.flags=r.U8();state.detail=r.U8();
+    state.health=r.Float();state.brokenEntityId=state.kind==DoorState?r.U32():UINT32_MAX;
     uint32_t count=r.U32();
-    if(!r.valid || state.name.empty() || state.kind>ChestState || state.flags>15 ||
+    if(!r.valid || state.name.empty() || state.id>0x7fffffffu || state.kind>ChestState || state.flags>15 ||
        (state.kind==PropState && state.detail!=0) || (state.kind==LampState && state.detail>1) ||
        ((state.kind==ButtonState || state.kind==ChestState) && state.detail>1) ||
-       (state.kind==DoorState && state.detail>7) || count>128) return false;
+       (state.kind==DoorState && ((state.detail&128)!=0 || ((state.detail&DoorDamageMask)>>DoorDamageShift)>2 ||
+          (state.brokenEntityId!=UINT32_MAX && state.brokenEntityId>0x7fffffffu))) ||
+       std::fabs(state.health)>1000000000.0f || count>128) return false;
     state.joints.clear();
     for(uint32_t i=0;i<count;++i) {
         JointState j;j.index=r.U32();j.kind=r.U8();j.flags=r.U8();j.min=r.Float();j.max=r.Float();

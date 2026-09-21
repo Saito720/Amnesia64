@@ -16,6 +16,7 @@ class cNativeDiaryRegression {
     unsigned trial=0,phase=0;
     Uint32 entered=0;
     bool requested=false,checkedResponses=false;
+    bool callbacksRegistered=false,fixtureCreated=false;
     bool originalTriggerPolicy=true;
     tString name;
     tString marker(const char* suffix) const {
@@ -34,19 +35,26 @@ public:
         if(!mp->IsActive() || !mp->IsReady() || !map) return fail(error,"session/map is no longer ready");
         if(entered && SDL_GetTicks()-entered>10000) return fail(error,"pickup presentation timed out");
         if(phase==0) {
-            if(trial==0) {
+            if(!callbacksRegistered) {
                 originalTriggerPolicy=mp->mSettings.allPlayersTriggerScripts;
                 auto* system=gpBase->mpEngine->GetSystem()->GetLowLevel();
                 if(!system->AddScriptFunc("void CodexSuppressDiary(string &in name, int index)",(void*)CodexSuppressDiary) ||
                    !system->AddScriptFunc("void CodexShowDiary(string &in name, int index)",(void*)CodexShowDiary))
                     return fail(error,"diary callback registration failed");
+                callbacksRegistered=true;
             }
             if(host) mp->mSettings.allPlayersTriggerScripts=trial==3?false:originalTriggerPolicy;
             gpBase->mpEngine->GetUpdater()->SetContainer("Default");
             gpBase->mpInputHandler->ChangeState(eLuxInputState_Game);
             name="codex_diary_"+cString::ToString(static_cast<int>(trial));
-            map->CreateEntity(name,"entities/item/diary_paper01/diary_paper01.ent",transform,1);
+            if(host && !fixtureCreated) {
+                map->CreateEntity(name,"entities/item/diary_paper01/diary_paper01.ent",transform,1);
+                fixtureCreated=true;
+            }
             auto* item=static_cast<cLuxProp_Item*>(map->GetEntityByName(name,eLuxEntityType_Prop,eLuxPropType_Item));
+            // The host owns runtime IDs; the client must wait for its real
+            // definition instead of independently allocating a recently freed ID.
+            if(!host && !item) return 0;
             if(!item || item->GetItemType()!=eLuxItemType_Diary) return fail(error,"retail diary fixture did not load");
             cResourceVarsObject vars;
             vars.AddVarString("DiaryText",trial<3?"CH01L03_Daniel":(trial==3?"CH01L10_Daniel03":"CH02L24_Daniel07_03"));
@@ -73,18 +81,18 @@ public:
             if(!host && !checkedResponses && !mp->mpEntities->mPendingDiaries.empty()) {
                 const auto& pending=*mp->mpEntities->mPendingDiaries.begin();
                 const size_t before=mp->mpEntities->mPendingDiaries.size();
-                luxnet::Writer wrong(luxnet::NativeDiaryResult);wrong.U32(mp->GetMapEpoch());wrong.String(pending.second.name);
+                luxnet::Writer wrong(luxnet::NativeDiaryResult);wrong.U32(mp->GetMapEpoch());wrong.String(pending.second.name);wrong.U32(pending.second.id);
                 wrong.U32(pending.first+1);wrong.U8(1);wrong.U8(1);
                 if(mp->mpEntities->HandleMessage(0,wrong.data) || mp->mpEntities->mPendingDiaries.size()!=before)
                     return fail(error,"wrong diary response token consumed a pending presentation");
-                luxnet::Writer mismatch(luxnet::NativeDiaryResult);mismatch.U32(mp->GetMapEpoch());mismatch.String("wrong_diary");
+                luxnet::Writer mismatch(luxnet::NativeDiaryResult);mismatch.U32(mp->GetMapEpoch());mismatch.String("wrong_diary");mismatch.U32(pending.second.id);
                 mismatch.U32(pending.first);mismatch.U8(1);mismatch.U8(1);
                 if(mp->mpEntities->HandleMessage(0,mismatch.data) || mp->mpEntities->mPendingDiaries.size()!=before)
                     return fail(error,"wrong diary response name consumed a pending presentation");
                 // The normal packet router suspends effects while loading; the
                 // presentation handler also refuses to open when not ready.
                 cLuxMultiplayerEntities isolated(mp);isolated.mPendingDiaries.insert(pending);
-                luxnet::Writer waiting(luxnet::NativeDiaryResult);waiting.U32(mp->GetMapEpoch());waiting.String(pending.second.name);
+                luxnet::Writer waiting(luxnet::NativeDiaryResult);waiting.U32(mp->GetMapEpoch());waiting.String(pending.second.name);waiting.U32(pending.second.id);
                 waiting.U32(pending.first);waiting.U8(1);waiting.U8(1);
                 mp->mbReady=false;const bool handled=isolated.HandleMessage(0,waiting.data);mp->mbReady=true;
                 if(!handled || !isolated.mPendingDiaries.empty() || gpBase->mpEngine->GetUpdater()->GetCurrentContainerName()=="Journal")
@@ -110,7 +118,7 @@ public:
             if(!host && !checkedResponses) return fail(error,"pending diary response validation was not exercised");
             return 1;
         }
-        ++trial;next(0);return 0;
+        ++trial;fixtureCreated=false;next(0);return 0;
     }
 };
 #endif

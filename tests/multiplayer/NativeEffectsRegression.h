@@ -67,10 +67,10 @@ public:
             while(auto* sound=world->GetSoundEntity("Door_1_CloseOn")) world->DestroySoundEntity(sound);
             if(!host) {
                 door->SetClosed(true,false);
-                luxnet::Writer state(luxnet::EntityState);state.U32(session->GetMapEpoch());state.String("Door_1");
-                state.U8(luxnet::DoorState);state.U8(luxnet::EntityActive|luxnet::EffectsActive);
-                state.U8(4|(door->GetLocked()?2:0));state.U32(0);
-                if(!session->GetEntities()->HandleMessage(0,state.data) || door->GetClosed() || sounds(world,"Door_1_CloseOn"))
+                luxnet::NativeState state;state.epoch=session->GetMapEpoch();state.name="Door_1";state.id=door->GetID();
+                state.kind=luxnet::DoorState;state.flags=luxnet::EntityActive|luxnet::EffectsActive;
+                state.detail=luxnet::DoorAutoCloseDisabled|(door->GetLocked()?luxnet::DoorLocked:0);state.health=door->GetHealth();
+                if(!session->GetEntities()->HandleMessage(0,luxnet::WriteNativeState(state)) || door->GetClosed() || sounds(world,"Door_1_CloseOn"))
                     return fail(error,"native state correction emitted a latch sound");
             }
             mark(role+"-native-fx-armed.txt","silent door correction and stationary players ready");next();return 0;

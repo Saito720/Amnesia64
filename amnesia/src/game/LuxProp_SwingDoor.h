@@ -109,6 +109,10 @@ public:
 	bool GetDisableAutoClose(){ return mbDisableAutoClose;}
 
 	void SetCurrentDamageLevel(int alX);
+	int GetCurrentDamageLevel() const { return mlCurrentMeshEntity; }
+	int GetBrokenEntityID() const;
+	bool GetDisableBreakable() const { return mbDisableBreakable; }
+	void ApplyNetworkState(float afHealth, int alDamageLevel, bool abBroken, bool abDisableBreakable, int alBrokenEntityID);
 
 	cMeshEntity* GetEffectMeshEntity();
 
@@ -127,6 +131,7 @@ public:
 	void SetupSaveData(iLuxEntity_SaveData *apSaveData);
 
 private:
+	void SetDoorLeafVisible(bool abVisible);
 	void SetupDoorPhysics(float afOpenAmount);
 
 	cLuxSwingDoorJointData* GetJointDataFromBody(iPhysicsBody *apBody);

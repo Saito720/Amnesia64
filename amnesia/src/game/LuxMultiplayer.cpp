@@ -302,6 +302,8 @@ void cLuxMultiplayer::AcceptSteamInvite() {
     if(JoinSteamLobby(std::to_string(lobby))) mlPendingSteamInvite=0;
 }
 void cLuxMultiplayer::Stop(const tString& reason) {
+    if(IsActive()) Log("Multiplayer %s stopping on map '%s' (epoch %u): %s\n",
+        IsHost()?"host":"client",msMapName.c_str(),mlMapEpoch,reason.empty()?"Disconnected":reason.c_str());
     mPendingRecoveredItems.clear();mAutoCombineItems.clear();mbCombiningInventory=mbGroupInventory=mbAutoCombiningInventory=false;
     mSharedScriptItems.clear();
     mRemoteItems.clear();
@@ -347,7 +349,6 @@ void cLuxMultiplayer::Reset() {
 bool cLuxMultiplayer::ShouldSuppressOfflineSaves() const {
     return IsActive() || (mbSessionWorld && gpBase->mpMapHandler->GetCurrentMap()!=NULL);
 }
-void cLuxMultiplayer::OnQuit() {Stop("Session ended.");}
 void cLuxMultiplayer::OnMapLeave(cLuxMap*) {mpEnemies->Reset();mpEffects->Reset();mpWorld->Reset();mpEntities->Reset();}
 void cLuxMultiplayer::ShowWindow(bool campaign) {mpUI->Show(campaign);}
 void cLuxMultiplayer::ToggleWindow() {mpUI->Toggle();}
@@ -387,6 +388,8 @@ void cLuxMultiplayer::OnMapLoaded(cLuxMap* map,const tString& start) {
     if(IsActive()) mpEffects->OnMapLoaded(map);
 }
 void cLuxMultiplayer::RejectPeer(uint32_t peer,const tString& reason) {
+    Warning("Multiplayer %s rejected peer %u on map '%s' (epoch %u): %s\n",
+        IsHost()?"host":"client",peer,msMapName.c_str(),mlMapEpoch,reason.c_str());
     if(IsHost()) {mTransport.Disconnect(peer,reason);mpWorld->OnPeerDisconnected(peer);mpEntities->OnPeerDisconnected(peer);mpEffects->OnPeerDisconnected(peer);mpEnemies->OnPeerDisconnected(peer);mPeers.erase(peer);}
     else {Stop(reason);ShowWindow();}
 }
@@ -397,9 +400,13 @@ void cLuxMultiplayer::HandleEvent(const hpl::cNetworkEvent& event) {
         msStatus=IsHost() ? "Hosting "+msMapName+" on Steam. Invite friends or share the lobby code." : "Steam lobby joined. Connecting to host...";
         if(IsClient()) SetLoadPhase(eLuxMultiplayerLoadPhase_Connecting,msStatus);
     } else if(event.type==hpl::eNetworkEventType::Connected) {
+        Log("Multiplayer %s connected peer %u on map '%s' (epoch %u).\n",
+            IsHost()?"host":"client",event.peer,msMapName.c_str(),mlMapEpoch);
         if(IsHost()) {mPeers[event.peer]=Peer();}
         else {Writer w(Hello);w.U32(ProtocolVersion);Send(0,w.data,true);SetLoadPhase(eLuxMultiplayerLoadPhase_Preparing,"Connected. Waiting for the host's map...");}
     } else if(event.type==hpl::eNetworkEventType::Disconnected) {
+        Log("Multiplayer %s disconnected peer %u on map '%s' (epoch %u): %s\n",
+            IsHost()?"host":"client",event.peer,msMapName.c_str(),mlMapEpoch,event.reason.c_str());
         if(IsHost()) {mPeers.erase(event.peer);mpWorld->OnPeerDisconnected(event.peer);mpEntities->OnPeerDisconnected(event.peer);mpEffects->OnPeerDisconnected(event.peer);mpEnemies->OnPeerDisconnected(event.peer);}
         else {Stop("Disconnected: "+event.reason);ShowWindow();}
     } else if(event.type==hpl::eNetworkEventType::Message) HandlePacket(event.peer,event.data);
@@ -461,10 +468,10 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
             if(!state.endSent || state.ready) {RejectPeer(peer,"Unexpected map acknowledgement.");return;}
             if(!mbHistoryComplete) {RejectPeer(peer,"The session's initialization history exceeded its limit while joining.");return;}
             state.ready=true;state.age=0;
-            if(!mpEntities->SendMapBaseline(peer)) {RejectPeer(peer,"Could not initialize restored map entities.");return;}
+            if(!mpEntities->SendMapBaseline(peer)) {RejectPeer(peer,"Could not initialize restored map entities: "+mpEntities->GetLastError());return;}
             if(!SyncItemCallbacks(peer)) {RejectPeer(peer,"Could not initialize item callbacks.");return;}
             for(const auto& effect:mvScriptHistory) if(!Send(peer,effect,true)) {RejectPeer(peer,"Script state exceeded the connection queue.");return;}
-            if(!mpEntities->SendInitialState(peer)) {RejectPeer(peer,"World has too many entities for initial synchronization.");return;}
+            if(!mpEntities->SendInitialState(peer)) {RejectPeer(peer,"Could not synchronize map entities: "+mpEntities->GetLastError());return;}
             if(!mpWorld->SendInitialState(peer)) {RejectPeer(peer,"World is too large for initial synchronization (32 MiB limit).");return;}
             if(!mpEnemies->SendInitialState(peer)) {RejectPeer(peer,"Could not initialize enemy state.");return;}
             if(!mpEffects->SendInitialState(peer)) {RejectPeer(peer,"Could not initialize active world effects.");return;}
@@ -678,7 +685,10 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
         tString error;if(!mpEffects->HandleMessage(0,data,error)) RejectPeer(0,error.empty()?"Invalid world effect update.":error);return;
     }
     if(type==EntityDefinition && mbReady) {
-        if(!mpEntities->ApplyDefinition(data)) RejectPeer(0,"Invalid or unavailable restored map entity.");return;
+        if(!mpEntities->ApplyDefinition(data)) RejectPeer(0,"Could not restore map entity: "+mpEntities->GetLastError());return;
+    }
+    if(type==EntityRemoved && mbReady) {
+        if(!mpEntities->ApplyRemoval(data)) RejectPeer(0,"Invalid removed-entity update from host.");return;
     }
     if(type==SameMapTeleport && mbReady) {
         const uint32_t epoch=r.U32();const tString mapName=r.String(256),start=r.String(128),a=r.String(256),b=r.String(256);
@@ -965,6 +975,15 @@ bool cLuxMultiplayer::RequestEntityInteraction(iLuxEntity* entity,iPhysicsBody* 
 }
 void cLuxMultiplayer::BroadcastScriptEffect(const std::vector<uint8_t>& effect) {
     if(!IsHost() || mbApplyingScriptEffect) return;
+    // A native break can allocate an entity immediately before its script
+    // callback creates another. Publish that allocation first on both live
+    // connections and the replay stream, so authored IDs keep matching.
+    if(mbReady && !effect.empty() && effect.front()!=EntityDefinition && effect.front()!=EntityRemoved &&
+        !mpEntities->SyncCreatedProps()) {
+        // The entity updater will stop the session between callbacks. Do not
+        // tear down replication from inside a script/native destruction stack.
+        mbHistoryComplete=false;return;
+    }
     // Bound late-join initialization history. Refuse joins once a complete replay cannot fit.
     if(mlScriptHistoryBytes+effect.size()<=256*1024) {mvScriptHistory.push_back(effect);mlScriptHistoryBytes+=effect.size();}
     else mbHistoryComplete=false;

@@ -24,7 +24,11 @@ public:
     bool SendInitialState(uint32_t peer);
     void CaptureMapBaseline();
     bool SendMapBaseline(uint32_t peer);
+    const std::string& GetLastError() const {return msLastError;}
     bool ApplyDefinition(const std::vector<uint8_t>& data);
+    bool ApplyRemoval(const std::vector<uint8_t>& data);
+    bool SyncCreatedProps();
+    bool IsEntityIDReserved(uint32_t id) const { return mDefinitionBindings.count(id)!=0; }
     void SyncRopes(uint32_t peer=UINT32_MAX);
     bool SeedCurrentMapItems(const std::vector<uint8_t>& mapBytes, std::string& error);
     bool HandleMessage(uint32_t peer, const std::vector<uint8_t>& data);
@@ -38,11 +42,15 @@ public:
 private:
     luxnet::PropDefinition CaptureDefinition(iLuxProp* prop);
     bool CaptureDefinitions(std::vector<std::vector<uint8_t> >& definitions);
+    bool Fail(const std::string& reason);
     std::vector<std::vector<uint8_t> > mvMapBaseline;
-    std::map<std::string,luxnet::PropIncarnationBinding> mDefinitionBindings;
+    std::map<uint32_t,luxnet::PropIncarnationBinding> mDefinitionBindings;
+    std::map<uint32_t,luxnet::PropRemoval> mAnnouncedProps;
+    std::string msPendingSyncError;
+    std::string msLastError,msMapBaselineError;
     bool mbMapBaselineValid=false;
     struct Claim { uint32_t peer, token; float age; uint64_t runtimeId; bool callbackOnly, diary; };
-    struct PendingDiary { std::string name; cLuxDiary* diary; float age; };
+    struct PendingDiary { std::string name; cLuxDiary* diary; float age; uint32_t id; };
     bool IsNative(iLuxEntity* entity) const;
     bool Eligible(iLuxEntity* entity);
     std::vector<uint8_t> Capture(iLuxProp* prop);
@@ -50,16 +58,17 @@ private:
     bool Commit(iLuxEntity* entity, bool remote, bool callbackOnly=false, int diaryIndex=-1, uint32_t peer=UINT32_MAX);
     void BroadcastState(iLuxEntity* entity);
     cLuxMultiplayer* mpSession;
-    std::map<std::string, Claim> mClaims;
-    std::map<std::string, std::vector<uint8_t> > mLastStates;
+    std::map<uint32_t, Claim> mClaims;
+    std::map<uint32_t, std::vector<uint8_t> > mLastStates;
     std::map<std::string, std::vector<uint8_t> > mLastRopes;
     std::map<std::string, uint64_t> mRemovedItems;
     std::map<std::pair<uint64_t,uint32_t>,uint32_t> mJointBreakRequests;
-    std::map<uint32_t, std::deque<std::string> > mInitial;
+    std::map<uint32_t, std::deque<std::pair<int,std::string> > > mInitial;
     std::map<uint32_t, PendingDiary> mPendingDiaries;
     bool* mpDiaryDecision;
     std::string msPending, msGranted;
     uint32_t mlToken, mlGrantedToken;
+    uint32_t mlPendingEntityID,mlGrantedEntityID;
     uint64_t mlPendingRuntimeID;
     int mlDiaryIndex;
     float mfSnapshotTime, mfPendingTime, mfGroundTruthTime;

@@ -2,13 +2,31 @@
 #define LUX_MULTIPLAYER_ENTITY_DEFINITION_H
 #include "LuxMultiplayerProtocol.h"
 #include "LuxMultiplayerWorldProtocol.h"
+#include <map>
 #include <set>
 
 namespace luxnet {
+// Removal is tied to the host instance, so a delayed tombstone cannot remove
+// a replacement that happens to reuse the same authored ID and name.
+struct PropRemoval {
+    uint32_t epoch=0, id=0;
+    uint64_t incarnation=0;
+    std::string name;
+};
+inline std::vector<uint8_t> WritePropRemoval(const PropRemoval& s) {
+    Writer w(EntityRemoved);w.U32(s.epoch);w.U32(s.id);
+    w.U32(static_cast<uint32_t>(s.incarnation));w.U32(static_cast<uint32_t>(s.incarnation>>32));
+    w.String(s.name);return w.data;
+}
+inline bool ReadPropRemoval(Reader& r,PropRemoval& s) {
+    s.epoch=r.U32();s.id=r.U32();s.incarnation=r.U32();s.incarnation|=uint64_t(r.U32())<<32;
+    s.name=r.String(256);
+    return r.Done() && s.epoch && s.id<=0x7fffffffu && s.incarnation && !s.name.empty();
+}
 // A reconstruction recipe, sent before native flags and physics state. The
 // source is an installed, validated entity resource, never executable script.
 struct PropDefinition {
-    uint32_t epoch=0, id=0;
+    uint32_t epoch=0, id=0, parentId=UINT32_MAX;
     uint64_t incarnation=0;
     std::string name, file, parent;
     float matrix[12]={1,0,0,0,0,1,0,0,0,0,1,0};
@@ -36,7 +54,7 @@ inline std::vector<uint8_t> WritePropDefinition(const PropDefinition& s) {
     for(float value:s.matrix) w.Float(value);
     for(float value:s.scale) w.Float(value);
     w.String(s.parent);
-    if(!s.parent.empty()) for(float value:s.attachment) w.Float(value);
+    if(!s.parent.empty()) {w.U32(s.parentId);for(float value:s.attachment) w.Float(value);}
     w.U32(static_cast<uint32_t>(s.bodies.size()));
     for(const auto& body:s.bodies) {w.U32(static_cast<uint32_t>(body.id));w.U32(static_cast<uint32_t>(body.id>>32));w.U32(body.generation);}
     w.U32(static_cast<uint32_t>(s.staticBodies.size()));
@@ -53,7 +71,8 @@ inline bool ReadPropDefinition(Reader& r,PropDefinition& s) {
     for(float& value:s.matrix) value=r.Float();
     for(float& value:s.scale) value=r.Float();
     s.parent=r.String(256);
-    if(!s.parent.empty()) for(float& value:s.attachment) value=r.Float();
+    if(!s.parent.empty()) {s.parentId=r.U32();for(float& value:s.attachment) value=r.Float();}
+    else s.parentId=UINT32_MAX;
     const uint32_t count=r.U32();if(!r.valid || count>1024) return false;
     s.bodies.clear();
     for(uint32_t i=0;i<count;++i) {
@@ -73,7 +92,8 @@ inline bool ReadPropDefinition(Reader& r,PropDefinition& s) {
         for(const auto& previous:s.staticBodies) if(previous.id==body.id) return false;
         s.staticBodies.push_back(body);
     }
-    if(!r.Done() || !s.epoch || !s.incarnation || s.id>0x7fffffffu || s.name.empty() || s.parent==s.name || !SafeRelativePath(s.file)) return false;
+    if(!r.Done() || !s.epoch || !s.incarnation || s.id>0x7fffffffu || s.name.empty() || !SafeRelativePath(s.file)) return false;
+    if(!s.parent.empty() && (s.parentId>0x7fffffffu || s.parentId==s.id)) return false;
     for(float value:s.matrix) if(std::fabs(value)>1000000) return false;
     for(float value:s.scale) if(value==0 || std::fabs(value)>10000) return false;
     if(!s.parent.empty()) for(float value:s.attachment) if(std::fabs(value)>1000000) return false;
@@ -81,20 +101,34 @@ inline bool ReadPropDefinition(Reader& r,PropDefinition& s) {
 }
 // Definitions can replace an authored parent (which destroys its attached
 // children). Always finish that reconstruction before binding any child.
-inline bool OrderPropDefinitions(std::vector<PropDefinition>& definitions) {
-    if(definitions.size()>8192) return false;
-    std::set<std::string> names;
-    for(const auto& definition:definitions) if(!names.insert(definition.name).second) return false;
-    for(const auto& definition:definitions) if(!definition.parent.empty() && !names.count(definition.parent)) return false;
-    std::set<std::string> emitted;
+inline std::string DescribePropDefinition(const PropDefinition& definition) {
+    return "entity '"+definition.name+"' (ID "+std::to_string(definition.id)+", source '"+definition.file+"')";
+}
+inline bool OrderPropDefinitions(std::vector<PropDefinition>& definitions,std::string* error=NULL) {
+    const auto fail=[&](const std::string& reason) {if(error) *error=reason;return false;};
+    if(error) error->clear();
+    if(definitions.size()>8192) return fail("Prop reconstruction roster exceeds 8192 entities.");
+    std::map<uint32_t,const PropDefinition*> identities;
+    for(const auto& definition:definitions)
+        if(!identities.emplace(definition.id,&definition).second)
+            return fail("Duplicate authored ID for "+DescribePropDefinition(definition)+".");
+    for(const auto& definition:definitions) if(!definition.parent.empty()) {
+        const auto parent=identities.find(definition.parentId);
+        if(parent==identities.end() || parent->second->name!=definition.parent)
+            return fail("Missing attachment parent '"+definition.parent+"' (ID "+std::to_string(definition.parentId)+") for "+DescribePropDefinition(definition)+".");
+    }
+    std::set<uint32_t> emitted;
     std::vector<PropDefinition> ordered;ordered.reserve(definitions.size());
     while(ordered.size()<definitions.size()) {
         const size_t before=ordered.size();
         for(auto& definition:definitions) {
-            if(emitted.count(definition.name) || (!definition.parent.empty() && !emitted.count(definition.parent))) continue;
-            emitted.insert(definition.name);ordered.push_back(definition);
+            if(emitted.count(definition.id) || (!definition.parent.empty() && !emitted.count(definition.parentId))) continue;
+            emitted.insert(definition.id);ordered.push_back(definition);
         }
-        if(before==ordered.size()) return false;
+        if(before==ordered.size()) {
+            for(const auto& definition:definitions) if(!emitted.count(definition.id))
+                return fail("Attachment cycle involving "+DescribePropDefinition(definition)+".");
+        }
     }
     definitions.swap(ordered);return true;
 }

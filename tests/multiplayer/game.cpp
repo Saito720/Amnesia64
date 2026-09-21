@@ -69,6 +69,9 @@ static void printStatus(const char* message) {
 #include "BorderlessSettingsRegression.h"
 #include "NetworkInterpolationRegression.h"
 #include "EnemyRegression.h"
+#include "BackHallRegression.h"
+#include "QuitRegression.h"
+#include "DoorBreakRegression.h"
 class cGameSmoke : public iUpdateable, public iRendererCallback {
     int state=0;
     Uint32 started=0, readyAt=0, statusAt=0;
@@ -98,6 +101,12 @@ class cGameSmoke : public iUpdateable, public iRendererCallback {
     cBorderlessSettingsRegression borderlessSettingsRegression;
     cEnemyRegression enemyRegression;
     bool enemiesOnly=std::getenv("CODEX_MP_ENEMIES")!=NULL;
+    cBackHallRegression backHallRegression;
+    bool backHallOnly=std::getenv("CODEX_MP_BACK_HALL")!=NULL;
+    cQuitRegression quitRegression;
+    bool quitTests=std::getenv("CODEX_MP_QUIT")!=NULL;
+    cDoorBreakRegression doorBreakRegression;
+    bool doorBreakOnly=std::getenv("CODEX_MP_DOOR_BREAK")!=NULL;
     cVector2l resizeValidated=0;
     bool genericEffectsDone=false;
     cMapCacheRegression mapCacheRegression;
@@ -173,6 +182,7 @@ class cGameSmoke : public iUpdateable, public iRendererCallback {
     }
 public:
     cGameSmoke() : iUpdateable("MultiplayerGameSmoke") {}
+    bool QuitConfirmed() const {return quitTests && quitRegression.FinalAccepted();}
     void OnStart() {
         started=SDL_GetTicks();
         if(role=="settings") {
@@ -225,6 +235,8 @@ public:
             if(settings<0) {fail(loadingError);return;}
             if(!settings) return;
             if(enemiesOnly) {state=70;return;}
+            if(backHallOnly) {state=71;return;}
+            if(doorBreakOnly) {state=73;return;}
             if(role=="settings") {
                 const int borderless=borderlessSettingsRegression.Update(loadingError);
                 if(borderless<0) {fail(loadingError);return;}
@@ -252,12 +264,32 @@ public:
             printStatus("PASS: host-authoritative enemy encounter regression");
             result=0;state=99;gpBase->mpEngine->Exit();return;
         }
+        if(state==71) {
+            const int backHall=backHallRegression.Update(loadingError);
+            if(backHall<0) {fail(loadingError);return;}
+            if(!backHall) return;
+            mark(role+"-passed.txt","PASS: retail Back Hall duplicate identities, independent states, baselines, reconnect and revisit.");
+            printStatus("PASS: retail Back Hall join, reconnect and map revisit regression");
+            result=0;state=99;gpBase->mpEngine->Exit();return;
+        }
+        if(state==72) {
+            if(quitRegression.Update(loadingError)<0) fail(loadingError);
+            return;
+        }
+        if(state==73) {
+            const int door=doorBreakRegression.Update(loadingError);
+            if(door<0) {fail(loadingError);return;}
+            if(!door) return;
+            mark(role+"-passed.txt","PASS: retail enemy door damage, broken visuals and debris, repeated baselines, reconnect, and saved-map revisit.");
+            printStatus("PASS: retail Grunt door-break replication regression");
+            result=0;state=99;gpBase->mpEngine->Exit();return;
+        }
         if(state==1) {
             if(role=="host") {
                 if(!screenshotDone) return;
                 if(mp->IsWindowVisible()) mp->ToggleWindow();
                 cLuxMultiplayerSettings settings;settings.useSteam=false;settings.port=port;settings.maxPlayers=2;
-                if(nativeOnly) settings.map="maps/main/ch01/01_old_archives.map";
+                if(nativeOnly || quitTests) settings.map="maps/main/ch01/01_old_archives.map";
                 tString hostingError;
                 if(!StartCurrentMapHost(settings,hostingError)) {fail("Host current map failed: "+hostingError);return;}
                 mark("host-listening.txt",mp->GetStatus());
@@ -307,6 +339,7 @@ public:
                 " epoch="+cString::ToString(static_cast<int>(mp->GetMapEpoch()));
             std::printf("%s READY %s body_hash=%llu\n",role.c_str(),info.c_str(),static_cast<unsigned long long>(bodyHash));std::fflush(stdout);
             mark(role+"-ready.txt",info);
+            if(quitTests) {state=72;return;}
             if(nativeOnly) {state=lifecycleOnly?48:incidentalOnly?46:40;return;}
             gpBase->mpEngine->GetUpdater()->SetContainer("MainMenu");
             mp->ShowWindow();
@@ -668,6 +701,11 @@ int main(int argc,char** argv) {
     cGameSmoke smoke;
     gpBase->mpEngine->GetUpdater()->AddGlobalUpdate(&smoke);
     gpBase->Run();
+    if(smoke.QuitConfirmed() && !exists(role+"-failed.txt")) {
+        mark(role+"-passed.txt","PASS: native close cancellations and affirmative menu/application exits through the production engine loop.");
+        printStatus("PASS: native window-close confirmation and actual application exit");
+        result=0;
+    }
     gpBase->Exit();
     hplDelete(gpBase);gpBase=NULL;
     return result;

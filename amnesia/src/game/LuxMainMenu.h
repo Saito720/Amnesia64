@@ -105,7 +105,7 @@ public:
 	void OnStart();
 	void Update(float afTimeStep);
 	void Reset();
-    void OnQuit();
+	bool RequestQuit();
 
 	void OnEnterContainer(const tString& asOldContainer);
 	void OnLeaveContainer(const tString& asNewContainer);
@@ -137,6 +137,10 @@ private:
 	// Helper methods
 	
 	void OnMenuExit();
+	bool ShowQuitConfirmation(eLuxMainMenuExit aMessage);
+	cGuiPopUpMessageBox* mpQuitConfirmation;
+	bool mbQuitAccepted;
+	eLuxMainMenuExit mQuitExitMessage;
 
 	void UpdateBase(float afTimeStep);
 
@@ -202,9 +206,6 @@ private:
 	bool PressExitToMainMenu(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(PressExitToMainMenu);
 	
-	bool ClickedExitToMainMenuPopup(iWidget* apWidget, const cGuiMessageData& aData);
-	kGuiCallbackDeclarationEnd(ClickedExitToMainMenuPopup);
-
 	bool PressExitAndSave(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(PressExitAndSave);
 

@@ -105,6 +105,7 @@ struct cLuxInputHandler {
     eLuxInputState state = eLuxInputState_MainMenu;
     eLuxInputState& mState = state;
     bool mbMultiplayerCapturing = false;
+    bool mbQuitRequested = false;
     cInput* mpInput = NULL;
     TestPlayer* mpPlayer = NULL;
     int globalUpdates = 0, gameUpdates = 0, menuUpdates = 0;
@@ -112,6 +113,7 @@ struct cLuxInputHandler {
     eLuxInputState GetState() { return state; }
     void ResetSmoothMousePos() { ++resets; }
     void Update(float);
+    void OnQuit();
     void UpdateGlobalInput() { ++globalUpdates; }
     void UpdateGameInput() { ++gameUpdates; }
     void UpdateMainMenuInput() { ++menuUpdates; }
@@ -123,11 +125,15 @@ struct cLuxInputHandler {
     void UpdateDemoEndInput() {}
     void UpdateLoadScreenInput() {}
 };
+struct TestMainMenu {
+    bool RequestQuit() { return true; }
+};
 struct cLuxBase {
     cEngine* mpEngine;
     cLuxInputHandler* mpInputHandler;
     TestMapHandler* mpMapHandler;
     cLuxMultiplayer* mpMultiplayer;
+    TestMainMenu* mpMainMenu;
     tString msStartMapFile="00_rainy_hall.map", msStartMapFolder="maps/main/ch01/";
 };
 static cLuxBase base;
@@ -213,6 +219,7 @@ int main(int argc,char** argv) {
     cGuiSet* menuSet=base.mpEngine->GetGui()->CreateSet("TestMainMenu",NULL);
     base.mpEngine->GetGui()->SetFocus(menuSet);
     TestMapHandler map; TestPlayer player;
+    TestMainMenu mainMenu; base.mpMainMenu=&mainMenu;
     base.mpMultiplayer=&session; base.mpMapHandler=&map;
     input.mpInput=base.mpEngine->GetInput(); input.mpPlayer=&player;
     {

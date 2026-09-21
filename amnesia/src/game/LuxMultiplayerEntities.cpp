@@ -25,13 +25,23 @@ using namespace luxnet;
 cLuxMultiplayerEntities::cLuxMultiplayerEntities(cLuxMultiplayer* session):mpSession(session) { Reset(); }
 void cLuxMultiplayerEntities::Reset() {
     mvMapBaseline.clear();mbMapBaselineValid=false;
+    msLastError.clear();msMapBaselineError.clear();
     mDefinitionBindings.clear();
+    mAnnouncedProps.clear();
+    msPendingSyncError.clear();
     mLastRopes.clear();
     mClaims.clear();mLastStates.clear();mRemovedItems.clear();mInitial.clear();mJointBreakRequests.clear();
     mPendingDiaries.clear();mpDiaryDecision=NULL;
     msPending.clear();msGranted.clear();mlToken=mlGrantedToken=0;
+    mlPendingEntityID=mlGrantedEntityID=UINT32_MAX;
     mlPendingRuntimeID=0;
     mfSnapshotTime=mfPendingTime=mfGroundTruthTime=0;mbCallback=false;mlDiaryIndex=-1;
+}
+bool cLuxMultiplayerEntities::Fail(const std::string& reason) {
+    auto* map=gpBase->mpMapHandler->GetCurrentMap();
+    msLastError="Map '"+(map?map->GetName():tString("<none>"))+"': "+reason;
+    Warning("Multiplayer entity synchronization failed: %s\n",msLastError.c_str());
+    return false;
 }
 bool cLuxMultiplayerEntities::SeedCurrentMapItems(const std::vector<uint8_t>& mapBytes,std::string& error) {
     std::vector<tString> items;
@@ -61,7 +71,7 @@ bool cLuxMultiplayerEntities::AllowPhysicsJointBreak(iLuxProp* prop,iPhysicsJoin
         const auto previous=mJointBreakRequests.find(key);
         if(previous!=mJointBreakRequests.end() && previous->second==token) return false;
         if(previous==mJointBreakRequests.end() && mJointBreakRequests.size()>=8192) return false;
-        JointBreakState request;request.epoch=mpSession->GetMapEpoch();request.name=prop->GetName();
+        JointBreakState request;request.epoch=mpSession->GetMapEpoch();request.name=prop->GetName();request.id=prop->GetID();
         request.index=slot;request.body=LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID());request.token=token;
         if(mpSession->Send(0,WriteJointBreak(request),true)) mJointBreakRequests[key]=token;
         break;
@@ -97,24 +107,24 @@ bool cLuxMultiplayerEntities::BeginInteraction(iLuxEntity* entity) {
     if(!mpSession->IsReady() || !Eligible(entity)) return false;
     const tString& name=entity->GetName();
     if(mpSession->IsHost()) {
-        if(mClaims.count(name)) return false;
+        if(mClaims.count(entity->GetID())) return false;
         if(static_cast<iLuxProp*>(entity)->GetPropType()==eLuxPropType_Lamp) {
             auto* lamp=static_cast<cLuxProp_Lamp*>(entity);
             if(lamp->GetLit() || !lamp->CanBeIgnitByPlayer()) {Commit(entity,false,true);return false;}
         }
         return true;
     }
-    if(msGranted==name) return true;
+    if(msGranted==name && mlGrantedEntityID==static_cast<uint32_t>(entity->GetID())) return true;
     if(!msPending.empty() || mPendingDiaries.size()>=8) return false;
-    Writer w(NativeRequest);w.U32(mpSession->GetMapEpoch());w.String(name);
-    if(mpSession->Send(0,w.data,true)) {msPending=name;mlPendingRuntimeID=entity->GetRuntimeID();mfPendingTime=0;}
+    Writer w(NativeRequest);w.U32(mpSession->GetMapEpoch());w.String(name);w.U32(entity->GetID());
+    if(mpSession->Send(0,w.data,true)) {msPending=name;mlPendingEntityID=entity->GetID();mlPendingRuntimeID=entity->GetRuntimeID();mfPendingTime=0;}
     return false;
 }
 void cLuxMultiplayerEntities::CompleteInteraction(iLuxEntity* entity,bool succeeded) {
     if(!mpSession->IsActive() || !IsNative(entity)) return;
     if(mpSession->IsHost()) {if(succeeded) Commit(entity,false);return;}
-    if(msGranted!=entity->GetName()) return;
-    Writer w(NativeResult);w.U32(mpSession->GetMapEpoch());w.String(msGranted);w.U32(mlGrantedToken);w.U8(succeeded);w.U32(mlDiaryIndex+1);
+    if(msGranted!=entity->GetName() || mlGrantedEntityID!=static_cast<uint32_t>(entity->GetID())) return;
+    Writer w(NativeResult);w.U32(mpSession->GetMapEpoch());w.String(msGranted);w.U32(mlGrantedEntityID);w.U32(mlGrantedToken);w.U8(succeeded);w.U32(mlDiaryIndex+1);
     if(!mpSession->Send(0,w.data,true)) mpSession->RejectPeer(0,"Could not confirm the native interaction with the host.");
 }
 void cLuxMultiplayerEntities::RecordDiaryIndex(const std::string& name,int index) {
@@ -122,7 +132,7 @@ void cLuxMultiplayerEntities::RecordDiaryIndex(const std::string& name,int index
 }
 bool cLuxMultiplayerEntities::DeferDiaryPresentation(const std::string& name,cLuxDiary* diary) {
     if(!mpSession->IsClient() || msGranted!=name || !mlGrantedToken || mlDiaryIndex<0 || !diary) return false;
-    mPendingDiaries[mlGrantedToken]={name,diary,0};
+    mPendingDiaries[mlGrantedToken]={name,diary,0,mlGrantedEntityID};
     return true;
 }
 void cLuxMultiplayerEntities::RecordDiaryDecision(bool open) {
@@ -184,24 +194,27 @@ void cLuxMultiplayerEntities::OnPeerDisconnected(uint32_t peer) {
     }
 }
 std::vector<uint8_t> cLuxMultiplayerEntities::Capture(iLuxProp* prop) {
-    Writer w(EntityState);w.U32(mpSession->GetMapEpoch());w.String(prop->GetName());
+    NativeState state;state.epoch=mpSession->GetMapEpoch();state.name=prop->GetName();state.id=prop->GetID();
     const uint8_t kind=prop->GetPropType()==eLuxPropType_Lamp?LampState:
         prop->GetPropType()==eLuxPropType_SwingDoor?DoorState:
         prop->GetPropType()==eLuxPropType_Button?ButtonState:
         prop->GetPropType()==eLuxPropType_Chest?ChestState:PropState;
-    w.U8(kind);
-    w.U8((prop->IsActive()?EntityActive:0) | (prop->GetInteractionDisabled()?InteractionDisabled:0) |
-         (prop->mbEffectsActive?EffectsActive:0) | (prop->mbStaticPhysics?StaticPhysics:0));
+    state.kind=kind;state.health=prop->GetHealth();
+    state.flags=(prop->IsActive()?EntityActive:0) | (prop->GetInteractionDisabled()?InteractionDisabled:0) |
+         (prop->mbEffectsActive?EffectsActive:0) | (prop->mbStaticPhysics?StaticPhysics:0);
     uint8_t detail=0;
     if(kind==LampState) detail=static_cast<cLuxProp_Lamp*>(prop)->GetLit()?1:0;
     if(kind==ButtonState) detail=static_cast<cLuxProp_Button*>(prop)->GetSwitchedOn()?1:0;
     if(kind==ChestState) detail=static_cast<cLuxProp_Chest*>(prop)->GetLocked()?1:0;
     if(kind==DoorState) {
         cLuxProp_SwingDoor* door=static_cast<cLuxProp_SwingDoor*>(prop);
-        detail=(door->GetClosed()?1:0)|(door->GetLocked()?2:0)|(door->GetDisableAutoClose()?4:0);
+        detail=(door->GetClosed()?DoorClosed:0)|(door->GetLocked()?DoorLocked:0)|
+            (door->GetDisableAutoClose()?DoorAutoCloseDisabled:0)|(door->IsBroken()?DoorBroken:0)|
+            (door->GetCurrentDamageLevel()<<DoorDamageShift)|(door->GetDisableBreakable()?DoorDisableBreakable:0);
+        state.brokenEntityId=door->GetBrokenEntityID()<0?UINT32_MAX:static_cast<uint32_t>(door->GetBrokenEntityID());
     }
-    w.U8(detail);
-    std::vector<JointState> joints;
+    state.detail=detail;
+    auto& joints=state.joints;
     for(size_t i=0;i<prop->mvJoints.size() && i<128;++i) {
         iPhysicsJoint* joint=prop->mvJoints[i];
         JointState j;j.index=static_cast<uint32_t>(i);
@@ -216,17 +229,15 @@ std::vector<uint8_t> cLuxMultiplayerEntities::Capture(iLuxProp* prop) {
         } else continue;
         joints.push_back(j);
     }
-    w.U32(static_cast<uint32_t>(joints.size()));
-    for(const auto& j:joints) {w.U32(j.index);w.U8(j.kind);w.U8(j.flags);w.Float(j.min);w.Float(j.max);}
-    return w.data;
+    return WriteNativeState(state);
 }
 bool cLuxMultiplayerEntities::Apply(const std::vector<uint8_t>& data) {
     Reader r(data);NativeState state;
     if(!ReadNativeState(r,state)) return false;
     if(state.epoch!=mpSession->GetMapEpoch()) return true;
     cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();
-    iLuxEntity* entity=map?map->GetEntityByName(state.name):NULL;
-    if(!entity || entity->GetDestroyMe()) return true;
+    iLuxEntity* entity=map?map->GetEntityByID(static_cast<int>(state.id)):NULL;
+    if(!entity || entity->GetName()!=state.name || entity->GetDestroyMe()) return true;
     auto removed=mRemovedItems.find(state.name);
     if(removed!=mRemovedItems.end()) {
         if(removed->second==entity->GetRuntimeID()) return true;
@@ -253,6 +264,9 @@ bool cLuxMultiplayerEntities::Apply(const std::vector<uint8_t>& data) {
     }
     prop->SetActive((state.flags&EntityActive)!=0);
     prop->SetInteractionDisabled((state.flags&InteractionDisabled)!=0);
+    // Native health side effects run on the host. Object-break events already
+    // have their own path; a snapshot must not replay them on the client.
+    prop->mfHealth=state.health;
     if(prop->mbStaticPhysics!=((state.flags&StaticPhysics)!=0)) prop->SetStaticPhysics((state.flags&StaticPhysics)!=0);
     if(state.kind==LampState) static_cast<cLuxProp_Lamp*>(prop)->SetLit(state.detail!=0,true);
     if(state.kind==ButtonState) static_cast<cLuxProp_Button*>(prop)->SetSwitchedOn(state.detail!=0,true);
@@ -262,8 +276,11 @@ bool cLuxMultiplayerEntities::Apply(const std::vector<uint8_t>& data) {
     if(prop->mbEffectsActive!=((state.flags&EffectsActive)!=0)) prop->SetEffectsActive((state.flags&EffectsActive)!=0,true);
     if(state.kind==DoorState) {
         auto* door=static_cast<cLuxProp_SwingDoor*>(prop);
-        door->SetLocked((state.detail&2)!=0,false);door->SetClosed((state.detail&1)!=0,false);
-        door->SetDisableAutoClose((state.detail&4)!=0);
+        door->SetLocked((state.detail&DoorLocked)!=0,false);door->SetClosed((state.detail&DoorClosed)!=0,false);
+        door->SetDisableAutoClose((state.detail&DoorAutoCloseDisabled)!=0);
+        door->ApplyNetworkState(state.health,(state.detail&DoorDamageMask)>>DoorDamageShift,
+            (state.detail&DoorBroken)!=0,(state.detail&DoorDisableBreakable)!=0,
+            state.brokenEntityId==UINT32_MAX?-1:static_cast<int>(state.brokenEntityId));
     }
     for(const auto& j:state.joints) {
         auto* joint=prop->mvJoints[j.index];
@@ -283,8 +300,9 @@ bool cLuxMultiplayerEntities::Apply(const std::vector<uint8_t>& data) {
 }
 void cLuxMultiplayerEntities::BroadcastState(iLuxEntity* entity) {
     if(entity->GetDestroyMe() || entity->GetEntityType()!=eLuxEntityType_Prop) return;
+    if(!SyncCreatedProps()) return;
     auto bytes=Capture(static_cast<iLuxProp*>(entity));
-    mLastStates[entity->GetName()]=bytes;mpSession->Broadcast(bytes,true);
+    mLastStates[entity->GetID()]=bytes;mpSession->Broadcast(bytes,true);
 }
 PropDefinition cLuxMultiplayerEntities::CaptureDefinition(iLuxProp* prop) {
     PropDefinition definition;definition.epoch=mpSession->GetMapEpoch();
@@ -297,6 +315,7 @@ PropDefinition cLuxMultiplayerEntities::CaptureDefinition(iLuxProp* prop) {
     definition.scale[0]=prop->mvOnLoadScale.x;definition.scale[1]=prop->mvOnLoadScale.y;definition.scale[2]=prop->mvOnLoadScale.z;
     if(auto* parent=prop->GetAttachmentParent()) {
         definition.parent=parent->GetName();
+        definition.parentId=static_cast<uint32_t>(parent->GetID());
         for(const auto* attached:parent->mlstAttachedProps) if(attached->mpProp==prop) {
             for(int row=0;row<3;++row) for(int col=0;col<4;++col)
                 definition.attachment[row*4+col]=attached->m_mtxOffset.m[row][col];
@@ -320,8 +339,8 @@ PropDefinition cLuxMultiplayerEntities::CaptureDefinition(iLuxProp* prop) {
     return definition;
 }
 bool cLuxMultiplayerEntities::CaptureDefinitions(std::vector<std::vector<uint8_t> >& output) {
-    output.clear();
-    auto* map=gpBase->mpMapHandler->GetCurrentMap();if(!map) return false;
+    output.clear();msLastError.clear();
+    auto* map=gpBase->mpMapHandler->GetCurrentMap();if(!map) return Fail("Cannot capture prop reconstruction without a loaded map.");
     std::vector<PropDefinition> definitions;
     auto it=map->GetEntityIterator();
     while(it.HasNext()) {
@@ -329,37 +348,116 @@ bool cLuxMultiplayerEntities::CaptureDefinitions(std::vector<std::vector<uint8_t
         if(entity->GetEntityType()!=eLuxEntityType_Prop) continue;
         auto* prop=static_cast<iLuxProp*>(entity);
         bool pendingDestruction=false;
-        for(auto* ancestor=prop;ancestor;ancestor=ancestor->GetAttachmentParent())
+        std::set<iLuxProp*> ancestors;
+        for(auto* ancestor=prop;ancestor;ancestor=ancestor->GetAttachmentParent()) {
+            if(!ancestors.insert(ancestor).second)
+                return Fail("Attachment cycle involving "+DescribePropDefinition(CaptureDefinition(prop))+".");
             if(ancestor->GetDestroyMe()) {pendingDestruction=true;break;}
+        }
         if(!pendingDestruction) definitions.push_back(CaptureDefinition(prop));
     }
-    if(!OrderPropDefinitions(definitions)) return false;
-    for(const auto& definition:definitions) output.push_back(WritePropDefinition(definition));
+    std::string error;
+    if(!OrderPropDefinitions(definitions,&error)) return Fail(error);
+    for(const auto& definition:definitions) {
+        auto bytes=WritePropDefinition(definition);Reader reader(bytes);PropDefinition verified;
+        if(!ReadPropDefinition(reader,verified)) return Fail("Cannot encode valid reconstruction for "+DescribePropDefinition(definition)+".");
+        output.push_back(std::move(bytes));
+    }
     return true;
 }
 void cLuxMultiplayerEntities::CaptureMapBaseline() {
     if(!mpSession->IsHost()) return;
     mbMapBaselineValid=CaptureDefinitions(mvMapBaseline);
-    if(!mbMapBaselineValid) Warning("Could not capture multiplayer prop reconstruction baseline.\n");
+    msMapBaselineError=msLastError;
+    if(mbMapBaselineValid) for(const auto& bytes:mvMapBaseline) {
+        Reader reader(bytes);PropDefinition definition;ReadPropDefinition(reader,definition);
+        mAnnouncedProps[definition.id]={definition.epoch,definition.id,definition.incarnation,definition.name};
+    }
+}
+bool cLuxMultiplayerEntities::SyncCreatedProps() {
+    if(!msPendingSyncError.empty()) return false;
+    auto* map=gpBase->mpMapHandler->GetCurrentMap();if(!map) return false;
+    bool changed=false;
+    std::map<uint32_t,uint64_t> present;
+    auto it=map->GetEntityIterator();
+    while(it.HasNext()) {
+        auto* entity=it.Next();
+        if(entity->GetEntityType()!=eLuxEntityType_Prop) continue;
+        present[entity->GetID()]=entity->GetRuntimeID();
+        // Destruction callbacks still see this ID occupied on the host. Keep
+        // it reserved on clients until destruction has actually completed.
+        if(entity->GetDestroyMe()) continue;
+        auto known=mAnnouncedProps.find(entity->GetID());
+        if(known==mAnnouncedProps.end() || known->second.incarnation!=entity->GetRuntimeID()) changed=true;
+    }
+    for(auto known=mAnnouncedProps.begin();known!=mAnnouncedProps.end();) {
+        auto current=present.find(known->first);
+        if(current==present.end() || current->second!=known->second.incarnation) {
+            mpSession->BroadcastScriptEffect(WritePropRemoval(known->second));
+            known=mAnnouncedProps.erase(known);
+        } else ++known;
+    }
+    if(!changed) return true;
+
+    // Native gameplay can create props without a script command (door debris,
+    // for example). Publish their recipes before any native/physics snapshots.
+    // Reuse full-roster validation so attachments are emitted parent first.
+    std::vector<std::vector<uint8_t> > definitions;
+    if(!CaptureDefinitions(definitions)) {msPendingSyncError=msLastError;return false;}
+    std::set<uint32_t> emitted;
+    for(const auto& bytes:definitions) {
+        Reader reader(bytes);PropDefinition definition;ReadPropDefinition(reader,definition);
+        auto known=mAnnouncedProps.find(definition.id);
+        if(known!=mAnnouncedProps.end() && known->second.incarnation==definition.incarnation &&
+            (definition.parent.empty() || !emitted.count(definition.parentId))) continue;
+        // Preserve creation order for both connected clients and history
+        // replay, including script callbacks following a native creation.
+        mpSession->BroadcastScriptEffect(bytes);
+        mAnnouncedProps[definition.id]={definition.epoch,definition.id,definition.incarnation,definition.name};
+        emitted.insert(definition.id);
+    }
+    return true;
+}
+bool cLuxMultiplayerEntities::ApplyRemoval(const std::vector<uint8_t>& bytes) {
+    Reader reader(bytes);PropRemoval removal;
+    if(!ReadPropRemoval(reader,removal)) return false;
+    if(removal.epoch!=mpSession->GetMapEpoch()) return true;
+    auto* map=gpBase->mpMapHandler->GetCurrentMap();if(!map) return false;
+    map->FlushNetworkEntityDestruction();
+    auto bound=mDefinitionBindings.find(removal.id);
+    auto* entity=map->GetEntityByID(static_cast<int>(removal.id));
+    if(bound==mDefinitionBindings.end() || bound->second.host!=removal.incarnation) return true;
+    if(entity && entity->GetName()==removal.name && entity->GetRuntimeID()==bound->second.local) {
+        map->DestroyEntity(entity);
+        map->FlushNetworkEntityDestruction();
+    }
+    mDefinitionBindings.erase(bound);
+    return true;
 }
 bool cLuxMultiplayerEntities::SendMapBaseline(uint32_t peer) {
-    if(!mbMapBaselineValid || mvMapBaseline.size()>8192) return false;
-    for(const auto& bytes:mvMapBaseline) if(!mpSession->Send(peer,bytes,true)) return false;
+    msLastError.clear();
+    if(!mbMapBaselineValid) {msLastError=msMapBaselineError;return false;}
+    if(mvMapBaseline.size()>8192) return Fail("Prop reconstruction baseline exceeds 8192 entities.");
+    for(const auto& bytes:mvMapBaseline) if(!mpSession->Send(peer,bytes,true)) {
+        Reader reader(bytes);PropDefinition definition;ReadPropDefinition(reader,definition);
+        return Fail("Could not queue restored baseline "+DescribePropDefinition(definition)+" for peer "+std::to_string(peer)+".");
+    }
     return true;
 }
 bool cLuxMultiplayerEntities::ApplyDefinition(const std::vector<uint8_t>& bytes) {
+    msLastError.clear();
     Reader reader(bytes);PropDefinition definition;
-    if(!ReadPropDefinition(reader,definition)) return false;
+    if(!ReadPropDefinition(reader,definition)) return Fail("Invalid reconstruction packet for "+DescribePropDefinition(definition)+".");
     if(definition.epoch!=mpSession->GetMapEpoch()) return true;
-    auto* map=gpBase->mpMapHandler->GetCurrentMap();if(!map) return false;
-    const tString bindingName=cString::ToLowerCase(definition.name);
+    auto* map=gpBase->mpMapHandler->GetCurrentMap();if(!map) return Fail("Cannot apply "+DescribePropDefinition(definition)+" without a loaded map.");
+    const auto fail=[&](const std::string& reason) {return Fail(reason+" for "+DescribePropDefinition(definition)+".");};
     const auto bind=[&](iLuxProp* prop) {
         if(!definition.parent.empty()) {
-            auto* entity=map->GetEntityByName(definition.parent,eLuxEntityType_Prop);
-            if(!entity || entity->GetDestroyMe()) return false;
+            auto* entity=map->GetEntityByID(static_cast<int>(definition.parentId),eLuxEntityType_Prop);
+            if(!entity || entity->GetName()!=definition.parent || entity->GetDestroyMe()) return fail("Missing attachment parent '"+definition.parent+"' (ID "+std::to_string(definition.parentId)+")");
             cMatrixf offset=cMatrixf::Identity;
             for(int row=0;row<3;++row) for(int col=0;col<4;++col) offset.m[row][col]=definition.attachment[row*4+col];
-            if(!static_cast<iLuxProp*>(entity)->AttachExistingProp(prop,offset)) return false;
+            if(!static_cast<iLuxProp*>(entity)->AttachExistingProp(prop,offset)) return fail("Cannot attach to parent '"+definition.parent+"' (ID "+std::to_string(definition.parentId)+")");
         } else if(prop->GetAttachmentParent()) {
             prop->GetAttachmentParent()->RemoveAttachedProp(prop);
         }
@@ -369,7 +467,7 @@ bool cLuxMultiplayerEntities::ApplyDefinition(const std::vector<uint8_t>& bytes)
                 auto* body=prop->GetBody(i);
                 if(body && LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID())==expected.id) {matched=body;break;}
             }
-            if(!matched) return false;
+            if(!matched) return fail("Missing replicated body "+std::to_string(expected.id));
             mpSession->GetWorld()->BindBodyGeneration(matched,expected.generation);
         }
         for(const auto& pose:definition.staticBodies) {
@@ -378,7 +476,7 @@ bool cLuxMultiplayerEntities::ApplyDefinition(const std::vector<uint8_t>& bytes)
                 auto* body=prop->GetBody(i);
                 if(body && LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID())==pose.id) {matched=body;break;}
             }
-            if(!matched) return false;
+            if(!matched) return fail("Missing static body "+std::to_string(pose.id));
             // A current dynamic pose may overtake a historical static recipe.
             // Keep the bound simulation stream authoritative in that case.
             if(mpSession->GetWorld()->GetBodyGeneration(matched)) continue;
@@ -391,28 +489,32 @@ bool cLuxMultiplayerEntities::ApplyDefinition(const std::vector<uint8_t>& bytes)
             matched->SetCollideCharacter((pose.flags&LuxWorldWire::CollideCharacter)!=0);
             if(pose.flags&LuxWorldWire::Awake) matched->Enable();
         }
-        mDefinitionBindings[bindingName]={definition.incarnation,prop->GetRuntimeID()};
+        mDefinitionBindings[definition.id]={definition.incarnation,prop->GetRuntimeID()};
         return true;
     };
-    auto* existing=map->GetEntityByName(definition.name);
+    // Authored names are not unique: the campaign contains same-name siblings.
+    // Their ID, rather than the first name-map entry, owns reconstruction.
+    // ObjectBreak marks an object for deferred destruction; its destruction
+    // can create the very debris this definition describes. Finish that work
+    // before deciding whether reconstruction is necessary.
+    map->FlushNetworkEntityDestruction();
+    auto* existing=map->GetEntityByID(static_cast<int>(definition.id));
     if(existing && !existing->GetDestroyMe() && existing->GetEntityType()==eLuxEntityType_Prop) {
         auto* prop=static_cast<iLuxProp*>(existing);
-        auto previous=mDefinitionBindings.find(bindingName);
+        auto previous=mDefinitionBindings.find(definition.id);
         const bool differentIncarnation=previous!=mDefinitionBindings.end() &&
             DefinitionChangesBoundIncarnation(previous->second,definition.incarnation,prop->GetRuntimeID());
         tString file=cString::ReplaceCharTo(prop->msFileName,"\\","/");
         if(!SafeRelativePath(file)) file=cString::GetFileName(file);
         const bool sameScale=prop->mvOnLoadScale==cVector3f(definition.scale[0],definition.scale[1],definition.scale[2]);
-        if(!differentIncarnation && sameScale && existing->GetID()==static_cast<int>(definition.id) &&
+        if(!differentIncarnation && sameScale && existing->GetName()==definition.name &&
            cString::ToLowerCase(file)==cString::ToLowerCase(definition.file)) return bind(prop);
     }
     tString error;
-    if(!LuxValidateMultiplayerAsset(definition.file,"ent",error)) return false;
+    if(!LuxValidateMultiplayerAsset(definition.file,"ent",error)) return fail("Invalid entity resource: "+error);
     // Definitions are applied only from packet handling, between engine updates.
     // Remove stale authored incarnations before loading the host's restored one.
     if(existing) map->DestroyEntity(existing);
-    auto* sameId=map->GetEntityByID(static_cast<int>(definition.id));
-    if(sameId && sameId!=existing) map->DestroyEntity(sameId);
     map->FlushNetworkEntityDestruction();
     cMatrixf transform=cMatrixf::Identity;
     for(int row=0;row<3;++row) for(int col=0;col<4;++col) transform.m[row][col]=definition.matrix[row*4+col];
@@ -422,28 +524,34 @@ bool cLuxMultiplayerEntities::ApplyDefinition(const std::vector<uint8_t>& bytes)
         cVector3f(definition.scale[0],definition.scale[1],definition.scale[2]));
     gpBase->mpCurrentMapLoading=previousLoading;
     auto* created=map->GetLatestEntity();
-    return created && created->GetName()==definition.name && created->GetEntityType()==eLuxEntityType_Prop && bind(static_cast<iLuxProp*>(created));
+    if(!created || created->GetID()!=static_cast<int>(definition.id) || created->GetName()!=definition.name || created->GetEntityType()!=eLuxEntityType_Prop)
+        return fail("Entity resource did not create the expected prop");
+    return bind(static_cast<iLuxProp*>(created));
 }
 bool cLuxMultiplayerEntities::SendInitialState(uint32_t peer) {
-    cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();if(!map) return false;
+    msLastError.clear();
+    cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();if(!map) return Fail("Cannot synchronize entities without a loaded map.");
     // Saved-map restoration runs after OnMapLoaded. Reconcile at the ready
     // barrier against the restored host world, including every return visit.
     std::string error;
-    if(!SeedCurrentMapItems(mpSession->mvMapBytes,error)) return false;
+    if(!SeedCurrentMapItems(mpSession->mvMapBytes,error)) return Fail("Cannot identify collected map items: "+error);
     std::vector<std::vector<uint8_t> > definitions;
     if(!CaptureDefinitions(definitions)) return false;
-    for(const auto& definition:definitions) if(!mpSession->Send(peer,definition,true)) return false;
+    for(const auto& bytes:definitions) if(!mpSession->Send(peer,bytes,true)) {
+        Reader reader(bytes);PropDefinition definition;ReadPropDefinition(reader,definition);
+        return Fail("Could not queue current "+DescribePropDefinition(definition)+" for peer "+std::to_string(peer)+".");
+    }
     SyncRopes(peer);
     auto& queue=mInitial[peer];queue.clear();
-    for(const auto& removed:mRemovedItems) queue.push_back(removed.first);
+    for(const auto& removed:mRemovedItems) queue.push_back({-1,removed.first});
     auto it=map->GetEntityIterator();
     while(it.HasNext()) {
         auto* entity=it.Next();
         // History may have created or replaced props since the restored baseline.
         // Reconcile the current roster before any native/body snapshots arrive.
         if(entity->GetEntityType()==eLuxEntityType_Prop && !entity->GetDestroyMe() && !mRemovedItems.count(entity->GetName()))
-            queue.push_back(entity->GetName());
-        if(queue.size()>8192) {mInitial.erase(peer);return false;}
+            queue.push_back({entity->GetID(),entity->GetName()});
+        if(queue.size()>8192) {mInitial.erase(peer);return Fail("Initial native entity state exceeds 8192 entries.");}
     }
     return true;
 }
@@ -460,6 +568,9 @@ void cLuxMultiplayerEntities::Update(float dt) {
     // Never reassign an unanswered grant while its recipient remains connected.
     for(uint32_t peer:expired) mpSession->RejectPeer(peer,"Timed out confirming a native interaction.");
     cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();if(!map) return;
+    if(!SyncCreatedProps()) {
+        mpSession->Stop("Could not synchronize new map entities: "+msLastError);return;
+    }
     for(auto it=mRemovedItems.begin();it!=mRemovedItems.end();) {
         auto* entity=map->GetEntityByName(it->first);
         if(entity && !entity->GetDestroyMe() && entity->GetRuntimeID()!=it->second) it=mRemovedItems.erase(it);else ++it;
@@ -467,11 +578,11 @@ void cLuxMultiplayerEntities::Update(float dt) {
     for(auto it=mInitial.begin();it!=mInitial.end();) {
         auto& queue=it->second;
         for(unsigned sent=0;sent<32 && !queue.empty();++sent) {
-            const auto& name=queue.front();std::vector<uint8_t> bytes;
-            if(mRemovedItems.count(name)) {Writer w(ItemRemoved);w.U32(mpSession->GetMapEpoch());w.String(name);bytes=w.data;}
+            const auto& pending=queue.front();const auto& name=pending.second;std::vector<uint8_t> bytes;
+            if(pending.first<0 && mRemovedItems.count(name)) {Writer w(ItemRemoved);w.U32(mpSession->GetMapEpoch());w.String(name);bytes=w.data;}
             else {
-                auto* entity=map->GetEntityByName(name);
-                if(entity && !entity->GetDestroyMe() && entity->GetEntityType()==eLuxEntityType_Prop) bytes=Capture(static_cast<iLuxProp*>(entity));
+                auto* entity=map->GetEntityByID(pending.first);
+                if(entity && entity->GetName()==name && !entity->GetDestroyMe() && entity->GetEntityType()==eLuxEntityType_Prop) bytes=Capture(static_cast<iLuxProp*>(entity));
             }
             if(!bytes.empty() && !mpSession->Send(it->first,bytes,true)) break;
             queue.pop_front();
@@ -487,7 +598,7 @@ void cLuxMultiplayerEntities::Update(float dt) {
     while(it.HasNext()) {
         auto* entity=it.Next();
         if(entity->GetEntityType()!=eLuxEntityType_Prop || entity->GetDestroyMe()) continue;
-        auto bytes=Capture(static_cast<iLuxProp*>(entity));auto& previous=mLastStates[entity->GetName()];
+        auto bytes=Capture(static_cast<iLuxProp*>(entity));auto& previous=mLastStates[entity->GetID()];
         if(groundTruth || bytes!=previous) {previous=bytes;mpSession->Broadcast(bytes,true);}
     }
 }
@@ -511,7 +622,7 @@ bool cLuxMultiplayerEntities::HandleMessage(uint32_t peer,const std::vector<uint
         Reader requestReader(data);JointBreakState request;
         if(!mpSession->IsHost() || !ReadJointBreak(requestReader,request)) return false;
         cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();
-        auto* prop=map?static_cast<iLuxProp*>(map->GetEntityByName(request.name,eLuxEntityType_Prop)):NULL;
+        auto* prop=map?static_cast<iLuxProp*>(map->GetEntityByID(static_cast<int>(request.id),eLuxEntityType_Prop)):NULL;
         if(!prop || prop->GetName()!=request.name || prop->GetDestroyMe() || request.index>=prop->mvJoints.size()) return true;
         iPhysicsJoint* joint=prop->mvJoints[request.index];
         if(!joint || !joint->IsBreakable()) return true;
@@ -531,12 +642,15 @@ bool cLuxMultiplayerEntities::HandleMessage(uint32_t peer,const std::vector<uint
     }
     if(mpSession->IsClient() && type==EntityState) return Apply(data);
     tString name=r.String(256);if(!r.valid || name.empty()) return false;
+    const uint32_t id=type==ItemRemoved?UINT32_MAX:r.U32();
+    if(!r.valid || (type!=ItemRemoved && id>0x7fffffffu)) return false;
     cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();
-    iLuxEntity* entity=map?map->GetEntityByName(name):NULL;
+    iLuxEntity* entity=map?(type==ItemRemoved?map->GetEntityByName(name):map->GetEntityByID(static_cast<int>(id))):NULL;
+    if(entity && entity->GetName()!=name) entity=NULL;
     if(mpSession->IsHost() && type==NativeRequest) {
         if(!r.Done()) return false;
         const auto& players=mpSession->GetWorld()->GetRemotePlayers();auto player=players.find(peer);
-        bool allow=Eligible(entity) && entity->GetName()==name && !mClaims.count(name) && player!=players.end() &&
+        bool allow=Eligible(entity) && !mClaims.count(id) && player!=players.end() &&
             player->second.age<=2 && (player->second.gameplay.flags&LuxWorldWire::PlayerAlive);
         if(allow) {
             allow=false;
@@ -550,7 +664,7 @@ bool cLuxMultiplayerEntities::HandleMessage(uint32_t peer,const std::vector<uint
         // invert a newer script/other-player toggle.
         if(allow && static_cast<iLuxProp*>(entity)->GetPropType()==eLuxPropType_Button) {
             Commit(entity,true,false,-1,peer);
-            Writer response(NativeGrant);response.U32(epoch);response.String(name);response.U32(0);response.U8(0);
+            Writer response(NativeGrant);response.U32(epoch);response.String(name);response.U32(id);response.U32(0);response.U8(0);
             return mpSession->Send(peer,response.data,true);
         }
         uint32_t token=0;bool callbackOnly=false;
@@ -560,16 +674,16 @@ bool cLuxMultiplayerEntities::HandleMessage(uint32_t peer,const std::vector<uint
             }
             const bool diary=static_cast<iLuxProp*>(entity)->GetPropType()==eLuxPropType_Item &&
                 static_cast<cLuxProp_Item*>(entity)->GetItemType()==eLuxItemType_Diary;
-            if(!++mlToken) ++mlToken;token=mlToken;mClaims[name]={peer,token,0,entity->GetRuntimeID(),callbackOnly,diary};
+            if(!++mlToken) ++mlToken;token=mlToken;mClaims[id]={peer,token,0,entity->GetRuntimeID(),callbackOnly,diary};
         }
-        Writer w(NativeGrant);w.U32(epoch);w.String(name);w.U32(token);w.U8(callbackOnly);
+        Writer w(NativeGrant);w.U32(epoch);w.String(name);w.U32(id);w.U32(token);w.U8(callbackOnly);
         if(!mpSession->Send(peer,w.data,true)) mpSession->RejectPeer(peer,"Could not deliver the native interaction grant.");
         return true;
     }
     if(mpSession->IsHost() && type==NativeResult) {
         uint32_t token=r.U32();uint8_t success=r.U8();uint32_t diary=r.U32();
         if(!r.Done() || !token || success>1 || diary>4096) return false;
-        auto claim=mClaims.find(name);
+        auto claim=mClaims.find(id);
         if(claim==mClaims.end() || claim->second.peer!=peer || claim->second.token!=token) return false;
         if(diary && !claim->second.diary) return false;
         Claim accepted=claim->second;mClaims.erase(claim);
@@ -579,34 +693,34 @@ bool cLuxMultiplayerEntities::HandleMessage(uint32_t peer,const std::vector<uint
         if(diary && mpSession->IsHost() && epoch==mpSession->GetMapEpoch()) {
             // Reliable ordering places the decision after all synchronous
             // callback effects; only its collector has this pending token.
-            Writer response(NativeDiaryResult);response.U32(epoch);response.String(name);response.U32(token);
+            Writer response(NativeDiaryResult);response.U32(epoch);response.String(name);response.U32(id);response.U32(token);
             response.U8(committed);response.U8(committed && openDiary);
             return mpSession->Send(peer,response.data,true);
         }
         return true;
     }
     if(mpSession->IsClient() && type==NativeGrant) {
-        uint32_t token=r.U32();uint8_t callbackOnly=r.U8();if(!r.Done() || callbackOnly>1 || msPending!=name) return false;
+        uint32_t token=r.U32();uint8_t callbackOnly=r.U8();if(!r.Done() || callbackOnly>1 || msPending!=name || mlPendingEntityID!=id) return false;
         const bool sameInstance=entity && entity->GetRuntimeID()==mlPendingRuntimeID;
-        msPending.clear();mlPendingRuntimeID=0;mfPendingTime=0;
+        msPending.clear();mlPendingEntityID=UINT32_MAX;mlPendingRuntimeID=0;mfPendingTime=0;
         if(!token) return true;
         if(!sameInstance || !Eligible(entity) || gpBase->mpPlayer->GetHealth()<=0 || callbackOnly) {
-            Writer w(NativeResult);w.U32(epoch);w.String(name);w.U32(token);
+            Writer w(NativeResult);w.U32(epoch);w.String(name);w.U32(id);w.U32(token);
             w.U8(sameInstance && callbackOnly && entity && gpBase->mpPlayer->GetHealth()>0);w.U32(0);
             return mpSession->Send(0,w.data,true);
         }
-        msGranted=name;mlGrantedToken=token;mlDiaryIndex=-1;
+        msGranted=name;mlGrantedEntityID=id;mlGrantedToken=token;mlDiaryIndex=-1;
         if(static_cast<iLuxProp*>(entity)->GetPropType()==eLuxPropType_Chest)
             static_cast<cLuxProp_Chest*>(entity)->Purchase();
         else entity->OnInteract(entity->GetBody(0),entity->GetBody(0)->GetWorldPosition());
-        msGranted.clear();mlGrantedToken=0;
+        msGranted.clear();mlGrantedEntityID=UINT32_MAX;mlGrantedToken=0;
         return true;
     }
     if(mpSession->IsClient() && type==NativeDiaryResult) {
         const uint32_t token=r.U32();const uint8_t accepted=r.U8(),open=r.U8();
         if(!r.Done() || !token || accepted>1 || open>1 || (!accepted && open)) return false;
         auto pending=mPendingDiaries.find(token);
-        if(pending==mPendingDiaries.end() || pending->second.name!=name) return false;
+        if(pending==mPendingDiaries.end() || pending->second.name!=name || pending->second.id!=id) return false;
         cLuxDiary* diary=pending->second.diary;mPendingDiaries.erase(pending);
         if(accepted) {
             if(open && mpSession->IsReady() && !gpBase->mpPlayer->IsDead() && gpBase->mpPlayer->GetHealth()>0 &&

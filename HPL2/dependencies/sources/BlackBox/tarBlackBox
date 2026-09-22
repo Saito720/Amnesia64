@@ -1,0 +1,25 @@
+#shell script for creating a release for BlackBox
+
+cd ..
+#make a temporary dir with the name BlackBox<version>
+BLKBOXDIR=BlackBox-$1
+BBTAR=BlackBox-$1.tar
+
+mkdir $BLKBOXDIR
+mkdir $BLKBOXDIR/include
+mkdir $BLKBOXDIR/lib
+
+#copy over the files
+cp BlackBox/*.h BlackBox/*.H BlackBox/*.cpp BlackBox/*.rc BlackBox/*.ico BlackBox/BlackBox.dsw BlackBox/BlackBox.dsp ./$BLKBOXDIR/
+cp BlackBox/include/*.h $BLKBOXDIR/include/
+cp BlackBox/lib/*.Lib BlackBox/lib/*.lib BlackBox/lib/*.dll $BLKBOXDIR/lib/
+
+#tar the files in the versioned directory, i.e. the dir named $BLKBOXDIR
+tar -cf $BBTAR $BLKBOXDIR
+
+gzip $BBTAR
+
+mv $BBTAR.gz BlackBox/
+
+rm -rf $BLKBOXDIR
+echo done making $BBTAR.gz

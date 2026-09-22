@@ -1,0 +1,83 @@
+// Original BlackBox dialog layout, with room for the updated text and x64 registers.
+// Compile resources into the executable rather than the static archive.
+#include <windows.h>
+#include "resource.h"
+
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+
+IDD_BLACKBOX_ERR_DLG DIALOG 0, 0, 320, 354
+STYLE DS_SETFONT | WS_MINIMIZEBOX | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "BlackBox"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LTEXT           "",IDC_INTRO2,1,1,318,81
+    LTEXT           "",IDC_INTRO,30,6,283,73
+    ICON            IDI_BUG,IDC_BUG_LBL,6,7,20,20
+    CONTROL         "",-1,"Static",SS_ETCHEDHORZ,0,84,320,1
+    PUSHBUTTON      "Close",IDC_CLOSE,261,94,52,14
+    PUSHBUTTON      "&Copy",IDC_COPY_TO_CLIPBOARD,261,120,52,14
+    PUSHBUTTON      "&Save...",IDC_SAVE_TO_FILE,261,138,52,14
+    PUSHBUTTON      "Mail to...",IDC_MAILTO,261,163,52,14
+    PUSHBUTTON      "Submit bug...",IDC_SUBMIT_NEW_VCF_BUG,261,181,52,14
+    PUSHBUTTON      "Information...",IDC_MACHINE_INFO,261,247,52,14
+    PUSHBUTTON      "State...",IDC_MACHINE_STATE,261,267,52,14
+    PUSHBUTTON      "&About...",IDC_ABOUT,261,333,52,14
+    GROUPBOX        "Exception Reason",-1,6,91,251,45
+    LTEXT           "",IDC_EXCEPTION,12,101,242,31
+    GROUPBOX        "Registers",-1,6,140,251,101
+    LTEXT           "",IDC_REGISTER,12,151,242,86
+    GROUPBOX        "Stack Trace",-1,6,244,251,103
+    LISTBOX         IDC_STACKTRACE,11,254,242,88,LBS_NOINTEGRALHEIGHT |
+                    WS_VSCROLL | WS_HSCROLL | WS_TABSTOP
+END
+
+IDD_ABOUT_BLACKBOX DIALOG 0, 0, 205, 111
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "About BlackBox"
+FONT 8, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "Close",IDOK,164,7,34,14
+    LTEXT           "BlackBox Software Error Reporting tool\nJim Crafton",-1,31,7,127,27
+    ICON            IDI_BUG,-1,7,7,20,20
+    LTEXT           "Version 1.0\n\nOriginal stack trace and exception trapping code from John Robbins BugSlayerUtils.\n\nStatic x86/x64 adaptation for Amnesia64.",-1,7,37,191,67
+END
+
+IDD_MACHINE_INFO_DLG DIALOG 0, 0, 265, 166
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Machine Information"
+FONT 8, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "Close",IDOK,208,7,50,14
+    GROUPBOX        "CPU",-1,7,7,195,37
+    GROUPBOX        "Operating System",-1,7,47,194,40
+    GROUPBOX        "Memory",-1,7,91,194,68
+    LTEXT           "",IDC_CPU_LABEL,12,17,186,23
+    LTEXT           "",IDC_OS_LABEL,11,58,186,25
+    LTEXT           "",IDC_MEM_LABEL,11,100,186,55
+END
+
+IDD_MACHINESTATE_DLG DIALOG 0, 0, 317, 169
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Machine State"
+FONT 8, "MS Sans Serif"
+BEGIN
+    DEFPUSHBUTTON   "Close",IDOK,260,7,50,14
+    GROUPBOX        "Running Processes at crash:",-1,7,7,250,65
+    GROUPBOX        "Modules Loaded by Selected Process",-1,7,77,250,85
+    LISTBOX         IDC_PROCESS_LIST,11,17,242,51,LBS_NOTIFY | LBS_NOINTEGRALHEIGHT |
+                    WS_VSCROLL | WS_HSCROLL | WS_TABSTOP
+    LISTBOX         IDC_PROCESS_MODULE_LIST,11,88,242,70,LBS_NOINTEGRALHEIGHT |
+                    LBS_DISABLENOSCROLL | WS_VSCROLL | WS_HSCROLL | WS_TABSTOP
+END
+
+IDD_INIT_DLG DIALOG 0, 0, 179, 55
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION
+CAPTION "Retrieving and analyzing crash data"
+FONT 8, "MS Sans Serif"
+BEGIN
+    CTEXT           "A crash has occurred...\nPlease wait while gathering system information...",-1,32,7,140,25
+    LTEXT           "Gathering crash information...",IDC_PROGRESS_LABEL,7,35,165,13,SS_CENTERIMAGE | SS_SUNKEN
+    ICON            IDI_BUG,-1,7,7,20,20
+END
+
+IDI_BUG ICON "ClassicBug.ico"

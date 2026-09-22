@@ -23,6 +23,7 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "../../../HPL2/dependencies/sources/BlackBox/BlackBox.h"
 #endif
 
 //---------------------------------------
@@ -33,6 +34,10 @@ cLuxBase* gpBase = NULL;
 
 int hplMain(const tString &asCommandline)
 {
+#ifdef _WIN32
+	if (!BlackBox::Initialize())
+		Warning("Could not initialize BlackBox crash reporting.\n");
+#endif
 	//////////////////////////
 	// Game creation and exit
 	gpBase = hplNew( cLuxBase, ());
@@ -56,6 +61,10 @@ int hplMain(const tString &asCommandline)
 	hplDelete(gpBase);
 
 	cMemoryManager::LogResults();
+
+#ifdef _WIN32
+	BlackBox::Shutdown();
+#endif
 
 	return 0;
 }

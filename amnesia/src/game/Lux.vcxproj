@@ -96,7 +96,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>$(HplNetworkingLibraries);ws2_32.lib;crypt32.lib;bcrypt.lib;Iphlpapi.lib;dbghelp.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dbghelp.lib;comdlg32.lib;shell32.lib;$(HplNetworkingLibraries);ws2_32.lib;crypt32.lib;bcrypt.lib;Iphlpapi.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
@@ -118,7 +118,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>$(HplNetworkingLibraries);ws2_32.lib;crypt32.lib;bcrypt.lib;Iphlpapi.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dbghelp.lib;comdlg32.lib;shell32.lib;$(HplNetworkingLibraries);ws2_32.lib;crypt32.lib;bcrypt.lib;Iphlpapi.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -134,7 +134,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>$(HplNetworkingLibraries);ws2_32.lib;crypt32.lib;bcrypt.lib;Iphlpapi.lib;dbghelp.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;Avrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dbghelp.lib;comdlg32.lib;shell32.lib;$(HplNetworkingLibraries);ws2_32.lib;crypt32.lib;bcrypt.lib;Iphlpapi.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;Avrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
@@ -156,7 +156,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>$(HplNetworkingLibraries);ws2_32.lib;crypt32.lib;bcrypt.lib;Iphlpapi.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;Avrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>dbghelp.lib;comdlg32.lib;shell32.lib;$(HplNetworkingLibraries);ws2_32.lib;crypt32.lib;bcrypt.lib;Iphlpapi.lib;winmm.lib;setupapi.lib;Imm32.lib;Version.lib;Avrt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -417,8 +417,14 @@
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Lux.rc" />
+    <ResourceCompile Include="..\..\..\HPL2\dependencies\sources\BlackBox\BlackBox.rc">
+      <AdditionalIncludeDirectories>..\..\..\HPL2\dependencies\sources\BlackBox;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\HPL2\dependencies\sources\BlackBox\BlackBox.vcxproj">
+      <Project>{92A79C45-42A4-4BA2-9A68-4B29C1D19D21}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\..\..\HPL2\core\HPL2.vcxproj">
       <Project>{4ab08447-393f-40d0-a48d-aa6ca41d50cc}</Project>
     </ProjectReference>

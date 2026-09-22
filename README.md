@@ -7,6 +7,7 @@
 - Can be compiled in both 32-bit and 64-bit modes using Visual Studio 2026 with the v145 build tools.
 - Single solution file for all projects (main game, HPL2, dependencies and editors). No need to compile the engine separately.
 - Engine dependencies are linked statically. Steam-enabled builds additionally ship Valve's `steam_api64.dll` (`steam_api.dll` for 32-bit builds) beside the executable.
+- BlackBox crash reporting is built into the Windows game as a static library, with x86/x64 stack traces and copy/save support. No `BlackBox.dll` is required. See [BlackBox integration and tests](HPL2/dependencies/sources/BlackBox/README.md).
 - Some libraries were changed, most notably:
 	- SDL2 was upgraded from 2.0.4 to 2.0.12
 	- alut was replaced with freealut

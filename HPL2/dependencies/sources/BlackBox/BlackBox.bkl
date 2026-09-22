@@ -1,0 +1,64 @@
+<?xml version="1.0" ?>
+
+<makefile>
+    <include file="../../build/bakefiles/VCFCommon.bkl"/>
+
+    <set var="LIBRARY_NAME">BlackBox</set>
+
+    <dll id="BlackBox_dll" template="vcf_dll" cond="PLATFORM_WIN32=='1'">
+        <headers>
+            BlackBox.h
+            BlackBoxUI.h
+            BugslayerUtil.h
+            CrashHandler.h
+            CriticalSection.h
+            CRTDBG_Internals.h
+            DiagAssert.h
+            Internal.h
+            MemDumperValidator.h
+            MemStress.h
+            MemStressConstants.h
+            MSJDBG.h
+            PSAPI.H
+            resource.h
+            StdAfx.h
+            SymbolEngine.h
+            WarningsOff.h
+            WarningsOn.h
+        </headers>
+        <sources>
+            AllocAndFillProcessModuleList.cpp
+            BlackBox.cpp
+            BlackBoxUI.cpp
+            BSUFunctions.cpp
+            CrashHandler.cpp
+            DiagAssert.cpp
+            GetLoadedModules.cpp
+            HookImportedFunctionByName.cpp
+            HookOrdinalExport.cpp
+            IsNT.cpp
+            MemDumperValidator.cpp
+            MemStress.cpp
+            NT4ProcessInfo.cpp
+            StdAfx.cpp
+            TLHELPProcessInfo.cpp        
+        </sources>
+
+        <include>include</include>
+        <lib-path>lib</lib-path>
+
+        <define>BLACKBOX_DLL</define>
+        <define>BLACKBOX_EXPORTS</define>
+        <define>STRICT</define>
+        <define>WORK_AROUND_SRCLINE_BUG</define>
+
+        <win32-res>BlackBox.rc</win32-res>
+
+        <sys-lib>DbgHelp</sys-lib>
+        <sys-lib>Psapi</sys-lib>
+    </dll>
+</makefile>
+
+<!--
+$Id: BlackBox.bkl 2660 2006-04-29 09:47:08Z kdmix $
+-->

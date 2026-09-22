@@ -82,6 +82,15 @@ add_executable(AmnesiaDemo MACOSX_BUNDLE EXCLUDE_FROM_ALL
     ${all_sources}
 )
 target_link_libraries(AmnesiaDemo HPL2)
+if(WIN32)
+    set(BLACKBOX_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../HPL2/dependencies/sources/BlackBox)
+    add_subdirectory(${BLACKBOX_DIR} ${CMAKE_CURRENT_BINARY_DIR}/blackbox)
+    foreach(game_target Amnesia AmnesiaDemo)
+        target_link_libraries(${game_target} BlackBox)
+        # .res files in static archives are not automatically pulled into an EXE.
+        target_sources(${game_target} PRIVATE ${BLACKBOX_DIR}/BlackBox.rc)
+    endforeach()
+endif()
 if(HPL_USE_STEAMWORKS)
     hpl_deploy_steamworks(Amnesia)
     hpl_deploy_steamworks(AmnesiaDemo)

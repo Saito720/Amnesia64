@@ -1,0 +1,27 @@
+#pragma once
+#define IDD_BLACKBOX_ERR_DLG            20101
+#define IDD_ABOUT_BLACKBOX              20103
+#define IDD_MACHINE_INFO_DLG            20104
+#define IDD_MACHINESTATE_DLG            20105
+#define IDD_INIT_DLG                    20106
+#define IDI_BUG                        20107
+#define IDC_INTRO                      21002
+#define IDC_COPY_TO_CLIPBOARD           21003
+#define IDC_SAVE_TO_FILE                21004
+#define IDC_STACKTRACE                 21005
+#define IDC_EXCEPTION                  21006
+#define IDC_REGISTER                   21007
+#define IDC_ABOUT                      21009
+#define IDC_MACHINE_INFO               21011
+#define IDC_CPU_LABEL                  21012
+#define IDC_OS_LABEL                   21013
+#define IDC_MEM_LABEL                  21014
+#define IDC_MACHINE_STATE              21015
+#define IDC_PROCESS_LIST               21016
+#define IDC_PROCESS_MODULE_LIST        21017
+#define IDC_PROGRESS_LABEL             21018
+#define IDC_INTRO2                     21022
+#define IDC_BUG_LBL                     21023
+#define IDC_MAILTO                     21024
+#define IDC_SUBMIT_NEW_VCF_BUG          21025
+#define IDC_CLOSE                      21026

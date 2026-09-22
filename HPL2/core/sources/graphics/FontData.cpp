@@ -31,6 +31,25 @@
 #include "gui/Gui.h"
 
 namespace hpl {
+	unsigned int DecodeFontCodepoint(const wchar_t*& apText)
+	{
+		unsigned int lCodepoint = (unsigned int)*apText++;
+		if(sizeof(wchar_t) == 2)
+		{
+			if(lCodepoint >= 0xD800 && lCodepoint <= 0xDBFF)
+			{
+				unsigned int lLow = (unsigned int)*apText;
+				if(lLow >= 0xDC00 && lLow <= 0xDFFF)
+				{
+					++apText;
+					return 0x10000 + ((lCodepoint - 0xD800) << 10) + (lLow - 0xDC00);
+				}
+				return 0xFFFD;
+			}
+		}
+		return (lCodepoint >= 0xD800 && lCodepoint <= 0xDFFF) ||
+			lCodepoint > 0x10FFFF ? 0xFFFD : lCodepoint;
+	}
 
 
 	//////////////////////////////////////////////////////////////////////////
@@ -72,6 +91,17 @@ namespace hpl {
 		{
 			if(mvGlyphs[i]) hplDelete(mvGlyphs[i]);
 		}
+	}
+
+	cGlyph* iFontData::GetGlyphForCodepoint(unsigned int alCodepoint)
+	{
+		if(alCodepoint < mlFirstChar || alCodepoint > mlLastChar) return NULL;
+		return GetGlyph((int)(alCodepoint - mlFirstChar));
+	}
+
+	float iFontData::GetKerning(unsigned int, unsigned int) const
+	{
+		return 0;
 	}
 
 	
@@ -209,154 +239,137 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	bool IsChineseFullwidthChar(wchar_t aChar)
+	static bool IsFontWrapSpace(unsigned int alCodepoint)
 	{
-		switch (aChar)
-		{
-		case 12290: // punctuation mark
-		case 65292: // comma
-		case 65311: // question mark
-		case 65281: // exclamation mark
-			return true;
-		default:
-			return false;
-		}
-		return false;
+		return alCodepoint == ' ' || alCodepoint == '\t' || alCodepoint == 0x3000;
 	}
 
-
-	struct cRowLength
+	static bool IsFontIdeograph(unsigned int alCodepoint)
 	{
-		unsigned int mlPos;
-		bool mbIncr;
-	};
-
+		return (alCodepoint >= 0x3400 && alCodepoint <= 0x9FFF) ||
+			(alCodepoint >= 0xF900 && alCodepoint <= 0xFAFF) ||
+			(alCodepoint >= 0x20000 && alCodepoint <= 0x323AF) ||
+			(alCodepoint >= 0x3040 && alCodepoint <= 0x30FF) ||
+			(alCodepoint >= 0xAC00 && alCodepoint <= 0xD7AF);
+	}
 
 	void iFontData::GetWordWrapRows(float afLength,float afFontHeight,cVector2f avSize,
 							const tWString& asString,tWStringVec *apRowVec)
 	{
-		int rows = 0;
-
-		unsigned int pos;
-		unsigned int first_letter=0;
-		unsigned int last_space=0;
-
-		std::list<cRowLength> rowLengthList;
-		cRowLength row;
-		float fTextLength;
-
-		for(pos = 0; pos < asString.size();pos++)
+		(void)afFontHeight;
+		if(apRowVec == NULL) return;
+		const size_t lInitialRows = apRowVec->size();
+		if(asString.empty())
 		{
-			//Log("char: %d\n",(char)asString[pos]);
-			if(asString[pos] == _W(' ') || asString[pos] == _W('\n') || IsChineseFullwidthChar(asString[pos]))
+			apRowVec->push_back(_W(""));
+			return;
+		}
+
+		const wchar_t* pBase = asString.c_str();
+		const size_t lLength = asString.size();
+		size_t lStart = 0;
+		bool bTrailingNewline = false;
+		while(lStart < lLength)
+		{
+			size_t lPos = lStart;
+			size_t lBreak = tWString::npos;
+			size_t lResume = tWString::npos;
+			bool bHasContent = false;
+			bool bBreakHasContent = false;
+			float fWidth = 0;
+			unsigned int lPrevious = 0;
+			bool bFinishedRow = false;
+			while(lPos < lLength)
 			{
-				tWString temp = asString.substr(first_letter, pos-first_letter);
-				fTextLength =  GetLength(avSize,temp.c_str());
-				
-				//Log("r:%d p:%d f:%d l:%d Temp:'%s'\n",rows,pos,first_letter,last_space, temp.c_str());
-				bool nothing = true;
-				if(fTextLength > afLength && IsChineseFullwidthChar(asString[pos]) == false)
+				const wchar_t* pText = pBase + lPos;
+				const unsigned int lCodepoint = DecodeFontCodepoint(pText);
+				const size_t lNext = (size_t)(pText - pBase);
+				if(lCodepoint == '\r' || lCodepoint == '\n')
 				{
-					rows++;
-					
-					row.mbIncr = true;
-					row.mlPos = last_space;
-					rowLengthList.push_back(row);
-
-					first_letter=last_space+1;
-					last_space = pos;
-					nothing = false;
-				}
-				else if (fTextLength > afLength && IsChineseFullwidthChar(asString[pos]) == true)
-				{	
-					row.mbIncr = false;
-					row.mlPos = last_space + 1;
-					rowLengthList.push_back(row);
-
-					first_letter = last_space + 1;
-					last_space = pos;
-					rows++;
-					nothing = false;
+					apRowVec->push_back(asString.substr(lStart, lPos-lStart));
+					lStart = lNext;
+					if(lCodepoint == '\r' && lStart < lLength && asString[lStart] == _W('\n')) ++lStart;
+					bTrailingNewline = lStart == lLength;
+					bFinishedRow = true;
+					break;
 				}
 
-				if(asString[pos] == _W('\n'))
+				cGlyph* pGlyph = GetGlyphForCodepoint(lCodepoint);
+				float fAdvance = pGlyph ? pGlyph->mfAdvance * avSize.x : 0;
+				if(pGlyph && lPrevious) fAdvance += GetKerning(lPrevious,lCodepoint) * avSize.x;
+				if(afLength > 0 && IsFontWrapSpace(lCodepoint) && fWidth + fAdvance > afLength)
 				{
-					last_space = pos;
-					first_letter=last_space+1;
-					
-					row.mbIncr = true;
-					row.mlPos = last_space;
-					rowLengthList.push_back(row);
-
-
-					rows++;
-					nothing = false;
+					if(bHasContent) apRowVec->push_back(asString.substr(lStart, lPos-lStart));
+					lStart = lNext;
+					while(lStart < lLength && IsFontWrapSpace((unsigned int)asString[lStart])) ++lStart;
+					bFinishedRow = true;
+					break;
 				}
-				if(nothing)
+				if(afLength > 0 && fWidth + fAdvance > afLength)
 				{
-					last_space = pos;
+					if(lPos == lStart)
+					{
+						apRowVec->push_back(asString.substr(lStart, lNext-lStart));
+						lStart = lNext;
+					}
+					else if(lBreak != tWString::npos)
+					{
+						if(bBreakHasContent) apRowVec->push_back(asString.substr(lStart, lBreak-lStart));
+						lStart = lResume;
+						while(lStart < lLength && IsFontWrapSpace((unsigned int)asString[lStart])) ++lStart;
+					}
+					else
+					{
+						apRowVec->push_back(asString.substr(lStart, lPos-lStart));
+						lStart = lPos;
+					}
+					bFinishedRow = true;
+					break;
 				}
+				fWidth += fAdvance;
+				lPrevious = pGlyph ? lCodepoint : 0;
+				if(!IsFontWrapSpace(lCodepoint)) bHasContent = true;
+				if(IsFontWrapSpace(lCodepoint))
+				{
+					lBreak = lPos;
+					lResume = lNext;
+					bBreakHasContent = bHasContent;
+				}
+				else if(IsFontIdeograph(lCodepoint))
+				{
+					lBreak = lNext;
+					lResume = lNext;
+				}
+				lPos = lNext;
+			}
+			if(!bFinishedRow)
+			{
+				apRowVec->push_back(asString.substr(lStart));
+				break;
 			}
 		}
-		tWString temp =  asString.substr(first_letter, pos-first_letter);
-		fTextLength = GetLength(avSize,temp.c_str());
-		if(fTextLength > afLength)
-		{
-			rows++;
-			row.mlPos = last_space;
-			row.mbIncr = true;
-			rowLengthList.push_back(row);
-		}
-
-		if(rows==0)
-		{
-			apRowVec->push_back(asString.c_str());
-		}
-		else
-		{
-			first_letter=0;
-			unsigned int i=0;
-
-			for(std::list<cRowLength>::iterator it = rowLengthList.begin();it != rowLengthList.end();++it)
-			{
-				apRowVec->push_back(asString.substr(first_letter, it->mlPos -first_letter).c_str());
-				i++;
-				first_letter = it->mlPos;
-				if (it->mbIncr)
-					first_letter++;
-			}
-			apRowVec->push_back(asString.substr(first_letter).c_str());
-
-		}
+		if(bTrailingNewline || apRowVec->size() == lInitialRows) apRowVec->push_back(_W(""));
 	}
 	
 	//-----------------------------------------------------------------------
 	
 	float iFontData::GetLength(const cVector2f& avSize,const wchar_t* sText)
 	{
-		int lCount=0;
-		float lXAdd =0;
-		float fLength =0;
-		while(sText[lCount] != 0)
+		if(sText == NULL) return 0;
+		float fLength = 0;
+		unsigned int lPrevious = 0;
+		while(*sText)
 		{
-			unsigned short lGlyphNum = ((wchar_t)sText[lCount]);
-			if(lGlyphNum<mlFirstChar || lGlyphNum>mlLastChar){
-				lCount++;
-				continue;
-			}
-			lGlyphNum -= mlFirstChar;
-
-			cGlyph *pGlyph = GetGlyph(lGlyphNum);
+			const unsigned int lCodepoint = DecodeFontCodepoint(sText);
+			cGlyph *pGlyph = GetGlyphForCodepoint(lCodepoint);
 			if(pGlyph)
 			{
-				cVector2f vOffset(pGlyph->mvOffset * avSize);
-				cVector2f vSize(pGlyph->mvSize * avSize);
-
-				fLength += pGlyph->mfAdvance*avSize.x; 
+				if(lPrevious) fLength += GetKerning(lPrevious, lCodepoint) * avSize.x;
+				fLength += pGlyph->mfAdvance * avSize.x;
+				lPrevious = lCodepoint;
 			}
-			lCount++;
+			else lPrevious = 0;
 		}
-
 		return fLength;
 	}
 	
@@ -385,10 +398,22 @@ namespace hpl {
 	cGlyph* iFontData::CreateGlyph(	cFrameSubImage* apImage, const cVector2l &avOffset,const cVector2l &avSize,
 									const cVector2l& avFontSize, int alAdvance)
 	{
+		return CreateGlyph(apImage, cVector2f((float)avOffset.x,(float)avOffset.y),
+			cVector2f((float)avSize.x,(float)avSize.y),
+			cVector2f((float)avFontSize.x,(float)avFontSize.y),(float)alAdvance);
+	}
+
+	cGlyph* iFontData::CreateGlyph(	cFrameSubImage* apImage, const cVector2f &avOffset,const cVector2f &avSize,
+									const cVector2f& avFontSize, float afAdvance)
+	{
 		//////////////////////////
 		//Gui gfx
-		cGuiGfxElement* pGuiGfx = mpGui->CreateGfxFilledRect(cColor(1,1),eGuiMaterial_FontNormal,false);
-		pGuiGfx->AddImage(apImage);
+		cGuiGfxElement* pGuiGfx = NULL;
+		if(apImage)
+		{
+			pGuiGfx = mpGui->CreateGfxFilledRect(cColor(1,1),eGuiMaterial_FontNormal,false);
+			pGuiGfx->AddImage(apImage);
+		}
 		
 		//////////////////////////
 		//Sizes
@@ -400,7 +425,7 @@ namespace hpl {
 		vOffset.x = ((float)avOffset.x)/((float)avFontSize.x) * mvSizeRatio.x;
 		vOffset.y = ((float)avOffset.y)/((float)avFontSize.y) * mvSizeRatio.y;
 		
-        float fAdvance = ((float)alAdvance)/((float)avFontSize.x) * mvSizeRatio.x;
+		float fAdvance = afAdvance / avFontSize.x * mvSizeRatio.x;
 		
 		cGlyph* pGlyph = hplNew( cGlyph,(pGuiGfx,vOffset,vSize,fAdvance));
 

@@ -29,6 +29,9 @@
 #include "resources/LowLevelResources.h"
 
 namespace hpl {
+	// Advances a wide string by one Unicode scalar value. Invalid surrogate
+	// sequences are represented by U+FFFD.
+	unsigned int DecodeFontCodepoint(const wchar_t*& apText);
 
 	class cResources;
 	class iLowLevelGraphics;
@@ -86,6 +89,9 @@ namespace hpl {
 		 * \return 
 		 */
 		inline cGlyph* GetGlyph(int alNum)const { if(alNum<0 || alNum>=(int)mvGlyphs.size()) return NULL; return mvGlyphs[alNum];}
+		virtual cGlyph* GetGlyphForCodepoint(unsigned int alCodepoint);
+		// Kerning is expressed in the same normalized units as glyph advance.
+		virtual float GetKerning(unsigned int alLeft, unsigned int alRight) const;
 
 		inline unsigned short GetFirstChar(){ return mlFirstChar;}
 		inline unsigned short GetLastChar(){ return mlLastChar;}
@@ -158,6 +164,8 @@ namespace hpl {
 
 		cGlyph* CreateGlyph(cFrameSubImage* apImage, const cVector2l &avOffset,const cVector2l &avSize,
 							const cVector2l& avFontSize, int alAdvance);
+		cGlyph* CreateGlyph(cFrameSubImage* apImage, const cVector2f &avOffset,const cVector2f &avSize,
+							const cVector2f& avFontSize, float afAdvance);
 		void AddGlyph(cGlyph *apGlyph);
 	};
 

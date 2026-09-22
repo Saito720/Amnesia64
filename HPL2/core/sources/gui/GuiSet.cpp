@@ -1484,7 +1484,9 @@ namespace hpl {
 										const cColor& aColor, eGuiMaterial aMaterial,
 										eFontAlign aAlign)
 	{
-		int lCount =0;
+		if(apString == NULL || apFont == NULL) return;
+		const wchar_t* pText = apString;
+		unsigned int lPrevious = 0;
 		cVector3f vPos = avPosition;
 
 		//////////////////////////////////////////////////////
@@ -1499,32 +1501,22 @@ namespace hpl {
 
 		//////////////////////////////////////////////////////
 		// Iterate the characters in string until NULL is found
-		while(apString[lCount] != 0)
+		while(*pText)
 		{
-			wchar_t lGlyphNum = ((wchar_t)apString[lCount]);
-			
-			//Check if the glyph is valid (in range)
-			if(	lGlyphNum < apFont->GetFirstChar() || 
-				lGlyphNum > apFont->GetLastChar())
-			{
-				lCount++;
-				continue;
-			}
-			//Get actual number of the glyph in the font.
-			lGlyphNum -= apFont->GetFirstChar();
-			
-			//Get glyph data and draw.
-			cGlyph *pGlyph = apFont->GetGlyph(lGlyphNum);
+			const unsigned int lCodepoint = DecodeFontCodepoint(pText);
+			cGlyph *pGlyph = apFont->GetGlyphForCodepoint(lCodepoint);
 			if(pGlyph)
 			{
+				if(lPrevious) vPos.x += apFont->GetKerning(lPrevious, lCodepoint) * avSize.x;
 				cVector2f vOffset(pGlyph->mvOffset * avSize);
-				cVector2f vSize(pGlyph->mvSize * avSize);// *apFont->GetSizeRatio());
+				cVector2f vSize(pGlyph->mvSize * avSize);
 
-				DrawGfx(pGlyph->mpGuiGfx,vPos + vOffset,vSize,aColor,aMaterial);
+				if(pGlyph->mpGuiGfx) DrawGfx(pGlyph->mpGuiGfx,vPos + vOffset,vSize,aColor,aMaterial);
 
 				vPos.x += pGlyph->mfAdvance*avSize.x; 
+				lPrevious = lCodepoint;
 			}
-			lCount++;
+			else lPrevious = 0;
 		}
 	}
 

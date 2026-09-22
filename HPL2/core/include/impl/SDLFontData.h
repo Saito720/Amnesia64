@@ -21,9 +21,9 @@
 #define HPL_SDL_FONTDATA_H
 
 #include "graphics/FontData.h"
+#include <map>
+#include <utility>
 
-//#include <SDL/SDL.h>
-//#include <SDL/SDL_ttf.h>
 
 namespace hpl {
 
@@ -36,9 +36,10 @@ namespace hpl {
 		bool CreateFromFontFile(const tWString &asFileName, int alSize,unsigned short alFirstChar, 
 								unsigned short alLastChar);
 		bool CreateFromBitmapFile(const tWString &asFileName);
+		float GetKerning(unsigned int alLeft, unsigned int alRight) const;
 
 	private:
-		//cGlyph* RenderGlyph(TTF_Font* apFont,unsigned short aChar, int alFontSize);
+		std::map<std::pair<unsigned int,unsigned int>, float> mKerning;
 
 	};
 

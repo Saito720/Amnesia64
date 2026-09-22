@@ -314,6 +314,7 @@
     <ClInclude Include="include\impl\OcclusionQueryOGL.h" />
     <ClInclude Include="include\impl\PBuffer.h" />
     <ClInclude Include="include\impl\SDLFontData.h" />
+    <ClInclude Include="include\impl\TrueTypeFontData.h" />
     <ClInclude Include="include\impl\SDLTexture.h" />
     <ClInclude Include="include\impl\VertexBufferOGL_Array.h" />
     <ClInclude Include="include\impl\VertexBufferOGL_VBO.h" />
@@ -630,6 +631,7 @@
     <ClCompile Include="sources\impl\OcclusionQueryOGL.cpp" />
     <ClCompile Include="sources\impl\PBuffer.cpp" />
     <ClCompile Include="sources\impl\SDLFontData.cpp" />
+    <ClCompile Include="sources\impl\TrueTypeFontData.cpp" />
     <ClCompile Include="sources\impl\SDLTexture.cpp" />
     <ClCompile Include="sources\impl\VertexBufferOGL_Array.cpp" />
     <ClCompile Include="sources\impl\VertexBufferOGL_VBO.cpp" />

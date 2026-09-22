@@ -402,7 +402,6 @@ void cLuxHintHandler::ParseStringForGamepadIcons()
 			// Convert the string
 			swprintf(sRowText, 1023, _W(" %ls"), vRows[i].c_str());
 
-			int lCount = 0;
 			cVector3f vPos;
 
 			if(vRows.size()==1)
@@ -416,29 +415,23 @@ void cLuxHintHandler::ParseStringForGamepadIcons()
 			}
 
 			//////////////////////////////////////////////////////
-			// Iterate the characters in string until NULL is found
-			while(sRowText[lCount] != 0)
+			// Match the GUI text renderer's Unicode and kerning advances so gamepad
+			// icons stay aligned with the text drawn beside them.
+			const wchar_t* pText = sRowText;
+			unsigned int lPrevious = 0;
+			while(*pText)
 			{
-				wchar_t lGlyphNum = ((wchar_t)sRowText[lCount]);
-			
-				//Check if the glyph is valid (in range)
-				if(	lGlyphNum < mpFont->GetFirstChar() || 
-					lGlyphNum > mpFont->GetLastChar())
-				{
-					lCount++;
-					continue;
-				}
-				//Get actual number of the glyph in the font.
-				lGlyphNum -= mpFont->GetFirstChar();
-			
-				//Get glyph data and draw.
-				cGlyph *pGlyph = mpFont->GetGlyph(lGlyphNum);
+				const wchar_t* pBefore = pText;
+				const unsigned int lCodepoint = DecodeFontCodepoint(pText);
+				cGlyph *pGlyph = mpFont->GetGlyphForCodepoint(lCodepoint);
 
 				if(pGlyph)
 				{
-					cVector2f vSize(pGlyph->mvSize * mvFontSize);
+					if(lPrevious) vPos.x += mpFont->GetKerning(lPrevious,lCodepoint) * mvFontSize.x;
 					vPos.x += pGlyph->mfAdvance*mvFontSize.x; 
+					lPrevious = lCodepoint;
 				}
+				else lPrevious = 0;
 
 				if(lPosition == mvHintIcons[lIconIdx].mlCharacterPosition)
 				{
@@ -457,8 +450,8 @@ void cLuxHintHandler::ParseStringForGamepadIcons()
 					}
 				}
 
-				lPosition++;
-				lCount++;
+				// Icon positions are offsets into the original wide string.
+				lPosition += (int)(pText - pBefore);
 			}
 		}
 	}

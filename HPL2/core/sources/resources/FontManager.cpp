@@ -24,6 +24,7 @@
 #include "graphics/Graphics.h"
 #include "graphics/LowLevelGraphics.h"
 #include "resources/ImageManager.h"
+#include "resources/FileSearcher.h"
 
 #include "graphics/FontData.h"
 
@@ -65,28 +66,34 @@ namespace hpl {
 		tWString sPath;
 		iFontData* pFont;
 		tString asNewName = cString::ToLowerCase(asName);
+		const tString sExt = cString::ToLowerCase(cString::GetFileExt(asName));
+		tWString sCachePath;
 
 		BeginLoad(asName);
-		
-		//asNewName = cString::SetFileExt(asName,"ttf");
-
-		pFont = static_cast<iFontData*>(this->FindLoadedResource(asNewName,sPath));
+		if(sExt == "ttf")
+		{
+			sPath = mpFileSearcher->GetFilePath(asNewName);
+			sCachePath = sPath + cString::To16Char("#" + cString::ToString(alSize) +
+				":" + cString::ToString(alFirstChar) + ":" + cString::ToString(alLastChar));
+			pFont = sPath.empty() ? NULL : static_cast<iFontData*>(GetResource(sCachePath));
+		}
+		else pFont = static_cast<iFontData*>(FindLoadedResource(asNewName,sPath));
 
 		if(pFont==NULL && sPath!=_W(""))
 		{
 			pFont = mpGraphics->GetLowLevel()->CreateFontData(asNewName);
 			pFont->SetUp(mpResources,mpGui);
 			
-			tString sExt = cString::ToLowerCase(cString::GetFileExt(asName));
-
 			//True Type Font
 			if(sExt == "ttf")
 			{
 				if(pFont->CreateFromFontFile(sPath,alSize,alFirstChar,alLastChar)==false){
+					Error("Couldn't load TrueType font '%s' at size %d\n",asName.c_str(),alSize);
 					hplDelete(pFont);
 					EndLoad();
 					return NULL;
 				}
+				pFont->SetFullPath(sCachePath);
 			}
 			//Angel code font type
 			else if(sExt == "fnt")
@@ -99,13 +106,12 @@ namespace hpl {
 			}
 			else
 			{
-				Error("Font '%s' has an unkown extension!\n",asName.c_str());
+				Error("Font '%s' has an unknown extension!\n",asName.c_str());
 				hplDelete(pFont);
 				EndLoad();
 				return NULL;
 			}
 			
-			//mpResources->GetImageManager()->FlushAll();
 			AddResource(pFont);
 		}
 

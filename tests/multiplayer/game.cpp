@@ -27,6 +27,8 @@
 #include "LuxMultiplayerEnemies.h"
 #include "LuxMultiplayerUI.h"
 #undef private
+#include "gui/WidgetLabel.h"
+#include "resources/FontManager.h"
 #include <SDL2/SDL.h>
 #include <cstdio>
 #include <cstdlib>
@@ -77,6 +79,7 @@ static void printStatus(const char* message) {
 class cGameSmoke : public iUpdateable, public iRendererCallback {
     int state=0;
     Uint32 started=0, readyAt=0, statusAt=0;
+    Uint32 fontTestReadyAt=0;
     uint32_t sequence=0;
     uint32_t oldEpoch=0, oldSequence=0;
     bool screenshotPending=false, screenshotDone=false;
@@ -225,6 +228,35 @@ public:
     }
     void Update(float dt) {
         if(state==99) return;
+        if(role=="font") {
+            if(fontTestReadyAt) return;
+            if(SDL_GetTicks()-started>20000) {fail("main menu did not become ready for font test");return;}
+            if(gpBase->mpEngine->GetUpdater()->GetCurrentContainerName()!="MainMenu") return;
+            const char* requested=std::getenv("CODEX_FONT_TEST_PATH");
+            if(!requested || !*requested) {fail("font test path was not provided");return;}
+            const std::filesystem::path path(requested);
+            if(!std::filesystem::is_regular_file(path)) {fail("font test file is missing");return;}
+            cResources* resources=gpBase->mpEngine->GetResources();
+            if(!resources->AddResourceDir(path.parent_path().wstring(),false)) {
+                fail("could not add font test resource directory");return;
+            }
+            iFontData* font=resources->GetFontManager()->CreateFontData(path.filename().string(),32);
+            if(!font) {fail("could not load test TTF through the game font manager");return;}
+            cGuiSet* menu=gpBase->mpEngine->GetGui()->GetSetFromName("MainMenu");
+            if(!menu) {fail("main menu GUI set is missing");return;}
+            cWidgetLabel* latin=menu->CreateWidgetLabel(cVector3f(35,170,200),cVector2f(780,45),
+                _W("AVATAR  To Wa Yo  caf\u00e9 na\u00efve \u20ac"));
+            latin->SetDefaultFontType(font);
+            latin->SetDefaultFontSize(cVector2f(32,32));
+            latin->SetDefaultFontColor(cColor(1,1));
+            cWidgetLabel* unicode=menu->CreateWidgetLabel(cVector3f(35,215,200),cVector2f(780,45),
+                _W("\u0395\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac  \u041f\u0440\u0438\u0432\u0435\u0442 \u043c\u0438\u0440"));
+            unicode->SetDefaultFontType(font);
+            unicode->SetDefaultFontSize(cVector2f(32,32));
+            unicode->SetDefaultFontColor(cColor(1,1));
+            fontTestReadyAt=SDL_GetTicks();
+            return;
+        }
         if(role=="steam-host") { updateSteamHost();return; }
         if(exists(role=="host" ? "client-failed.txt" : "host-failed.txt")) {fail("peer's test process failed; stopping this instance");return;}
         if(SDL_GetTicks()-started>180000) {fail("180-second handshake/test timeout: "+gpBase->mpMultiplayer->GetStatus());return;}
@@ -671,6 +703,18 @@ public:
         }
     }
     void OnPostRender(float dt) {
+        if(role=="font") {
+            if(!fontTestReadyAt || SDL_GetTicks()-fontTestReadyAt<750) return;
+            cBitmap* bitmap=gpBase->mpEngine->GetGraphics()->GetLowLevel()->CopyFrameBufferToBitmap();
+            if(!bitmap) {fail("in-game font screenshot readback failed");return;}
+            const bool saved=gpBase->mpEngine->GetResources()->GetBitmapLoaderHandler()->SaveBitmap(bitmap,
+                cString::To16Char(outputDir+"/font-in-game.png"),0);
+            hplDelete(bitmap);
+            if(!saved) {fail("in-game font screenshot save failed");return;}
+            mark(role+"-passed.txt","PASS: TTF rendered in the live main menu through the game GUI.");
+            printStatus("PASS: TTF rendered in the live main menu");
+            result=0;state=99;gpBase->mpEngine->Exit();return;
+        }
         tString loadingError;
         if(playerModelsOnly && !playerModelScreenshot.OnPostRender(loadingError)) {fail(loadingError);return;}
         if(enemiesOnly && !enemyRegression.OnPostRender(loadingError)) {fail(loadingError);return;}
@@ -709,7 +753,7 @@ public:
     }
 };
 int main(int argc,char** argv) {
-    if(argc!=5) {std::fprintf(stderr,"Usage: smoke host|client|steam-host|settings init.cfg output-dir port\n");return 2;}
+    if(argc!=5) {std::fprintf(stderr,"Usage: smoke host|client|steam-host|settings|font init.cfg output-dir port\n");return 2;}
     role=argv[1];outputDir=argv[3];port=static_cast<unsigned short>(std::atoi(argv[4]));
     gpBase=hplNew(cLuxBase,());
     if(!gpBase->Init(argv[2])) {

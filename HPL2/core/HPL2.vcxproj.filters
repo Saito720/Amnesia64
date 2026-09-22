@@ -513,6 +513,9 @@
     <ClInclude Include="include\impl\SDLFontData.h">
       <Filter>Impl\Graphics</Filter>
     </ClInclude>
+    <ClInclude Include="include\impl\TrueTypeFontData.h">
+      <Filter>Impl\Graphics</Filter>
+    </ClInclude>
     <ClInclude Include="include\impl\SDLTexture.h">
       <Filter>Impl\Graphics</Filter>
     </ClInclude>
@@ -1432,6 +1435,9 @@
       <Filter>Impl\Graphics</Filter>
     </ClCompile>
     <ClCompile Include="sources\impl\SDLFontData.cpp">
+      <Filter>Impl\Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\impl\TrueTypeFontData.cpp">
       <Filter>Impl\Graphics</Filter>
     </ClCompile>
     <ClCompile Include="sources\impl\SDLTexture.cpp">

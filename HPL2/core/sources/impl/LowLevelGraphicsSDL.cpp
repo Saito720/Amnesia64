@@ -23,7 +23,6 @@
 //#pragma comment(lib, "GLaux.lib")
 //#pragma comment(lib, "Cg.lib")
 //#pragma comment(lib, "CgGL.lib")
-//#pragma comment(lib, "SDL_ttf.lib")
 //#pragma comment(lib, "TaskKeyHook.lib")
 #endif
 
@@ -36,6 +35,8 @@
 
 #include "impl/LowLevelGraphicsSDL.h"
 #include "impl/SDLFontData.h"
+#include "impl/TrueTypeFontData.h"
+#include "system/String.h"
 #include "impl/SDLTexture.h"
 //#include "impl/CGShader.h"
 //#include "impl/CGProgram.h"
@@ -135,7 +136,6 @@ namespace hpl {
 		}
 #endif
 
-		//TTF_Init();
 	}
 
 	//-----------------------------------------------------------------------
@@ -161,7 +161,6 @@ namespace hpl {
 #ifdef WITH_CG
 		ExitCG();
 #endif
-		//TTF_Quit();
 #if SDL_VERSION_ATLEAST(2, 0, 0)
         SDL_DestroyWindow(mpScreen);
 #endif
@@ -865,8 +864,8 @@ namespace hpl {
 
 	iFontData* cLowLevelGraphicsSDL::CreateFontData(const tString &asName)
 	{
-		;
-
+		if(cString::ToLowerCase(cString::GetFileExt(asName)) == "ttf")
+			return hplNew(cTrueTypeFontData, (asName, this));
 		return hplNew( cSDLFontData, (asName, this) );
 	}
 

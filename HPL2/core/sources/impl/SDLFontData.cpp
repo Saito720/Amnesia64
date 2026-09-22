@@ -72,13 +72,21 @@ namespace hpl {
 		TiXmlDocument *pXmlDoc = hplNew( TiXmlDocument,() );
 		if(pXmlDoc->LoadFile(pFile)==false)
 		{
-			Error("Couldn't load angle code font file '%s'\n",asFileName.c_str());
+			Error("Couldn't load AngelCode font file '%s'\n",cString::To8Char(asFileName).c_str());
 			fclose(pFile);
 			hplDelete(pXmlDoc);
 			return false;
 		}
 
 		TiXmlElement *pRootElem = pXmlDoc->RootElement();
+		if(pRootElem == NULL || pRootElem->FirstChildElement("common") == NULL ||
+			pRootElem->FirstChildElement("chars") == NULL ||
+			pRootElem->FirstChildElement("pages") == NULL)
+		{
+			fclose(pFile);
+			hplDelete(pXmlDoc);
+			return false;
+		}
 
 		////////////////////////////////////////////
 		// Load Common info
@@ -86,10 +94,16 @@ namespace hpl {
 
 		int lLineHeight = cString::ToInt(pCommonElem->Attribute("lineHeight"),0);
 		int lBase = cString::ToInt(pCommonElem->Attribute("base"),0);
+		if(lLineHeight <= 0 || lBase <= 0)
+		{
+			fclose(pFile);
+			hplDelete(pXmlDoc);
+			return false;
+		}
 
 		mfHeight = (float)lLineHeight;
 
-		mvSizeRatio.x = (float)lBase / (float)lLineHeight;//I think this is a not correct. Not sure what is done here :S
+		mvSizeRatio.x = (float)lBase / (float)lLineHeight;
 		mvSizeRatio.y = 1;
 
 		int lLargestGlyphId=-1;
@@ -104,6 +118,12 @@ namespace hpl {
 			if(lId >lLargestGlyphId) lLargestGlyphId = lId;
 		}
 
+		if(lLargestGlyphId < 0 || lLargestGlyphId > 65535)
+		{
+			fclose(pFile);
+			hplDelete(pXmlDoc);
+			return false;
+		}
 		mlFirstChar =0;
 		mlLastChar = lLargestGlyphId;
 		mvGlyphs.resize(lLargestGlyphId+1, NULL);
@@ -113,10 +133,26 @@ namespace hpl {
 		std::vector<cFrameTexture*> vFrameTextures;
 		
 		TiXmlElement *pPagesRootElem = pRootElem->FirstChildElement("pages");
+		if(pPagesRootElem->FirstChildElement("page") == NULL)
+		{
+			fclose(pFile);
+			hplDelete(pXmlDoc);
+			return false;
+		}
+		for(TiXmlElement *pPage = pPagesRootElem->FirstChildElement("page"); pPage;
+			pPage = pPage->NextSiblingElement("page"))
+		{
+			const char* pPageFile = pPage->Attribute("file");
+			if(pPageFile == NULL || *pPageFile == 0)
+			{
+				fclose(pFile);
+				hplDelete(pXmlDoc);
+				return false;
+			}
+		}
 
-		int lCount=0;
 		TiXmlElement *pPageElem = pPagesRootElem->FirstChildElement("page");
-		for(; pPageElem != NULL; pPageElem = pPageElem->NextSiblingElement("page"), ++lCount)
+		for(; pPageElem != NULL; pPageElem = pPageElem->NextSiblingElement("page"))
 		{
 			tWString sFileName = cString::To16Char(pPageElem->Attribute("file"));
 			tWString sFilePath = cString::SetFilePathW(sFileName,sPath);
@@ -127,6 +163,7 @@ namespace hpl {
 			if(pBitmap==NULL)
 			{
 				Error("Couldn't load bitmap %s for FNT file '%s'\n",cString::To8Char(sFilePath).c_str(),cString::To8Char(asFileName).c_str());
+				fclose(pFile);
 				hplDelete(pXmlDoc);
 				return false;
 			}
@@ -144,11 +181,8 @@ namespace hpl {
 
                 pBitmap = pTempBitmap;
 			}
-			//Log("Loaded bitmap %s, bpp: %d pixelformat: %d\n",sFileName.c_str(),pBitmap->GetBytesPerPixel(), pBitmap->GetPixelFormat());
-
 			///////////////////////
 			//Create a texture from bitmap (do not want to load it from texture manager since that would delete the texture on its own).
-			tString sName = cString::SetFileExt(cString::To8Char(asFileName),"")+"_"+cString::ToString(lCount);
 			iTexture *pTexture = mpLowLevelGraphics->CreateTexture("",eTextureType_2D,eTextureUsage_Normal);
 
 			pTexture->CreateFromBitmap(pBitmap);
@@ -183,7 +217,7 @@ namespace hpl {
 
 			int lPage = cString::ToInt(pCharElem->Attribute("page"),0);
 
-			if(lId<0 || lId>=(int)mvGlyphs.size())
+			if(lId<0 || lId>=(int)mvGlyphs.size() || lPage < 0 || lPage >= (int)vFrameTextures.size())
 			{
 				Warning("Font '%s' contain glyph with invalid id: %d. Skipping loading of it!\n", cString::To8Char(asFileName).c_str(), lId);
 				continue;
@@ -191,6 +225,14 @@ namespace hpl {
 
 			//Get the bitmap where the character graphics is
 			cFrameTexture* pFrameTexture = vFrameTextures[lPage];
+			const cVector3l& vPageSize = pFrameTexture->GetTexture()->GetSize();
+			if(lX < 0 || lY < 0 || lW < 0 || lH < 0 || lX > vPageSize.x ||
+				lY > vPageSize.y || lW > vPageSize.x - lX || lH > vPageSize.y - lY)
+			{
+				Warning("Font '%s' contains glyph %d outside bitmap page %d. Skipping it!\n",
+					cString::To8Char(asFileName).c_str(), lId, lPage);
+				continue;
+			}
 			
 			cFrameSubImage *pImage = pFrameTexture->CreateCustomImage(cVector2l(lX, lY),cVector2l(lW,lH));
             
@@ -198,6 +240,7 @@ namespace hpl {
             cGlyph *pGlyph = CreateGlyph(pImage,cVector2l(lXOffset,lYOffset),cVector2l(lW,lH),
 										cVector2l(lBase,lLineHeight),lAdvance);
 			
+			if(mvGlyphs[lId]) hplDelete(mvGlyphs[lId]);
 			mvGlyphs[lId] = pGlyph;
 
 		}
@@ -210,130 +253,52 @@ namespace hpl {
 	
 	//-----------------------------------------------------------------------
 	
-	bool cSDLFontData::CreateFromFontFile(const tWString &asFileName, int alSize, unsigned short alFirstChar, 
-											unsigned short alLastChar)
+	bool cSDLFontData::CreateFromFontFile(const tWString &, int,
+		unsigned short, unsigned short)
 	{
-		/*SetFullPath(asFileName);
-
-		cGlyph* pGlyph=NULL;
-
-		mlFirstChar = alFirstChar;
-		mlLastChar = alLastChar;
-		
-		TTF_Font* pFont = TTF_OpenFont(cString::To8Char(asFileName).c_str(), alSize);
-		if(pFont==NULL){
-			Error("Error when opening '%s': %s\n",asFileName.c_str(),TTF_GetError());
-			return false;
-		}
-		
-		//Create bitmaps from all of the characters and create
-		//Images from those. 
-		for(int i=alFirstChar; i<=alLastChar;i++)
-		{
-			unsigned short lUniCode = i;
-			//char c = (char)i;
-			
-			//if(c == 'ˆ')lUniCode = 'o';
-			//else if(c == '÷')lUniCode = 'O';
-
-            pGlyph = RenderGlyph(pFont, lUniCode, alSize);
-			AddGlyph(pGlyph);
-		}
-		
-		//Get the properties
-		mfHeight = (float)TTF_FontHeight(pFont);
-
-		mvSizeRatio = 1;
-		
-		//Cleanup
-		TTF_CloseFont(pFont);
-
-		return true;*/
 		return false;
 	}
 
-	//-----------------------------------------------------------------------
-
-	//////////////////////////////////////////////////////////////////////////
-	// PRIVATE METHODS
-	//////////////////////////////////////////////////////////////////////////
-
-	//-----------------------------------------------------------------------
-	
-	/*cGlyph* cSDLFontData::RenderGlyph(TTF_Font* apFont,unsigned short aChar, int alFontSize)
+	void cSDLFontData::GetWordWrapRows(float afLength, float, cVector2f avSize,
+		const tWString& asString, tWStringVec *apRowVec)
 	{
-		//If the font is saved to disk, then load the bitmap from disk instead.
-		
-		cVector2l vMin;
-		cVector2l vMax;
-		int lAdvance=0;
-		
-		TTF_GlyphMetrics(apFont, aChar, &vMin.x, &vMax.x, &vMin.y, &vMax.y, &lAdvance);
-
-		//Create the bitmap we want to draw upon
-		cVector2l vSize = vMax - vMin;
-		cBitmap *pBmp = hplNew(cBitmap, () );
-		//TODO: Create and fill bitmap		
-		//pBmp->CreateData(cVector3l(vSize.x, vSize.y,1),ePixelFormat_RGBA,0,0);
-		//pBmp->Clear(cColor(0,1),0,0);
-		
-		//create a surface with the glyph
-		SDL_Color Col;Col.r=255;Col.g=255;Col.b=255;
-		SDL_Surface* pGlyphSurface = TTF_RenderGlyph_Blended(apFont,aChar,Col);
-
-		SDL_Surface* pTempSurface = SDL_CreateRGBSurface(	SDL_SWSURFACE, vSize.x, vSize.y,32, 
-															0x000000ff,0x0000ff00,0x00ff0000,0xff000000);
-        
-		//Blit the surface using blending. This way it should create a nice
-		//b&w image where the font is white.
-		//TODO: Get Surface data and do a raw data blit.
-		SDL_SetAlpha(pTempSurface,0,0);
-		SDL_SetAlpha(pGlyphSurface,SDL_SRCALPHA,0);
-		SDL_BlitSurface(pGlyphSurface, NULL, pTempSurface,NULL);
-		SDL_SetAlpha(pTempSurface,0,0);
-
-        //Set the alpha of the bitmap to the average color.
-		//So we get some alpha bledning.
-		int lBmpSize = 4;
-		unsigned char* PixBuffer = (unsigned char*)pTempSurface->pixels;
-		
-		//Should not be needed:
-		for(int y=0;y<vSize.y;y++)
-			for(int x=0;x<vSize.x;x++)
+		if(apRowVec == NULL) return;
+		// The shipped bitmap fonts were laid out with these word/punctuation
+		// break rules and without kerning. Keep that layout for existing assets.
+		size_t lStart = 0, lLastSpace = 0;
+		bool bHasBreak = false;
+		for(size_t lPos = 0; lPos < asString.size(); ++lPos)
+		{
+			const wchar_t lChar = asString[lPos];
+			const bool bPunctuation = lChar == 0x3002 || lChar == 0xFF0C ||
+				lChar == 0xFF1F || lChar == 0xFF01;
+			if(lChar != _W(' ') && lChar != _W('\n') && !bPunctuation) continue;
+			if(GetLength(avSize, asString.substr(lStart, lPos-lStart).c_str()) > afLength)
 			{
-				unsigned char* Pix = &PixBuffer[y*pBmp->GetWidth()*lBmpSize + 
-					x*lBmpSize];
-
-				Pix[3] = Pix[0];	
+				const size_t lEnd = lLastSpace + (bPunctuation ? 1 : 0);
+				// A word wider than the box has no preceding break. Keep it intact
+				// instead of dropping its first character or creating an empty row.
+				if(bHasBreak && lEnd > lStart && lLastSpace + 1 <= lPos)
+				{
+					apRowVec->push_back(asString.substr(lStart, lEnd-lStart));
+					lStart = lLastSpace + 1;
+				}
 			}
-		pBmp->SetSize(cVector3l(vSize.x, vSize.y,1));
-		pBmp->SetPixelFormat(ePixelFormat_RGBA);
-		pBmp->SetBytesPerPixel(4);
-		pBmp->GetData(0,0)->SetData(PixBuffer,vSize.x*vSize.y * 4);
-
-		SDL_FreeSurface(pTempSurface);
-
-		//////////////////////////
-		//Create Image
-		cFrameSubImage* pImage = mpResources->GetImageManager()->CreateFromBitmap("",pBmp);
-		if(pImage==NULL){
-			FatalError("Couldn't create image for bitmap\n");
-			return NULL;
+			if(lChar == _W('\n'))
+			{
+				apRowVec->push_back(asString.substr(lStart, lPos-lStart));
+				lStart = lPos + 1;
+			}
+			lLastSpace = lPos;
+			bHasBreak = true;
 		}
-		
-		////////////////////////////////////
-		//Create the Glyph
-		int lHeight = TTF_FontHeight(apFont);
-		cVector2l vOffset = cVector2l(vMin.x, alFontSize - vMax.y);//(lHeight - vSize.y) - vMin.y);
-
-		cGlyph* pGlyph = CreateGlyph(pImage,vOffset,vSize,alFontSize,lAdvance);
-
-		hplDelete(pBmp);
-		SDL_FreeSurface(pGlyphSurface);
-
-		return pGlyph;
-	}*/
-
-	//-----------------------------------------------------------------------
+		if(GetLength(avSize, asString.substr(lStart).c_str()) > afLength &&
+			bHasBreak && lLastSpace > lStart)
+		{
+			apRowVec->push_back(asString.substr(lStart, lLastSpace-lStart));
+			lStart = lLastSpace + 1;
+		}
+		apRowVec->push_back(asString.substr(lStart));
+	}
 
 }

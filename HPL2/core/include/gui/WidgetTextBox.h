@@ -108,7 +108,7 @@ namespace hpl {
 		int GetLastCharInSize(int alStartPos, float afMaxSize, float afLengthAdd);
 		int GetFirstCharInSize(int alStartPos, float afMaxSize, float afLengthAdd);
 		bool WidgetConsiderSomeCharsIllegal();
-		bool IsIllegalChar(wchar_t alChar);
+		bool IsIllegalChar(unsigned int alChar);
 		void SetTextUpdated();
 
 		/////////////////////////

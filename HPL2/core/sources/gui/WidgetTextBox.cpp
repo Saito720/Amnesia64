@@ -36,6 +36,72 @@
 #include "gui/WidgetButton.h"
 
 namespace hpl {
+	static bool IsHighSurrogate(wchar_t aChar)
+	{
+		return sizeof(wchar_t) == 2 && (unsigned int)aChar >= 0xD800 && (unsigned int)aChar <= 0xDBFF;
+	}
+
+	static bool IsLowSurrogate(wchar_t aChar)
+	{
+		return sizeof(wchar_t) == 2 && (unsigned int)aChar >= 0xDC00 && (unsigned int)aChar <= 0xDFFF;
+	}
+
+	static int ClampTextPosition(const tWString& asText, int alPosition)
+	{
+		if(alPosition < 0) return 0;
+		if(alPosition > (int)asText.size()) return (int)asText.size();
+		if(alPosition > 0 && alPosition < (int)asText.size() &&
+			IsHighSurrogate(asText[alPosition-1]) && IsLowSurrogate(asText[alPosition])) --alPosition;
+		return alPosition;
+	}
+
+	static int PreviousTextCodepoint(const tWString& asText, int alPosition)
+	{
+		int lPrevious = alPosition > 0 ? alPosition - 1 : 0;
+		if(lPrevious > 0 && lPrevious < (int)asText.size() &&
+			IsLowSurrogate(asText[lPrevious]) && IsHighSurrogate(asText[lPrevious-1])) --lPrevious;
+		return lPrevious;
+	}
+
+	static int NextTextCodepoint(const tWString& asText, int alPosition)
+	{
+		if(alPosition >= (int)asText.size()) return (int)asText.size();
+		return alPosition + (IsHighSurrogate(asText[alPosition]) &&
+			alPosition + 1 < (int)asText.size() && IsLowSurrogate(asText[alPosition+1]) ? 2 : 1);
+	}
+
+	static tWString EncodeTextCodepoint(unsigned int alCodepoint)
+	{
+		tWString sText;
+		if(alCodepoint > 0x10FFFF || (alCodepoint >= 0xD800 && alCodepoint <= 0xDFFF)) return sText;
+		if(sizeof(wchar_t) == 2 && alCodepoint > 0xFFFF)
+		{
+			alCodepoint -= 0x10000;
+			sText += (wchar_t)(0xD800 + (alCodepoint >> 10));
+			sText += (wchar_t)(0xDC00 + (alCodepoint & 0x3FF));
+		}
+		else sText += (wchar_t)alCodepoint;
+		return sText;
+	}
+
+	static int CountTextCodepoints(const tWString& asText)
+	{
+		int lCount = 0;
+		const wchar_t* pText = asText.c_str();
+		while(*pText)
+		{
+			DecodeFontCodepoint(pText);
+			++lCount;
+		}
+		return lCount;
+	}
+
+	static int TextPrefixUnits(const tWString& asText, int alCodepoints)
+	{
+		const wchar_t* pText = asText.c_str();
+		while(*pText && alCodepoints-- > 0) DecodeFontCodepoint(pText);
+		return (int)(pText - asText.c_str());
+	}
 
 	int cWidgetTextBox::mlDefaultDecimals = 3;
 
@@ -52,9 +118,6 @@ namespace hpl {
 		mInputType = aType;
 		mbShowButtons = false;
 		
-		LoadGraphics();
-
-		mpPointerGfx = mpSkin->GetGfx(eGuiSkinGfx_PointerText);
 		mpPrevAttention = NULL;
 
 		mlMarkerCharPos = -1;
@@ -67,8 +130,6 @@ namespace hpl {
 		mfMaxTextSizeNeg =0;
 
 		mlMaxCharacters = -1;
-
-		mlVisibleCharSize =0;
 
 		mbPressed = false;
 
@@ -96,6 +157,10 @@ namespace hpl {
 		mbNumericValueUpdated = true;
 
 		mbUIKeyboardOpen = false;
+		mbGotFocusRecently = false;
+		// Loading graphics calls OnChangeSize/OnChangeText, so initialize state first.
+		LoadGraphics();
+		mpPointerGfx = mpSkin->GetGfx(eGuiSkinGfx_PointerText);
 	}
 
 	//-----------------------------------------------------------------------
@@ -131,14 +196,10 @@ namespace hpl {
 
 		mlMaxCharacters = alLength;
 
-		if(mlMaxCharacters >=0 && (int)msText.size() > mlMaxCharacters)
+		if(mlMaxCharacters >=0 && CountTextCodepoints(msText) > mlMaxCharacters)
 		{
-			SetText(cString::SubW(msText,0,mlMaxCharacters));
-			
-			if(mlSelectedTextEnd >= mlMaxCharacters) mlSelectedTextEnd = mlMaxCharacters-1;
-			if(mlMarkerCharPos >= mlMaxCharacters) mlMarkerCharPos = mlMaxCharacters-1;
-
-			OnChangeText();
+			const int lEnd = TextPrefixUnits(msText,mlMaxCharacters);
+			SetText(cString::SubW(msText,0,lEnd));
 		}
 	}
 
@@ -152,12 +213,11 @@ namespace hpl {
 			alStart = 0;
 		if(alStart>lTextLen)
 			alStart = lTextLen;
-		mlSelectedTextEnd=alStart;
+		if(alCount < 0 || alCount > lTextLen-alStart)
+			alCount = lTextLen-alStart;
 
-		if(alCount==-1)
-			alCount = lTextLen-mlSelectedTextEnd;
-
-        SetMarkerPos(mlSelectedTextEnd+alCount);
+		mlSelectedTextEnd = ClampTextPosition(msText, alStart);
+		SetMarkerPos(alStart+alCount);
 	}
 
 	//-----------------------------------------------------------------------
@@ -345,52 +405,47 @@ namespace hpl {
 
 	int cWidgetTextBox::GetLastCharInSize(int alStartPos, float afMaxSize, float afLengthAdd)
 	{
-		int lCharPos = (int)msText.size();
-		float fLength =0;
-		int lFirst = mpDefaultFontType->GetFirstChar();
-		int lLast = mpDefaultFontType->GetLastChar();
-		for(int i=alStartPos; i< (int)msText.size(); ++i)
+		const wchar_t* pText = msText.c_str() + ClampTextPosition(msText, alStartPos);
+		float fLength = 0;
+		unsigned int lPrevious = 0;
+		while(*pText)
 		{
-			if(i < lFirst || i >lLast) continue;
-
-			cGlyph* pGlyph = mpDefaultFontType->GetGlyph(msText[i] - lFirst);
-			if(pGlyph==NULL)continue;
-
-			fLength += pGlyph->mfAdvance * mvDefaultFontSize.x;
-			if(fLength + afLengthAdd >= afMaxSize)
+			const int lCharacterStart = (int)(pText - msText.c_str());
+			const unsigned int lCodepoint = DecodeFontCodepoint(pText);
+			cGlyph* pGlyph = mpDefaultFontType->GetGlyphForCodepoint(lCodepoint);
+			if(pGlyph)
 			{
-				lCharPos = i;
-				break;
+				if(lPrevious) fLength += mpDefaultFontType->GetKerning(lPrevious,lCodepoint) * mvDefaultFontSize.x;
+				fLength += pGlyph->mfAdvance * mvDefaultFontSize.x;
+				if(fLength + afLengthAdd >= afMaxSize) return lCharacterStart;
 			}
+			lPrevious = pGlyph ? lCodepoint : 0;
 		}
-
-		return lCharPos;
+		return (int)msText.size();
 	}
 	
 	//-----------------------------------------------------------------------
 
 	int cWidgetTextBox::GetFirstCharInSize(int alStartPos, float afMaxSize, float afLengthAdd)
 	{
-		int lCharPos = 0;
-		float fLength =0;
-		int lFirst = mpDefaultFontType->GetFirstChar();
-		int lLast = mpDefaultFontType->GetLastChar();
-		for(int i=alStartPos; i>=0 ; --i)
+		float fLength = 0;
+		unsigned int lNext = 0;
+		// alStartPos is a caret boundary; measure the text before it.
+		for(int i = ClampTextPosition(msText, alStartPos); i > 0;)
 		{
-			if(i < lFirst || i >lLast) continue;
-
-			cGlyph* pGlyph = mpDefaultFontType->GetGlyph(msText[i] - lFirst);
-			if(pGlyph==NULL)continue;
-
-			fLength += pGlyph->mfAdvance * mvDefaultFontSize.x;
-			if(fLength + afLengthAdd >= afMaxSize)
+			i = PreviousTextCodepoint(msText, i);
+			const wchar_t* pText = msText.c_str() + i;
+			const unsigned int lCodepoint = DecodeFontCodepoint(pText);
+			cGlyph* pGlyph = mpDefaultFontType->GetGlyphForCodepoint(lCodepoint);
+			if(pGlyph)
 			{
-				lCharPos = i;
-				break;
+				if(lNext) fLength += mpDefaultFontType->GetKerning(lCodepoint,lNext) * mvDefaultFontSize.x;
+				fLength += pGlyph->mfAdvance * mvDefaultFontSize.x;
+				if(fLength + afLengthAdd >= afMaxSize) return i;
 			}
+			lNext = pGlyph ? lCodepoint : 0;
 		}
-
-		return lCharPos;
+		return -1;
 	}
 
 	//-----------------------------------------------------------------------
@@ -402,17 +457,16 @@ namespace hpl {
 		return false;
 	}
 	
-	bool cWidgetTextBox::IsIllegalChar(wchar_t alChar)
+	bool cWidgetTextBox::IsIllegalChar(unsigned int alChar)
 	{
-		for(size_t i=0; i<msIllegalChars.length(); ++i)
-		{
-			if(msIllegalChars[i] == alChar) return true;
-		}
+		const wchar_t* pText = msIllegalChars.c_str();
+		while(*pText)
+			if(DecodeFontCodepoint(pText) == alChar) return true;
 
         if(mbLegalCharCodeLimitEnabled)
 		{
-			if(alChar > mlLegalCharCodeMaxLimit) return true;
-			if(alChar < mlLegalCharCodeMinLimit) return true;
+			if(alChar > (unsigned int)mlLegalCharCodeMaxLimit) return true;
+			if(alChar < (unsigned int)mlLegalCharCodeMinLimit) return true;
 		}
 		return false;
 	}
@@ -465,13 +519,12 @@ namespace hpl {
 
 	void cWidgetTextBox::SetMarkerPos(int alPos)
 	{
-		mlMarkerCharPos = alPos;
-		if(mlMarkerCharPos < 0) mlMarkerCharPos =0;
-		if(mlMarkerCharPos > (int)msText.size() && msText.size()>0) mlMarkerCharPos =(int)msText.size();
+		mlMarkerCharPos = ClampTextPosition(msText, alPos);
 
 		if(mlMarkerCharPos > mlFirstVisibleChar + mlVisibleCharSize)
 		{
-			mlFirstVisibleChar =	GetFirstCharInSize(mlMarkerCharPos,mfTextMaxSize,0)+1;
+			const int lFirstExcluded = GetFirstCharInSize(mlMarkerCharPos,mfTextMaxSize,0);
+			mlFirstVisibleChar = lFirstExcluded < 0 ? 0 : NextTextCodepoint(msText,lFirstExcluded);
 			if(msText.size()<=1) mlFirstVisibleChar =0;
 			OnChangeText();
 		}
@@ -506,19 +559,18 @@ namespace hpl {
 
 	void cWidgetTextBox::OnChangeText()
 	{
+		if(mlMaxCharacters >= 0 && CountTextCodepoints(msText) > mlMaxCharacters)
+			msText.resize(TextPrefixUnits(msText, mlMaxCharacters));
+		if(mlMarkerCharPos >= 0) mlMarkerCharPos = ClampTextPosition(msText, mlMarkerCharPos);
+		if(mlSelectedTextEnd >= 0) mlSelectedTextEnd = ClampTextPosition(msText, mlSelectedTextEnd);
+		if(mlFirstVisibleChar >= (int)msText.size()) mlFirstVisibleChar = 0;
+		if(mlFirstVisibleChar > 0 && IsLowSurrogate(msText[mlFirstVisibleChar]) &&
+			IsHighSurrogate(msText[mlFirstVisibleChar-1])) --mlFirstVisibleChar;
 		if(msText == _W(""))
 			mlVisibleCharSize = 0;
 		else
 			mlVisibleCharSize = GetLastCharInSize(	mlFirstVisibleChar,mfTextMaxSize,0) - 
 													mlFirstVisibleChar;
-
-		if(mlMaxCharacters >=0 && (int)msText.size() > mlMaxCharacters)
-		{
-			SetText(cString::SubW(msText,0,mlMaxCharacters));
-
-			if(mlSelectedTextEnd >= mlMaxCharacters) mlSelectedTextEnd = mlMaxCharacters-1;
-			if(mlMarkerCharPos >= mlMaxCharacters) mlMarkerCharPos = mlMaxCharacters-1;
-		}
 
 		if(mbTextChanged && mInputType == eWidgetTextBoxInputType_Numeric)
 		{
@@ -623,9 +675,23 @@ namespace hpl {
 								vTextAdd + cVector3f(fPos,0,0.01f),
 								cVector2f(fSize,mvDefaultFontSize.y));
 
-				DrawDefaultTextHighlight(cString::SubW(msText,lHighlightStart,lHighlightSize), 
-								GetGlobalPosition() + vTextAdd + cVector3f(fPos,0,0.02f),
-								eFontAlign_Left);
+				if(lHighlightSize > 0)
+				{
+					// Redrawing a selected substring must retain kerning across its
+					// left boundary, or the highlighted glyphs shift over the originals.
+					float fHighlightPos = fPos;
+					if(lHighlightStart > mlFirstVisibleChar)
+					{
+						const wchar_t* pPrevious = msText.c_str() + PreviousTextCodepoint(msText,lHighlightStart);
+						const wchar_t* pCurrent = msText.c_str() + lHighlightStart;
+						const unsigned int lPrevious = DecodeFontCodepoint(pPrevious);
+						const unsigned int lCurrent = DecodeFontCodepoint(pCurrent);
+						if(mpDefaultFontType->GetGlyphForCodepoint(lPrevious) && mpDefaultFontType->GetGlyphForCodepoint(lCurrent))
+							fHighlightPos += mpDefaultFontType->GetKerning(lPrevious,lCurrent) * mvDefaultFontSize.x;
+					}
+					DrawDefaultTextHighlight(cString::SubW(msText,lHighlightStart,lHighlightSize),
+						GetGlobalPosition() + vTextAdd + cVector3f(fHighlightPos,0,0.02f), eFontAlign_Left);
+				}
 			}
 		}
 
@@ -847,6 +913,7 @@ namespace hpl {
 					cPlatform::CopyTextToClipboard(cString::SubW(msText,lStart, lSelectSize));
 					SetText(cString::SubW(msText,0,	lStart) + cString::SubW(msText,lEnd));
 					mlSelectedTextEnd = -1;
+					SetMarkerPos(lStart);
 
 					SetTextUpdated();
 				}
@@ -866,17 +933,19 @@ namespace hpl {
 				{
 					tWString sTempExtra = sExtra;
 					sExtra = _W("");
-					for(size_t i=0; i<sTempExtra.size(); ++i)
+					const wchar_t* pExtra = sTempExtra.c_str();
+					while(*pExtra)
 					{
-						if(IsIllegalChar(sTempExtra[i])==false)
-							sExtra += sTempExtra[i];
+						const unsigned int lCodepoint = DecodeFontCodepoint(pExtra);
+						if(!IsIllegalChar(lCodepoint))
+							sExtra += EncodeTextCodepoint(lCodepoint);
 					}
 				}
 				
 				if(mlSelectedTextEnd <0)
 				{
-					if(	mlMaxCharacters ==-1 || 
-						(int)msText.size() + (int)sExtra.size() <= mlMaxCharacters)
+					if(	mlMaxCharacters ==-1 ||
+						CountTextCodepoints(msText) + CountTextCodepoints(sExtra) <= mlMaxCharacters)
 					{
 						SetText(cString::SubW(msText,0,	mlMarkerCharPos)+ sExtra +
 								cString::SubW(msText,mlMarkerCharPos) );
@@ -887,8 +956,8 @@ namespace hpl {
 				else
 				{
 					if(	mlMaxCharacters < 0 ||
-						(int)sExtra.size() <= lSelectSize ||
-						(int)sExtra.size() + (int)msText.size() - lSelectSize <= mlMaxCharacters)
+						CountTextCodepoints(msText) - CountTextCodepoints(msText.substr(lStart,lSelectSize)) +
+						CountTextCodepoints(sExtra) <= mlMaxCharacters)
 					{
 						SetText(cString::SubW(msText,0,	lStart) + sExtra + 
 								cString::SubW(msText,lEnd));
@@ -912,13 +981,13 @@ namespace hpl {
 				if(mlSelectedTextEnd==-1) 
 					mlSelectedTextEnd = mlMarkerCharPos;
 
-				if(key == eKey_Left)	SetMarkerPos(mlMarkerCharPos-1);
-				else					SetMarkerPos(mlMarkerCharPos+1);
+				if(key == eKey_Left)	SetMarkerPos(PreviousTextCodepoint(msText,mlMarkerCharPos));
+				else					SetMarkerPos(NextTextCodepoint(msText,mlMarkerCharPos));
 			}
 			else
 			{
-				if(key == eKey_Left)	SetMarkerPos(mlMarkerCharPos-1);
-				else					SetMarkerPos(mlMarkerCharPos+1);
+				if(key == eKey_Left)	SetMarkerPos(PreviousTextCodepoint(msText,mlMarkerCharPos));
+				else					SetMarkerPos(NextTextCodepoint(msText,mlMarkerCharPos));
 
 				mlSelectedTextEnd = -1;
 			}
@@ -946,7 +1015,7 @@ namespace hpl {
 				if(key == eKey_Delete)
 				{
 					SetText(cString::SubW(msText,0,	mlMarkerCharPos)+ 
-							cString::SubW(msText,mlMarkerCharPos+1));
+							cString::SubW(msText,NextTextCodepoint(msText,mlMarkerCharPos)));
 
 					SetTextUpdated();
 				}
@@ -954,9 +1023,10 @@ namespace hpl {
 				{
 					if(mlMarkerCharPos!=0)
 					{
-						SetText(cString::SubW(msText,0,	mlMarkerCharPos-1)+ 
+						const int lPrevious = PreviousTextCodepoint(msText,mlMarkerCharPos);
+						SetText(cString::SubW(msText,0,lPrevious)+
 								cString::SubW(msText,mlMarkerCharPos));
-						SetMarkerPos(mlMarkerCharPos-1);
+						SetMarkerPos(lPrevious);
 
 						SetTextUpdated();
 					}
@@ -1005,23 +1075,24 @@ namespace hpl {
 		{
 			//////////////////////////////
 			// Set up data
-			int lFirstFontChar = mpDefaultFontType->GetFirstChar();
-			int lLastFontChar = mpDefaultFontType->GetLastChar();
-			wchar_t unicode = aData.mKeyPress.mlUnicode;
+			const unsigned int lCodepoint = (unsigned int)aData.mKeyPress.mlUnicode;
+			const tWString sUnicode = EncodeTextCodepoint(lCodepoint);
+			if(sUnicode.empty() || lCodepoint == 0) return true;
+			wchar_t unicode = lCodepoint <= 0xFFFF ? (wchar_t)lCodepoint : 0;
 			wchar_t lFirstNum = _W('0');
 			wchar_t lLastNum = _W('9');
 
 			//////////////////////
 			// Check so character is not illegal
-			if(IsIllegalChar(unicode)) return true;
+			if(IsIllegalChar(lCodepoint)) return true;
 			
 			///////////////////////////
 			// Numerical Input
 			if(mInputType == eWidgetTextBoxInputType_Numeric)
 			{
-				if(	unicode >= lFirstNum && unicode <= lLastNum ||
-					(unicode == _W('.') || unicode == _W('-')) &&
-					mpDefaultFontType->GetGlyph(unicode - lFirstFontChar))
+				if(	((unicode >= lFirstNum && unicode <= lLastNum) ||
+					unicode == _W('.') || unicode == _W('-')) &&
+					mpDefaultFontType->GetGlyphForCodepoint((unsigned int)unicode))
 				{
 					if(mlSelectedTextEnd<0)
 					{
@@ -1029,7 +1100,7 @@ namespace hpl {
 						{
 							if(mlMarkerCharPos==0)
 							{
-								if(msText[0]!=_W('-'))
+								if(msText.empty() || msText[0]!=_W('-'))
 								{
 									SetText(unicode + cString::SubW(msText,0));
 									SetMarkerPos(mlMarkerCharPos+1);
@@ -1106,17 +1177,16 @@ namespace hpl {
 			// Normal text input
 			else
 			{
-				if( unicode >= lFirstFontChar && unicode <= lLastFontChar &&
-					mpDefaultFontType->GetGlyph(unicode - lFirstFontChar))
+				if(mpDefaultFontType->GetGlyphForCodepoint(lCodepoint))
 				{
 					if(	mlSelectedTextEnd <0)
 					{
-						if(mlMaxCharacters ==-1 || (int)msText.size() < mlMaxCharacters)
+						if(mlMaxCharacters ==-1 || CountTextCodepoints(msText) < mlMaxCharacters)
 						{
-							SetText(cString::SubW(msText,0,	mlMarkerCharPos)+ unicode +
+							SetText(cString::SubW(msText,0,	mlMarkerCharPos)+ sUnicode +
 									cString::SubW(msText,mlMarkerCharPos) );		
 
-							SetMarkerPos(mlMarkerCharPos+1);
+							SetMarkerPos(mlMarkerCharPos+(int)sUnicode.size());
 
 							SetTextUpdated();
 						}
@@ -1125,13 +1195,14 @@ namespace hpl {
 					{
 						int lStart = mlMarkerCharPos < mlSelectedTextEnd ? mlMarkerCharPos : mlSelectedTextEnd;
 						int lEnd = mlMarkerCharPos > mlSelectedTextEnd ? mlMarkerCharPos : mlSelectedTextEnd;
-					
-						SetText(cString::SubW(msText,0,	lStart) + unicode + 
+						if(mlMaxCharacters >= 0 && CountTextCodepoints(msText) -
+							CountTextCodepoints(msText.substr(lStart,lEnd-lStart)) + 1 > mlMaxCharacters) return true;
+						SetText(cString::SubW(msText,0,	lStart) + sUnicode +
 								cString::SubW(msText,lEnd));
 
 						mlSelectedTextEnd = -1;
 
-						SetMarkerPos(lStart+1);
+						SetMarkerPos(lStart+(int)sUnicode.size());
 
 						SetTextUpdated();
 					}

@@ -88,57 +88,40 @@ namespace hpl {
     {
         tWString sTemp;
 
-        const char *pCur = asString.c_str();
-        const char *pEnd = pCur + asString.size();
+        for(size_t i = 0; i < asString.size();)
+        {
+            const unsigned char lFirst = (unsigned char)asString[i];
+            unsigned int lCodepoint = 0xFFFD, lMinimum = 0;
+            size_t lBytes = 1;
+            if(lFirst < 0x80) lCodepoint = lFirst;
+            else if(lFirst >= 0xC2 && lFirst <= 0xDF)
+            { lCodepoint = lFirst & 0x1F; lBytes = 2; lMinimum = 0x80; }
+            else if(lFirst >= 0xE0 && lFirst <= 0xEF)
+            { lCodepoint = lFirst & 0x0F; lBytes = 3; lMinimum = 0x800; }
+            else if(lFirst >= 0xF0 && lFirst <= 0xF4)
+            { lCodepoint = lFirst & 0x07; lBytes = 4; lMinimum = 0x10000; }
 
-        while (pCur < pEnd) {
-            Uint32 uTemp;
-            if ( (*pCur & 0x80) == 0 ) {
-                uTemp = pCur[0];
-                pCur+=1;
+            bool bValid = lBytes <= asString.size() - i;
+            for(size_t j = 1; bValid && j < lBytes; ++j)
+            {
+                const unsigned char lNext = (unsigned char)asString[i+j];
+                bValid = (lNext & 0xC0) == 0x80;
+                lCodepoint = (lCodepoint << 6) | (lNext & 0x3F);
             }
-            else if ( (*pCur & 0xe0) == 0xc0 ) {
-                uTemp = (pCur[0] & 0x1f) << 6 | 
-                        (pCur[1] & 0x3f);
-                pCur+=2;
+            if(!bValid || lCodepoint < lMinimum || lCodepoint > 0x10FFFF ||
+                (lCodepoint >= 0xD800 && lCodepoint <= 0xDFFF))
+            {
+                lCodepoint = 0xFFFD;
+                lBytes = 1;
             }
-            else if ( (*pCur & 0xf0) == 0xe0 ) {
-                uTemp = (pCur[0] & 0x0f) << 12 | 
-                        (pCur[1] & 0x3f) << 6 | 
-                        (pCur[2] & 0x3f);
-                pCur+=3;
+            i += lBytes;
+            if(sizeof(wchar_t) == 2 && lCodepoint > 0xFFFF)
+            {
+                lCodepoint -= 0x10000;
+                sTemp.push_back((wchar_t)(0xD800 + (lCodepoint >> 10)));
+                sTemp.push_back((wchar_t)(0xDC00 + (lCodepoint & 0x3FF)));
             }
-#if SIZEOF_WCHAR == 4
-            else if ( (*pCur & 0xf8) == 0xf0 ) {
-                uTemp = (pCur[0] & 0x07) << 18 | 
-                        (pCur[1] & 0x3f) << 12 | 
-                        (pCur[2] & 0x3f) << 6 | 
-                        (pCur[3] & 0x3f);
-                pCur+=4;
-            }
-            else if ( (*pCur & 0xfc) == 0xf8 ) {
-                uTemp = (pCur[0] & 0x03) << 24 | 
-                        (pCur[1] & 0x3f) << 18 | 
-                        (pCur[2] & 0x3f) << 12 | 
-                        (pCur[3] & 0x3f) << 6 | 
-                        (pCur[4] & 0x3f);
-                pCur+=5;
-            }
-            else if ( (*pCur & 0xfe) == 0xfc ) {
-                uTemp = (pCur[0] & 0x01) << 30 | 
-                        (pCur[1] & 0x3f) << 24 | 
-                        (pCur[2] & 0x3f) << 18 | 
-                        (pCur[3] & 0x3f) << 12 | 
-                        (pCur[4] & 0x3f) << 6 | 
-                        (pCur[5] & 0x3f);
-                pCur+=6;
-            }
-#endif
-			else {
-				uTemp = 0xfffd; // replacement character
-				pCur += 1;
-			}
-            sTemp.push_back((wchar_t)uTemp);
+            else sTemp.push_back((wchar_t)lCodepoint);
         }
 
         return sTemp;
@@ -151,51 +134,38 @@ namespace hpl {
 		tString sTemp;
 		for(size_t i=0; i<awsString.size(); ++i)
 		{
-			Uint32 lWChar = awsString[i];
-			tString sBuf;
+			unsigned int lWChar = (unsigned int)awsString[i];
+			if(sizeof(wchar_t) == 2 && lWChar >= 0xD800 && lWChar <= 0xDBFF &&
+				i + 1 < awsString.size() && (unsigned int)awsString[i+1] >= 0xDC00 &&
+				(unsigned int)awsString[i+1] <= 0xDFFF)
+			{
+				lWChar = 0x10000 + ((lWChar - 0xD800) << 10) +
+					((unsigned int)awsString[++i] - 0xDC00);
+			}
+			if(lWChar > 0x10FFFF || (lWChar >= 0xD800 && lWChar <= 0xDFFF)) lWChar = 0xFFFD;
 
 			if(lWChar < 0x80)
 			{
-				sBuf = char(lWChar);
+				sTemp.push_back((char)lWChar);
 			}
 			else if(lWChar < 0x800)
 			{
-				sBuf.push_back(((lWChar & 0x7C0) >> 6) | 0xC0);
-				sBuf.push_back((lWChar & 0x3F) | 0x80);
+				sTemp.push_back((char)((lWChar >> 6) | 0xC0));
+				sTemp.push_back((char)((lWChar & 0x3F) | 0x80));
 			}
 			else if(lWChar < 0x10000)
 			{
-				sBuf.push_back(((lWChar & 0xF000) >> 12) | 0xE0);
-				sBuf.push_back(((lWChar & 0xFC0) >> 6) | 0x80);
-				sBuf.push_back(((lWChar & 0x3F) | 0x80));
+				sTemp.push_back((char)((lWChar >> 12) | 0xE0));
+				sTemp.push_back((char)(((lWChar >> 6) & 0x3F) | 0x80));
+				sTemp.push_back((char)((lWChar & 0x3F) | 0x80));
 			}
-#if SIZEOF_WCHAR == 4
-			else if(lWChar < 0x200000)
+			else
 			{
-				sBuf.push_back(((lWChar & 0x1C0000) >> 18) | 0xF0);
-				sBuf.push_back(((lWChar & 0x3F000) >> 12) | 0x80);
-				sBuf.push_back(((lWChar & 0xFC0) >> 6) | 0x80);
-				sBuf.push_back(((lWChar & 0x3F) | 0x80));
+				sTemp.push_back((char)((lWChar >> 18) | 0xF0));
+				sTemp.push_back((char)(((lWChar >> 12) & 0x3F) | 0x80));
+				sTemp.push_back((char)(((lWChar >> 6) & 0x3F) | 0x80));
+				sTemp.push_back((char)((lWChar & 0x3F) | 0x80));
 			}
-			else if(lWChar < 0x4000000)
-			{
-				sBuf.push_back(((lWChar & 0x3000000) >> 24) | 0xF8);
-				sBuf.push_back(((lWChar & 0xFC000) >> 18) | 0x80);
-				sBuf.push_back(((lWChar & 0x3F000) >> 12) | 0x80);
-				sBuf.push_back(((lWChar & 0xFC0) >> 6) | 0x80);
-				sBuf.push_back(((lWChar & 0x3F) | 0x80));
-			}
-			else if(lWChar < 0x80000000)
-			{
-				sBuf.push_back(((lWChar & 0x40000000) >> 30) | 0xFC);
-				sBuf.push_back(((lWChar & 0x3F000000) >> 24) | 0x80);
-				sBuf.push_back(((lWChar & 0xFC000) >> 18) | 0x80);
-				sBuf.push_back(((lWChar & 0x3F000) >> 12) | 0x80);
-				sBuf.push_back(((lWChar & 0xFC0) >> 6) | 0x80);
-				sBuf.push_back(((lWChar & 0x3F) | 0x80));
-			}
-#endif
-			sTemp += sBuf;
 		}
 
 		return sTemp;

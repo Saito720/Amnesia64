@@ -97,7 +97,16 @@ namespace hpl {
             {
                 tWString tstr = cString::UTF8ToWChar(pEvent->text.text);
                 for (size_t i=0,l=tstr.size(); i<l; ++i) {
-                    AddKeyToList(SDL_GetModState(), eKey_None, (int)tstr[i], mlstKeysPressed);
+                    unsigned int lCodepoint = (unsigned int)tstr[i];
+                    if(sizeof(wchar_t) == 2 && lCodepoint >= 0xD800 && lCodepoint <= 0xDBFF &&
+                        i + 1 < l && (unsigned int)tstr[i+1] >= 0xDC00 && (unsigned int)tstr[i+1] <= 0xDFFF)
+                    {
+                        lCodepoint = 0x10000 + ((lCodepoint - 0xD800) << 10) +
+                            ((unsigned int)tstr[++i] - 0xDC00);
+                    }
+                    if((lCodepoint >= 0xD800 && lCodepoint <= 0xDFFF) || lCodepoint > 0x10FFFF)
+                        lCodepoint = 0xFFFD;
+                    AddKeyToList(SDL_GetModState(), eKey_None, (int)lCodepoint, mlstKeysPressed);
                 }
             }
 #else

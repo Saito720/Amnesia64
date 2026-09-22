@@ -38,9 +38,9 @@ namespace hpl {
 		/**
 		 * Create a new font
 		 * \param asName name of the font
-		 * \param alSize size the characters are rendered in
-		 * \param alFirstChar first ASCII character to be rendered
-		 * \param alLastChar last ASCII character to be rendered
+		 * \param alSize TTF rasterization height in pixels (bitmap fonts use their baked size)
+		 * \param alFirstChar legacy glyph range metadata; TTF glyphs load on demand outside it
+		 * \param alLastChar legacy glyph range metadata; TTF glyphs load on demand outside it
 		 * \return 
 		 */
 		iFontData* CreateFontData(const tString& asName, int alSize=16,unsigned short alFirstChar=32,

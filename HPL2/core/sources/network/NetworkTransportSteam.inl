@@ -20,6 +20,7 @@
 #endif
 #include <steam/steam_api.h>
 #include "NetworkSteamValidation.h"
+#include "NetworkTransportDiagnostics.h"
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -175,6 +176,8 @@ namespace hpl
         HSteamNetPollGroup group = k_HSteamNetPollGroup_Invalid;
         std::map<uint32_t, HSteamNetConnection> peers;
         std::map<uint32_t, uint64_t> identities;
+        // Diagnostics only: never gate message delivery or connection handling.
+        std::set<HSteamNetConnection> diagnosticConnected, diagnosticReceived, diagnosticSendFailed;
         struct cAvatarRequest
         {
             cSteamAvatarImage image;
@@ -222,12 +225,23 @@ namespace hpl
             for(const auto& item : peers) if(item.second == connection) return item.first;
             return UINT32_MAX;
         }
+        void ForgetConnectionDiagnostics(HSteamNetConnection connection)
+        {
+            diagnosticConnected.erase(connection); diagnosticReceived.erase(connection);
+            diagnosticSendFailed.erase(connection);
+        }
         void Queue(eNetworkEventType type, uint32_t peer = 0, const std::string& reason = std::string())
         {
             cNetworkEvent event; event.type = type; event.peer = peer; event.reason = reason;
             pending.push_back(std::move(event));
         }
         void CloseSession();
+        void RejectIncoming(HSteamNetConnection connection, int code, const std::string& reason)
+        {
+            Queue(eNetworkEventType::Diagnostic, UINT32_MAX, "Steam incoming connection rejected: " +
+                network_detail::ConnectionText(connection, UINT32_MAX) + " end=" + std::to_string(code) + " reason='" + reason + "'");
+            SteamNetworkingSockets()->CloseConnection(connection, code, reason.c_str(), false);
+        }
         void Fail(const std::string& error)
         {
             const bool wasHost = host, wasSteam = steam;
@@ -235,7 +249,11 @@ namespace hpl
             // Preserve role until the game consumes SessionFailed and calls
             // Stop: its world/focus cleanup depends on IsClient/IsActive.
             active = true; host = wasHost; steam = wasSteam; failed = true;
-            pending.clear();
+            // Keep diagnostic context for the failure, while discarding the same
+            // queued gameplay/session events as before.
+            pending.erase(std::remove_if(pending.begin(), pending.end(), [](const cNetworkEvent& event)
+                { return event.type != eNetworkEventType::Diagnostic; }), pending.end());
+            Queue(eNetworkEventType::Diagnostic, 0, "Steam session failure: " + error);
             Queue(eNetworkEventType::SessionFailed, 0, error);
             gSteamStatus = error;
         }
@@ -302,6 +320,7 @@ namespace hpl
             { target->Fail("Steam could not publish the session's lobby settings."); return; }
             target->sessionDeadline = cSteamClock::time_point::max();
             gSteamStatus = "Steam lobby ready. Friends can join through Steam.";
+            target->Queue(eNetworkEventType::Diagnostic, 0, "Steam lobby created and listener ready.");
             target->Queue(eNetworkEventType::SessionReady);
         }
         void Joined(LobbyEnter_t* result, bool failed)
@@ -330,10 +349,10 @@ namespace hpl
             { target->Fail("Unable to begin an authenticated Steam relay connection to the host."); return; }
             target->peers[0] = connection; target->identities[0] = target->expectedHost;
             connections[connection] = target;
-            if(!SteamNetworkingSockets()->SetConnectionPollGroup(connection, target->group))
-            { target->Fail("Unable to receive messages from the Steam host."); return; }
             target->sessionDeadline = cSteamClock::now() + std::chrono::seconds(45);
             gSteamStatus = "Joined Steam lobby; connecting through Valve's relay network...";
+            target->Queue(eNetworkEventType::Diagnostic, 0, "Steam lobby joined; relay connection started: " +
+                network_detail::ConnectionText(connection, 0));
             target->Queue(eNetworkEventType::SessionReady);
         }
         void Searched(LobbyMatchList_t* result, bool failed)
@@ -499,6 +518,7 @@ namespace hpl
             }
         }
         peers.clear(); identities.clear(); avatars.clear();
+        diagnosticConnected.clear(); diagnosticReceived.clear(); diagnosticSendFailed.clear();
         listen = k_HSteamListenSocket_Invalid; group = k_HSteamNetPollGroup_Invalid;
         active = false; host = false; steam = false; failed = false;
         lobby = 0; expectedHost = 0; nextPeer = 1; maxPeers = 0;
@@ -525,6 +545,8 @@ namespace hpl
         operation->createResult.Set(call, operation.get(), &cImpl::cOperation::Created);
         cImpl::callbacks->operations.push_back(std::move(operation));
         gSteamStatus = "Creating Steam lobby...";
+        mpImpl->Queue(eNetworkEventType::Diagnostic, 0, "Steam lobby create requested: remote_capacity=" +
+            std::to_string(maxPeers) + " public=" + (publicLobby ? "yes" : "no"));
         return true;
     }
     bool cNetworkTransport::JoinSteamLobby(uint64_t lobby, std::string& error)
@@ -545,6 +567,7 @@ namespace hpl
         operation->joinResult.Set(call, operation.get(), &cImpl::cOperation::Joined);
         cImpl::callbacks->operations.push_back(std::move(operation));
         gSteamStatus = "Joining Steam lobby...";
+        mpImpl->Queue(eNetworkEventType::Diagnostic, 0, "Steam lobby join requested.");
         return true;
     }
     bool cNetworkTransport::RequestSteamLobbies(std::string& error)
@@ -648,6 +671,12 @@ namespace hpl
         }
         if(!owner || !owner->active) return;
         ISteamNetworkingSockets* api = SteamNetworkingSockets();
+        const uint32_t diagnosticPeer = owner->PeerFor(info->m_hConn);
+        const std::string diagnosticReason = steam_detail::DisplayText(info->m_info.m_szEndDebug, sizeof(info->m_info.m_szEndDebug) - 1);
+        owner->Queue(eNetworkEventType::Diagnostic, diagnosticPeer,
+            "Steam status callback: " + network_detail::ConnectionText(info->m_hConn, diagnosticPeer) + " " +
+            network_detail::ConnectionStateText(info->m_eOldState) + " -> " + network_detail::ConnectionStateText(info->m_info.m_eState) +
+            " end=" + std::to_string(info->m_info.m_eEndReason) + " reason='" + diagnosticReason + "'");
         const uint64_t remote = info->m_info.m_identityRemote.GetSteamID64();
         if(info->m_info.m_eState == k_ESteamNetworkingConnectionState_Connecting && owner->host)
         {
@@ -656,21 +685,23 @@ namespace hpl
             {
                 std::string error;
                 if(!owner->ValidateLobby(error))
-                { api->CloseConnection(info->m_hConn, 1003, error.c_str(), false); return; }
+                { owner->RejectIncoming(info->m_hConn, 1003, error); return; }
                 if(!IsPlayer(remote) || remote == owner->expectedHost)
-                { api->CloseConnection(info->m_hConn, 1003, "A separate authenticated Steam player is required to join the host.", false); return; }
+                { owner->RejectIncoming(info->m_hConn, 1003, "A separate authenticated Steam player is required to join the host."); return; }
                 if(!LobbyContains(owner->lobby, remote))
-                { api->CloseConnection(info->m_hConn, 1003, "The connecting Steam player is not a current member of this lobby.", false); return; }
+                { owner->RejectIncoming(info->m_hConn, 1003, "The connecting Steam player is not a current member of this lobby."); return; }
                 for(const auto& item : owner->identities) if(item.second == remote)
-                { api->CloseConnection(info->m_hConn, 1003, "This Steam player is already connected.", false); return; }
+                { owner->RejectIncoming(info->m_hConn, 1003, "This Steam player is already connected."); return; }
             }
             if(owner->peers.size() >= owner->maxPeers || owner->nextPeer == UINT32_MAX)
-            { api->CloseConnection(info->m_hConn, 1001, "The multiplayer session is full.", false); return; }
-            if(api->AcceptConnection(info->m_hConn) != k_EResultOK || !api->SetConnectionPollGroup(info->m_hConn, owner->group))
-            { api->CloseConnection(info->m_hConn, 1002, "Unable to accept the connection.", false); return; }
+            { owner->RejectIncoming(info->m_hConn, 1001, "The multiplayer session is full."); return; }
+            if(api->AcceptConnection(info->m_hConn) != k_EResultOK)
+            { owner->RejectIncoming(info->m_hConn, 1002, "Unable to accept the connection."); return; }
             const uint32_t peer = owner->nextPeer++;
             owner->peers[peer] = info->m_hConn; owner->identities[peer] = remote;
             connections[info->m_hConn] = owner;
+            owner->Queue(eNetworkEventType::Diagnostic, peer,
+                "Steam incoming connection accepted: " + network_detail::ConnectionText(info->m_hConn, peer));
         }
         else if(info->m_info.m_eState == k_ESteamNetworkingConnectionState_Connected)
         {
@@ -685,23 +716,44 @@ namespace hpl
                 {
                     if(!owner->host) { owner->Fail("Steam host identity or lobby membership changed."); return; }
                     api->CloseConnection(info->m_hConn, 1003, "Steam identity or lobby membership changed.", false);
+                    owner->ForgetConnectionDiagnostics(info->m_hConn);
                     connections.erase(info->m_hConn); owner->peers.erase(peer); owner->identities.erase(peer);
                     owner->Queue(eNetworkEventType::Disconnected, peer, "Steam identity or lobby membership changed.");
                     return;
                 }
             }
+            // Callbacks and incoming messages are independent queues. Exposing
+            // this connection to Poll only here keeps an early reliable Hello
+            // buffered until the game receives Connected and registers its peer.
+            if(!api->SetConnectionPollGroup(info->m_hConn, owner->group))
+            {
+                const std::string error = "Unable to receive messages from the connection.";
+                owner->Queue(eNetworkEventType::Diagnostic, peer, "Steam receive group assignment failed: " +
+                    network_detail::ConnectionText(info->m_hConn, peer));
+                api->CloseConnection(info->m_hConn, 1002, error.c_str(), false);
+                owner->ForgetConnectionDiagnostics(info->m_hConn);
+                connections.erase(info->m_hConn); owner->peers.erase(peer); owner->identities.erase(peer);
+                owner->Queue(eNetworkEventType::Disconnected, peer, error);
+                return;
+            }
             owner->sessionDeadline = cSteamClock::time_point::max();
+            owner->diagnosticConnected.insert(info->m_hConn);
+            owner->Queue(eNetworkEventType::Diagnostic, peer,
+                "Steam Connected event queued: " + network_detail::ConnectionText(info->m_hConn, peer));
             owner->Queue(eNetworkEventType::Connected, peer);
         }
         else if(info->m_info.m_eState == k_ESteamNetworkingConnectionState_ClosedByPeer || info->m_info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally)
         {
             const uint32_t peer = owner->PeerFor(info->m_hConn);
+            owner->Queue(eNetworkEventType::Diagnostic, peer, "Steam disconnect health: " +
+                network_detail::ConnectionText(info->m_hConn, peer) + network_detail::ConnectionHealthText(api, info->m_hConn));
             if(peer != UINT32_MAX)
             {
                 const std::string reason = steam_detail::DisplayText(info->m_info.m_szEndDebug, sizeof(info->m_info.m_szEndDebug) - 1);
                 owner->Queue(eNetworkEventType::Disconnected, peer, reason.empty() ? "The network connection closed." : reason);
                 owner->peers.erase(peer); owner->identities.erase(peer);
             }
+            owner->ForgetConnectionDiagnostics(info->m_hConn);
             connections.erase(info->m_hConn); api->CloseConnection(info->m_hConn, 0, nullptr, false);
         }
     }
@@ -731,6 +783,7 @@ namespace hpl
                 const auto connection = peers.find(peer);
                 if(connection != peers.end())
                 {
+                    ForgetConnectionDiagnostics(connection->second);
                     connections.erase(connection->second);
                     SteamNetworkingSockets()->CloseConnection(connection->second, 1003, "The player left the Steam lobby.", false);
                     peers.erase(connection);
@@ -766,10 +819,28 @@ namespace hpl
             {
                 cNetworkEvent event; event.type = eNetworkEventType::Message; event.peer = peer;
                 const uint8_t* bytes = static_cast<const uint8_t*>(message->m_pData);
+                if(mpImpl->diagnosticReceived.insert(message->m_conn).second)
+                {
+                    cNetworkEvent diagnostic; diagnostic.type = eNetworkEventType::Diagnostic; diagnostic.peer = peer;
+                    diagnostic.reason = "Steam first received message: " + network_detail::ConnectionText(message->m_conn, peer) +
+                        " type=" + (message->m_cbSize ? std::to_string(static_cast<unsigned>(bytes[0])) : "empty") +
+                        " bytes=" + std::to_string(message->m_cbSize) + " connected_event_queued=" +
+                        (mpImpl->diagnosticConnected.count(message->m_conn) ? "yes" : "no");
+                    events.push_back(std::move(diagnostic));
+                }
                 if(message->m_cbSize) event.data.assign(bytes, bytes + message->m_cbSize);
                 received += event.data.size(); events.push_back(std::move(event));
             }
             message->Release();
+        }
+    }
+    void cNetworkTransport::DrainDiagnostics(std::vector<cNetworkEvent>& events)
+    {
+        for(auto it = mpImpl->pending.begin(); it != mpImpl->pending.end();)
+        {
+            if(it->type != eNetworkEventType::Diagnostic) { ++it; continue; }
+            events.push_back(std::move(*it));
+            it = mpImpl->pending.erase(it);
         }
     }
     bool cNetworkTransport::Send(uint32_t peer, const std::vector<uint8_t>& data, bool reliable)
@@ -778,7 +849,15 @@ namespace hpl
         const auto found = mpImpl->peers.find(peer);
         if(found == mpImpl->peers.end()) return false;
         const int flags = reliable ? k_nSteamNetworkingSend_Reliable : k_nSteamNetworkingSend_UnreliableNoDelay;
-        return SteamNetworkingSockets()->SendMessageToConnection(found->second, data.data(), static_cast<uint32_t>(data.size()), flags, nullptr) == k_EResultOK;
+        ISteamNetworkingSockets* api = SteamNetworkingSockets();
+        const EResult result = api->SendMessageToConnection(found->second, data.data(), static_cast<uint32_t>(data.size()), flags, nullptr);
+        // NoDelay drops are expected for superseded real-time state. Report only
+        // the first actionable SDK failure for each connection.
+        if(result != k_EResultOK && (reliable || result != k_EResultIgnored) && mpImpl->diagnosticSendFailed.insert(found->second).second)
+            mpImpl->Queue(eNetworkEventType::Diagnostic, peer, "Steam send failed: " + network_detail::ConnectionText(found->second, peer) +
+                " result=" + std::to_string(static_cast<int>(result)) + " reliable=" + (reliable ? "yes" : "no") +
+                " bytes=" + std::to_string(data.size()) + network_detail::ConnectionHealthText(api, found->second));
+        return result == k_EResultOK;
     }
     void cNetworkTransport::Flush(uint32_t peer)
     {
@@ -791,7 +870,10 @@ namespace hpl
     {
         const auto found = mpImpl->peers.find(peer);
         if(found == mpImpl->peers.end()) return;
+        mpImpl->Queue(eNetworkEventType::Diagnostic, peer, "Steam local disconnect: " + network_detail::ConnectionText(found->second, peer) +
+            " reason='" + network_detail::DiagnosticText(reason.c_str(), 127) + "'" + network_detail::ConnectionHealthText(SteamNetworkingSockets(), found->second));
         SteamNetworkingSockets()->CloseConnection(found->second, 1000, reason.substr(0, 127).c_str(), false);
+        mpImpl->ForgetConnectionDiagnostics(found->second);
         cImpl::connections.erase(found->second); mpImpl->peers.erase(found);
         // A failed map initialization or a full reliable queue closes this
         // connection; it must not ban the Steam account from retrying. Admission
@@ -850,8 +932,7 @@ namespace hpl
         const HSteamNetConnection connection = SteamNetworkingSockets()->ConnectByIPAddress(address, cImpl::Options(options, false), options);
         if(connection == k_HSteamNetConnection_Invalid) { error = "Unable to start a connection to the host."; Stop(); return false; }
         mpImpl->peers[0] = connection; cImpl::connections[connection] = mpImpl;
-        if(!SteamNetworkingSockets()->SetConnectionPollGroup(connection, mpImpl->group))
-        { error = "Unable to receive messages from the host."; Stop(); return false; }
+        mpImpl->Queue(eNetworkEventType::Diagnostic, 0, "Steam direct connection started: " + network_detail::ConnectionText(connection, 0));
         return true;
     }
 }

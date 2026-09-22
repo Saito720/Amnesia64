@@ -264,6 +264,8 @@ namespace
                 const tWString path = documents[i];
                 std::vector<uint8_t> bytes;
                 if(!LuxReadMultiplayerMap(path, bytes)) { missing.insert(cString::To8Char(path)); continue; }
+                if(bytes.size() > 64 * 1024 * 1024 - totalBytes)
+                { error = "Map exceeds the supported asset dependency budget."; return false; }
                 totalBytes += bytes.size();
                 Document document(resources);
                 if(!document.Parse(bytes))

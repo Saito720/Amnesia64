@@ -4,6 +4,7 @@
 #include "LuxMultiplayerInventoryProtocol.h"
 #include "network/NetworkTransport.h"
 #include <cstdint>
+#include <cstdarg>
 #include <map>
 #include <set>
 #include <vector>
@@ -94,6 +95,11 @@ public:
     cLuxMultiplayerEnemies* GetEnemies() { return mpEnemies; }
     bool Send(uint32_t peer, const std::vector<uint8_t>& data, bool reliable);
     void Broadcast(const std::vector<uint8_t>& data, bool reliable);
+    // Diagnostics use fixed categories, never per-packet payloads as keys.
+    void LogDiagnostic(const char* category,const char* format,...) const;
+    void LogDiagnosticLimited(const char* category,const char* format,...) const;
+    void LogDiagnosticWarning(const char* category,const char* format,...) const;
+    void LogDiagnosticWarningLimited(const char* category,const char* format,...) const;
     void ShowWindow(bool campaign=false);
     void ToggleWindow();
     bool IsWindowVisible() const;
@@ -139,6 +145,11 @@ private:
         float age=0, requestCooldown=0;
         float interactionTokens=32;
         bool reliableSendFailed=false;
+        // Observability only: these do not drive connection or timeout decisions.
+        unsigned long lastJoinLogTime=0;
+        bool mapSendFailureLogged=false;
+        uint32_t lastPacketType=0, lastPacketBytes=0;
+        unsigned long lastPacketTime=0;
     };
     std::map<uint32_t, std::map<tString,luxnet::InventoryItem> > mRemoteItems;
     std::set<tString> mSharedScriptItems;
@@ -152,6 +163,9 @@ private:
     void BroadcastPlayerIdentities();
     bool ApplyInventoryPacket(const std::vector<uint8_t>& data);
     void SendMap(uint32_t peer,Peer& state);
+    void LogPeerJoinState(uint32_t peer,const char* context) const;
+    void FlushDiagnosticSummary();
+    void LogDiagnosticV(const char* category,const char* format,va_list args,bool limited,bool warning) const;
     bool CaptureMap(cLuxMap* map,const tString& start,const std::vector<uint8_t>* verifiedSource=NULL);
     bool LoadReceivedMap();
     bool FindMatchingMap();
@@ -203,6 +217,11 @@ private:
     bool mbPreserveHostPosition;
     bool mbSessionWorld;
     float mfJoinAge;
+    unsigned long mlLastJoinLogTime=0, mlLoadPhaseLogStart=0;
+    uint32_t mlLastPacketType=0, mlLastPacketBytes=0;
+    unsigned long mlLastPacketTime=0;
+    std::set<uint32_t> mLoggedUnregisteredPeers;
+    mutable std::map<tString,uint32_t> mDiagnosticCounts;
 };
 
 class cLuxMultiplayerRemoteTriggerScope {

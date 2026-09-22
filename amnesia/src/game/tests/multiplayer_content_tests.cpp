@@ -73,6 +73,42 @@ static void TestMapCache(const tWString& logPath) {
         cPlatform::RemoveFolder(root,false,false),"remove only exact generated fixture files and empty directories");
     std::puts("PASS: persistent cache verification, corruption repair, atomic writes, existing-entry preservation and scoped clearing");
 }
+static void TestDependencyBudget(cResources* resources,const tWString& logPath) {
+    const auto parent=std::filesystem::path(logPath).parent_path();
+    tWString directory;
+    for(unsigned attempt=0;attempt<100;++attempt) {
+        const tWString candidate=(parent/(_W("dependency-budget_")+cString::To16Char(cString::ToString(cPlatform::GetApplicationTime()))+
+            _W('_')+cString::To16Char(cString::ToString(attempt)))).wstring();
+        if(cPlatform::CreateFolder(candidate)) {directory=candidate;break;}
+    }
+    Require(!directory.empty(),"reserve exclusive dependency-budget fixture directory");
+    const tWString path=directory+_W("/last.mat");
+    const auto bytes=Bytes("<Material/>");
+    FILE* file=cPlatform::OpenFile(path,_W("wb"));
+    Require(file!=nullptr,"create final dependency fixture");
+    Require(std::fwrite(bytes.data(),1,bytes.size(),file)==bytes.size(),"write final dependency fixture");
+    Require(std::fclose(file)==0,"close final dependency fixture");
+    const size_t limit=64*1024*1024;
+    for(int delta:{-1,0,1}) {
+        tString error;
+        Validator validator(resources,error);
+        // Model the earlier dependencies' accounting, then use the production
+        // file read/XML validation for the final dependency crossing the cap.
+        validator.totalBytes=limit-bytes.size()+delta;
+        validator.documents.push_back(path);
+        const bool valid=validator.Dependencies();
+        if(delta<=0)
+            Require(valid && error.empty() && validator.totalBytes==limit+delta,
+                "final dependency at or below 64 MiB is accepted");
+        else
+            Require(!valid && error.find("dependency budget")!=tString::npos,
+                "final dependency one byte above 64 MiB is rejected");
+    }
+    cPlatform::RemoveFile(path);
+    Require(!cPlatform::FileExists(path) && cPlatform::RemoveFolder(directory,false,false),
+        "remove only the generated dependency fixture and empty directory");
+    std::puts("PASS: final dependency byte budget below, at and above 64 MiB");
+}
 int hplMain(const tString&) { return 0; }
 int main(int argc, char** argv)
 {
@@ -91,6 +127,7 @@ int main(int argc, char** argv)
     Require(engine != nullptr, "create engine");
     SDL_HideWindow(SDL_GL_GetCurrentWindow());
     cResources* resources = engine->GetResources();
+    TestDependencyBudget(resources,cString::To16Char(argv[1]));
     TestFBX(resources, engine->GetGraphics()->GetLowLevel(), cString::To16Char(argv[1]));
     Require(resources->LoadResourceDirsFile("resources.cfg"), "load retail resource directories");
     resources->AddResourceDir(_W("lang/eng/voices"), true);

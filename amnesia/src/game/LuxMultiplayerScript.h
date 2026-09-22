@@ -29,6 +29,9 @@ public:
                     w.data.insert(w.data.begin()+argumentsOffset,mask,mask+4);
                 }
                 gpBase->mpMultiplayer->BroadcastScriptEffect(w.data);
+            } else {
+                gpBase->mpMultiplayer->LogDiagnosticLimited("script-replication",
+                    "host skipped command %u (epoch %u): %s",id,gpBase->mpMultiplayer->GetMapEpoch(),error.c_str());
             }
         }
     }

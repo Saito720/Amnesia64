@@ -413,8 +413,11 @@ void cLuxMultiplayerWorld::RefreshBodies()
     // binding a network packet to an arbitrary body.
     for (std::set<uint64_t>::iterator it = collisions.begin(); it != collisions.end(); ++it)
     {
-        if (mAmbiguousBodies.insert(*it).second)
-            Warning("Multiplayer excluded physics bodies with ambiguous network identities.\n");
+        if (mAmbiguousBodies.insert(*it).second) {
+            const auto track=mBodies.find(*it);
+            mpSession->LogDiagnosticWarningLimited("body-mapping","ambiguous body identity excluded id=%llu name=%s",
+                static_cast<unsigned long long>(*it),track==mBodies.end()?"<unknown>":track->second.name.c_str());
+        }
         present.erase(*it);
     }
     for (std::map<uint64_t, BodyTrack>::iterator it = mBodies.begin(); it != mBodies.end(); )
@@ -430,7 +433,11 @@ void cLuxMultiplayerWorld::RefreshBodies()
         {
             auto track=mBodies.find(id);
             if(track==mBodies.end() || !LeaseMatchesBody(entry.second,id,track->second.body) || track->second.body->GetMass()<=0)
-            {invalid.push_back(entry.first);break;}
+            {
+                mpSession->LogDiagnosticLimited("lease-invalidated","body changed or disappeared owner=%u token=%u body=%llu contact=%d",
+                    entry.second.owner,entry.first,static_cast<unsigned long long>(id),entry.second.contact);
+                invalid.push_back(entry.first);break;
+            }
         }
     for(uint32_t token:invalid) EndLease(token,mpSession->IsHost());
     if(mlPendingRequest && !mBodies.count(mlPendingBody)) CancelPendingInteraction();
@@ -527,12 +534,18 @@ void cLuxMultiplayerWorld::SendBodyBatch(uint32_t alPeer, bool abBroadcast, cons
 
 bool cLuxMultiplayerWorld::SendInitialState(uint32_t alPeer)
 {
-    if (!mpSession->IsHost() || !mpMap || mInitialPackets.count(alPeer)) return false;
+    if (!mpSession->IsHost() || !mpMap || mInitialPackets.count(alPeer)) {
+        mpSession->LogDiagnostic("world","cannot queue body baseline peer=%u host=%d mapLoaded=%d alreadyQueued=%d",
+            alPeer,mpSession->IsHost(),mpMap!=NULL,mInitialPackets.count(alPeer)!=0);return false;
+    }
     RefreshBodies();
     SyncStickyStates(alPeer);
     // Bound retained snapshots, and trickle the initial burst into GNS with
     // retries. A large map must not silently lose bodies when its send queue fills.
-    if (mlInitialBytes + mBodies.size() * 100 > 32 * 1024 * 1024) return false;
+    if (mlInitialBytes + mBodies.size() * 100 > 32 * 1024 * 1024) {
+        mpSession->LogDiagnostic("world","body baseline capacity exceeded peer=%u bodies=%zu queuedBytes=%zu",alPeer,mBodies.size(),mlInitialBytes);return false;
+    }
+    const size_t previousBytes=mlInitialBytes;
     std::vector<Body> states;
     for (std::map<uint64_t, BodyTrack>::iterator it = mBodies.begin(); it != mBodies.end(); ++it)
         if (iPhysicsBody* body = FindBody(it->first)) states.push_back(CaptureBody(it->first, body));
@@ -546,6 +559,8 @@ bool cLuxMultiplayerWorld::SendInitialState(uint32_t alPeer)
     for (std::map<uint32_t, Lease>::iterator it = mLeases.begin(); it != mLeases.end(); ++it)
         SendLease(it->second, 0, alPeer, false);
     SendPose();
+    mpSession->LogDiagnostic("world","body baseline queued peer=%u bodies=%zu bytes=%zu leases=%zu",
+        alPeer,states.size(),mlInitialBytes-previousBytes,mLeases.size());
     return true;
 }
 
@@ -634,7 +649,10 @@ void cLuxMultiplayerWorld::Update(float afTimeStep)
             if (!mpSession->Send(it->first, it->second.front(), true)) break;
             mlInitialBytes -= it->second.front().size(); it->second.pop_front();
         }
-        if (it->second.empty()) it = mInitialPackets.erase(it); else ++it;
+        if (it->second.empty()) {
+            mpSession->LogDiagnostic("world","body baseline sent peer=%u retainedBytes=%zu",it->first,mlInitialBytes);
+            it=mInitialPackets.erase(it);
+        } else ++it;
     }
     RefreshBodies();
     UpdateEnemyInfluence(dt);
@@ -669,6 +687,9 @@ void cLuxMultiplayerWorld::Update(float afTimeStep)
     if (mlPendingRequest)
     {
         mfPendingTime += dt;
+        if(mfPendingTime>2)
+            mpSession->LogDiagnosticLimited("interaction-timeout","lease request timed out request=%u body=%llu waited=%.2fs",
+                mlPendingRequest,static_cast<unsigned long long>(mlPendingBody),mfPendingTime);
         if (!InteractionStillPressed() || mfPendingTime > 2) CancelPendingInteraction();
     }
     std::vector<uint32_t> expired;
@@ -680,7 +701,11 @@ void cLuxMultiplayerWorld::Update(float afTimeStep)
             if (lease.contact || lease.owner != mpSession->GetLocalPeerId()) lease.remaining -= dt;
             bool missing = false;
             for (size_t i = 0; i < lease.bodies.size(); ++i) if (!FindBody(lease.bodies[i])) missing = true;
-            if (lease.remaining <= 0 || missing) expired.push_back(it->first);
+            if (lease.remaining <= 0 || missing) {
+                if(!lease.contact) mpSession->LogDiagnosticLimited("lease-expired","interaction lease expired owner=%u token=%u missingBody=%d remaining=%.2fs",
+                    lease.owner,lease.token,missing,lease.remaining);
+                expired.push_back(it->first);
+            }
         }
         for (size_t i = 0; i < expired.size(); ++i) EndLease(expired[i], true);
     }
@@ -757,7 +782,10 @@ void cLuxMultiplayerWorld::Update(float afTimeStep)
 void cLuxMultiplayerWorld::ApplyBody(const Body& aState, uint32_t alSequence, bool abGroundTruth, bool abFromOwner)
 {
     std::map<uint64_t, BodyTrack>::iterator it = mBodies.find(aState.id);
-    if (it == mBodies.end()) return;
+    if (it == mBodies.end()) {
+        mpSession->LogDiagnosticLimited("body-mapping","snapshot ignored; body unavailable id=%llu generation=%u sequence=%u baseline=%d",
+            static_cast<unsigned long long>(aState.id),aState.generation,alSequence,abGroundTruth);return;
+    }
     BodyTrack& track = it->second;
     if(!track.generation) {
         // Keep the last generation across local replacement so delayed packets
@@ -1458,7 +1486,7 @@ void cLuxMultiplayerWorld::UpdatePlayerModels(float dt)
             cMeshEntity* mesh = LoadPlayerModel(world, entry.first);
             if (!mesh)
             {
-                Warning("Multiplayer player model '%s' is unavailable or has no Armature_root; using placeholder cylinders for this map.\n", PlayerModelFile);
+                mpSession->LogDiagnosticWarning("player-model","asset=%s unavailable or missing Armature_root; using placeholder cylinders",PlayerModelFile);
                 mbPlayerModelFailed = true;
                 continue;
             }
@@ -1469,9 +1497,9 @@ void cLuxMultiplayerWorld::UpdatePlayerModels(float dt)
                     const char* name = PlayerAnimationNames[gait];
                     const float speed = mfPlayerStrideReferenceSpeeds[gait] = MeasurePlayerStrideSpeed(mesh, name);
                     if (speed > 0)
-                        Log("Multiplayer %s animation measured %.3f m/s from planted toes.\n", name, speed);
+                        mpSession->LogDiagnostic("player-model","animation=%s measuredStride=%.3f m/s",name,speed);
                     else if (mesh->GetAnimationStateFromName(name))
-                        Warning("Multiplayer %s animation has no reliable planted-toe speed; keeping its authored playback rate for this map.\n", name);
+                        mpSession->LogDiagnosticWarning("player-model","animation=%s has no reliable planted-toe speed; using authored playback rate",name);
                 }
                 mbPlayerStrideReferencesMeasured = true;
             }
@@ -1497,7 +1525,7 @@ void cLuxMultiplayerWorld::UpdatePlayerModels(float dt)
         }
         if (missing && !mbPlayerAnimationWarning)
         {
-            Warning("Multiplayer player model is missing a locomotion clip; using the nearest available pose for this map.\n");
+            mpSession->LogDiagnosticWarning("player-model","missing locomotion clip; using nearest available pose");
             mbPlayerAnimationWarning = true;
         }
         const bool reset = created || player.resetModelPose;
@@ -1888,6 +1916,8 @@ bool cLuxMultiplayerWorld::GrantLease(uint32_t alPeer, uint64_t alBody, uint32_t
         SendBodyBatch(alPeer, false, baseline, true, true);
     }
     SendLease(lease, alRequest, 0, true);
+    if(!abContact) mpSession->LogDiagnostic("lease","interaction granted owner=%u token=%u request=%u bodies=%zu root=%llu",
+        alPeer,lease.token,alRequest,lease.bodies.size(),static_cast<unsigned long long>(alBody));
     return true;
 }
 
@@ -1920,6 +1950,8 @@ void cLuxMultiplayerWorld::EndLease(uint32_t alToken, bool abBroadcast)
     std::map<uint32_t, Lease>::iterator it = mLeases.find(alToken);
     if (it == mLeases.end()) return;
     Lease lease = it->second;
+    if(!lease.contact) mpSession->LogDiagnostic("lease","interaction ended owner=%u token=%u bodies=%zu broadcast=%d",
+        lease.owner,alToken,lease.bodies.size(),abBroadcast);
     // Releasing a local state can refresh the body index recursively. Remove
     // this lease first, so replacement invalidation cannot release it twice.
     mLeases.erase(alToken);
@@ -2114,6 +2146,8 @@ bool cLuxMultiplayerWorld::HandleMessage(uint32_t alPeer, const std::vector<uint
         if (!reader.Done() || !request || !mpSession->IsHost()) return false;
         if (!GrantLease(alPeer, body, request))
         {
+            mpSession->LogDiagnosticLimited("lease-denied","interaction denied peer=%u request=%u body=%llu",
+                alPeer,request,static_cast<unsigned long long>(body));
             Writer writer(LeaseDenied, epoch); writer.U32(request); mpSession->Send(alPeer, writer.bytes, true);
         }
         return true;
@@ -2181,7 +2215,11 @@ bool cLuxMultiplayerWorld::HandleMessage(uint32_t alPeer, const std::vector<uint
     {
         uint32_t request = reader.U32();
         if (!reader.Done() || mpSession->IsHost()) return false;
-        if (request == mlPendingRequest) CancelPendingInteraction();
+        if (request == mlPendingRequest) {
+            mpSession->LogDiagnosticLimited("lease-denied","host denied interaction request=%u body=%llu",
+                request,static_cast<unsigned long long>(mlPendingBody));
+            CancelPendingInteraction();
+        }
         return true;
     }
     if(type==StickyState)
@@ -2191,7 +2229,10 @@ bool cLuxMultiplayerWorld::HandleMessage(uint32_t alPeer, const std::vector<uint
         if(attached) {bodyId=reader.U64();mass=reader.F32(1000000);gravity=reader.U8();canDetach=reader.U8();}
         if(!reader.Done() || mpSession->IsHost() || attached>1 || mass<0 || gravity>1 || canDetach>1) return false;
         iPhysicsBody* body=attached?FindBody(bodyId):NULL;
-        if(attached && !body) return true;
+        if(attached && !body) {
+            mpSession->LogDiagnosticLimited("sticky-mapping","attachment ignored; area=%d body=%llu unavailable",id,static_cast<unsigned long long>(bodyId));
+            return true;
+        }
         for(auto* area:mpMap->GetStickyAreas()) if(area->GetID()==id) {
             area->ApplyNetworkAttachment(body,mass,gravity!=0,canDetach!=0);break;
         }

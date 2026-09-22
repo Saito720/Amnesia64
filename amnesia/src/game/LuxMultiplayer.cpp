@@ -39,11 +39,57 @@
 #include "LuxInventory.h"
 #include "LuxArea.h"
 #include <algorithm>
+#include <chrono>
+#include <cstdarg>
 #include <cstdio>
+#include <ctime>
 
 using namespace luxnet;
 
 namespace {
+void MultiplayerLogText(char* message,bool warning=false) {
+    for(char* p=message;*p;++p) if(static_cast<unsigned char>(*p)<32) *p=' ';
+    const auto now=std::chrono::system_clock::now();
+    const auto millis=std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    const std::time_t seconds=static_cast<std::time_t>(millis/1000);
+    std::tm utc={};
+#ifdef _WIN32
+    gmtime_s(&utc,&seconds);
+#else
+    gmtime_r(&seconds,&utc);
+#endif
+    char timestamp[32];std::strftime(timestamp,sizeof(timestamp),"%Y-%m-%dT%H:%M:%S",&utc);
+    // The engine Warning formatter has a 2048-byte buffer; bound the whole
+    // line, including diagnostic context and the timestamp, before calling it.
+    char line[1900];
+    std::snprintf(line,sizeof(line),"[%s.%03uZ; app=%lu ms] Multiplayer %s\n",timestamp,
+        static_cast<unsigned>(millis%1000),cPlatform::GetApplicationTime(),message);
+    line[sizeof(line)-2]='\n';line[sizeof(line)-1]='\0';
+    if(warning) Warning("%s",line);else Log("%s",line);
+}
+void MultiplayerLog(const char* format,...) {
+    char message[2048];va_list args;va_start(args,format);
+    std::vsnprintf(message,sizeof(message),format,args);va_end(args);
+    MultiplayerLogText(message);
+}
+const char* LoadPhaseName(eLuxMultiplayerLoadPhase phase) {
+    switch(phase) {
+    case eLuxMultiplayerLoadPhase_None:return "none";
+    case eLuxMultiplayerLoadPhase_Connecting:return "connecting";
+    case eLuxMultiplayerLoadPhase_Preparing:return "waiting-for-host-map";
+    case eLuxMultiplayerLoadPhase_Checking:return "checking-map";
+    case eLuxMultiplayerLoadPhase_Downloading:return "downloading-map";
+    case eLuxMultiplayerLoadPhase_Loading:return "loading-map";
+    default:return "unknown";
+    }
+}
+const char* TransportName(bool steam) {
+#ifdef HPL_USE_STEAMWORKS
+    return steam?"Steamworks relay":"Steamworks direct IP";
+#else
+    (void)steam;return "standalone direct IP";
+#endif
+}
 bool WithinInteractionReach(iPhysicsBody* body,const cLuxMultiplayerRemotePlayer& player,float reach) {
     const cVector3f eyes=player.position+cVector3f(player.gameplay.eyeOffset[0],player.gameplay.eyeOffset[1],player.gameplay.eyeOffset[2]);
     const cVector3f min=body->GetBoundingVolume()->GetMin(),max=body->GetBoundingVolume()->GetMax();
@@ -107,7 +153,9 @@ void cLuxMultiplayer::EnsureProfile() {
 bool cLuxMultiplayer::Host(const cLuxMultiplayerSettings& settings) {
     if(IsActive()) {msStatus="Disconnect the current session before hosting another.";return false;}
     if((!settings.useSteam && settings.port==0) || settings.maxPlayers<2 || settings.maxPlayers>16) {msStatus="Use 2 to 16 players and, for direct IP, a port from 1 to 65535.";return false;}
-    if(settings.useSteam && !hpl::cNetworkTransport::InitializeSteam(msStatus)) return false;
+    if(settings.useSteam && !hpl::cNetworkTransport::InitializeSteam(msStatus)) {
+        LogDiagnostic("session","Steam initialization failed: %s",msStatus.c_str());return false;
+    }
     EnsureProfile();
     mSettings=settings; gpBase->SetCustomStory(NULL); gpBase->mbHardMode=false;
     tString map=settings.map.empty()?gpBase->msStartMapFile:settings.map;
@@ -123,6 +171,7 @@ bool cLuxMultiplayer::Host(const cLuxMultiplayerSettings& settings) {
     msStatus="Loading hosted map...";gpBase->mpLoadScreenHandler->DrawMultiplayerScreen();
     if(!LuxReadMultiplayerMap(source,preflight) || !LuxValidateMultiplayerMap(preflight,msStatus)) {
         if(preflight.empty()) msStatus="Cannot read the selected XML .map file (maximum 16 MiB): "+folder+map;
+        LogDiagnostic("session","Hosted map validation failed: %s",msStatus.c_str());
         return false;
     }
     folder=cString::To8Char(cString::GetFilePathW(source));
@@ -131,7 +180,10 @@ bool cLuxMultiplayer::Host(const cLuxMultiplayerSettings& settings) {
     const bool listening=settings.useSteam ?
         mTransport.HostSteam(settings.maxPlayers-1,settings.publicLobby,map,msStatus) :
         mTransport.Host(settings.port,settings.maxPlayers-1,msStatus);
-    if(!listening) return false;
+    if(!listening) {LogDiagnostic("session","Could not start host transport: %s",msStatus.c_str());return false;}
+    LogDiagnostic("session","Starting map='%s' protocol=%u transport=%s players=%u public=%d client_map_changes=%d player_scripts=%d player_collision=%d.",
+        map.c_str(),ProtocolVersion,TransportName(settings.useSteam),settings.maxPlayers,settings.publicLobby,
+        settings.allowClientMapChanges,settings.allPlayersTriggerScripts,settings.playerCollision);
     if(!++mlSessionSerial) ++mlSessionSerial;
     mbSessionWorld=true;
     mbRestoreFocusWait=gpBase->mpEngine->GetWaitIfAppOutOfFocus();
@@ -188,6 +240,7 @@ bool cLuxMultiplayer::HostCurrentMap(const cLuxMultiplayerSettings& settings) {
     std::vector<uint8_t> preflight;
     if(!LuxReadMultiplayerMap(cString::To16Char(path),preflight) || !LuxValidateMultiplayerMap(preflight,msStatus)) {
         if(preflight.empty()) msStatus="Cannot read the current XML .map file (maximum 16 MiB): "+path;
+        LogDiagnostic("session","Current-map validation failed: %s",msStatus.c_str());
         return false;
     }
     if(!LuxValidateMultiplayerCurrentMapSource(gpBase->mpMapHandler->GetCurrentMap()->GetWorld(),preflight,msStatus)) return false;
@@ -198,7 +251,10 @@ bool cLuxMultiplayer::HostCurrentMap(const cLuxMultiplayerSettings& settings) {
     const bool listening=settings.useSteam ?
         mTransport.HostSteam(settings.maxPlayers-1,settings.publicLobby,cString::GetFileName(path),msStatus) :
         mTransport.Host(settings.port,settings.maxPlayers-1,msStatus);
-    if(!listening) return false;
+    if(!listening) {LogDiagnostic("session","Could not host current map: %s",msStatus.c_str());return false;}
+    LogDiagnostic("session","Hosting current map='%s' protocol=%u transport=%s players=%u public=%d client_map_changes=%d player_scripts=%d player_collision=%d.",
+        cString::GetFileName(path).c_str(),ProtocolVersion,TransportName(settings.useSteam),settings.maxPlayers,settings.publicLobby,
+        settings.allowClientMapChanges,settings.allPlayersTriggerScripts,settings.playerCollision);
     if(!++mlSessionSerial) ++mlSessionSerial;
     mSettings=settings;mSettings.map=path;mSettings.startPos.clear();
     mlLocalPeer=0;mlMapEpoch=0;mbReturnToMenu=false;
@@ -231,7 +287,9 @@ bool cLuxMultiplayer::Join(const tString& address) {
     SetLoadPhase(eLuxMultiplayerLoadPhase_Connecting,"Connecting to "+address+"...",true);
     EnsureProfile(); gpBase->mpDebugHandler->SetFastForward(false);
     gpBase->mpDebugHandler->SetDebugWindowActive(false);
-    if(!mTransport.Join(address,27015,msStatus)) {mLoadPhase=eLuxMultiplayerLoadPhase_None;return false;}
+    if(!mTransport.Join(address,27015,msStatus)) {
+        LogDiagnostic("session","Could not start direct connection: %s",msStatus.c_str());mLoadPhase=eLuxMultiplayerLoadPhase_None;return false;
+    }
     mSettings.useSteam=false;
     msStatus="Connecting to "+address+"...";
     BeginClientSession();
@@ -244,7 +302,9 @@ bool cLuxMultiplayer::JoinSteamLobby(const tString& code) {
     SetLoadPhase(eLuxMultiplayerLoadPhase_Connecting,"Joining Steam lobby...",true);
     if(!hpl::cNetworkTransport::InitializeSteam(msStatus)) {mLoadPhase=eLuxMultiplayerLoadPhase_None;return false;}
     EnsureProfile();
-    if(!mTransport.JoinSteamLobby(lobby,msStatus)) {mLoadPhase=eLuxMultiplayerLoadPhase_None;return false;}
+    if(!mTransport.JoinSteamLobby(lobby,msStatus)) {
+        LogDiagnostic("session","Could not start Steam lobby join: %s",msStatus.c_str());mLoadPhase=eLuxMultiplayerLoadPhase_None;return false;
+    }
     mSettings.useSteam=true;
     gpBase->mpDebugHandler->SetFastForward(false);
     gpBase->mpDebugHandler->SetDebugWindowActive(false);
@@ -257,6 +317,9 @@ void cLuxMultiplayer::BeginClientSession() {
     mbRestoreFocusWait=gpBase->mpEngine->GetWaitIfAppOutOfFocus();
     gpBase->mpEngine->SetWaitIfAppOutOfFocus(false);
     mbReady=false;mbReceiving=false;mbReturnToMenu=false;mbHasClientMap=false;mfJoinAge=0;mlMapEpoch=0;mlLocalPeer=0;
+    mlLastJoinLogTime=mlLoadPhaseLogStart=cPlatform::GetApplicationTime();
+    mlLastPacketType=mlLastPacketBytes=0;mlLastPacketTime=0;
+    MultiplayerLog("client beginning join (transport=%s, protocol=%u).",TransportName(mSettings.useSteam),ProtocolVersion);
     EnterClientLoading();
     SetLoadPhase(eLuxMultiplayerLoadPhase_Connecting,msStatus,true);
 }
@@ -276,6 +339,11 @@ void cLuxMultiplayer::EnterClientLoading() {
     if(gpBase->mpMapHandler->GetCurrentMap()) gpBase->mpMapHandler->GetCurrentMap()->GetWorld()->SetActive(false);
 }
 void cLuxMultiplayer::SetLoadPhase(eLuxMultiplayerLoadPhase phase,const tString& status,bool present) {
+    if(mLoadPhase!=phase || msLoadScreenStatus!=status) {
+        mlLastJoinLogTime=mlLoadPhaseLogStart=cPlatform::GetApplicationTime();
+        MultiplayerLog("%s load phase=%s on map '%s' (epoch %u): %s",
+            IsHost()?"host":"client",LoadPhaseName(phase),msMapName.c_str(),mlMapEpoch,status.c_str());
+    }
     mLoadPhase=phase;msLoadScreenStatus=status;msStatus=status;
     if(present) gpBase->mpLoadScreenHandler->DrawMultiplayerScreen();
 }
@@ -303,14 +371,25 @@ void cLuxMultiplayer::AcceptSteamInvite() {
     if(JoinSteamLobby(std::to_string(lobby))) mlPendingSteamInvite=0;
 }
 void cLuxMultiplayer::Stop(const tString& reason) {
-    if(IsActive()) Log("Multiplayer %s stopping on map '%s' (epoch %u): %s\n",
-        IsHost()?"host":"client",msMapName.c_str(),mlMapEpoch,reason.empty()?"Disconnected":reason.c_str());
+    std::vector<hpl::cNetworkEvent> diagnostics;mTransport.DrainDiagnostics(diagnostics);
+    for(const auto& event:diagnostics) MultiplayerLog("transport %s",event.reason.c_str());
+    if(IsActive()) {
+        MultiplayerLog("%s stopping on map '%s' (epoch %u, load phase=%s): %s",
+            IsHost()?"host":"client",msMapName.c_str(),mlMapEpoch,LoadPhaseName(mLoadPhase),reason.empty()?"Disconnected":reason.c_str());
+        if(IsHost()) {
+            for(const auto& peer:mPeers) if(!peer.second.ready) LogPeerJoinState(peer.first,"session stopping");
+        } else if(IsClient()) LogDiagnostic("receive-context","Last packet type=%u bytes=%u age=%.1fs.",mlLastPacketType,mlLastPacketBytes,
+            mlLastPacketType?(cPlatform::GetApplicationTime()-mlLastPacketTime)/1000.0:-1.0);
+    }
+    mLoggedUnregisteredPeers.clear();
     mPendingRecoveredItems.clear();mAutoCombineItems.clear();mbCombiningInventory=mbGroupInventory=mbAutoCombiningInventory=false;
     mSharedScriptItems.clear();
     mRemoteItems.clear();
     bool client=IsClient();
     if(IsActive()) gpBase->mpEngine->SetWaitIfAppOutOfFocus(mbRestoreFocusWait);
-    mpEnemies->Reset();mpEffects->Reset();mpWorld->Shutdown();mpEntities->Reset();mTransport.Stop();mPeers.clear();mSteamPeerIdentities.clear();
+    mpEnemies->Reset();mpEffects->Reset();mpWorld->Shutdown();mpEntities->Reset();
+    FlushDiagnosticSummary();
+    mTransport.Stop();mPeers.clear();mSteamPeerIdentities.clear();
     mvMapBytes.clear();mvScriptHistory.clear();mlScriptHistoryBytes=0;
     msPendingHostMap.clear();
     mbMapPreparing=false;mbResumeReady=false;mlMapTransition=0;
@@ -350,7 +429,10 @@ void cLuxMultiplayer::Reset() {
 bool cLuxMultiplayer::ShouldSuppressOfflineSaves() const {
     return IsActive() || (mbSessionWorld && gpBase->mpMapHandler->GetCurrentMap()!=NULL);
 }
-void cLuxMultiplayer::OnMapLeave(cLuxMap*) {mpEnemies->Reset();mpEffects->Reset();mpWorld->Reset();mpEntities->Reset();}
+void cLuxMultiplayer::OnMapLeave(cLuxMap*) {
+    mpEnemies->Reset();mpEffects->Reset();mpWorld->Reset();mpEntities->Reset();
+    FlushDiagnosticSummary();
+}
 void cLuxMultiplayer::ShowWindow(bool campaign) {mpUI->Show(campaign);}
 void cLuxMultiplayer::ToggleWindow() {mpUI->Toggle();}
 bool cLuxMultiplayer::IsWindowVisible() const {return mpUI->IsVisible();}
@@ -381,12 +463,43 @@ void cLuxMultiplayer::BroadcastPlayerIdentities() {
     for(auto& peer:mPeers) if(peer.second.greeted && !Send(peer.first,packet,true)) peer.second.reliableSendFailed=true;
 }
 bool cLuxMultiplayer::Send(uint32_t peer,const std::vector<uint8_t>& data,bool reliable) {return mTransport.Send(peer,data,reliable);}
+void cLuxMultiplayer::LogDiagnostic(const char* category,const char* format,...) const {
+    va_list args;va_start(args,format);LogDiagnosticV(category,format,args,false,false);va_end(args);
+}
+void cLuxMultiplayer::LogDiagnosticLimited(const char* category,const char* format,...) const {
+    va_list args;va_start(args,format);LogDiagnosticV(category,format,args,true,false);va_end(args);
+}
+void cLuxMultiplayer::LogDiagnosticWarning(const char* category,const char* format,...) const {
+    va_list args;va_start(args,format);LogDiagnosticV(category,format,args,false,true);va_end(args);
+}
+void cLuxMultiplayer::LogDiagnosticWarningLimited(const char* category,const char* format,...) const {
+    va_list args;va_start(args,format);LogDiagnosticV(category,format,args,true,true);va_end(args);
+}
+void cLuxMultiplayer::LogDiagnosticV(const char* category,const char* format,va_list args,bool limited,bool warning) const {
+    if(limited) {
+        uint32_t& count=mDiagnosticCounts[category];if(count<UINT32_MAX) ++count;
+        if(count>8) {
+            if(count==9) LogDiagnostic(category,"Further details suppressed for this map; totals will be logged when leaving it.");
+            return;
+        }
+    }
+    char detail[1536];std::vsnprintf(detail,sizeof(detail),format,args);
+    char message[2048];std::snprintf(message,sizeof(message),"%s %s on map '%s' (epoch %u): %s",
+        IsHost()?"host":IsClient()?"client":"offline",category,msMapName.c_str(),mlMapEpoch,detail);
+    MultiplayerLogText(message,warning);
+}
+void cLuxMultiplayer::FlushDiagnosticSummary() {
+    for(const auto& count:mDiagnosticCounts) if(count.second>8)
+        LogDiagnostic(count.first.c_str(),"%u occurrences in this map, %u additional details suppressed.",count.second,count.second-8);
+    mDiagnosticCounts.clear();
+}
 void cLuxMultiplayer::Broadcast(const std::vector<uint8_t>& data,bool reliable) {
     if(!IsHost()) return;
     for(auto& peer:mPeers) if(peer.second.ready && !Send(peer.first,data,reliable) && reliable)
         peer.second.reliableSendFailed=true;
 }
 bool cLuxMultiplayer::CaptureMap(cLuxMap* map,const tString& start,const std::vector<uint8_t>* verifiedSource) {
+    FlushDiagnosticSummary();
     // Current-map attachment transfers the exact bytes checked against the
     // loaded world, even if an editor saves the disk file during setup.
     if(verifiedSource) mvMapBytes=*verifiedSource;
@@ -401,6 +514,9 @@ bool cLuxMultiplayer::CaptureMap(cLuxMap* map,const tString& start,const std::ve
     mvScriptHistory.clear();mlScriptHistoryBytes=0;mbHistoryComplete=true;
     mbMapPreparing=false;msPreparingMap.clear();
     for(auto& peer:mPeers) {peer.second.ready=false;peer.second.beginSent=false;peer.second.endSent=false;peer.second.transferRequested=false;peer.second.offset=0;peer.second.age=0;}
+    for(auto& peer:mPeers) {peer.second.lastJoinLogTime=cPlatform::GetApplicationTime();peer.second.mapSendFailureLogged=false;}
+    MultiplayerLog("host captured map '%s' (epoch %u, bytes=%u, peers=%u).",msMapName.c_str(),mlMapEpoch,
+        static_cast<unsigned>(mvMapBytes.size()),static_cast<unsigned>(mPeers.size()));
     return true;
 }
 void cLuxMultiplayer::OnMapLoaded(cLuxMap* map,const tString& start) {
@@ -414,28 +530,47 @@ void cLuxMultiplayer::OnMapLoaded(cLuxMap* map,const tString& start) {
     if(IsActive()) mpEffects->OnMapLoaded(map);
 }
 void cLuxMultiplayer::RejectPeer(uint32_t peer,const tString& reason) {
-    Warning("Multiplayer %s rejected peer %u on map '%s' (epoch %u): %s\n",
-        IsHost()?"host":"client",peer,msMapName.c_str(),mlMapEpoch,reason.c_str());
+    if(IsHost()) LogPeerJoinState(peer,"rejecting peer");
+    LogDiagnosticWarning("session","rejecting peer %u: %s",peer,reason.c_str());
     if(IsHost()) {mTransport.Disconnect(peer,reason);mpWorld->OnPeerDisconnected(peer);mpEntities->OnPeerDisconnected(peer);mpEffects->OnPeerDisconnected(peer);mpEnemies->OnPeerDisconnected(peer);mPeers.erase(peer);BroadcastPlayerIdentities();}
     else {Stop(reason);ShowWindow();}
 }
 void cLuxMultiplayer::HandleEvent(const hpl::cNetworkEvent& event) {
-    if(event.type==hpl::eNetworkEventType::SessionFailed) {
+    if(event.type==hpl::eNetworkEventType::Diagnostic) {
+        MultiplayerLog("transport %s",event.reason.c_str());
+    } else if(event.type==hpl::eNetworkEventType::SessionFailed) {
         Stop(event.reason);ShowWindow();
     } else if(event.type==hpl::eNetworkEventType::SessionReady) {
+        MultiplayerLog("%s session ready (epoch %u).",IsHost()?"host":"client",mlMapEpoch);
         msStatus=IsHost() ? "Hosting "+msMapName+" on Steam. Invite friends or share the lobby code." : "Steam lobby joined. Connecting to host...";
         if(IsClient()) SetLoadPhase(eLuxMultiplayerLoadPhase_Connecting,msStatus);
     } else if(event.type==hpl::eNetworkEventType::Connected) {
-        Log("Multiplayer %s connected peer %u on map '%s' (epoch %u).\n",
+        MultiplayerLog("%s connected peer %u on map '%s' (epoch %u).",
             IsHost()?"host":"client",event.peer,msMapName.c_str(),mlMapEpoch);
-        if(IsHost()) {mPeers[event.peer]=Peer();}
-        else {Writer w(Hello);w.U32(ProtocolVersion);Send(0,w.data,true);SetLoadPhase(eLuxMultiplayerLoadPhase_Preparing,"Connected. Waiting for the host's map...");}
+        mLoggedUnregisteredPeers.erase(event.peer);
+        if(IsHost()) {mPeers[event.peer]=Peer();mPeers[event.peer].lastJoinLogTime=cPlatform::GetApplicationTime();}
+        else {
+            Writer w(Hello);w.U32(ProtocolVersion);const bool sent=Send(0,w.data,true);
+            MultiplayerLog("client Hello send (peer 0, version=%u, accepted=%d).",ProtocolVersion,sent);
+            if(!sent) {RejectPeer(0,"Could not send the multiplayer handshake.");return;}
+            SetLoadPhase(eLuxMultiplayerLoadPhase_Preparing,"Connected. Waiting for the host's map...");
+        }
     } else if(event.type==hpl::eNetworkEventType::Disconnected) {
-        Log("Multiplayer %s disconnected peer %u on map '%s' (epoch %u): %s\n",
+        MultiplayerLog("%s disconnected peer %u on map '%s' (epoch %u): %s",
             IsHost()?"host":"client",event.peer,msMapName.c_str(),mlMapEpoch,event.reason.c_str());
+        if(IsHost()) LogPeerJoinState(event.peer,"peer disconnected");
+        mLoggedUnregisteredPeers.erase(event.peer);
         if(IsHost()) {mPeers.erase(event.peer);mpWorld->OnPeerDisconnected(event.peer);mpEntities->OnPeerDisconnected(event.peer);mpEffects->OnPeerDisconnected(event.peer);mpEnemies->OnPeerDisconnected(event.peer);BroadcastPlayerIdentities();}
         else {Stop("Disconnected: "+event.reason);ShowWindow();}
     } else if(event.type==hpl::eNetworkEventType::Message) HandlePacket(event.peer,event.data);
+}
+void cLuxMultiplayer::LogPeerJoinState(uint32_t peer,const char* context) const {
+    const auto found=mPeers.find(peer);if(found==mPeers.end()) return;
+    const Peer& state=found->second;
+    MultiplayerLog("host peer %u %s on map '%s' (epoch %u): age=%.1fs greeted=%d manifest=%d request=%d end=%d ready=%d offset=%u/%u preparing=%d send_failed=%d last_rx_type=%u bytes=%u rx_age=%.1fs.",
+        peer,context,msMapName.c_str(),mlMapEpoch,state.age,state.greeted,state.beginSent,state.transferRequested,
+        state.endSent,state.ready,state.offset,static_cast<unsigned>(mvMapBytes.size()),mbMapPreparing,state.reliableSendFailed,
+        state.lastPacketType,state.lastPacketBytes,state.lastPacketType?(cPlatform::GetApplicationTime()-state.lastPacketTime)/1000.0:-1.0);
 }
 void cLuxMultiplayer::SendMap(uint32_t peer,Peer& state) {
     if(mbMapPreparing || !state.greeted || state.ready || mvMapBytes.empty()) return;
@@ -445,8 +580,12 @@ void cLuxMultiplayer::SendMap(uint32_t peer,Peer& state) {
         w.String(msMapName);w.String(msStartPos);w.U8(mSettings.allowClientMapChanges);w.U8(mSettings.allPlayersTriggerScripts);
         w.U8(mSettings.playerCollision);w.U8(mbMapResetsGame);w.U8(mbMapHardMode);
         w.String(msMapHash);
-        if(!Send(peer,w.data,true)) return;
+        if(!Send(peer,w.data,true)) {
+            if(!state.mapSendFailureLogged) {MultiplayerLog("host MapBegin send failed (peer %u, epoch %u); normal retry remains pending.",peer,mlMapEpoch);state.mapSendFailureLogged=true;}
+            return;
+        }
         state.beginSent=true;
+        MultiplayerLog("host queued MapBegin (peer %u, epoch %u, map='%s', bytes=%u).",peer,mlMapEpoch,msMapName.c_str(),static_cast<unsigned>(mvMapBytes.size()));
     }
     // The client checks installed XML and its saved cache before requesting
     // bytes. A matching file needs only this manifest and the end marker.
@@ -454,22 +593,41 @@ void cLuxMultiplayer::SendMap(uint32_t peer,Peer& state) {
     for(int i=0;i<2 && state.offset<mvMapBytes.size();++i) {
         size_t size=std::min(size_t(MapChunkBytes),mvMapBytes.size()-state.offset);
         Writer w(MapChunk);w.U32(mlMapEpoch);w.U32(state.offset);w.Bytes(mvMapBytes.data()+state.offset,size);
-        if(!Send(peer,w.data,true)) return;
+        if(!Send(peer,w.data,true)) {
+            if(!state.mapSendFailureLogged) {MultiplayerLog("host MapChunk send failed (peer %u, epoch %u, offset=%u); normal retry remains pending.",peer,mlMapEpoch,state.offset);state.mapSendFailureLogged=true;}
+            return;
+        }
         state.offset+=static_cast<uint32_t>(size);
     }
     if(state.offset==mvMapBytes.size() && !state.endSent) {
         Writer w(MapEnd);w.U32(mlMapEpoch);
         state.endSent=Send(peer,w.data,true);
+        if(state.endSent) MultiplayerLog("host queued MapEnd (peer %u, epoch %u).",peer,mlMapEpoch);
+        else if(!state.mapSendFailureLogged) {MultiplayerLog("host MapEnd send failed (peer %u, epoch %u); normal retry remains pending.",peer,mlMapEpoch);state.mapSendFailureLogged=true;}
     }
 }
 void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& data) {
+    if(IsHost()) {
+        auto found=mPeers.find(peer);if(found!=mPeers.end()) {
+            found->second.lastPacketType=data.empty()?0:data[0];found->second.lastPacketBytes=static_cast<uint32_t>(data.size());
+            found->second.lastPacketTime=cPlatform::GetApplicationTime();
+        }
+    } else if(IsClient() && peer==0) {
+        mlLastPacketType=data.empty()?0:data[0];mlLastPacketBytes=static_cast<uint32_t>(data.size());mlLastPacketTime=cPlatform::GetApplicationTime();
+    }
     if(data.empty() || data.size()>hpl::cNetworkTransport::MaxMessageBytes) {RejectPeer(peer,"Invalid packet size.");return;}
     Reader r(data);uint8_t type=data[0];
     if(IsHost()) {
-        auto it=mPeers.find(peer);if(it==mPeers.end()) return;
+        auto it=mPeers.find(peer);if(it==mPeers.end()) {
+            if(mLoggedUnregisteredPeers.size()<16 && mLoggedUnregisteredPeers.insert(peer).second)
+                LogDiagnosticLimited("unregistered-peer","Discarded packet without a registered game peer (peer %u, type=%u, bytes=%u, epoch %u).",
+                    peer,static_cast<unsigned>(type),static_cast<unsigned>(data.size()),mlMapEpoch);
+            return;
+        }
         Peer& state=it->second;
         if(type==Hello) {
             uint32_t version=r.U32();
+            MultiplayerLog("host received Hello (peer %u, version=%u, already_greeted=%d, epoch %u).",peer,version,state.greeted,mlMapEpoch);
             if(!r.Done() || state.greeted || version!=ProtocolVersion) {RejectPeer(peer,"Multiplayer protocol mismatch. Use the same Amnesia build as the host.");return;}
             if(!mbHistoryComplete) {RejectPeer(peer,"This session has exceeded the late-join script history limit. Join after the next map change.");return;}
             state.greeted=true;
@@ -481,17 +639,25 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
         if(type==MapRequest) {
             const uint32_t epoch=r.U32();const uint8_t reuse=r.U8();const tString hash=r.String(64);
             if(!r.Done() || reuse>1 || !ValidMapHash(hash)) {RejectPeer(peer,"Malformed map request.");return;}
-            if(epoch!=mlMapEpoch) return;
+            if(epoch!=mlMapEpoch) {
+                LogDiagnosticLimited("stale-handshake","Ignored MapRequest (peer %u, packet epoch %u, host epoch %u).",peer,epoch,mlMapEpoch);
+                return;
+            }
             if(!state.beginSent || state.transferRequested || state.ready || hash!=msMapHash) {
                 RejectPeer(peer,"Unexpected map request.");return;
             }
             state.transferRequested=true;
             if(reuse) state.offset=static_cast<uint32_t>(mvMapBytes.size());
+            MultiplayerLog("host accepted MapRequest (peer %u, epoch %u, reuse=%u).",peer,epoch,static_cast<unsigned>(reuse));
             return;
         }
         if(type==Ready) {
             uint32_t epoch=r.U32();if(!r.Done()) {RejectPeer(peer,"Malformed map acknowledgement.");return;}
-            if(epoch!=mlMapEpoch) return;
+            if(epoch!=mlMapEpoch) {
+                LogDiagnosticLimited("stale-handshake","Ignored Ready (peer %u, packet epoch %u, host epoch %u).",peer,epoch,mlMapEpoch);
+                return;
+            }
+            MultiplayerLog("host received Ready (peer %u, packet epoch %u, host epoch %u).",peer,epoch,mlMapEpoch);
             if(!state.endSent || state.ready) {RejectPeer(peer,"Unexpected map acknowledgement.");return;}
             if(!mbHistoryComplete) {RejectPeer(peer,"The session's initialization history exceeded its limit while joining.");return;}
             state.ready=true;state.age=0;
@@ -502,6 +668,7 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
             if(!mpWorld->SendInitialState(peer)) {RejectPeer(peer,"World is too large for initial synchronization (32 MiB limit).");return;}
             if(!mpEnemies->SendInitialState(peer)) {RejectPeer(peer,"Could not initialize enemy state.");return;}
             if(!mpEffects->SendInitialState(peer)) {RejectPeer(peer,"Could not initialize active world effects.");return;}
+            MultiplayerLog("host queued initial world state (peer %u, epoch %u, script_records=%u).",peer,mlMapEpoch,static_cast<unsigned>(mvScriptHistory.size()));
             msStatus="Hosting "+msMapName+". Connected clients: "+cString::ToString(static_cast<int>(mPeers.size()));return;
         }
         if(!state.ready) return;
@@ -517,7 +684,9 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
         if(type==MapChangeRequest) {
             uint32_t epoch=r.U32();tString map=r.String(512),start=r.String(128),a=r.String(256),b=r.String(256);
             if(!r.Done() || !SafeRelativePath(map) || map!=AuthoredMapFilename(map)) {RejectPeer(peer,"Invalid map change request.");return;}
-            if(epoch!=mlMapEpoch || !mSettings.allowClientMapChanges || state.requestCooldown>0) return;
+            if(epoch!=mlMapEpoch || !mSettings.allowClientMapChanges || state.requestCooldown>0) {
+                LogDiagnosticLimited("request-denied","Map change from peer %u ignored: packet_epoch=%u permitted=%d cooldown=%.1fs.",peer,epoch,mSettings.allowClientMapChanges,state.requestCooldown);return;
+            }
             // Resolve and validate an unlocked level door in the host's authoritative map.
             cLuxMap* current=gpBase->mpMapHandler->GetCurrentMap();
             const auto& poses=mpWorld->GetRemotePlayers();auto pose=poses.find(peer);
@@ -533,7 +702,8 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
                 for(int i=0;i<candidate->GetBodyNum();++i)
                     if(candidate->CanInteract(candidate->GetBody(i)) && WithinInteractionReach(candidate->GetBody(i),pose->second,candidate->GetMaxFocusDistance())) door=candidate;
             }
-            if(!door) return;
+            if(!door) {LogDiagnosticLimited("request-denied","Map change from peer %u has no matching unlocked level door in reach.",peer);return;}
+            LogDiagnostic("map-transition","Accepted peer %u level-door request to '%s'.",peer,map.c_str());
             state.requestCooldown=2.0f;
             cLuxMultiplayerRemoteTriggerScope remoteTrigger(true,peer);
             door->OnInteract(door->GetBody(0),pose->second.position);return;
@@ -541,19 +711,23 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
         if(type==ItemCombineRequest) {
             const uint32_t epoch=r.U32();const tString a=r.String(256),b=r.String(256);
             if(!r.Done() || a.empty() || b.empty()) {RejectPeer(peer,"Invalid item combination.");return;}
-            if(epoch!=mlMapEpoch || !mSettings.allPlayersTriggerScripts || state.interactionTokens<1) return;
+            if(epoch!=mlMapEpoch || !mSettings.allPlayersTriggerScripts || state.interactionTokens<1) {
+                LogDiagnosticLimited("request-denied","Item combination from peer %u ignored: packet_epoch=%u scripts=%d tokens=%.1f.",peer,epoch,mSettings.allPlayersTriggerScripts,state.interactionTokens);return;
+            }
             state.interactionTokens-=1;
             cLuxMultiplayerRemoteTriggerScope trigger(true,peer);
-            if(!HasRemoteItem(a) || !HasRemoteItem(b)) return;
-            auto* callback=gpBase->mpInventory->GetCombineCallback(a,b);if(!callback) return;
+            if(!HasRemoteItem(a) || !HasRemoteItem(b)) {LogDiagnosticLimited("request-denied","Item combination from peer %u lacks an owned ingredient.",peer);return;}
+            auto* callback=gpBase->mpInventory->GetCombineCallback(a,b);if(!callback) {LogDiagnosticLimited("request-denied","Item combination from peer %u has no registered callback.",peer);return;}
             CombineInventoryItems(peer,a,b);
             return;
         }
         if(type==ItemUseRequest) {
             const uint32_t epoch=r.U32();const tString item=r.String(256),name=r.String(256);
             if(!r.Done() || item.empty() || name.empty()) {RejectPeer(peer,"Invalid item use request.");return;}
-            if(epoch!=mlMapEpoch || !mSettings.allPlayersTriggerScripts) return;
-            if(state.interactionTokens<1) return;state.interactionTokens-=1;
+            if(epoch!=mlMapEpoch || !mSettings.allPlayersTriggerScripts || state.interactionTokens<1) {
+                LogDiagnosticLimited("request-denied","Item use from peer %u ignored: packet_epoch=%u scripts=%d tokens=%.1f.",peer,epoch,mSettings.allPlayersTriggerScripts,state.interactionTokens);return;
+            }
+            state.interactionTokens-=1;
             cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();
             iLuxEntity* ent=map?map->GetEntityByName(name):NULL;
             auto pose=mpWorld->GetRemotePlayers().find(peer);
@@ -568,7 +742,7 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
                 if(WithinInteractionReach(ent->GetBody(i),pose->second,reach)) near=true;
             }
             cLuxUseItemCallback* callback=map->GetUseItemCallback(item,name);
-            if(!near || !callback) return;
+            if(!near || !callback) {LogDiagnosticLimited("request-denied","Item use from peer %u ignored: in_reach=%d callback=%d.",peer,near,callback!=NULL);return;}
             const bool remove=callback->mbAutoDestroy;const tString callbackName=callback->msName;
             map->RunScript(callback->msFunction+"(\""+callback->msItem+"\", \""+callback->msEntity+"\")");
             if(remove) map->RemoveUseItemCallback(callback,callbackName);
@@ -577,17 +751,23 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
         if(type==EntityInteract) {
             uint32_t epoch=r.U32();tString name=r.String(256);uint32_t index=r.U32();
             if(!r.Done()) {RejectPeer(peer,"Invalid interaction request.");return;}
-            if(epoch!=mlMapEpoch || !mSettings.allPlayersTriggerScripts) return;
-            if(state.interactionTokens<1) return;state.interactionTokens-=1;
+            if(epoch!=mlMapEpoch || !mSettings.allPlayersTriggerScripts || state.interactionTokens<1) {
+                LogDiagnosticLimited("request-denied","Entity interaction from peer %u ignored: packet_epoch=%u scripts=%d tokens=%.1f.",peer,epoch,mSettings.allPlayersTriggerScripts,state.interactionTokens);return;
+            }
+            state.interactionTokens-=1;
             cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();
             iLuxEntity* ent=map?map->GetEntityByName(name):NULL;
             const auto& poses=mpWorld->GetRemotePlayers();auto pose=poses.find(peer);
-            if(!ent || !ent->IsActive() || index>=uint32_t(ent->GetBodyNum()) || pose==poses.end()) return;
+            if(!ent || !ent->IsActive() || index>=uint32_t(ent->GetBodyNum()) || pose==poses.end()) {
+                LogDiagnosticLimited("request-denied","Entity interaction from peer %u ignored: target='%s' body=%u target_exists=%d player_exists=%d.",peer,name.c_str(),index,ent!=NULL,pose!=poses.end());return;
+            }
             iPhysicsBody* body=ent->GetBody(index);
             if(pose->second.age>2 || ent->GetDestroyMe() || ent->GetInteractionDisabled() ||
                !(pose->second.gameplay.flags&LuxWorldWire::PlayerAlive) ||
                mpWorld->IsInteractionOwnedByOther(body,peer) ||
-               !WithinInteractionReach(body,pose->second,ent->GetMaxFocusDistance()) || !ent->CanInteract(body)) return;
+               !WithinInteractionReach(body,pose->second,ent->GetMaxFocusDistance()) || !ent->CanInteract(body)) {
+                LogDiagnosticLimited("request-denied","Entity interaction from peer %u failed live-player, ownership, reach or target-state checks (target='%s', pose_age=%.2fs).",peer,name.c_str(),pose->second.age);return;
+            }
             // Interactive physics controllers are handled by leases, never through the host's player state.
             cLuxMultiplayerRemoteTriggerScope remoteTrigger(true,peer);
             ent->RunInteractCallbackFunc();return;
@@ -636,6 +816,7 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
         uint32_t version=r.U32(),id=r.U32(),epoch=r.U32(),size=r.U32(),crc=r.U32();
         tString name=r.String(256),start=r.String(128);uint8_t changes=r.U8(),triggers=r.U8(),collision=r.U8(),resetGame=r.U8(),hardMode=r.U8();
         tString hash=r.String(64);
+        MultiplayerLog("client received MapBegin (peer %u, assigned peer=%u, epoch %u, bytes=%u).",peer,id,epoch,size);
         if(!r.Done() || version!=ProtocolVersion || id==0 || epoch==0 || size==0 || size>MaxMapBytes ||
             !SafeRelativePath(name) || cString::GetFileName(name)!=name || cString::ToLowerCase(cString::GetFileExt(name))!="map" || changes>1 || triggers>1 || collision>1 || resetGame>1 || hardMode>1 || !ValidMapHash(hash)) {
             RejectPeer(0,"Host sent an invalid map manifest.");return;
@@ -663,6 +844,7 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
                 if(!IsClient()) return;
             }
         }
+        FlushDiagnosticSummary();
         EnterClientLoading();mbReady=false;
         SetLoadPhase(eLuxMultiplayerLoadPhase_Checking,"Checking installed and downloaded copies of "+name+"...",true);
         mbMapPreparing=false;mvPreparingPackets.clear();mlPreparingPacketBytes=0;
@@ -672,12 +854,16 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
         mSettings.playerCollision=collision!=0;
         mbMapResetsGame=resetGame!=0;
         mbMapHardMode=hardMode!=0;
+        LogDiagnostic("session","Host settings: client_map_changes=%d player_scripts=%d player_collision=%d reset_game=%d hard_mode=%d.",
+            mSettings.allowClientMapChanges,mSettings.allPlayersTriggerScripts,mSettings.playerCollision,mbMapResetsGame,mbMapHardMode);
         mvMapBytes.clear();mvMapBytes.reserve(size);mbReceiving=true;mbReady=false;mfJoinAge=0;
         mbReusingMap=FindMatchingMap();
         SetLoadPhase(mbReusingMap?eLuxMultiplayerLoadPhase_Loading:eLuxMultiplayerLoadPhase_Downloading,
             mbReusingMap?"Using matching local map: "+name:"Downloading "+name+" from the host...",true);
         Writer request(MapRequest);request.U32(mlMapEpoch);request.U8(mbReusingMap);request.String(msMapHash);
-        if(!Send(0,request.data,true)) RejectPeer(0,"Could not request the host map.");
+        const bool sent=Send(0,request.data,true);
+        MultiplayerLog("client MapRequest send (epoch %u, reuse=%d, accepted=%d).",mlMapEpoch,mbReusingMap,sent);
+        if(!sent) RejectPeer(0,"Could not request the host map.");
         return;
     }
     if(mbMapPreparing) {
@@ -697,7 +883,10 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
         mvMapBytes.insert(mvMapBytes.end(),data.begin()+r.pos,data.end());return;
     }
     if(type==MapEnd) {
-        uint32_t epoch=r.U32();if(epoch!=mlMapEpoch) return;
+        uint32_t epoch=r.U32();
+        MultiplayerLog("client received MapEnd (packet epoch %u, client epoch %u, bytes=%u/%u).",epoch,mlMapEpoch,
+            static_cast<unsigned>(mvMapBytes.size()),mlExpectedMapBytes);
+        if(epoch!=mlMapEpoch) return;
         if(r.Done() && mbReceiving)
             SetLoadPhase(eLuxMultiplayerLoadPhase_Checking,"Verifying "+msMapName+"...",true);
         if(!r.Done() || !mbReceiving || mvMapBytes.size()!=mlExpectedMapBytes || Checksum(mvMapBytes)!=mlMapChecksum ||
@@ -705,7 +894,9 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
         mbReceiving=false;
         if(!LoadReceivedMap()) {RejectPeer(0,msStatus);return;}
         Writer w(Ready);w.U32(mlMapEpoch);
-        if(!Send(0,w.data,true)) {RejectPeer(0,"Could not acknowledge the loaded host map.");return;}
+        const bool sent=Send(0,w.data,true);
+        MultiplayerLog("client Ready send after map load (epoch %u, accepted=%d).",mlMapEpoch,sent);
+        if(!sent) {RejectPeer(0,"Could not acknowledge the loaded host map.");return;}
         mbReady=true;
         SetLoadPhase(eLuxMultiplayerLoadPhase_None,"Joined "+msMapName+". Session remains live while menus are open.");return;
     }
@@ -833,10 +1024,14 @@ bool cLuxMultiplayer::FindMatchingMap() {
         if(!cacheRoot.empty() && normalized.compare(0,cacheRoot.size(),cacheRoot)==0) continue;
         std::vector<uint8_t> bytes;
         if(LuxReadMultiplayerMap(path,bytes) && bytes.size()==mlExpectedMapBytes && MapHash(bytes)==msMapHash) {
+            LogDiagnostic("map-source","Reusing verified installed XML (%u bytes).",mlExpectedMapBytes);
             mvMapBytes.swap(bytes);msExistingMapPath=cString::To8Char(path);return true;
         }
     }
-    if(LuxReadCachedMultiplayerMap(msMapHash,mlExpectedMapBytes,mvMapBytes)) return true;
+    if(LuxReadCachedMultiplayerMap(msMapHash,mlExpectedMapBytes,mvMapBytes)) {
+        LogDiagnostic("map-source","Reusing verified downloaded cache (%u bytes).",mlExpectedMapBytes);return true;
+    }
+    LogDiagnostic("map-source","No matching installed XML or cache; requesting %u bytes from host.",mlExpectedMapBytes);
     mvMapBytes.clear();return false;
 }
 bool cLuxMultiplayer::LoadReceivedMap() {
@@ -865,12 +1060,13 @@ bool cLuxMultiplayer::LoadReceivedMap() {
         if(!written) {cPlatform::RemoveFile(path);RemoveEmptyDirectory(dir);msStatus="Failed to write the received map.";return false;}
         // Persistent cache entries can be deleted at any time: the loader uses
         // this private copy, also isolating simultaneously running instances.
-        if(!LuxStoreCachedMultiplayerMap(msMapHash,mvMapBytes)) Warning("Could not retain downloaded map in the multiplayer cache.\n");
+        if(!LuxStoreCachedMultiplayerMap(msMapHash,mvMapBytes))
+            LogDiagnosticWarning("map-source","Could not retain downloaded map in the multiplayer cache.");
     }
     RemoveReceivedMapFiles();
     msReceivedMapPath=ownCopy?cString::To8Char(path):"";
     msLoadedMapPath=cString::To8Char(path);
-    Log("Multiplayer map source: %s; SHA-256 %s; XML '%s'\n",
+    LogDiagnostic("map-source","Loading %s; SHA-256 %s; XML '%s'",
         !ownCopy?"installed":(mbReusingMap?"cache":"download"),msMapHash.c_str(),msLoadedMapPath.c_str());
     mbLoading=true;
     gpBase->SetCustomStory(NULL);gpBase->mbHardMode=mbMapHardMode;
@@ -925,12 +1121,23 @@ void cLuxMultiplayer::Update(float dt) {
         for(auto& p:mPeers) {
             p.second.age+=dt;p.second.requestCooldown=std::max(0.0f,p.second.requestCooldown-dt);
             p.second.interactionTokens=std::min(32.0f,p.second.interactionTokens+32.0f*dt);
+            const unsigned long now=cPlatform::GetApplicationTime();
+            if(!p.second.ready && now-p.second.lastJoinLogTime>=10000UL) {
+                p.second.lastJoinLogTime=now;LogPeerJoinState(p.first,"still joining");
+            }
             if(p.second.reliableSendFailed || (!p.second.ready && p.second.age>120)) expired.push_back(p.first);
             else SendMap(p.first,p.second);
         }
         for(uint32_t peer:expired) RejectPeer(peer,"Connection could not keep up with reliable world state or timed out during map load.");
     } else if(!mbReady) {
         mfJoinAge+=dt;
+        const unsigned long now=cPlatform::GetApplicationTime();
+        if(now-mlLastJoinLogTime>=10000UL) {
+            mlLastJoinLogTime=now;
+            MultiplayerLog("client still joining on map '%s' (epoch %u): phase=%s phase_elapsed=%.1fs join_age=%.1fs receiving=%d preparing=%d downloaded=%u/%u.",
+                msMapName.c_str(),mlMapEpoch,LoadPhaseName(mLoadPhase),(now-mlLoadPhaseLogStart)/1000.0,
+                mfJoinAge,mbReceiving,mbMapPreparing,mlMapEpoch?mlDownloadedMapBytes:0,mlMapEpoch?mlExpectedMapBytes:0);
+        }
         if(mfJoinAge>120) {RejectPeer(0,"Timed out waiting for the host map.");return;}
     }
     if(mbReady) UpdateBackgroundWorld(eUpdateableMessage_Update,dt);
@@ -1016,11 +1223,16 @@ void cLuxMultiplayer::BroadcastScriptEffect(const std::vector<uint8_t>& effect) 
         !mpEntities->SyncCreatedProps()) {
         // The entity updater will stop the session between callbacks. Do not
         // tear down replication from inside a script/native destruction stack.
+        if(mbHistoryComplete) LogDiagnostic("script-history","Late joins disabled because newly created entities could not be synchronized: %s",mpEntities->GetLastError().c_str());
         mbHistoryComplete=false;return;
     }
     // Bound late-join initialization history. Refuse joins once a complete replay cannot fit.
     if(mlScriptHistoryBytes+effect.size()<=256*1024) {mvScriptHistory.push_back(effect);mlScriptHistoryBytes+=effect.size();}
-    else mbHistoryComplete=false;
+    else {
+        if(mbHistoryComplete) LogDiagnostic("script-history","Late joins disabled: replay history reached its 256 KiB limit (stored=%u, next=%u, records=%u).",
+            static_cast<unsigned>(mlScriptHistoryBytes),static_cast<unsigned>(effect.size()),static_cast<unsigned>(mvScriptHistory.size()));
+        mbHistoryComplete=false;
+    }
     Broadcast(effect,true);
 }
 bool cLuxMultiplayer::AllowObjectBreak(const tString& name) {
@@ -1083,19 +1295,23 @@ bool cLuxMultiplayer::GiveInventoryItem(uint32_t peer,const InventoryItem& item)
 void cLuxMultiplayer::RecoverRemoteItems(uint32_t peer) {
     auto held=mRemoteItems.find(peer);if(held==mRemoteItems.end()) return;
     const auto items=held->second;mRemoteItems.erase(held);
+    LogDiagnostic("inventory-recovery","Recovering %u tracked items from disconnected peer %u.",static_cast<unsigned>(items.size()),peer);
     for(const auto& entry:items) if(RetainProgressionItem(entry.second.type)) mPendingRecoveredItems[entry.first]=entry.second;
     RecoverPendingItems();
     if(!mPendingRecoveredItems.empty())
-        Warning("Some disconnected-player items could not be loaded into the host inventory; their recovery data is retained and will be retried.\n");
+        LogDiagnosticWarning("inventory-recovery","%zu disconnected-player items could not be loaded into the host inventory; recovery data is retained and will be retried.",mPendingRecoveredItems.size());
 }
 void cLuxMultiplayer::RecoverPendingItems() {
     if(!IsHost()) return;
+    const size_t before=mPendingRecoveredItems.size();
     for(auto it=mPendingRecoveredItems.begin();it!=mPendingRecoveredItems.end();) {
         const auto item=it->second;bool accepted=gpBase->mpInventory->GetItem(item.name)!=NULL;
         if(!accepted) gpBase->mpInventory->AddItem(item.name,static_cast<eLuxItemType>(item.type),item.subtype,item.image,
             item.amount,item.value,item.extra,&accepted,false);
         if(accepted) it=mPendingRecoveredItems.erase(it);else ++it;
     }
+    if(mPendingRecoveredItems.size()!=before)
+        LogDiagnostic("inventory-recovery","Recovered %u items to host; %u remain pending.",static_cast<unsigned>(before-mPendingRecoveredItems.size()),static_cast<unsigned>(mPendingRecoveredItems.size()));
 }
 bool cLuxMultiplayer::RouteInventoryGive(const InventoryItem& item) {
     if(!IsHost() || !mbCombiningInventory) return false;
@@ -1227,10 +1443,12 @@ void cLuxMultiplayer::NotifyHostMapChange(const tString& map) {
     if(!SafeRelativePath(msPreparingMap) || msPreparingMap.size()>256) return;
     ++mlMapTransition;if(!mlMapTransition) ++mlMapTransition;
     mbMapPreparing=true;
+    MultiplayerLog("host preparing map '%s' (current epoch %u, transition %u).",msPreparingMap.c_str(),mlMapEpoch,mlMapTransition);
     for(auto& peer:mPeers) if(peer.second.greeted) SendMapPreparation(peer.first,peer.second);
 }
 void cLuxMultiplayer::CancelHostMapChange(const tString& reason) {
     if(!IsHost() || !mbMapPreparing) return;
+    MultiplayerLog("host cancelled map preparation (epoch %u, transition %u): %s",mlMapEpoch,mlMapTransition,reason.c_str());
     Writer notice(MapCancelled);notice.U32(mlMapEpoch);notice.U32(mlMapTransition);notice.String(reason.substr(0,512));
     mbMapPreparing=false;msPreparingMap.clear();
     for(auto& peer:mPeers) if(peer.second.greeted) {

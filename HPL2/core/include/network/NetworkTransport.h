@@ -8,7 +8,8 @@
 
 namespace hpl
 {
-    enum class eNetworkEventType { Connected, Disconnected, Message, SessionReady, SessionFailed };
+    // Diagnostic events are local log records, never wire messages.
+    enum class eNetworkEventType { Connected, Disconnected, Message, SessionReady, SessionFailed, Diagnostic };
 
     struct cSteamLobbyInfo
     {
@@ -72,6 +73,9 @@ namespace hpl
         bool InviteSteamFriends(std::string& error);
         void Stop();
         void Poll(std::vector<cNetworkEvent>& events);
+        // Preserve queued failure context before Stop clears the transport.
+        // Does not pump callbacks or consume gameplay/session events.
+        void DrainDiagnostics(std::vector<cNetworkEvent>& events);
         bool Send(uint32_t peer, const std::vector<uint8_t>& data, bool reliable);
         // Promptly packetize queued traffic before a blocking map load. This
         // does not wait for delivery or change reliable ordering.

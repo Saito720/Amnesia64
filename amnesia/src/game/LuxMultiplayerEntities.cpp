@@ -30,6 +30,7 @@ void cLuxMultiplayerEntities::Reset() {
     mAnnouncedProps.clear();
     msPendingSyncError.clear();
     mLastRopes.clear();
+    mMappingDiagnostics.clear();
     mClaims.clear();mLastStates.clear();mRemovedItems.clear();mInitial.clear();mJointBreakRequests.clear();
     mPendingDiaries.clear();mpDiaryDecision=NULL;
     msPending.clear();msGranted.clear();mlToken=mlGrantedToken=0;
@@ -40,8 +41,20 @@ void cLuxMultiplayerEntities::Reset() {
 bool cLuxMultiplayerEntities::Fail(const std::string& reason) {
     auto* map=gpBase->mpMapHandler->GetCurrentMap();
     msLastError="Map '"+(map?map->GetName():tString("<none>"))+"': "+reason;
-    Warning("Multiplayer entity synchronization failed: %s\n",msLastError.c_str());
+    mpSession->LogDiagnosticWarning("entities","synchronization failed: %s",msLastError.c_str());
     return false;
+}
+void cLuxMultiplayerEntities::DiagnoseMapping(const std::string& description,bool found) {
+    auto previous=mMappingDiagnostics.find(description);
+    if(found) {
+        if(previous!=mMappingDiagnostics.end() && !previous->second) {
+            previous->second=true;
+            mpSession->LogDiagnosticLimited("entity-mapping","mapping recovered: %s",description.c_str());
+        }
+    } else if(previous==mMappingDiagnostics.end() && mMappingDiagnostics.size()<16) {
+        mMappingDiagnostics[description]=false;
+        mpSession->LogDiagnosticLimited("entity-mapping","snapshot ignored; local mapping unavailable: %s",description.c_str());
+    }
 }
 bool cLuxMultiplayerEntities::SeedCurrentMapItems(const std::vector<uint8_t>& mapBytes,std::string& error) {
     std::vector<tString> items;
@@ -237,26 +250,32 @@ bool cLuxMultiplayerEntities::Apply(const std::vector<uint8_t>& data) {
     if(state.epoch!=mpSession->GetMapEpoch()) return true;
     cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();
     iLuxEntity* entity=map?map->GetEntityByID(static_cast<int>(state.id)):NULL;
-    if(!entity || entity->GetName()!=state.name || entity->GetDestroyMe()) return true;
+    if(!entity || entity->GetName()!=state.name || entity->GetDestroyMe()) {
+        DiagnoseMapping("entity '"+state.name+"' id="+std::to_string(state.id),false);return true;
+    }
+    if(!mMappingDiagnostics.empty()) DiagnoseMapping("entity '"+state.name+"' id="+std::to_string(state.id),true);
     auto removed=mRemovedItems.find(state.name);
     if(removed!=mRemovedItems.end()) {
         if(removed->second==entity->GetRuntimeID()) return true;
         mRemovedItems.erase(removed);
     }
-    if(entity->GetEntityType()!=eLuxEntityType_Prop) return false;
+    if(entity->GetEntityType()!=eLuxEntityType_Prop) return Fail("Native snapshot targets a non-prop '"+state.name+"'.");
     iLuxProp* prop=static_cast<iLuxProp*>(entity);
     if((state.kind==LampState && prop->GetPropType()!=eLuxPropType_Lamp) ||
        (state.kind==DoorState && prop->GetPropType()!=eLuxPropType_SwingDoor) ||
        (state.kind==ButtonState && prop->GetPropType()!=eLuxPropType_Button) ||
-       (state.kind==ChestState && prop->GetPropType()!=eLuxPropType_Chest)) return false;
+       (state.kind==ChestState && prop->GetPropType()!=eLuxPropType_Chest))
+        return Fail("Native type mismatch for '"+state.name+"' id="+std::to_string(state.id)+
+            " wireKind="+std::to_string(state.kind)+" localPropType="+std::to_string(prop->GetPropType())+".");
     // Validate all referenced constraints before changing any entity state.
     for(const auto& j:state.joints) {
-        if(j.index>=prop->mvJoints.size()) return false;
+        if(j.index>=prop->mvJoints.size()) return Fail("Missing joint "+std::to_string(j.index)+" for '"+state.name+"'.");
         auto* joint=prop->mvJoints[j.index];
         // A local break can precede the host's matching deletion. Never revive
         // that slot, or reject a preceding live snapshot for the missing joint.
         if(joint && ((j.kind==1 && joint->GetType()!=ePhysicsJointType_Hinge) ||
-           (j.kind==2 && joint->GetType()!=ePhysicsJointType_Slider))) return false;
+           (j.kind==2 && joint->GetType()!=ePhysicsJointType_Slider)))
+            return Fail("Joint type mismatch at "+std::to_string(j.index)+" for '"+state.name+"'.");
     }
     for(const auto& j:state.joints) {
         if(j.kind==0) mJointBreakRequests.erase(std::make_pair(prop->GetRuntimeID(),j.index));
@@ -553,11 +572,15 @@ bool cLuxMultiplayerEntities::SendInitialState(uint32_t peer) {
             queue.push_back({entity->GetID(),entity->GetName()});
         if(queue.size()>8192) {mInitial.erase(peer);return Fail("Initial native entity state exceeds 8192 entries.");}
     }
+    mpSession->LogDiagnostic("entities","baseline queued peer=%u definitions=%zu nativeStates=%zu",peer,definitions.size(),queue.size());
     return true;
 }
 void cLuxMultiplayerEntities::Update(float dt) {
     if(mpSession->IsClient()) {
-        if(!msPending.empty() && (mfPendingTime+=dt)>20) {mpSession->RejectPeer(0,"The host did not respond to an item or lamp interaction.");return;}
+        if(!msPending.empty() && (mfPendingTime+=dt)>20) {
+            mpSession->LogDiagnostic("entities","interaction response timeout entity=%s id=%u waited=%.1fs",msPending.c_str(),mlPendingEntityID,mfPendingTime);
+            mpSession->RejectPeer(0,"The host did not respond to an item or lamp interaction.");return;
+        }
         for(auto& pending:mPendingDiaries) if((pending.second.age+=dt)>20) {
             mpSession->RejectPeer(0,"The host did not confirm the diary pickup.");return;
         }
@@ -587,7 +610,10 @@ void cLuxMultiplayerEntities::Update(float dt) {
             if(!bytes.empty() && !mpSession->Send(it->first,bytes,true)) break;
             queue.pop_front();
         }
-        if(queue.empty()) it=mInitial.erase(it);else ++it;
+        if(queue.empty()) {
+            mpSession->LogDiagnostic("entities","baseline sent peer=%u",it->first);
+            it=mInitial.erase(it);
+        } else ++it;
     }
     mfGroundTruthTime+=dt;
     mfSnapshotTime+=dt;if(mfSnapshotTime<0.1f) return;mfSnapshotTime=0;
@@ -611,7 +637,8 @@ bool cLuxMultiplayerEntities::HandleMessage(uint32_t peer,const std::vector<uint
         Reader reader(data);RopeSnapshot s;if(!ReadRope(reader,s)) return false;
         auto* map=gpBase->mpMapHandler->GetCurrentMap();
         auto* rope=map?map->GetPhysicsWorld()->GetRope(s.name):NULL;
-        if(!rope) return true;
+        if(!rope) {DiagnoseMapping("rope '"+s.name+"'",false);return true;}
+        if(!mMappingDiagnostics.empty()) DiagnoseMapping("rope '"+s.name+"'",true);
         rope->SetMinTotalLength(s.min);rope->SetMaxTotalLength(s.max);rope->SetTotalLength(s.length);
         rope->SetMotorWantedLength(s.wanted);rope->SetMotorSpeedMul(s.mul);
         rope->SetMotorMinSpeed(s.minSpeed);rope->SetMotorMaxSpeed(s.maxSpeed);rope->SetMotorActive(s.motor!=0);

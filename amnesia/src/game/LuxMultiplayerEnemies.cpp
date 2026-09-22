@@ -160,17 +160,27 @@ void cLuxMultiplayerEnemies::RemoveReplica(iLuxEnemy* enemy) {
 bool cLuxMultiplayerEnemies::Apply(Replica& replica, iLuxEnemy* enemy, bool snap) {
     using namespace LuxEnemyWire;
     const State& state = replica.state;
-    if(uint8_t(enemy->GetEnemyType()) != state.type || state.state >= eLuxEnemyState_LastEnum) return false;
+    const auto incompatible=[&](const tString& reason) {
+        mpSession->LogDiagnostic("enemies","replica rejected name=%s generation=%llu: %s",
+            state.name.c_str(),static_cast<unsigned long long>(state.generation),reason.c_str());return false;
+    };
+    if(uint8_t(enemy->GetEnemyType()) != state.type || state.state >= eLuxEnemyState_LastEnum)
+        return incompatible("enemy type or state does not match the installed entity");
     cMeshEntity* mesh = enemy->GetMeshEntity();
     // Validate every resource reference before applying any state. An installed
     // .ent with incompatible animation names must not leave a partial replica.
     for(const auto& animation : state.animations)
-        if(!mesh->GetAnimationStateFromName(animation.name)) return false;
-    if(!state.currentAnimation.empty() && !mesh->GetAnimationStateFromName(state.currentAnimation)) return false;
-    if(state.lights.size() != enemy->mvLights.size()) return false;
+        if(!mesh->GetAnimationStateFromName(animation.name)) return incompatible("missing animation '"+animation.name+"'");
+    if(!state.currentAnimation.empty() && !mesh->GetAnimationStateFromName(state.currentAnimation))
+        return incompatible("missing current animation '"+state.currentAnimation+"'");
+    if(state.lights.size() != enemy->mvLights.size()) return incompatible("light count differs from host");
     for(size_t i=0;i<state.lights.size();++i)
-        if(state.lights[i].name != enemy->mvLights[i]->GetName()) return false;
+        if(state.lights[i].name != enemy->mvLights[i]->GetName()) return incompatible("light name mismatch for '"+state.lights[i].name+"'");
     const bool first = !replica.applied || replica.runtime != enemy->GetRuntimeID();
+    if(replica.waitLogged) {
+        mpSession->LogDiagnosticLimited("enemy-wait","replica available name=%s waited=%.2fs",state.name.c_str(),replica.pendingTime);
+        replica.waitLogged=false;
+    }
     PrepareReplica(enemy);
     replica.startPosition = enemy->GetCharacterBody()->GetPosition();
     replica.startYaw = enemy->GetCharacterBody()->GetYaw();
@@ -341,17 +351,25 @@ bool cLuxMultiplayerEnemies::SendInitialState(uint32_t peer) {
         auto state = Capture(enemy); state.sequence = ++mlSequence; state.flags |= LuxEnemyWire::Baseline;
         auto bytes = LuxEnemyWire::EncodeState(state);
         if(state.animations.size() > LuxEnemyWire::MaxAnimations || state.lights.size() > LuxEnemyWire::MaxLights ||
-           bytes.size() > LuxEnemyWire::MaxPacketBytes) return false;
+           bytes.size() > LuxEnemyWire::MaxPacketBytes) {
+            mpSession->LogDiagnostic("enemies","baseline exceeds limits peer=%u name=%s bytes=%zu animations=%zu lights=%zu",
+                peer,state.name.c_str(),bytes.size(),state.animations.size(),state.lights.size());return false;
+        }
         total += bytes.size(); queue.push_back(bytes);
-        if(queue.size() > LuxEnemyWire::MaxEnemies || total > MaxInitialBytes) return false;
+        if(queue.size() > LuxEnemyWire::MaxEnemies || total > MaxInitialBytes) {
+            mpSession->LogDiagnostic("enemies","baseline capacity exceeded peer=%u states=%zu bytes=%zu",peer,queue.size(),total);return false;
+        }
     }
     for(const auto& item : mRemoved) {
         auto removed = item.second; removed.sequence = ++mlSequence;
         auto bytes = LuxEnemyWire::EncodeRemoved(removed);
         total += bytes.size(); queue.push_back(bytes);
-        if(queue.size() > LuxEnemyWire::MaxEnemies || total > MaxInitialBytes) return false;
+        if(queue.size() > LuxEnemyWire::MaxEnemies || total > MaxInitialBytes) {
+            mpSession->LogDiagnostic("enemies","removal baseline capacity exceeded peer=%u states=%zu bytes=%zu",peer,queue.size(),total);return false;
+        }
     }
     mInitial[peer] = queue;
+    mpSession->LogDiagnostic("enemies","baseline queued peer=%u states=%zu bytes=%zu",peer,queue.size(),total);
     return true;
 }
 
@@ -371,7 +389,10 @@ void cLuxMultiplayerEnemies::Update(float dt) {
                 if(!mpSession->Send(it->first,queue.front(),true)) break;
                 queue.pop_front();
             }
-            if(queue.empty()) it = mInitial.erase(it); else ++it;
+            if(queue.empty()) {
+                mpSession->LogDiagnostic("enemies","baseline sent peer=%u",it->first);
+                it=mInitial.erase(it);
+            } else ++it;
         }
         return;
     }
@@ -390,6 +411,12 @@ void cLuxMultiplayerEnemies::Update(float dt) {
         }
         if(!replica.confirmed || !enemy || (replica.waitingRuntime && enemy->GetRuntimeID() == replica.waitingRuntime)) {
             replica.pendingTime += dt;
+            if(replica.pendingTime>=2 && !replica.waitLogged) {
+                replica.waitLogged=true;
+                mpSession->LogDiagnosticLimited("enemy-wait","waiting for replica name=%s baseline=%d localEntity=%d replacement=%d generation=%llu",
+                    entry.first.c_str(),replica.confirmed,enemy!=NULL,replica.waitingRuntime!=0,
+                    static_cast<unsigned long long>(replica.state.generation));
+            }
             if(replica.pendingTime > PendingTimeout) {
                 mpSession->Stop("The host enemy was not created by the map or its script: " + entry.first); return;
             }

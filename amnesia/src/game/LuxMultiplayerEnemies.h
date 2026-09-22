@@ -33,6 +33,7 @@ private:
         cMatrixf startMesh = cMatrixf::Identity;
         float startYaw = 0, blendTime = 0, pendingTime = 0;
         bool received = false, applied = false, removed = false, confirmed = false;
+        bool waitLogged = false;
     };
     iLuxEnemy* Find(const tString& name) const;
     LuxEnemyWire::State Capture(iLuxEnemy* enemy);

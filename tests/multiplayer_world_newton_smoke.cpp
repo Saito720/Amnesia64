@@ -197,6 +197,10 @@ public:
     const hpl::cSteamAvatarImage* GetPlayerSteamAvatar(uint32_t) { return NULL; }
     uint32_t GetLocalPeerId() const { return peer; }
     uint32_t GetMapEpoch() const { return 7; }
+    void LogDiagnostic(const char*,const char*,...) const {}
+    void LogDiagnosticLimited(const char*,const char*,...) const {}
+    void LogDiagnosticWarning(const char*,const char*,...) const {}
+    void LogDiagnosticWarningLimited(const char*,const char*,...) const {}
     bool Send(uint32_t destination, const std::vector<uint8_t>& bytes, bool reliable)
     {
         if (blocked) return false;

@@ -21,6 +21,12 @@ try {
         if($LASTEXITCODE -ne 0) { throw 'Steam metadata test build failed.' }
         & (Join-Path $output 'SteamValidationTest.exe')
         if($LASTEXITCODE -ne 0) { throw 'Steam metadata tests failed.' }
+        # Drive the real standalone transport with deterministic SDK callback/data
+        # scheduling. This requires neither Steam nor a live network connection.
+        & $context.Compiler /nologo /EHsc /std:c++14 /MD /W4 /WX /D_CRT_SECURE_NO_WARNINGS "/I$(Join-Path $PSScriptRoot 'stubs')" "/I$(Join-Path $workspace 'HPL2/core/include')" (Join-Path $PSScriptRoot 'NetworkTransportOrderingTest.cpp') (Join-Path $workspace 'HPL2/core/sources/network/NetworkTransport.cpp') /Fe:NetworkTransportOrderingTest.exe /link ws2_32.lib
+        if($LASTEXITCODE -ne 0) { throw 'Transport ordering test build failed.' }
+        & (Join-Path $output 'NetworkTransportOrderingTest.exe')
+        if($LASTEXITCODE -ne 0) { throw 'Transport ordering test failed.' }
         foreach($test in @('SteamTransportTest','NetworkTransportTest')) {
             & $context.Compiler /nologo /EHsc /std:c++14 /MD /W3 /D_CRT_SECURE_NO_WARNINGS /DHPL_USE_STEAMWORKS "/DHPL_STEAM_APP_ID=$appid" "/I$(Join-Path $workspace 'HPL2/core/include')" "/I$(Join-Path $sdk 'public')" (Join-Path $PSScriptRoot "$test.cpp") (Join-Path $workspace 'HPL2/core/sources/network/NetworkTransport.cpp') "/Fe:$test.exe" /link (Join-Path $sdk 'redistributable_bin/win64/steam_api64.lib') ws2_32.lib
             if($LASTEXITCODE -ne 0) { throw "$test build failed." }

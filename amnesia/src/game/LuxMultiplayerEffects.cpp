@@ -190,6 +190,9 @@ void cLuxMultiplayerEffects::PostUpdate(float dt) {
                 local.resourcesValid=LuxValidateMultiplayerAsset(local.effect.asset,
                     local.effect.kind==luxfx::Sound?"snt":"ps",error);
                 local.resourcesChecked=true;
+                if(!local.resourcesValid)
+                    mpSession->LogDiagnosticLimited("effect-resource","local effect omitted name=%s asset=%s: %s",
+                        local.effect.name.c_str(),local.effect.asset.c_str(),error.c_str());
             }
             if(!local.resourcesValid) {++it;continue;}
             // An effect destroyed before its first finalized sample has no
@@ -197,7 +200,11 @@ void cLuxMultiplayerEffects::PostUpdate(float dt) {
             if((local.effect.flags&luxfx::Stopped) || (local.particle && local.particle->IsDead())) {++it;continue;}
             local.effect.id=NextID();local.effect.operation=luxfx::Create;
             auto bytes=luxfx::Packet(local.effect);luxnet::Reader reader(bytes);luxfx::Effect valid;
-            if(!luxfx::Read(reader,valid)) {++it;continue;}
+            if(!luxfx::Read(reader,valid)) {
+                mpSession->LogDiagnosticLimited("effect-state","local effect cannot be encoded name=%s asset=%s kind=%u",
+                    local.effect.name.c_str(),local.effect.asset.c_str(),unsigned(local.effect.kind));
+                ++it;continue;
+            }
             Send(local.effect);local.published=true;local.elapsed=0;
             local.effect.operation=luxfx::State;local.last=luxfx::Packet(local.effect);
         } else local.elapsed+=dt;
@@ -283,7 +290,10 @@ bool cLuxMultiplayerEffects::HandleMessage(uint32_t peer,const std::vector<uint8
     if(mpSession->IsHost()) {
         if(effect.peer!=peer || !peer || effect.operation==luxfx::DeclareSound) return false;
         Budget& budget=mBudgets[peer];budget.bytes+=unsigned(bytes.size());++budget.packets;
-        if(budget.bytes>256*1024 || budget.packets>512 || (effect.operation==luxfx::Create && ++budget.creates>64)) return false;
+        if(budget.bytes>256*1024 || budget.packets>512 || (effect.operation==luxfx::Create && ++budget.creates>64)) {
+            mpSession->LogDiagnostic("effects","peer budget exceeded peer=%u bytes=%u packets=%u creates=%u",
+                peer,budget.bytes,budget.packets,budget.creates);return false;
+        }
     } else if(effect.peer==mpSession->GetLocalPeerId()) return true;
     const Key key(effect.peer,effect.id);auto found=mRemote.find(key);
     if(effect.operation==luxfx::Create || effect.operation==luxfx::DeclareSound) {
@@ -297,7 +307,11 @@ bool cLuxMultiplayerEffects::HandleMessage(uint32_t peer,const std::vector<uint8
         // The host's world stream has the same bound as its local capture;
         // player-authored streams have a tighter per-player allowance.
         if(count>=(effect.peer==0?4096u:256u) || mRemote.size()>=8192) return false;
-        Remote remote;remote.effect=effect;remote.initialPosition=Position(effect);if(!Apply(remote,true,error)) return false;
+        Remote remote;remote.effect=effect;remote.initialPosition=Position(effect);
+        if(!Apply(remote,true,error)) {
+            mpSession->LogDiagnostic("effects","replay failed owner=%u id=%u kind=%u name=%s asset=%s: %s",
+                effect.peer,effect.id,unsigned(effect.kind),effect.name.c_str(),effect.asset.c_str(),error.c_str());return false;
+        }
         if(effect.kind!=luxfx::PlayerSound) mRemote[key]=remote;
     } else {
         // Gracefully ignore a late update/removal for a rejected old position.
@@ -325,6 +339,7 @@ void cLuxMultiplayerEffects::OnPeerDisconnected(uint32_t peer) {
     mBudgets.erase(peer);mLastCreated.erase(peer);
 }
 bool cLuxMultiplayerEffects::SendInitialState(uint32_t peer) {
+    size_t sent=0;
     auto prepare=[](luxfx::Effect& effect) {
         effect.operation=luxfx::Create;
         if(effect.kind!=luxfx::Sound) return true;
@@ -337,12 +352,21 @@ bool cLuxMultiplayerEffects::SendInitialState(uint32_t peer) {
     for(const auto& entry:mLocal) if(entry.second.published) {
         auto effect=entry.second.effect;
         if(!prepare(effect)) continue;
-        if(!mpSession->Send(peer,luxfx::Packet(effect),true)) return false;
+        if(!mpSession->Send(peer,luxfx::Packet(effect),true)) {
+            mpSession->LogDiagnostic("effects","baseline send failed peer=%u sent=%zu owner=%u id=%u asset=%s",
+                peer,sent,effect.peer,effect.id,effect.asset.c_str());return false;
+        }
+        ++sent;
     }
     for(const auto& entry:mRemote) {
         auto effect=entry.second.effect;if(effect.peer==peer) continue;
         if((effect.kind==luxfx::Sound && !entry.second.sound) || (effect.kind==luxfx::Particle && !entry.second.particle) || !prepare(effect)) continue;
-        if(!mpSession->Send(peer,luxfx::Packet(effect),true)) return false;
+        if(!mpSession->Send(peer,luxfx::Packet(effect),true)) {
+            mpSession->LogDiagnostic("effects","relayed baseline send failed peer=%u sent=%zu owner=%u id=%u asset=%s",
+                peer,sent,effect.peer,effect.id,effect.asset.c_str());return false;
+        }
+        ++sent;
     }
+    mpSession->LogDiagnostic("effects","baseline sent peer=%u effects=%zu",peer,sent);
     return true;
 }

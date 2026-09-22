@@ -13,6 +13,7 @@ struct cScriptResourceValidation {
     bool hostEnemyCommand=false;
     std::string& error;
     uint32_t optionalMask=0, unavailableMask=0, checkedMask=0;
+    uint32_t commandId=0;
     unsigned nextResource=0;
     bool overflow=false;
     cScriptResourceValidation(bool execute,std::string& message):apply(execute),error(message) {}
@@ -35,11 +36,18 @@ struct cScriptResourceValidation {
         return true;
     }
     bool Read(luxnet::Reader& r);
+    bool Result(bool valid,const luxnet::Reader& r) {
+        if(!valid && error.empty())
+            error="Malformed multiplayer script command "+std::to_string(commandId)+
+                " at byte "+std::to_string(r.pos)+".";
+        return valid;
+    }
 };
 bool cScriptResourceValidation::Read(luxnet::Reader& r) {
     cScriptResourceValidation& resources=*this;
     error.clear();
     uint32_t id=r.U32();
+    commandId=id&~LuxScriptOptionalResources;
     if(id & LuxScriptOptionalResources) {
         resources.optionalMask=r.U32();id &= ~LuxScriptOptionalResources;
         if(!r.valid || !resources.optionalMask) return false;
@@ -531,7 +539,9 @@ bool cScriptResourceValidation::Read(luxnet::Reader& r) {
         // Keep the validation before touching XML, but skip unusable hints
         // without failing the session. Actual playback is still validated.
         if(!resources.Asset(asSoundFile,"snt",error)) {
-            if(apply) hpl::Warning("Skipping optional multiplayer sound preload '%s': %s\n",asSoundFile.c_str(),error.c_str());
+            if(apply && gpBase->mpMultiplayer)
+                gpBase->mpMultiplayer->LogDiagnosticWarningLimited("script-preload",
+                    "Skipping optional sound preload '%s': %s",asSoundFile.c_str(),error.c_str());
             error.clear();return resources.Finish();
         }
         return resources.Invoke([&] { cLuxScriptHandler::PreloadSound(asSoundFile); });
@@ -1147,9 +1157,10 @@ bool LuxValidateMultiplayerScriptEffect(luxnet::Reader& r, std::string& error,ui
     cScriptResourceValidation resources(false,error);
     const bool valid=resources.Read(r);
     if(unavailableResources) *unavailableResources=resources.unavailableMask;
-    return valid;
+    return resources.Result(valid,r);
 }
 bool LuxApplyMultiplayerScriptEffect(luxnet::Reader& r, std::string& error) {
     cScriptResourceValidation resources(true,error);
-    return resources.Read(r);
+    const bool valid=resources.Read(r);
+    return resources.Result(valid,r);
 }

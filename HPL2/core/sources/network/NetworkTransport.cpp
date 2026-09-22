@@ -15,8 +15,10 @@
 #endif
 #include <steam/steamnetworkingsockets.h>
 #include <steam/isteamnetworkingutils.h>
+#include "NetworkTransportDiagnostics.h"
 #include <algorithm>
 #include <map>
+#include <set>
 #include <utility>
 
 namespace hpl
@@ -32,6 +34,7 @@ namespace hpl
         HSteamListenSocket listen = k_HSteamListenSocket_Invalid;
         HSteamNetPollGroup group = k_HSteamNetPollGroup_Invalid;
         std::map<uint32_t, HSteamNetConnection> peers;
+        std::set<HSteamNetConnection> diagnosticConnected, diagnosticReceived, diagnosticSendFailed;
         std::vector<cNetworkEvent> pending;
 
         static unsigned users;
@@ -89,9 +92,20 @@ namespace hpl
             event.reason = reason;
             pending.push_back(std::move(event));
         }
+        void ForgetConnectionDiagnostics(HSteamNetConnection connection)
+        {
+            diagnosticConnected.erase(connection); diagnosticReceived.erase(connection); diagnosticSendFailed.erase(connection);
+        }
+        void RejectIncoming(HSteamNetConnection connection, int code, const std::string& reason)
+        {
+            Queue(eNetworkEventType::Diagnostic, UINT32_MAX, "Direct incoming connection rejected: " +
+                network_detail::ConnectionText(connection, UINT32_MAX) + " end=" + std::to_string(code) + " reason='" + reason + "'");
+            SteamNetworkingSockets()->CloseConnection(connection, code, reason.c_str(), false);
+        }
 
         static void StatusChanged(SteamNetConnectionStatusChangedCallback_t* info)
         {
+            if(!info) return;
             auto found = connections.find(info->m_hConn);
             cImpl* owner = found == connections.end() ? nullptr : found->second;
             if(!owner && info->m_info.m_hListenSocket != k_HSteamListenSocket_Invalid)
@@ -99,39 +113,68 @@ namespace hpl
                 const auto listener = listeners.find(info->m_info.m_hListenSocket);
                 if(listener != listeners.end()) owner = listener->second;
             }
-            if(!owner) return;
+            if(!owner || !owner->active) return;
             ISteamNetworkingSockets* api = SteamNetworkingSockets();
+            const uint32_t diagnosticPeer = owner->PeerFor(info->m_hConn);
+            owner->Queue(eNetworkEventType::Diagnostic, diagnosticPeer, "Direct status callback: " +
+                network_detail::ConnectionText(info->m_hConn, diagnosticPeer) + " " +
+                network_detail::ConnectionStateText(info->m_eOldState) + " -> " + network_detail::ConnectionStateText(info->m_info.m_eState) +
+                " end=" + std::to_string(info->m_info.m_eEndReason) + " reason='" +
+                network_detail::DiagnosticText(info->m_info.m_szEndDebug, sizeof(info->m_info.m_szEndDebug) - 1) + "'");
             if(info->m_info.m_eState == k_ESteamNetworkingConnectionState_Connecting && owner->host)
             {
+                if(owner->PeerFor(info->m_hConn) != UINT32_MAX) return;
                 // Count pending handshakes as well as established connections.
                 if(owner->peers.size() >= owner->maxPeers || owner->nextPeer == UINT32_MAX)
                 {
-                    api->CloseConnection(info->m_hConn, 1001, "The multiplayer session is full.", false);
+                    owner->RejectIncoming(info->m_hConn, 1001, "The multiplayer session is full.");
                     return;
                 }
-                if(api->AcceptConnection(info->m_hConn) != k_EResultOK ||
-                   !api->SetConnectionPollGroup(info->m_hConn, owner->group))
+                if(api->AcceptConnection(info->m_hConn) != k_EResultOK)
                 {
-                    api->CloseConnection(info->m_hConn, 1002, "Unable to accept the connection.", false);
+                    owner->RejectIncoming(info->m_hConn, 1002, "Unable to accept the connection.");
                     return;
                 }
-                owner->peers[owner->nextPeer++] = info->m_hConn;
+                const uint32_t peer = owner->nextPeer++;
+                owner->peers[peer] = info->m_hConn;
                 connections[info->m_hConn] = owner;
+                owner->Queue(eNetworkEventType::Diagnostic, peer, "Direct incoming connection accepted: " +
+                    network_detail::ConnectionText(info->m_hConn, peer));
             }
             else if(info->m_info.m_eState == k_ESteamNetworkingConnectionState_Connected)
             {
                 const uint32_t peer = owner->PeerFor(info->m_hConn);
-                if(peer != UINT32_MAX) owner->Queue(eNetworkEventType::Connected, peer);
+                if(peer == UINT32_MAX) return;
+                // Keep messages SDK-buffered until the game can register this
+                // peer. Status callbacks can lag behind received reliable data.
+                if(!api->SetConnectionPollGroup(info->m_hConn, owner->group))
+                {
+                    const std::string error = "Unable to receive messages from the connection.";
+                    owner->Queue(eNetworkEventType::Diagnostic, peer, "Direct receive group assignment failed: " +
+                        network_detail::ConnectionText(info->m_hConn, peer));
+                    api->CloseConnection(info->m_hConn, 1002, error.c_str(), false);
+                    owner->ForgetConnectionDiagnostics(info->m_hConn);
+                    connections.erase(info->m_hConn); owner->peers.erase(peer);
+                    owner->Queue(eNetworkEventType::Disconnected, peer, error);
+                    return;
+                }
+                owner->diagnosticConnected.insert(info->m_hConn);
+                owner->Queue(eNetworkEventType::Diagnostic, peer, "Direct Connected event queued: " +
+                    network_detail::ConnectionText(info->m_hConn, peer));
+                owner->Queue(eNetworkEventType::Connected, peer);
             }
             else if(info->m_info.m_eState == k_ESteamNetworkingConnectionState_ClosedByPeer ||
                     info->m_info.m_eState == k_ESteamNetworkingConnectionState_ProblemDetectedLocally)
             {
                 const uint32_t peer = owner->PeerFor(info->m_hConn);
+                owner->Queue(eNetworkEventType::Diagnostic, peer, "Direct disconnect health: " +
+                    network_detail::ConnectionText(info->m_hConn, peer) + network_detail::ConnectionHealthText(api, info->m_hConn));
                 if(peer != UINT32_MAX)
                 {
                     owner->Queue(eNetworkEventType::Disconnected, peer, info->m_info.m_szEndDebug);
                     owner->peers.erase(peer);
                 }
+                owner->ForgetConnectionDiagnostics(info->m_hConn);
                 connections.erase(info->m_hConn);
                 api->CloseConnection(info->m_hConn, 0, nullptr, false);
             }
@@ -170,6 +213,7 @@ namespace hpl
             return false;
         }
         cImpl::listeners[mpImpl->listen] = mpImpl;
+        mpImpl->Queue(eNetworkEventType::Diagnostic, 0, "Direct listener ready: remote_capacity=" + std::to_string(maxPeers));
         return true;
     }
 
@@ -233,12 +277,7 @@ namespace hpl
         }
         mpImpl->peers[0] = connection;
         cImpl::connections[connection] = mpImpl;
-        if(!SteamNetworkingSockets()->SetConnectionPollGroup(connection, mpImpl->group))
-        {
-            error = "Unable to receive messages from the host.";
-            Stop();
-            return false;
-        }
+        mpImpl->Queue(eNetworkEventType::Diagnostic, 0, "Direct connection started: " + network_detail::ConnectionText(connection, 0));
         return true;
     }
 
@@ -283,11 +322,30 @@ namespace hpl
                 event.type = eNetworkEventType::Message;
                 event.peer = peer;
                 const uint8_t* bytes = static_cast<const uint8_t*>(message->m_pData);
+                if(mpImpl->diagnosticReceived.insert(message->m_conn).second)
+                {
+                    cNetworkEvent diagnostic; diagnostic.type = eNetworkEventType::Diagnostic; diagnostic.peer = peer;
+                    diagnostic.reason = "Direct first received message: " + network_detail::ConnectionText(message->m_conn, peer) +
+                        " type=" + (message->m_cbSize ? std::to_string(static_cast<unsigned>(bytes[0])) : "empty") +
+                        " bytes=" + std::to_string(message->m_cbSize) + " connected_event_queued=" +
+                        (mpImpl->diagnosticConnected.count(message->m_conn) ? "yes" : "no");
+                    events.push_back(std::move(diagnostic));
+                }
                 if(message->m_cbSize) event.data.assign(bytes, bytes + message->m_cbSize);
                 received += event.data.size();
                 events.push_back(std::move(event));
             }
             message->Release();
+        }
+    }
+
+    void cNetworkTransport::DrainDiagnostics(std::vector<cNetworkEvent>& events)
+    {
+        for(auto it = mpImpl->pending.begin(); it != mpImpl->pending.end();)
+        {
+            if(it->type != eNetworkEventType::Diagnostic) { ++it; continue; }
+            events.push_back(std::move(*it));
+            it = mpImpl->pending.erase(it);
         }
     }
 
@@ -297,8 +355,13 @@ namespace hpl
         const auto found = mpImpl->peers.find(peer);
         if(found == mpImpl->peers.end()) return false;
         const int flags = reliable ? k_nSteamNetworkingSend_Reliable : k_nSteamNetworkingSend_UnreliableNoDelay;
-        return SteamNetworkingSockets()->SendMessageToConnection(found->second, data.data(),
-            static_cast<uint32_t>(data.size()), flags, nullptr) == k_EResultOK;
+        ISteamNetworkingSockets* api = SteamNetworkingSockets();
+        const EResult result = api->SendMessageToConnection(found->second, data.data(), static_cast<uint32_t>(data.size()), flags, nullptr);
+        if(result != k_EResultOK && (reliable || result != k_EResultIgnored) && mpImpl->diagnosticSendFailed.insert(found->second).second)
+            mpImpl->Queue(eNetworkEventType::Diagnostic, peer, "Direct send failed: " + network_detail::ConnectionText(found->second, peer) +
+                " result=" + std::to_string(static_cast<int>(result)) + " reliable=" + (reliable ? "yes" : "no") +
+                " bytes=" + std::to_string(data.size()) + network_detail::ConnectionHealthText(api, found->second));
+        return result == k_EResultOK;
     }
 
     void cNetworkTransport::Flush(uint32_t peer)
@@ -313,7 +376,10 @@ namespace hpl
     {
         const auto found = mpImpl->peers.find(peer);
         if(found == mpImpl->peers.end()) return;
+        mpImpl->Queue(eNetworkEventType::Diagnostic, peer, "Direct local disconnect: " + network_detail::ConnectionText(found->second, peer) +
+            " reason='" + network_detail::DiagnosticText(reason.c_str(), 127) + "'" + network_detail::ConnectionHealthText(SteamNetworkingSockets(), found->second));
         SteamNetworkingSockets()->CloseConnection(found->second, 1000, reason.substr(0, 127).c_str(), false);
+        mpImpl->ForgetConnectionDiagnostics(found->second);
         cImpl::connections.erase(found->second);
         mpImpl->peers.erase(found);
         mpImpl->Queue(eNetworkEventType::Disconnected, peer, reason);

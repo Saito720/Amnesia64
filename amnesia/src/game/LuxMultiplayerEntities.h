@@ -43,6 +43,8 @@ private:
     luxnet::PropDefinition CaptureDefinition(iLuxProp* prop);
     bool CaptureDefinitions(std::vector<std::vector<uint8_t> >& definitions);
     bool Fail(const std::string& reason);
+    void DiagnoseMapping(const std::string& description,bool found);
+    std::map<std::string,bool> mMappingDiagnostics;
     std::vector<std::vector<uint8_t> > mvMapBaseline;
     std::map<uint32_t,luxnet::PropIncarnationBinding> mDefinitionBindings;
     std::map<uint32_t,luxnet::PropRemoval> mAnnouncedProps;

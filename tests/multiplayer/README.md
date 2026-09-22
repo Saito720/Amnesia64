@@ -56,7 +56,10 @@ For enemy-damaged doors and native prop creation/removal, run:
 
 This uses Daniel's Room's retail Grunt and crowbar door. Real attack animation
 events must replicate both damaged meshes, the broken leaf, surviving hinges,
-and exactly one debris prop. Repeated baselines, reconnects and a Study roundtrip
+and exactly one debris prop. Each rendered submesh is checked so a hidden parent
+cannot mask an intact door panel overlapping either damage stage. Repeated native
+state updates, deactivation/reactivation, and repair must retain the correct mesh.
+Repeated baselines, reconnects and a Study roundtrip
 must retain the broken door. The debris's authored four-second lifetime is
 respected, including removal on connected clients and absence after rejoining.
 The final phases check scripted damage sound/particle creation, rapid

@@ -730,7 +730,10 @@ void cLuxProp_SwingDoor::ApplyNetworkState(float afHealth, int alDamageLevel, bo
 	mlBrokenEntityID = alBrokenEntityID;
 	SetCurrentDamageLevel(alDamageLevel);
 	ImplementedOnSetActive(IsActive());
-	SetDoorLeafVisible(!mbBroken && IsActive());
+	// Submeshes render independently of their mesh entity's visibility flag.
+	// Restore the original leaf only for the intact stage, never underneath a
+	// damaged replacement. This also restores a repaired leaf at stage zero.
+	SetDoorLeafVisible(!mbBroken && IsActive() && mlCurrentMeshEntity==0);
 }
 
 //-----------------------------------------------------------------------

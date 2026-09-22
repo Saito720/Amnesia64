@@ -27,6 +27,10 @@ and `Debug` or `Release` for x86.
 
 See [OpenAL Soft build and update details](HPL2/dependencies/sources/OPENAL_SOFT.md).
 
+Newton's internal assertion dialogs are disabled by default in Debug builds.
+See [Newton diagnostics](HPL2/dependencies/sources/Newton/README.md) to enable
+them when debugging physics; engine and game assertions remain enabled.
+
 Steamworks SDK 1.65 headers and redistributables are included under
 `HPL2/dependencies/steamworks/sdk`; the original ZIP is not needed to build.
 The default build uses the AppID in `steam_appid.txt`

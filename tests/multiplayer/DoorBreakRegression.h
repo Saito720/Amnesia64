@@ -78,6 +78,11 @@ class cDoorBreakRegression : public iWorldEffectCallback {
         if(!enemy || !slab) {error="retail Grunt or door slab is missing";return false;}
         enemy->SetActive(true);enemy->SetDisabled(false);enemy->SetSanityDecreaseActive(false);
         enemy->SetDisableTriggers(true);enemy->ClearPatrolNodes();
+        // Keep the parked players in activation range as their network poses
+        // settle. Trigger suppression does not block PlayerOutOfRange, which
+        // would deactivate the Grunt before its native attack marker fires.
+        enemy->mfActivationDistance=1000;enemy->mbPlayerInRange=true;
+        enemy->mlstMessages.clear();
         enemy->mfForwardSpeed=enemy->mfBackwardSpeed=0;
         for(int pose=0;pose<eLuxEnemyPoseType_LastEnum;++pose)
             for(int speed=0;speed<eLuxEnemyMoveSpeed_LastEnum;++speed)
@@ -104,17 +109,72 @@ class cDoorBreakRegression : public iWorldEffectCallback {
         enemy->ChangeState(eLuxEnemyState_BreakDoor);
         return true;
     }
+    bool inspectVisuals(cLuxProp_SwingDoor* prop,tString& error,int damageLevel,bool broken) const {
+        if(!prop || !prop->GetMeshEntity()) {error="door visual fixture missing";return false;}
+        cMeshEntity* meshes[3]={prop->GetMeshEntity(),NULL,NULL};
+        auto meshIt=gpBase->mpMapHandler->GetCurrentMap()->GetWorld()->GetDynamicMeshEntityIterator();
+        while(meshIt.HasNext()) {
+            auto* mesh=meshIt.Next();
+            for(int stage=1;stage<3;++stage)
+                if(mesh->GetName()==prop->GetName()+"damage"+cString::ToString(stage)) meshes[stage]=mesh;
+        }
+        for(int stage=0;stage<3;++stage) {
+            auto* mesh=meshes[stage];
+            const bool selected=prop->IsActive() && stage==damageLevel;
+            if(!mesh || mesh->IsVisible()!=selected || mesh->IsActive()!=selected) {
+                error="door damage mesh selection disagrees at stage "+cString::ToString(stage);return false;
+            }
+            unsigned renderableCount=0;
+            for(int sub=0;sub<mesh->GetSubMeshEntityNum();++sub) {
+                auto* piece=mesh->GetSubMeshEntity(sub);
+                if(piece->GetSubMesh()->IsCollideShape()) continue;
+                ++renderableCount;
+                bool originalLeaf=false;
+                if(stage==0) for(int body=0;body<prop->GetBodyNum();++body)
+                    if(prop->GetBody(body)->GetMass()!=0 && piece->GetEntityParent()==prop->GetBody(body)) originalLeaf=true;
+                const bool visible=selected && !(broken && originalLeaf);
+                // The renderer registers each submesh separately. A hidden
+                // mesh wrapper does not prevent an explicitly visible child
+                // from overlaying the selected damage mesh.
+                if(piece->IsVisible()!=visible) {
+                    error="door renderable visibility disagrees: stage="+cString::ToString(stage)+
+                        " piece="+piece->GetName()+" expected="+cString::ToString(int(visible));return false;
+                }
+            }
+            if(!renderableCount) {error="door damage mesh has no renderable pieces";return false;}
+        }
+        return true;
+    }
+    bool replayVisualState(cLuxProp_SwingDoor* prop,tString& error) const {
+        const float health=prop->GetHealth();
+        const int damageLevel=prop->GetCurrentDamageLevel();const bool broken=prop->IsBroken();
+        const bool disableBreakable=prop->GetDisableBreakable();const int brokenEntityID=prop->GetBrokenEntityID();
+        const auto apply=[&]() {prop->ApplyNetworkState(health,damageLevel,broken,disableBreakable,brokenEntityID);};
+        if(role=="client") for(int repeat=0;repeat<2;++repeat) {
+            apply();
+            if(!inspectVisuals(prop,error,damageLevel,broken)) return false;
+        }
+        prop->SetActive(false);
+        if(!inspectVisuals(prop,error,damageLevel,broken)) return false;
+        if(role=="client") {
+            apply();
+            if(!inspectVisuals(prop,error,damageLevel,broken)) return false;
+        }
+        prop->SetActive(true);
+        if(!inspectVisuals(prop,error,damageLevel,broken)) return false;
+        if(role=="client") {
+            apply();
+            if(!inspectVisuals(prop,error,damageLevel,broken)) return false;
+        }
+        return true;
+    }
     bool inspect(tString& error,int damageLevel,bool broken,bool retainRuntime=false,bool expectDebris=true) {
         auto* prop=door();auto* map=gpBase->mpMapHandler->GetCurrentMap();
         if(!prop || !prop->GetMeshEntity()) {error="retail mansion_1 door missing";return false;}
         if(prop->GetCurrentDamageLevel()!=damageLevel || prop->IsBroken()!=broken) {
             error="native door damage level or broken flag disagrees";return false;
         }
-        auto* effect=prop->GetEffectMeshEntity();
-        if(!effect || !effect->IsVisible() || !effect->IsActive() ||
-           (damageLevel!=0 && (effect==prop->GetMeshEntity() || prop->GetMeshEntity()->IsVisible()))) {
-            error="visible damage mesh disagrees with native door state";return false;
-        }
+        if(!inspectVisuals(prop,error,damageLevel,broken)) return false;
         auto* slab=prop->GetBodyFromID(10);auto* slabMesh=prop->GetMeshEntity()->GetSubMeshEntity(0);
         auto* hinges=prop->GetMeshEntity()->GetSubMeshEntity(1);
         if(!slab || !slabMesh || !hinges || (broken && (slab->IsActive() || slabMesh->IsVisible() || slabMesh->IsActive() || !hinges->IsVisible()))) {
@@ -226,12 +286,29 @@ public:
             const float target=phase==2?65.0f:phase==3?30.0f:-10.0f;
             if(host && !acted) {
                 if(!attack(phase==4?40.0f:35.0f,error)) return fail(error,error);
+                std::printf("%s door attack started: phase=%u state=%d active=%d health=%.3f\n",
+                    role.c_str(),phase,int(grunt()->GetCurrentEnemyState()),grunt()->IsActive(),door()->GetHealth());
+                std::fflush(stdout);
                 acted=true;
             }
             if(door()->GetHealth()>target+0.01f) return 0;
             if(host) grunt()->SetActive(false);
             if(std::fabs(door()->GetHealth()-target)>0.01f) return fail(error,"one Grunt strike damaged the door more than once");
             if(!inspect(error,phase==4?0:int(phase)-1,phase==4)) {lastCheck=error;return 0;}
+            if(!replayVisualState(door(),error)) return fail(error,error);
+            if(!host && phase<4) {
+                // A repair snapshot must restore the original leaf even when
+                // the entity's active flag never changes, then allow damage
+                // to select its replacement mesh again.
+                auto* prop=door();const float health=prop->GetHealth();
+                const int damageLevel=prop->GetCurrentDamageLevel();
+                prop->ApplyNetworkState(100,0,false,prop->GetDisableBreakable(),-1);
+                if(!inspectVisuals(prop,error,0,false))
+                    return fail(error,"intact repair snapshot: "+error);
+                prop->ApplyNetworkState(health,damageLevel,false,prop->GetDisableBreakable(),-1);
+                if(!inspectVisuals(prop,error,damageLevel,false))
+                    return fail(error,"damage after repair snapshot: "+error);
+            }
             done(phase==2?"damage1.txt":phase==3?"damage2.txt":"broken.txt");
             printStatus(phase==4?"Grunt break hid the door slab, retained hinges, and replicated one debris prop":"Grunt strike replicated the retail door's damaged mesh");
             next();return 0;
@@ -336,7 +413,9 @@ public:
             if(!prop || prop->GetHealth()!=65 || prop->GetCurrentDamageLevel()!=1 || !scriptedEffects(1)) {
                 lastCheck="scripted damage snapshot or native sound/particle replication missing";return 0;
             }
-            if(!prop->GetEffectMeshEntity()->IsVisible() || nativeCallbacks["codex_script_door:Break"]!=0)
+            if(!inspectVisuals(prop,error,1,false)) return fail(error,error);
+            if(!replayVisualState(prop,error)) return fail(error,error);
+            if(nativeCallbacks["codex_script_door:Break"]!=0)
                 return fail(error,"scripted damage produced the wrong visual or break callback");
             done("script-damaged.txt");next();return 0;
         }
@@ -366,8 +445,17 @@ public:
         }
         if(phase==15) {
             if(!both("script-broken.txt")) return 0;
+            if(host && !acted) {
+                gpBase->mpMapHandler->GetCurrentMap()->RunScript("ResetProp(\"codex_script_door\");");acted=true;
+            }
+            auto* prop=scriptDoor();
+            if(!prop || prop->IsBroken() || prop->GetHealth()!=100 || prop->GetCurrentDamageLevel()!=0) return 0;
+            if(!inspectVisuals(prop,error,0,false) || !replayVisualState(prop,error)) return fail(error,error);
+            if(!scriptedEffects(3) || nativeCallbacks["codex_script_door:Break"]!=(host?2u:0u))
+                return fail(error,"door repair replayed break callbacks or effects");
+            done("script-repaired.txt");if(!both("script-repaired.txt")) return 0;
             restoreEffectObserver();
-            printStatus("Scripted door damage delivered native effects; rapid break/reset retained one debris and host-only callback creations");
+            printStatus("Door damage, repeated snapshots, activation, and repair retained exclusive rendered meshes and host-only break callbacks");
             next();return 0;
         }
         if(phase==16) {

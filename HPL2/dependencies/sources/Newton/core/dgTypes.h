@@ -136,8 +136,19 @@
 
 
 //************************************************************
-#if !(defined (_WIN_32_VER) || defined (_WIN_64_VER))
-	#define _ASSERTE(x)
+// Amnesia customization: Newton's legacy collision diagnostics can repeatedly
+// open CRT assertion dialogs. Keep the Debug runtime and other Debug code, but
+// make these private-library assertions opt-in. This header is not part of the
+// public Newton API, so engine/game assertions are unaffected.
+#ifndef NEWTON_ENABLE_ASSERTS
+	#define NEWTON_ENABLE_ASSERTS 0
+#endif
+
+#if !NEWTON_ENABLE_ASSERTS || !(defined (_WIN_32_VER) || defined (_WIN_64_VER))
+	#undef _ASSERTE
+	#undef _ASSERT
+	#define _ASSERTE(x) ((void)0)
+	#define _ASSERT(x) ((void)0)
 #endif
 
 #define __USE_CPU_FOUND__

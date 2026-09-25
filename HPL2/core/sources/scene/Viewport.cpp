@@ -66,13 +66,15 @@ namespace hpl {
 	
 	void cViewport::SetWorld(cWorld *apWorld)
 	{ 
-		if(mpWorld != NULL && mpScene->WorldExists(mpWorld))
+		// Only the listener owns the world's sound-emission state. A secondary
+		// camera must not enable another world or silence the listener's world.
+		if(mbIsListener && mpWorld != NULL && mpScene->WorldExists(mpWorld))
 		{
 			mpWorld->SetIsSoundEmitter(false);
 		}
 
 		mpWorld = apWorld;
-		if(mpWorld) mpWorld->SetIsSoundEmitter(true);
+		if(mbIsListener && mpWorld) mpWorld->SetIsSoundEmitter(true);
 
 		mpRenderSettings->ResetVariables();
 	}
@@ -108,7 +110,7 @@ namespace hpl {
 	void cViewport::RunViewportCallbackMessage(eViewportMessage aMessage)
 	{
 		tViewportCallbackListIt it = mlstCallbacks.begin();
-		for(; it != mlstCallbacks.begin(); ++it)
+		for(; it != mlstCallbacks.end(); ++it)
 		{
 			iViewportCallback *pCallback = *it;
 

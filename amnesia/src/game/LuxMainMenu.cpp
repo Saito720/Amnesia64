@@ -270,7 +270,14 @@ bool cLuxMainMenu::RequestQuit()
 		return false;
 	if(sContainer == "MainMenu" && mpGuiSet->PopUpIsActive()) return false;
 
-	if(pMultiplayer && pMultiplayer->IsWindowVisible()) pMultiplayer->ToggleWindow();
+	if(pMultiplayer && pMultiplayer->IsWindowVisible())
+	{
+		pMultiplayer->ToggleWindow();
+		// Hiding the overlay does not erase its pixels from the last frame.
+		// Redraw before the menu snapshots it, without the swap-time overlay.
+		if(sContainer != "MainMenu" && gpBase->mpMapHandler->MapIsLoaded() && !pMultiplayer->IsActive())
+			gpBase->mpHelpFuncs->RenderBackgroundScreen(true);
+	}
 	if(sContainer != "MainMenu") gpBase->mpEngine->GetUpdater()->SetContainer("MainMenu");
 	if(mbRecreateGui) return false;
 	if(mbQuitAccepted)
@@ -1371,6 +1378,7 @@ void cLuxMainMenu::CreateBackground()
 
 		if(mpBgWorld) mpViewport->SetWorld(mpBgWorld);
 		mpViewport->SetCamera(mpBgCamera);
+		if(mpBgWorld) mpScene->SetCurrentListener(mpViewport);
 	}
 }
 
@@ -1488,6 +1496,8 @@ void cLuxMainMenu::DestroyBackground()
 	if(mpBgWorld && mpBgCamera)
 	{
 		if(mpLogoGfx) mpGui->DestroyGfx(mpLogoGfx);
+
+		mpScene->SetCurrentListener(gpBase->mpMapHandler->GetViewport());
 
 		mpScene->DestroyCamera(mpBgCamera);
 		mpScene->DestroyWorld(mpBgWorld);

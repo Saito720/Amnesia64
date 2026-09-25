@@ -644,21 +644,22 @@ namespace hpl {
 
 	bool cPlatform::RunProgram( const tWString& asPath, const tWString& asParams )
 	{
-		PROCESS_INFORMATION pi;
-		STARTUPINFO si;
+		PROCESS_INFORMATION pi = {};
+		STARTUPINFO si = {};
 		
-		memset(&si,0,sizeof(si));
 		si.cb= sizeof(si);
 		si.wShowWindow = SW_SHOW;
 
-		tWString sCommandLine = asPath + _W(" ") + asParams;
+		tWString sCommandLine = _W("\"") + asPath + _W("\" ") + asParams;
 
-		bool result = CreateProcess(asPath.c_str(), (LPWSTR)sCommandLine.c_str(), NULL, NULL, false, 0, NULL, NULL, &si, &pi) == TRUE;
+		// CreateProcess may modify the command-line buffer.
+		if(!CreateProcess(asPath.c_str(), &sCommandLine[0], NULL, NULL, false, 0, NULL, NULL, &si, &pi))
+			return false;
 
 		CloseHandle(pi.hProcess);
 		CloseHandle(pi.hThread);
 
-		return result;
+		return true;
 	}
 
 	//-----------------------------------------------------------------------

@@ -4,6 +4,7 @@
 #include "LuxProp_Item.h"
 #include "LuxProp_Object.h"
 #include "LuxMultiplayerContent.h"
+#include "QuitBackgroundRegression.h"
 
 static bool StartCurrentMapHost(const cLuxMultiplayerSettings& settings,tString& error)
 {
@@ -50,6 +51,7 @@ static bool StartCurrentMapHost(const cLuxMultiplayerSettings& settings,tString&
     gpBase->mpEngine->GetResources()->AddResourceDir(sourceFolder.wstring(),false);
     if(!gpBase->StartGame(map,sourceFolder.generic_string()+"/",gpBase->msStartMapPos)) {error="could not load offline hosting fixture";return false;}
     cLuxMap* current=gpBase->mpMapHandler->GetCurrentMap();
+    if(!CheckQuitBackground(error)) return false;
     if(!LuxValidateMultiplayerCurrentMapSource(current->GetWorld(),source,error)) return false;
     // Edit only a copied byte buffer. A semantic edit must not match the live
     // world, while harmless formatting still describes its original source.

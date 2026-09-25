@@ -10,9 +10,10 @@ putting it only in the static library would allow the linker to discard it.
 Resource IDs use a separate range to avoid the game icon's IDs.
 
 The active sources are `BlackBox.cpp`, `BlackBoxUI.cpp`, and `BlackBoxReport.cpp`.
-The supplied legacy BugSlayer utilities, DLL binaries, import libraries, old
-makefiles, and Visual Studio projects are historical reference only; they are
-not used by either current build. The old `ReadMe.txt` describes that DLL build.
+The unused legacy BugSlayer utilities (including import hooks and memory-stress
+helpers), bundled DLLs/import libraries, SDK headers, and obsolete build projects
+have been removed. Historical versions remain available in Git history. Both
+current build systems use only the static implementation listed above.
 
 The adaptation replaces DLL initialization, 32-bit stack walking and pointer
 casts, unbounded report buffers, and the old process-performance registry code.

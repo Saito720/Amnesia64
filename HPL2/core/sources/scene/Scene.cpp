@@ -118,6 +118,7 @@ namespace hpl {
 
 	void cScene::DestroyViewport(cViewport* apViewPort)
 	{
+		if(mpCurrentListener == apViewPort) SetCurrentListener(NULL);
 		STLFindAndDelete(mlstViewports, apViewPort);
 	}
 

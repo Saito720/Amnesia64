@@ -15,6 +15,8 @@
 #include "graphics/PostEffect_ImageTrail.h"
 #include "scene/Scene.h"
 #include "scene/Viewport.h"
+#include "scene/World.h"
+#include "system/Platform.h"
 #include "gui/Gui.h"
 #include "gui/GuiSet.h"
 #include "system/LowLevelSystem.h"
@@ -41,6 +43,8 @@ namespace
         ++gChecks;
         if (!condition) throw std::runtime_error(message);
     }
+
+    #include "ViewportLifecycle.h"
 
     void CheckNoGlError(const char* stage)
     {
@@ -449,6 +453,7 @@ namespace
         Check(engine != NULL, "full engine creation must succeed");
         try
         {
+            TestViewportLifecycle(engine);
             SDL_Window* window = CurrentWindow();
             cGraphics* graphics = engine->GetGraphics();
             iLowLevelGraphics* lowLevel = graphics->GetLowLevel();
@@ -602,6 +607,7 @@ int hplMain(const hpl::tString&) { return 0; }
 
 int main(int argc, char** argv)
 {
+    if(argc == 2 && std::strcmp(argv[1], "--process-child") == 0) return 0;
     SDL_SetMainReady();
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
     {
@@ -612,6 +618,9 @@ int main(int argc, char** argv)
     int result = 0;
     try
     {
+#if defined(_WIN32)
+        TestProcessHandles();
+#endif
         TestWindowResize();
         TestNativeWindowResize();
         TestRelaunch();

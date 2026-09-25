@@ -91,6 +91,12 @@ close exits the application. `-QuitDirectly` checks that
 `ExitMenuDirectly=true` exits the application from a live session. Success is
 recorded only after the real engine loop returns.
 
+Before hosting, the offline fixture also opens the multiplayer overlay over
+gameplay, inventory and journal, requests quit, and inspects the captured menu
+texture for stale screen pixels. It cancels through the real No button and
+checks that the loaded map remains intact. Active multiplayer uses a live menu
+background, so this capture regression runs before the session starts.
+
 Verified with the Steamworks Debug x64 build: return-to-menu run `e16056fdb5c2`,
 direct-exit run `a843a6449e1b`, and UI run `4855c75b6a07` passed. The native
 quit runs use two local UDP peers with the Steamworks networking backend.

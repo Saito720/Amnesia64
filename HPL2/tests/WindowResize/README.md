@@ -28,6 +28,11 @@ On September 12, 2026, the Windows x64 suite passed **890 assertions** with both
 
 ## Combined game and multiplayer regression
 
+The engine run also checks viewport callback delivery, audio ownership when
+secondary cameras are attached/detached, listener changes and destruction. On
+Windows, the native suite checks successful and failed process launches for
+handle leaks; its child processes exit before initializing SDL or the engine.
+
 The [multiplayer game harness](../../../tests/multiplayer/README.md) can also exercise resizing through the real game's outer engine loop. Enable its additional cases with:
 
 ```powershell

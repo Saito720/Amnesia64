@@ -85,7 +85,7 @@ bool cLuxMultiplayerEntities::AllowPhysicsJointBreak(iLuxProp* prop,iPhysicsJoin
         if(previous!=mJointBreakRequests.end() && previous->second==token) return false;
         if(previous==mJointBreakRequests.end() && mJointBreakRequests.size()>=8192) return false;
         JointBreakState request;request.epoch=mpSession->GetMapEpoch();request.name=prop->GetName();request.id=prop->GetID();
-        request.index=slot;request.body=LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID());request.token=token;
+        request.index=slot;request.body=cLuxMultiplayerWorld::GetBodyId(body);request.token=token;
         if(mpSession->Send(0,WriteJointBreak(request),true)) mJointBreakRequests[key]=token;
         break;
     }
@@ -118,6 +118,7 @@ bool cLuxMultiplayerEntities::DeferCallback(iLuxEntity* entity) const {
 bool cLuxMultiplayerEntities::BeginInteraction(iLuxEntity* entity) {
     if(!mpSession->IsActive()) return true;
     if(!mpSession->IsReady() || !Eligible(entity)) return false;
+    if(mpSession->IsHost() && mpSession->mbMapPreparing) return false;
     const tString& name=entity->GetName();
     if(mpSession->IsHost()) {
         if(mClaims.count(entity->GetID())) return false;
@@ -344,10 +345,10 @@ PropDefinition cLuxMultiplayerEntities::CaptureDefinition(iLuxProp* prop) {
     for(int i=0;i<prop->GetBodyNum();++i) {
         auto* body=prop->GetBody(i);if(!body) continue;
         const uint32_t generation=mpSession->GetWorld()->GetBodyGeneration(body);
-        if(generation) definition.bodies.push_back({LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID()),generation});
+        if(generation) definition.bodies.push_back({cLuxMultiplayerWorld::GetBodyId(body),generation});
         else if(!prop->GetAttachmentParent() && body->GetMass()<=0) {
             PropDefinition::StaticBodyPose pose;
-            pose.id=LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID());
+            pose.id=cLuxMultiplayerWorld::GetBodyId(body);
             pose.flags=(body->GetEnabled()?LuxWorldWire::Awake:0)|(body->IsActive()?LuxWorldWire::Active:0)|
                 (body->GetGravity()?LuxWorldWire::Gravity:0)|(body->GetCollide()?LuxWorldWire::Collide:0)|
                 (body->GetCollideCharacter()?LuxWorldWire::CollideCharacter:0);
@@ -484,7 +485,7 @@ bool cLuxMultiplayerEntities::ApplyDefinition(const std::vector<uint8_t>& bytes)
             iPhysicsBody* matched=NULL;
             for(int i=0;i<prop->GetBodyNum();++i) {
                 auto* body=prop->GetBody(i);
-                if(body && LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID())==expected.id) {matched=body;break;}
+                if(body && cLuxMultiplayerWorld::GetBodyId(body)==expected.id) {matched=body;break;}
             }
             if(!matched) return fail("Missing replicated body "+std::to_string(expected.id));
             mpSession->GetWorld()->BindBodyGeneration(matched,expected.generation);
@@ -493,7 +494,7 @@ bool cLuxMultiplayerEntities::ApplyDefinition(const std::vector<uint8_t>& bytes)
             iPhysicsBody* matched=NULL;
             for(int i=0;i<prop->GetBodyNum();++i) {
                 auto* body=prop->GetBody(i);
-                if(body && LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID())==pose.id) {matched=body;break;}
+                if(body && cLuxMultiplayerWorld::GetBodyId(body)==pose.id) {matched=body;break;}
             }
             if(!matched) return fail("Missing static body "+std::to_string(pose.id));
             // A current dynamic pose may overtake a historical static recipe.
@@ -657,7 +658,7 @@ bool cLuxMultiplayerEntities::HandleMessage(uint32_t peer,const std::vector<uint
         iPhysicsBody* endpoints[]={joint->GetChildBody(),joint->GetParentBody()};
         for(auto* endpoint:endpoints)
             if(endpoint && endpoint->GetUserData()==prop && endpoint->GetMass()>0 &&
-               LuxWorldWire::BodyId(endpoint->GetName(),endpoint->GetUniqueID())==request.body) body=endpoint;
+               cLuxMultiplayerWorld::GetBodyId(endpoint)==request.body) body=endpoint;
         uint32_t owner=0,token=0;
         if(!body || !mpSession->GetWorld()->GetSimulationLease(body,owner,token) || owner!=peer || token!=request.token) return true;
         // Packet handling occurs outside Newton's joint traversal. Preserve the
@@ -677,7 +678,7 @@ bool cLuxMultiplayerEntities::HandleMessage(uint32_t peer,const std::vector<uint
     if(mpSession->IsHost() && type==NativeRequest) {
         if(!r.Done()) return false;
         const auto& players=mpSession->GetWorld()->GetRemotePlayers();auto player=players.find(peer);
-        bool allow=Eligible(entity) && !mClaims.count(id) && player!=players.end() &&
+        bool allow=!mpSession->mbMapPreparing && Eligible(entity) && !mClaims.count(id) && player!=players.end() &&
             player->second.age<=2 && (player->second.gameplay.flags&LuxWorldWire::PlayerAlive);
         if(allow) {
             allow=false;

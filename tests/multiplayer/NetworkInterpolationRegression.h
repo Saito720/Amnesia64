@@ -28,7 +28,10 @@ inline bool RunNetworkInterpolationRegression(tString& error)
     body->AddChild(&descendant);
     descendant.SetPosition(cVector3f(0, 1, 0));
     replication->RefreshBodies();
-    const uint64_t id = LuxWorldWire::BodyId(body->GetName(), body->GetUniqueID());
+    // Client bodies acquire their generation from the host. This fixture calls
+    // ApplyBody directly, so establish the same valid nonzero incarnation first.
+    replication->BindBodyGeneration(body, 1);
+    const uint64_t id = cLuxMultiplayerWorld::GetBodyId(body);
     iEntity3D::BeginRenderInterpolation(1);
     descendant.GetRenderWorldMatrix();
     iEntity3D::EndRenderInterpolation();

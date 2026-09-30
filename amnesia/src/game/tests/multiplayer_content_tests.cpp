@@ -21,6 +21,7 @@ static std::vector<uint8_t> Bytes(const std::string& text) { return std::vector<
 #include "MultiplayerCacheMetricsTests.h"
 #include "MultiplayerCachePathTests.h"
 #include "MultiplayerFBXTests.h"
+#include "MultiplayerDecalTests.h"
 static void TestMapCache(const tWString& logPath) {
     const auto parent=std::filesystem::path(logPath).parent_path();
     tWString root;
@@ -112,8 +113,11 @@ static void TestDependencyBudget(cResources* resources,const tWString& logPath) 
 int hplMain(const tString&) { return 0; }
 int main(int argc, char** argv)
 {
-    Require(argc == 2 || argc==3, "provide the absolute test log path and optional --cache-only");
+    Require(argc == 2 || argc==3, "provide the absolute test log path and optional --cache-only or --decal-parser-only");
     SetLogFile(cString::To16Char(argv[1]));
+    TestDecalMeshParser();
+    TestRetailDecalGeometry();
+    if(argc==3 && tString(argv[2])=="--decal-parser-only") return 0;
     TestMapCache(cString::To16Char(argv[1]));
     TestMapCacheMetrics(cString::To16Char(argv[1]));
     TestMapCachePaths(cString::To16Char(argv[1]));
@@ -127,6 +131,7 @@ int main(int argc, char** argv)
     Require(engine != nullptr, "create engine");
     SDL_HideWindow(SDL_GL_GetCurrentWindow());
     cResources* resources = engine->GetResources();
+    TestDecalMapAndLoader(resources);
     TestDependencyBudget(resources,cString::To16Char(argv[1]));
     TestFBX(resources, engine->GetGraphics()->GetLowLevel(), cString::To16Char(argv[1]));
     Require(resources->LoadResourceDirsFile("resources.cfg"), "load retail resource directories");

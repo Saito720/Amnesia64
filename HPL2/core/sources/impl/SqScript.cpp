@@ -29,6 +29,7 @@
 
 namespace hpl {
 	bool IsScriptExecuting() { return asGetActiveContext() != NULL; }
+	const void* GetActiveScriptContext() { return asGetActiveContext(); }
 
 	//////////////////////////////////////////////////////////////////////////
 	// PUBLIC DATA

@@ -105,7 +105,7 @@ public:
         }
         if(phase==3) {
             if(!exists("host-joint-baseline.txt") || age<2300 ||
-               world->mBodyLeases.count(LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID()))) return 0;
+               world->mBodyLeases.count(cLuxMultiplayerWorld::GetBodyId(body))) return 0;
             if(body->GetJointNum()!=0 || !savedBroken(prop) || destructions!=2) return fail(error,"periodic state or baseline revived a deleted joint");
             // Repeated reliable deletion is harmless on a client that has
             // already processed it (including joints other than hinge/slider).
@@ -157,7 +157,7 @@ public:
                 // a slide controller whose constraint no longer exists.
                 LuxWorldWire::Writer grant(LuxWorldWire::LeaseGrant,session->GetMapEpoch());
                 grant.U32(session->GetLocalPeerId());grant.U32(0x70000001);grant.U32(request);grant.U8(0);grant.U8(1);
-                grant.U64(LuxWorldWire::BodyId(drawer->GetName(),drawer->GetUniqueID()));
+                grant.U64(cLuxMultiplayerWorld::GetBodyId(drawer));
                 if(!world->HandleMessage(0,grant.bytes) || gpBase->mpPlayer->GetCurrentState()!=eLuxPlayerState_Normal ||
                    world->mlPendingRequest || world->mlLocalLease || cabinet->CanInteract(drawer))
                     return fail(error,"delayed grant entered a controller with a deleted joint");
@@ -209,7 +209,7 @@ public:
                     if(joint->CheckBreakage()) return fail(error,"host follower broke a client-owned joint");
                     joint->SetBreakForce(1000000000.0f);
                     luxnet::JointBreakState request;request.epoch=session->GetMapEpoch();request.name=owned->GetName();request.id=owned->GetID();
-                    request.index=0;request.body=LuxWorldWire::BodyId(ownedBody->GetName(),ownedBody->GetUniqueID());request.token=token+1;
+                    request.index=0;request.body=cLuxMultiplayerWorld::GetBodyId(ownedBody);request.token=token+1;
                     if(!session->GetEntities()->HandleMessage(owner,luxnet::WriteJointBreak(request)) || !ownedBody->GetJointNum())
                         return fail(error,"stale lease token could break the painting");
                     request.token=token;request.body^=1;
@@ -242,7 +242,7 @@ public:
                 mark(role+"-joint-owner-deleted.txt","client-authoritative physical break reached host and observer");next();return 0;
             }
             if(!both("joint-owner-deleted.txt") || age<1500 ||
-               world->mBodyLeases.count(LuxWorldWire::BodyId(ownedBody->GetName(),ownedBody->GetUniqueID()))) return 0;
+               world->mBodyLeases.count(cLuxMultiplayerWorld::GetBodyId(ownedBody))) return 0;
             if(ownedBody->GetJointNum() || !savedBroken(owned)) return fail(error,"owner break was revived after lease release");
             mark(role+"-joint-passed.txt","joint lifecycle, pending grants, owner-authoritative breaks and follower suppression passed");next();return 0;
         }

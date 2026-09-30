@@ -54,6 +54,27 @@ struct Removed {
     uint64_t generation = 0;
     std::string name;
 };
+struct PlayerEvent {
+    uint32_t epoch=0, sequence=0, life=0;
+    float value=0, force[3]={};
+    int32_t strength=0;
+    uint8_t type=0, lethal=0;
+};
+inline bool DecodePlayerEvent(const std::vector<uint8_t>& bytes,PlayerEvent& output,uint32_t damageTypeCount) {
+    if(bytes.empty() || bytes.size()>64 || (bytes.front()!=luxnet::EnemyTerror && bytes.front()!=luxnet::EnemyDamage)) return false;
+    luxnet::Reader r(bytes);PlayerEvent event;
+    event.epoch=r.U32();event.sequence=r.U32();event.life=r.U32();event.value=r.Float();
+    if(bytes.front()==luxnet::EnemyTerror) {
+        if(!r.Done() || !event.life || event.value<0 || event.value>1) return false;
+    } else {
+        event.strength=static_cast<int32_t>(r.U32());event.type=r.U8();event.lethal=r.U8();
+        double squaredForce=0;
+        for(float& value:event.force) {value=r.Float();squaredForce+=double(value)*value;}
+        if(!r.Done() || !event.life || event.value<0 || event.value>10000 || event.strength<0 || event.strength>1000 ||
+           event.type>=damageTypeCount || event.lethal>1 || squaredForce>1000000) return false;
+    }
+    output=event;return true;
+}
 inline bool Newer(uint32_t value, uint32_t previous) {
     return value != previous && uint32_t(value - previous) < 0x80000000u;
 }

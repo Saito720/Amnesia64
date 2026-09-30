@@ -1,6 +1,7 @@
 #ifndef MULTIPLAYER_BACK_HALL_REGRESSION_H
 #define MULTIPLAYER_BACK_HALL_REGRESSION_H
 #include "LuxSavedGame.h"
+#include "SharedInventoryRegression.h"
 
 // Use the unmodified retail map: it contains legitimate props sharing names
 // while their authored IDs, positions, and (for one pair) resources differ.
@@ -11,6 +12,7 @@ class cBackHallRegression {
     uint32_t firstPeer=0,epoch=0;
     uint64_t hostSession=0;
     tString lastCheck;
+    cSharedInventoryRegression sharedInventoryRegression;
     std::map<int,uint64_t> runtimes;
     const int ids[4]={1030,1040,1047,1055};
     const char* names[4]={"Even01Slime04","Even01Slime04","Even01Slime02_3","Even01Slime02_3"};
@@ -170,6 +172,13 @@ public:
         }
         if(phase==7) {
             if(!both("rejoined.txt")) return 0;
+            if(host && !acted) {cSharedInventoryRegression::GiveEarlierMapRewards(gpBase->mpMapHandler->GetCurrentMap());acted=true;}
+            if(!exists(role+"-backhall-shared-ready.txt")) {
+                if(!cSharedInventoryRegression::EarlierMapRewardsReady()) return 0;
+                if(!host) gpBase->mpInventory->GetItem("codex_shared_health")->SetCount(2);
+                done("shared-ready.txt");
+            }
+            if(!both("shared-ready.txt")) return 0;
             // Old Archives intentionally calls ClearSavedMaps on entry. Use
             // the neighboring Study to exercise an actual saved-map revisit.
             if(host) {
@@ -181,6 +190,9 @@ public:
         if(phase==8) {
             if(exists(role+"-backhall-away.txt")) {
                 if(!both("away.txt")) return 0;
+                const int shared=sharedInventoryRegression.Update(error);
+                if(shared<0) return fail(error,error);
+                if(!shared) return 0;
                 if(host) {
                     if(!savedStates(error)) return fail(error,error);
                     gpBase->mpMapHandler->ChangeMap("09_back_hall.map","PlayerStartArea_1","","");

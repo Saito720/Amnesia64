@@ -11,6 +11,7 @@
 #include "LuxMultiplayerEntityDefinition.h"
 #include "LuxMultiplayerEffects.h"
 #include "LuxMultiplayerEnemies.h"
+#include "LuxMultiplayerEnemyProtocol.h"
 #include "LuxMultiplayerScript.h"
 #include "LuxMultiplayerInventoryPolicy.h"
 #include "LuxSteamLaunch.h"
@@ -37,6 +38,7 @@
 #include "LuxLoadScreenHandler.h"
 #include "LuxHelpFuncs.h"
 #include "LuxInventory.h"
+#include "LuxItemType.h"
 #include "LuxArea.h"
 #include <algorithm>
 #include <chrono>
@@ -664,6 +666,10 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
             if(!mpEntities->SendMapBaseline(peer)) {RejectPeer(peer,"Could not initialize restored map entities: "+mpEntities->GetLastError());return;}
             if(!SyncItemCallbacks(peer)) {RejectPeer(peer,"Could not initialize item callbacks.");return;}
             for(const auto& effect:mvScriptHistory) if(!Send(peer,effect,true)) {RejectPeer(peer,"Script state exceeded the connection queue.");return;}
+            if(!state.inventoryInitialized) {
+                if(!SendSharedInventoryState(peer)) {RejectPeer(peer,"Could not initialize retained shared inventory.");return;}
+                state.inventoryInitialized=true;
+            }
             if(!mpEntities->SendInitialState(peer)) {RejectPeer(peer,"Could not synchronize map entities: "+mpEntities->GetLastError());return;}
             if(!mpWorld->SendInitialState(peer)) {RejectPeer(peer,"World is too large for initial synchronization (32 MiB limit).");return;}
             if(!mpEnemies->SendInitialState(peer)) {RejectPeer(peer,"Could not initialize enemy state.");return;}
@@ -900,6 +906,17 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
         mbReady=true;
         SetLoadPhase(eLuxMultiplayerLoadPhase_None,"Joined "+msMapName+". Session remains live while menus are open.");return;
     }
+    if(!mbReady && (type==EnemyState || type==EnemyRemoved || type==EnemyDamage || type==EnemyTerror)) {
+        // Unreliable snapshots can overtake the reliable next-map manifest.
+        // Validate their complete wire shape, then discard without consulting
+        // an old or not-yet-created map/player replica.
+        LuxEnemyWire::State state;LuxEnemyWire::Removed removed;LuxEnemyWire::PlayerEvent event;
+        const bool valid=type==EnemyState?LuxEnemyWire::DecodeState(data,state):
+            type==EnemyRemoved?LuxEnemyWire::DecodeRemoved(data,removed):
+            LuxEnemyWire::DecodePlayerEvent(data,event,eLuxDamageType_LastEnum);
+        if(!valid) RejectPeer(0,"Invalid enemy update from host while loading.");
+        return;
+    }
     if((type==EnemyState || type==EnemyRemoved) && mbReady) {
         if(!mpEnemies->HandleMessage(peer,data)) RejectPeer(0,"Invalid enemy update from host.");return;
     }
@@ -930,6 +947,9 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
     }
     if((type==NativeGrant || type==NativeDiaryResult || type==EntityState || type==ItemRemoved || type==RopeState) && mbReady) {
         if(!mpEntities->HandleMessage(0,data)) RejectPeer(0,"Invalid entity update from host.");return;
+    }
+    if(type==SharedInventoryState && mbReady) {
+        if(!ApplySharedInventoryState(data)) RejectPeer(0,"Invalid shared inventory state from host.");return;
     }
     if((type==InventoryGrant || type==InventoryRemove) && mbReady) {
         if(!ApplyInventoryPacket(data)) RejectPeer(0,"Invalid inventory update from host.");
@@ -999,6 +1019,89 @@ bool cLuxMultiplayer::ApplyInventoryPacket(const std::vector<uint8_t>& data) {
         return true;
     }
     return false;
+}
+namespace {
+bool RetainedSharedInventoryType(uint32_t type) {
+    return type==eLuxItemType_Puzzle || type==eLuxItemType_Lantern || type==eLuxItemType_Health ||
+        type==eLuxItemType_Sanity || type==eLuxItemType_LampOil || type==eLuxItemType_HandObject;
+}
+bool ValidateSharedInventoryEntries(const std::vector<SharedInventoryEntry>& entries) {
+    std::set<tString> countedSubtypes;
+    for(const auto& entry:entries) {
+        if(!RetainedSharedInventoryType(entry.item.type)) return false;
+        auto* type=gpBase->mpInventory->GetItemTypeData(static_cast<eLuxItemType>(entry.item.type));
+        if(type->HasCount()) {
+            if(entry.count>static_cast<uint32_t>(type->GetMaxCount()) || !countedSubtypes.insert(entry.item.subtype).second) return false;
+        } else if(entry.count!=1) return false;
+        tString error;
+        if(entry.item.image.empty() || !LuxValidateMultiplayerAsset("graphics/item/"+entry.item.image,"texture",error)) return false;
+    }
+    return ValidSharedInventoryRestoreOrder(entries,[](uint32_t type) {
+        return gpBase->mpInventory->GetItemTypeData(static_cast<eLuxItemType>(type))->HasCount();
+    });
+}
+}
+bool cLuxMultiplayer::SendSharedInventoryState(uint32_t peer) {
+    std::vector<SharedInventoryEntry> entries;
+    for(int index=0;index<gpBase->mpInventory->GetItemNum();++index) {
+        auto* held=gpBase->mpInventory->GetItem(index);
+        if(!mSharedScriptItems.count(held->GetName()) || !RetainedSharedInventoryType(held->GetType())) continue;
+        SharedInventoryEntry entry;auto& item=entry.item;
+        item.name=held->GetName();item.type=held->GetType();item.subtype=held->GetSubType();
+        item.image=held->GetImageName();
+        const tString prefix="graphics/item/";
+        if(item.image.compare(0,prefix.size(),prefix)==0) item.image.erase(0,prefix.size());
+        item.amount=held->GetAmount();item.value=held->GetStringVal();item.extra=held->GetExtraStringVal();
+        entry.count=held->GetCount();entries.push_back(entry);
+    }
+    const auto packet=WriteSharedInventoryState(mlMapEpoch,entries);
+    Reader check(packet);check.U32();std::vector<SharedInventoryEntry> verified;
+    if(!ReadSharedInventoryState(check,verified,eLuxItemType_LastEnum) || !ValidateSharedInventoryEntries(verified)) return false;
+    return Send(peer,packet,true);
+}
+bool cLuxMultiplayer::ApplySharedInventoryState(const std::vector<uint8_t>& data) {
+    Reader reader(data);const uint32_t epoch=reader.U32();std::vector<SharedInventoryEntry> entries;
+    if(!ReadSharedInventoryState(reader,entries,eLuxItemType_LastEnum) || !ValidateSharedInventoryEntries(entries)) return false;
+    if(epoch!=mlMapEpoch) return true;
+    auto* inventory=gpBase->mpInventory;
+    std::set<tString> names,rebuild;
+    // Validate the entire replacement before mutating a held item. Current-map
+    // history can use a later stack name than the host's earlier-map grant.
+    for(const auto& entry:entries) {
+        names.insert(entry.item.name);
+        auto* held=inventory->GetItem(entry.item.name);
+        if(held && (held->GetType()!=entry.item.type || held->GetSubType()!=entry.item.subtype ||
+           held->GetImageName()!="graphics/item/"+entry.item.image)) return false;
+        auto* type=inventory->GetItemTypeData(static_cast<eLuxItemType>(entry.item.type));
+        auto* stack=type->HasCount()?inventory->GetItemFromSubType(entry.item.subtype):NULL;
+        if(stack && stack!=held) {
+            if(!mSharedScriptItems.count(stack->GetName())) return false;
+            // Current-map replay may already hold a later non-counted entry
+            // of this subtype. Recreate that entry after its missing earlier
+            // stack so native AddItem cannot merge the stack into it.
+            if(!held) for(int index=0;index<inventory->GetItemNum();++index) {
+                auto* collision=inventory->GetItem(index);
+                if(collision->GetSubType()!=entry.item.subtype) continue;
+                if(!mSharedScriptItems.count(collision->GetName())) return false;
+                rebuild.insert(collision->GetName());
+            }
+        }
+    }
+    for(const auto& name:mSharedScriptItems) if(!names.count(name) || rebuild.count(name)) {
+        if(auto* held=inventory->GetItem(name)) {
+            held->SetCount(1);inventory->RemoveItem(held);
+        }
+    }
+    for(const auto& entry:entries) {
+        const auto& item=entry.item;auto* held=inventory->GetItem(item.name);
+        if(!held) held=inventory->AddItem(item.name,static_cast<eLuxItemType>(item.type),item.subtype,item.image,
+            item.amount,item.value,item.extra,NULL,false);
+        if(!held) return false;
+        held->SetCount(entry.count);held->SetAmount(item.amount);
+        held->SetStringVal(item.value);held->SetExtraStringVal(item.extra);
+        if(item.type==eLuxItemType_HandObject && !inventory->GetEquippedHandItem()) inventory->SetEquippedHandItem(held);
+    }
+    mSharedScriptItems.swap(names);return true;
 }
 bool cLuxMultiplayer::FindMatchingMap() {
     std::vector<tWString> candidates;
@@ -1390,8 +1493,12 @@ void cLuxMultiplayer::AutoCombineInventory(uint32_t collector,const tString& acq
     mbAutoCombiningInventory=false;
     mAutoCombineItems.clear();
 }
-void cLuxMultiplayer::RecordSharedItem(const tString& item) {
-    if(IsHost() && gpBase->mpInventory->GetItem(item)) mSharedScriptItems.insert(item);
+void cLuxMultiplayer::RecordSharedItem(const tString& item,const tString& subtype) {
+    if(!IsHost() && !(IsClient() && mbApplyingScriptEffect)) return;
+    auto* held=gpBase->mpInventory->GetItem(item);
+    // Counted grants merge with an existing stack and retain its first name.
+    if(!held && !subtype.empty()) held=gpBase->mpInventory->GetItemFromSubType(subtype);
+    if(held) mSharedScriptItems.insert(held->GetName());
 }
 void cLuxMultiplayer::ForgetRemoteItem(const tString& item) {
     mSharedScriptItems.erase(item);
@@ -1457,6 +1564,8 @@ void cLuxMultiplayer::CancelHostMapChange(const tString& reason) {
     }
 }
 void cLuxMultiplayer::ProcessHostMapChange() {
+    // Debug loads reset the game too; do not abandon approved old-map actions.
+    if(mpEntities->HasPendingInteractions()) return;
     tString requested=msPendingHostMap,start=msPendingHostStart;msPendingHostMap.clear();
     msStatus="Loading hosted map: "+requested;gpBase->mpLoadScreenHandler->DrawMultiplayerScreen();
     tWString path=cString::To16Char(requested);

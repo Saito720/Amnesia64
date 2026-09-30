@@ -84,6 +84,22 @@ inline bool RunEnemyProtocolRegression(std::string& error)
     }
     if(!Newer(1,0xfffffffeu) || Newer(0xfffffffeu,1) || Newer(7,7) || Newer(0x80000000u,0))
         return fail("sequence wrap/reordering comparison is ambiguous");
+    for(uint8_t type:{uint8_t(luxnet::EnemyTerror),uint8_t(luxnet::EnemyDamage)}) {
+        luxnet::Writer event(type);event.U32(6);event.U32(17);event.U32(2);event.Float(type==luxnet::EnemyTerror?0.4f:25.0f);
+        if(type==luxnet::EnemyDamage) {event.U32(3);event.U8(1);event.U8(1);event.Float(1);event.Float(2);event.Float(3);}
+        PlayerEvent decodedEvent;
+        if(!DecodePlayerEvent(event.data,decodedEvent,6) || decodedEvent.epoch!=6 || decodedEvent.sequence!=17 || decodedEvent.life!=2)
+            return fail("player event full payload did not decode");
+        for(size_t length=0;length<event.data.size();++length) {
+            PlayerEvent sentinel;sentinel.epoch=99;
+            if(DecodePlayerEvent({event.data.begin(),event.data.begin()+length},sentinel,6) || sentinel.epoch!=99)
+                return fail("old-epoch player event accepted truncation or changed output before full validation");
+        }
+        auto invalidEvent=event.data;invalidEvent.push_back(0);
+        if(DecodePlayerEvent(invalidEvent,decodedEvent,6)) return fail("player event trailing bytes were accepted");
+        invalidEvent=event.data;for(size_t i=9;i<13;++i) invalidEvent[i]=0;
+        if(DecodePlayerEvent(invalidEvent,decodedEvent,6)) return fail("player event with no player lifetime was accepted");
+    }
     return true;
 }
 #endif

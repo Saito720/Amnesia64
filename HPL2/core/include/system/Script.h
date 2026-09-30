@@ -33,6 +33,10 @@
 namespace hpl {
 	// True only while the local scripting VM is executing a script context.
 	bool IsScriptExecuting();
+	// Opaque identity of the currently executing VM context, or NULL outside
+	// script execution. A script callback may enter a second context while a
+	// native binding from the first context remains on the call stack.
+	const void* GetActiveScriptContext();
 
 	class iScript : public iResourceBase
 	{

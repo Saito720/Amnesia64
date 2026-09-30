@@ -1,6 +1,6 @@
 # Multiplayer campaign regression checks
 
-Use the same protocol-14 build on both peers. Keep **every player may trigger
+Use the same protocol-15 build on both peers. Keep **every player may trigger
 Player callbacks** enabled for the client interaction tests.
 
 ## Changes under test

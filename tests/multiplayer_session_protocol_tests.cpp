@@ -62,6 +62,41 @@ static void CheckInventoryTransfersAndRecipes() {
     invalid=item;invalid.image=std::string(1025,'x');assert(!decode(WriteInventoryItem(7,invalid)));
     auto trailing=bytes;trailing.push_back(0);assert(!decode(trailing));
 
+    SharedInventoryEntry entry;entry.item=item;entry.count=3;
+    const auto shared=WriteSharedInventoryState(7,{entry});
+    auto decodeShared=[](const std::vector<uint8_t>& data) {
+        Reader reader(data);reader.U32();std::vector<SharedInventoryEntry> entries;
+        return ReadSharedInventoryState(reader,entries,10);
+    };
+    Reader sharedReader(shared);assert(sharedReader.U32()==7);
+    std::vector<SharedInventoryEntry> entries;
+    assert(ReadSharedInventoryState(sharedReader,entries,10) && entries.size()==1 && entries[0].count==3 &&
+        WriteSharedInventoryState(7,entries)==shared);
+    for(size_t length=0;length<shared.size();++length) assert(!decodeShared({shared.begin(),shared.begin()+length}));
+    trailing=shared;trailing.push_back(0);assert(!decodeShared(trailing));
+    assert(decodeShared(WriteSharedInventoryState(7,{})));
+    assert(!decodeShared(WriteSharedInventoryState(7,{entry,entry})));
+    auto badEntry=entry;badEntry.count=0;assert(!decodeShared(WriteSharedInventoryState(7,{badEntry})));
+    badEntry.count=1025;assert(!decodeShared(WriteSharedInventoryState(7,{badEntry})));
+    badEntry=entry;badEntry.item.type=10;assert(!decodeShared(WriteSharedInventoryState(7,{badEntry})));
+    badEntry=entry;badEntry.item.amount=std::numeric_limits<float>::infinity();assert(!decodeShared(WriteSharedInventoryState(7,{badEntry})));
+    auto overLimit=shared;overLimit.resize(MaxSharedInventoryBytes+1);assert(!decodeShared(overLimit));
+    Writer excess(SharedInventoryState);excess.U32(7);excess.U32(MaxSharedInventoryItems+1);assert(!decodeShared(excess.data));
+    // Parsing a malformed replacement preserves every trusted entry/count.
+    Reader invalidShared(trailing);invalidShared.U32();
+    assert(!ReadSharedInventoryState(invalidShared,entries,10) && WriteSharedInventoryState(7,entries)==shared);
+    // Valid native inventory can hold a counted stack followed by a puzzle
+    // with the same subtype. Alphabetical ordering would merge the stack into
+    // the puzzle during restore, so validate the native construction order.
+    auto healthEntry=entry;healthEntry.item.name="z_health";healthEntry.item.type=5;healthEntry.item.subtype="same";
+    auto puzzleEntry=entry;puzzleEntry.item.name="a_puzzle";puzzleEntry.item.type=0;puzzleEntry.item.subtype="same";puzzleEntry.count=1;
+    auto counted=[](uint32_t type) {return type==5;};
+    assert(ValidSharedInventoryRestoreOrder(std::vector<SharedInventoryEntry>{healthEntry,puzzleEntry},counted));
+    assert(!ValidSharedInventoryRestoreOrder(std::vector<SharedInventoryEntry>{puzzleEntry,healthEntry},counted));
+    assert(!ValidSharedInventoryRestoreOrder(std::vector<SharedInventoryEntry>{healthEntry,healthEntry},counted));
+    auto secondPuzzle=puzzleEntry;secondPuzzle.item.name="b_puzzle";
+    assert(ValidSharedInventoryRestoreOrder(std::vector<SharedInventoryEntry>{healthEntry,puzzleEntry,secondPuzzle},counted));
+
     const std::vector<InventoryRecipe> recipes={
         {"drill12","CombineDrill","part1","part2"},
         {"drill13","CombineDrill","part1","part3"},

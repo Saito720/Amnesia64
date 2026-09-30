@@ -3,6 +3,7 @@
 #include "LuxBase.h"
 #include "resources/LowLevelResources.h"
 #include "resources/XmlDocument.h"
+#include "resources/DecalMeshValidation.h"
 #include "scene/World.h"
 #include <algorithm>
 #include <cstdio>
@@ -133,6 +134,24 @@ namespace
                 { error = "Map object refers to an invalid file index or object ID."; return false; }
                 if(objectID >= 0 && !objectIDs.insert(objectID).second)
                 { error = "Map contains duplicate object IDs."; return false; }
+            }
+        }
+        return true;
+    }
+
+    bool ValidateDecals(cXmlElement* contents, tString& error)
+    {
+        cXmlElement* decals = contents->GetFirstElement("Decals");
+        if(!decals) return true;
+        cXmlNodeListIterator entries = decals->GetChildIterator();
+        while(entries.HasNext())
+        {
+            cXmlElement* decal = entries.Next()->ToElement();
+            if(!decal) continue;
+            if(!decal_detail::Read(decal->GetFirstElement("DecalMesh"), error))
+            {
+                error = "Map decal '" + decal->GetAttributeString("Name") + "': " + error;
+                return false;
             }
         }
         return true;
@@ -308,6 +327,7 @@ bool LuxValidateMultiplayerMap(const std::vector<uint8_t>& bytes, tString& error
     if(!map || !contents)
     { error = "Host map is missing Level/MapData/MapContents."; return false; }
     if(!ValidateIndices(contents, error)) return false;
+    if(!ValidateDecals(contents, error)) return false;
     Validator validator(resources, error);
     validator.Scan(map, "map");
     return validator.Dependencies();

@@ -111,7 +111,7 @@ public:
     uint32_t GetRemotePlayerTouching(iLuxEntity* entity);
     bool RequestEntityInteraction(iLuxEntity* entity, iPhysicsBody* body, const cVector3f& pos);
     bool RequestItemUse(const tString& item, const tString& entity, bool combine=false);
-    void RecordSharedItem(const tString& item);
+    void RecordSharedItem(const tString& item,const tString& subtype="");
     bool SyncItemCallbacks(uint32_t peer=UINT32_MAX);
     void RecordRemoteItem(uint32_t peer, cLuxProp_Item* item);
     void RecoverRemoteItems(uint32_t peer);
@@ -141,6 +141,7 @@ public:
 private:
     struct Peer {
         bool greeted=false, ready=false, beginSent=false, endSent=false, transferRequested=false;
+        bool inventoryInitialized=false;
         uint32_t offset=0;
         float age=0, requestCooldown=0;
         float interactionTokens=32;
@@ -162,6 +163,8 @@ private:
     void HandlePacket(uint32_t peer,const std::vector<uint8_t>& data);
     void BroadcastPlayerIdentities();
     bool ApplyInventoryPacket(const std::vector<uint8_t>& data);
+    bool SendSharedInventoryState(uint32_t peer);
+    bool ApplySharedInventoryState(const std::vector<uint8_t>& data);
     void SendMap(uint32_t peer,Peer& state);
     void LogPeerJoinState(uint32_t peer,const char* context) const;
     void FlushDiagnosticSummary();

@@ -4,6 +4,7 @@
 #include "../amnesia/src/game/LuxTypes.h"
 #include "impl/PhysicsWorldNewton.h"
 #include "network/NetworkTransport.h"
+#include "../amnesia/src/game/LuxMultiplayerEntityDefinition.h"
 #include <cassert>
 #include <iostream>
 #include <cstdint>
@@ -116,6 +117,8 @@ class iLuxEntity
     static uint64_t NextRuntimeId() { static uint64_t next=0;return ++next; }
     uint64_t runtimeId=NextRuntimeId();
 public:
+    int entityId = -1;
+    int GetID() const { return entityId; }
     uint64_t GetRuntimeID() const { return runtimeId; }
     eLuxEntityType GetEntityType() { return eLuxEntityType_Prop; }
     bool GetDestroyMe() { return false; }
@@ -668,6 +671,99 @@ static void CheckDuplicateNamedDrawers()
     host.Activate(); assert(!host.replication.IsInteractionOwnedByOther(frames[0]));
 }
 
+static void CheckDuplicateNamedProps()
+{
+    // The retail Orb Chamber has these two distinct map entities using the
+    // same chair resource, entity name, body name and resource-local body ID.
+    Fixture host(true,0), client(false,1), late(false,2);
+    iLuxProp hostProps[2], clientProps[2], lateProps[2];
+    iPhysicsBody* bodies[3][2] = {};
+    Fixture* peers[] = {&host,&client,&late};
+    iLuxProp* props[] = {hostProps,clientProps,lateProps};
+    const int entityIds[] = {993,1386};
+    const auto create = [](Fixture& peer, iLuxProp& prop, const cVector3f& position) {
+        auto* body=peer.physics.CreateBody("chair_nice01_1_Body_1",peer.physics.CreateBoxShape(cVector3f(0.5f),NULL));
+        body->SetUniqueID(11);body->SetMass(10);body->SetGravity(false);body->SetAutoDisable(false);
+        body->SetPosition(position);body->SetUserData(&prop);prop.bodies.push_back(body);
+        return body;
+    };
+    for(int peer=0;peer<3;++peer) {
+        // Opposite load order and different runtime identities must still bind
+        // host recipes to the correct authored map instances on both clients.
+        for(int entry=0;entry<2;++entry) {
+            const int index=peer?1-entry:entry;
+            props[peer][index].entityId=entityIds[index];
+            bodies[peer][index]=create(*peers[peer],props[peer][index],cVector3f(float(index*2+peer*20),0,0));
+        }
+        peers[peer]->Activate();peers[peer]->replication.OnMapLoaded(&peers[peer]->map);
+    }
+    const uint64_t ids[] = {cLuxMultiplayerWorld::GetBodyId(bodies[0][0]),cLuxMultiplayerWorld::GetBodyId(bodies[0][1])};
+    assert(ids[0]!=ids[1]);
+    uint32_t generations[2] = {};
+    host.Activate();
+    for(int index=0;index<2;++index) {
+        generations[index]=host.replication.GetBodyGeneration(bodies[0][index]);
+        assert(generations[index]);
+        assert(hostProps[index].GetRuntimeID()!=clientProps[index].GetRuntimeID());
+        assert(ids[index]==cLuxMultiplayerWorld::GetBodyId(bodies[1][index]));
+        // Use the production reconstruction codec and body-generation binding
+        // rather than inferring matching identity from allocation or position.
+        luxnet::PropDefinition definition;definition.epoch=7;definition.id=entityIds[index];
+        definition.name="chair_nice01_1";definition.file="entities/furniture/chair_nice01/chair_nice01.ent";
+        definition.incarnation=hostProps[index].GetRuntimeID();definition.bodies.push_back({ids[index],generations[index]});
+        const auto bytes=luxnet::WritePropDefinition(definition);
+        luxnet::Reader reader(bytes);luxnet::PropDefinition decoded;
+        assert(luxnet::ReadPropDefinition(reader,decoded));
+        for(int peer=1;peer<3;++peer) {
+            assert(decoded.id==uint32_t(props[peer][index].GetID()));
+            assert(decoded.bodies[0].id==cLuxMultiplayerWorld::GetBodyId(bodies[peer][index]));
+            peers[peer]->Activate();
+            peers[peer]->replication.BindBodyGeneration(bodies[peer][index],decoded.bodies[0].generation);
+        }
+    }
+    host.Activate();assert(host.replication.SendInitialState(1));host.replication.Update(0.01f);Deliver(host,client);
+    for(int index=0;index<2;++index)
+        assert(cMath::Vector3Dist(bodies[0][index]->GetLocalPosition(),bodies[1][index]->GetLocalPosition())<0.001f);
+    host.Activate();assert(host.replication.HandleMessage(1,PosePacket(1,1,0)));
+    client.Activate();assert(!client.replication.RequestInteraction(bodies[1][0],eLuxPlayerState_InteractGrab,0));
+    Deliver(client,host);Deliver(host,client);
+    assert(client.replication.OwnsInteraction(bodies[1][0]) && !client.replication.OwnsInteraction(bodies[1][1]));
+    host.Activate();
+    host.player.character=host.physics.CreateCharacterBody("duplicate_prop_owner",cVector3f(0.6f,1.8f,0.6f));
+    host.player.character->SetPosition(cVector3f(2,0,0));
+    assert(host.replication.RequestInteraction(bodies[0][1],eLuxPlayerState_InteractGrab,0));
+    host.player.state=eLuxPlayerState_InteractGrab;
+    assert(host.replication.OwnsInteraction(bodies[0][1]) && !host.replication.OwnsInteraction(bodies[0][0]));
+    bodies[1][0]->SetPosition(cVector3f(-3,0,0));
+    bodies[0][1]->SetPosition(cVector3f(2.5f,0,0));
+    client.player.character=client.physics.CreateCharacterBody("duplicate_prop_client",cVector3f(0.6f,1.8f,0.6f));
+    client.player.character->SetPosition(0);
+    client.Activate();client.replication.Update(0.05f);Deliver(client,host);
+    assert(std::fabs(bodies[0][0]->GetLocalPosition().x+3)<0.001f);
+    assert(std::fabs(bodies[0][1]->GetLocalPosition().x-2.5f)<0.001f);
+    client.Activate();client.replication.ReleaseInteraction();Deliver(client,host);Deliver(host,client);
+    host.Activate();assert(host.replication.SendInitialState(2));host.replication.Update(0.01f);Deliver(host,late);
+    for(int index=0;index<2;++index)
+        assert(cMath::Vector3Dist(bodies[0][index]->GetLocalPosition(),bodies[2][index]->GetLocalPosition())<0.001f);
+
+    // A rebuilt local prop keeps the same map identity while the runtime and
+    // host generation change. Its same-named sibling retains its own stream.
+    iLuxProp hostReplacement,lateReplacement;hostReplacement.entityId=lateReplacement.entityId=entityIds[0];
+    hostProps[0].bodies.clear();host.physics.DestroyBody(bodies[0][0]);
+    bodies[0][0]=create(host,hostReplacement,cVector3f(-5,0,0));
+    host.Activate();const uint32_t replacementGeneration=host.replication.GetBodyGeneration(bodies[0][0]);
+    assert(replacementGeneration!=generations[0] && cLuxMultiplayerWorld::GetBodyId(bodies[0][0])==ids[0]);
+    lateProps[0].bodies.clear();late.physics.DestroyBody(bodies[2][0]);
+    bodies[2][0]=create(late,lateReplacement,cVector3f(30,0,0));
+    late.Activate();late.replication.BindBodyGeneration(bodies[2][0],replacementGeneration);
+    assert(cLuxMultiplayerWorld::GetBodyId(bodies[2][0])==ids[0]);
+    host.Activate();assert(host.replication.SendInitialState(2));host.replication.Update(0.01f);Deliver(host,late);
+    assert(std::fabs(bodies[2][0]->GetLocalPosition().x+5)<0.001f);
+    assert(std::fabs(bodies[2][1]->GetLocalPosition().x-2.5f)<0.001f);
+    host.replication.ReleaseInteraction();
+    std::cout << "Same-name authored prop instances have independent physics, leases, late-join recipes and replacement generations.\n";
+}
+
 static void CheckWheelState()
 {
     cLuxProp_Wheel hostWheel,clientWheel;
@@ -733,6 +829,7 @@ int main()
     CheckEnemyContactOwnership();
     CheckDropCollisionGuard();
     CheckDuplicateNamedDrawers();
+    CheckDuplicateNamedProps();
     CheckContactOwnership();
     CheckSmoothCorrections();
     CheckWheelState();

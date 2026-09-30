@@ -61,6 +61,7 @@ static void printStatus(const char* message) {
 #include "LanternRegression.h"
 #include "JointLifecycleRegression.h"
 #include "LoadingRegression.h"
+#include "NativeTransitionRegression.h"
 #include "MapCacheRegression.h"
 #include "HostingRegression.h"
 #include "GuiAspectRegression.h"
@@ -376,6 +377,11 @@ public:
                 if(!resize) return;
             }
             if(!cachePathIsValid()) return;
+            if(!enemiesOnly && !backHallOnly && !doorBreakOnly && !quitTests) {
+                const int transition=RunNativeTransitionRegression(loadingError);
+                if(transition<0) {fail(loadingError);return;}
+                if(!transition) return;
+            }
             if(uncappedTests && !RunNetworkInterpolationRegression(loadingError)) {fail(loadingError);return;}
             if(!RunPlayerModelRegression(loadingError,playerModelsOnly)) {fail(loadingError);return;}
             if(playerModelsOnly) {state=74;return;}

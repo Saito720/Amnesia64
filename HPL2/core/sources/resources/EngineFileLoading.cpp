@@ -20,6 +20,7 @@
 #include "resources/EngineFileLoading.h"
 
 #include "resources/XmlDocument.h"
+#include "resources/DecalMeshValidation.h"
 #include "resources/Resources.h"
 #include "resources/TextureManager.h"
 #include "resources/MaterialManager.h"
@@ -360,8 +361,15 @@ namespace hpl {
 		//Load Vertex data
 		if(apElement==NULL)return NULL;
 
-		int lNumOfVtx = apElement->GetAttributeInt("NumVerts", 0);
-		int lNumOfIdx = apElement->GetAttributeInt("NumInds", 0);
+		decal_detail::MeshData geometry;
+		tString error;
+		if(!decal_detail::Read(apElement, error, &geometry))
+		{
+			Warning("Decal %s has invalid geometry, skipping: %s\n", asName.c_str(), error.c_str());
+			return NULL;
+		}
+		const int lNumOfVtx = static_cast<int>(geometry.vertices);
+		const int lNumOfIdx = static_cast<int>(geometry.indexCount);
 
 		if(lNumOfIdx <=0 || lNumOfVtx<=0)
 		{
@@ -369,24 +377,6 @@ namespace hpl {
 			return NULL;
 		}
 			
-		cXmlElement *pDataArrayElem[4];
-		pDataArrayElem[0] = apElement->GetFirstElement("Positions");
-		pDataArrayElem[1] = apElement->GetFirstElement("Normals");
-		pDataArrayElem[2] = apElement->GetFirstElement("TexCoords");
-		pDataArrayElem[3] = apElement->GetFirstElement("Tangents");
-		cXmlElement *pIndicesElem = apElement->GetFirstElement("Indices");
-
-		tFloatVec vDataArrays[4];
-		tIntVec vIdxArray;
-		tString sSepp=" ";
-		for(int i=0; i<4; ++i)
-		{
-			vDataArrays->reserve(lNumOfVtx * glDecalNumOfElements[i]);
-			cString::GetFloatVec(pDataArrayElem[i]->GetAttributeString("Array"), vDataArrays[i],&sSepp);
-		}
-		vIdxArray.reserve(lNumOfIdx);
-		cString::GetIntVec(pIndicesElem->GetAttributeString("Array"), vIdxArray,&sSepp);
-	
 		//////////////////////////////////
 		// Create vertex buffer
 		iVertexBuffer *pVtxBuffer = apGraphics->GetLowLevel()->CreateVertexBuffer(eVertexBufferType_Software, eVertexBufferDrawType_Tri, 
@@ -403,7 +393,7 @@ namespace hpl {
 		{
 			for(int i=0; i<4; ++i)
 			{
-				float *pData = &vDataArrays[i][vtx*glDecalNumOfElements[i]];
+				float *pData = &geometry.arrays[i][vtx*glDecalNumOfElements[i]];
 
 				if(glDecalNumOfElements[i]==2)
 					pVtxBuffer->AddVertexVec3f(glDecalElementType[i], cVector3f(pData[0],pData[1],0) );
@@ -417,7 +407,7 @@ namespace hpl {
 		}
 
 		for(int i=0; i<lNumOfIdx; ++i)
-			pVtxBuffer->AddIndex(vIdxArray[i]);
+			pVtxBuffer->AddIndex(geometry.indices[i]);
 
 		//Compile
 		pVtxBuffer->Compile(0);

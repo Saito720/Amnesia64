@@ -10,12 +10,14 @@ static const uint32_t LuxScriptOptionalResources=0x80000000u;
 bool LuxValidateMultiplayerScriptEffect(luxnet::Reader& r, std::string& error,uint32_t* unavailableResources=NULL);
 
 // A fixed, typed registry; clients never compile script text from the network.
-// The scope suppresses duplicate broadcasts from nested native helper calls.
+// Native helpers within one VM context are one command. Authored callbacks
+// entered by that command execute in another context and have their own effects.
 class cLuxMultiplayerScriptScope {
 public:
     template<class... Args> cLuxMultiplayerScriptScope(uint32_t id,const Args&... args) {
-        bool outer=smDepth++==0;
-        if(outer && gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsHost() && hpl::IsScriptExecuting()) {
+        mpPreviousContext=smContext;
+        const void* context=hpl::GetActiveScriptContext();smContext=context;
+        if(context && context!=mpPreviousContext && gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsHost()) {
             luxnet::Writer w(luxnet::ScriptEffect);w.U32(gpBase->mpMultiplayer->GetMapEpoch());
             const size_t commandOffset=w.data.size();w.U32(id);
             const size_t argumentsOffset=w.data.size();
@@ -35,9 +37,12 @@ public:
             }
         }
     }
-    ~cLuxMultiplayerScriptScope() {--smDepth;}
+    ~cLuxMultiplayerScriptScope() {smContext=mpPreviousContext;}
 private:
-    static unsigned smDepth;
+    cLuxMultiplayerScriptScope(const cLuxMultiplayerScriptScope&)=delete;
+    cLuxMultiplayerScriptScope& operator=(const cLuxMultiplayerScriptScope&)=delete;
+    const void* mpPreviousContext;
+    static const void* smContext;
     static void Write(luxnet::Writer& w,const std::string& v) {w.String(v);}
     static void Write(luxnet::Writer& w,float v) {w.Float(v);}
     static void Write(luxnet::Writer& w,int v) {w.U32(static_cast<uint32_t>(v));}

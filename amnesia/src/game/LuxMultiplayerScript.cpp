@@ -2,7 +2,7 @@
 #include "LuxScriptHandler.h"
 #include "LuxMultiplayerContent.h"
 
-unsigned cLuxMultiplayerScriptScope::smDepth=0;
+const void* cLuxMultiplayerScriptScope::smContext=NULL;
 
 // Every asset site in the typed registry consumes one bit, in argument order.
 // A missing host resource only relaxes that matching client lookup; other

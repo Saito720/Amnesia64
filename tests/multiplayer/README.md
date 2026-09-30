@@ -20,7 +20,7 @@ running Steam client with access to the configured AppID. The UI harness stubs
 Steam services and never sends invitations. Build and run with the same backend.
 Switching a test to Standalone changes the normal Debug game build too; rebuild
 the game without `/p:HplUseSteamworks=false` to return to Steam afterward.
-The current session/lobby protocol is **14**; all instances must use matching builds.
+The current session/lobby protocol is **15**; all instances must use matching builds.
 
 For the duplicate-name reconstruction and reconnect regression, run:
 
@@ -35,6 +35,12 @@ intact across repeated baselines and a client reconnect to the same host.
 It also makes a normal trip to Study and back, verifying the saved per-ID states
 before departure from Study and after reconstruction on both peers. Old Archives
 is unsuitable for this persistence check because its script clears saved maps.
+The Study leg also checks that an ordinary transition preserves each player's
+consumed shared stack. A fresh reconnect must restore earlier-map scripted
+rewards and exact current counts, reconcile merged stack names, and remove
+consumed rewards replayed by the current map's history. Counted health rewards
+and two later puzzle items sharing a subtype must retain their distinct types
+and native insertion order. Repeated snapshots must be idempotent.
 The transport suite separately covers Steam lobby lifecycle and direct-IP
 reconnects; authenticated two-account retry instructions are in
 [the transport checks](../../HPL2/tests/network/README.md).
@@ -396,10 +402,34 @@ disconnect while the multiplayer world is still loaded. The title menu must
 continue rendering after disconnect/reset without retaining a deleted world.
 The test checks networking and simulation state; it does not measure latency
 or prove all campaign scripts and physics interactions work correctly.
+The complete run also withholds an approved pickup result while normal and debug
+map changes are queued. Both must wait; the late confirmation must invoke its
+callback once, record recovery ownership, and remove the pickup from the old-map
+save before a revisit. An actual nested lever callback must emit its authored
+inventory grant once while native helpers still avoid duplicate effects.
+Held downloads receive real delayed enemy state and terror packets from the
+old and current epochs. The client must validate and discard them while unready,
+then complete the transfer without changing replicas or terror state.
+The independent Newton suite uses duplicate retail chair names and .ent-local
+body IDs with distinct map IDs, reversed construction order, separate leases,
+late-join reconstruction and replacement generations. Render-interpolation
+fixtures bind the same nonzero generations as production network replicas.
+Content checks validate decal counts, all vertex arrays, finite values and
+triangle indices before the native loader allocates a vertex buffer. They also
+check all installed decal geometry, including the shipped legacy tangent token.
 The reviewed protocol-8 Steam-enabled Debug and Release builds pass without compiler
 warnings or errors. Full two-instance run `0b402d98b1dd` and UI run `c0367b4967cd` pass,
 along with the protocol/Newton suites and content checks for all 33 retail maps.
 These are controlled local regressions; cross-account relay playtesting remains separate.
+
+Verified on 2026-09-30 with protocol 15 and Steamworks x64: Debug and Release
+game builds, all five protocol suites, real Newton physics, deterministic Steam
+metadata/transport ordering and native UI run `ce3736394547` passed. Full game
+run `59d467b446a6`, combined uncapped/resize run `41884506df7b`, Back Hall/Study
+reconnect run `b715c88f606d`, enemy run `18109d29fd10` and door-break run
+`8b4c3139d426` passed. Content validation passed all 33 campaign maps and
+3,780 decals across 37 installed maps. These game runs used local UDP peers
+with the Steamworks backend; separate-account Steam relay gameplay is unverified.
 
 The window-resizing integration also passes Steam-enabled Debug and Release builds
 without compiler warnings or errors, combined game run `10fb37920780` with

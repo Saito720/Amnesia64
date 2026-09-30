@@ -597,6 +597,12 @@ void cLuxMapHandler::CheckMapChange(float afTimeStep)
 {
 	if(mMapChangeData.mbActive==false) return;
 	if(gpBase->mpEffectHandler->GetFade()->IsFading()) return;
+    // Keep polling the old session until granted pickups/ignitions are confirmed.
+    // Saving first would retain pickups already credited to a client and discard
+    // their ownership/recovery ledger when OnMapLeave resets the claims.
+    if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsHost() &&
+       mpCurrentMap && FileToMapName(mMapChangeData.msMapFile)!=mpCurrentMap->GetName() &&
+       gpBase->mpMultiplayer->GetEntities()->HasPendingInteractions()) return;
 
 	///////////////////////////////////////
 	// Setup variables
@@ -637,6 +643,10 @@ void cLuxMapHandler::CheckMapChange(float afTimeStep)
 
 		//////////////////////
 		// Save old map
+		// The fade suspends ordinary map updates, so a just-confirmed pickup may
+		// still be queued for destruction. Remove it before recording the revisit.
+        if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsHost())
+            mpCurrentMap->FlushNetworkEntityDestruction();
 		mpSavedGame->SaveMap(mpCurrentMap);
 
 		//////////////////////

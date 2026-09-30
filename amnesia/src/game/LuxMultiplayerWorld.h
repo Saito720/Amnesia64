@@ -41,6 +41,7 @@ public:
     bool HandleMessage(uint32_t alPeer, const std::vector<uint8_t>& avMessage);
     void OnPeerDisconnected(uint32_t alPeer);
     bool SendInitialState(uint32_t alPeer);
+    static uint64_t GetBodyId(iPhysicsBody* body);
     uint32_t GetBodyGeneration(iPhysicsBody* body);
     void BindBodyGeneration(iPhysicsBody* body, uint32_t generation);
 

@@ -103,6 +103,10 @@ int main()
     assert(BodyId("crate_1") != BodyId("crate_2"));
     assert(BodyId("cabinet_Body", -1) == BodyId("cabinet_Body"));
     assert(BodyId("cabinet_Body", 0) != BodyId("cabinet_Body", -1));
+    assert(BodyId("chair_nice01_1_Body_1", 11, 993) != BodyId("chair_nice01_1_Body_1", 11, 1386));
+    assert(BodyId("cabinet_Body", 32, 993) != BodyId("cabinet_Body", 33, 993));
+    assert(BodyId("cabinet_Body", -1, 993) != BodyId("cabinet_Body", -1, 1386));
+    assert(BodyId("cabinet_Body", 32, -1) == BodyId("cabinet_Body", 32));
     for (int id : {17, 32, 33, 34})
     {
         assert(BodyId("cabinet_Body", id) != BodyId("other_cabinet_Body", id));

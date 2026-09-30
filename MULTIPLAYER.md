@@ -4,6 +4,7 @@ This is an experimental multiplayer foundation, not a campaign-complete co-op re
 It provides real host/client sessions, shared player and physics state, map delivery,
 exclusive object interaction, host-authoritative enemies, host script effects, and coordinated map changes.
 Windows Debug and Release x64 are the primary build targets for this checkout.
+The current wire protocol is version 15; all peers must use the same updated build.
 
 FBX meshes and skeletal animations use the importer from `amfp` commit `be7694f`,
 including its AMFP asset compatibility fixes. The bundled ufbx dependency builds
@@ -122,7 +123,7 @@ or cached maps skip the download phase. Every waiting frame clears the viewport;
 blocking verification and loading also present their screen before starting work.
 Cancelled or failed host map changes return clients to the previous map, preserving
 in-flight world events. Same-map start-position changes do not put clients into a
-map-loading state. The session uses protocol **14**; all players need
+map-loading state. The session uses protocol **15**; all players need
 the updated build.
 The client cannot open the game debug menu; F3/fast-forward is disabled for everyone
 in a session. Host debug map loads/reloads use a queued session-preserving path.
@@ -223,9 +224,11 @@ player helper fill light and lantern mesh are not replicated. Remote lights are
 removed when the source disappears, its pose becomes stale, the peer disconnects,
 or the map is replaced.
 
-Dynamic body IDs combine the entity-qualified body name with its authored XML body
-ID. Repeated names inside retail entities, including `chest_of_drawers_nice.ent`,
-remain distinct. Procedural bodies without authored IDs use their stable names;
+Dynamic body IDs combine the entity-qualified body name, its authored XML body
+ID, and the owning map entity's stable ID. Separate map instances with identical
+names and entity-file body IDs remain distinct, including retail Orb Chamber chairs.
+Repeated body names inside `chest_of_drawers_nice.ent` remain distinct too.
+Procedural bodies without owning map entities use their stable names/authored IDs;
 truly ambiguous identities are excluded. Clients receive a reliable initial body burst. Awake
 bodies are sampled at 20 Hz, sleeping transitions are sent reliably, and periodic
 ground-truth snapshots correct drift. Newton keeps simulating contacts locally;
@@ -354,6 +357,13 @@ map download; otherwise the host sends reliable 32 KiB chunks, up to 16 MiB. Siz
 CRC32 and SHA-256 are checked before loading. Cache files are rehashed on every use,
 so changed host maps or damaged cache entries require a fresh download.
 
+Before saving or resetting a map, the host waits for approved native interactions
+to finish and stops issuing new grants. Transport updates and the existing
+20-second claim timeout continue during this wait. Confirmed pickup destruction
+is flushed before the old-map save, keeping revisit and disconnect recovery state
+consistent. Delayed enemy snapshots and terror packets are validated and discarded
+while a client loads the next map.
+
 The Windows cache is `%LOCALAPPDATA%/HPL2/Amnesia/MultiplayerCache/`. Linux uses
 `$XDG_CACHE_HOME` (or `~/.cache`), and macOS uses `~/Library/Caches`, with the same
 `HPL2/Amnesia/MultiplayerCache` suffix. Persistent maps live in `objects/<sha256>.map`.
@@ -373,9 +383,13 @@ be removed manually; the build does not migrate or clean up legacy profile folde
 Compressed-only `.cmap` hosting is not supported.
 
 Validation checks XML nesting/size, required map structure, file indices, duplicate
-object IDs, direct resources, and local `.ent`, `.mat`, `.ps`, and `.snt` dependency
-graphs. It follows engine conventions for author-machine paths, compiled meshes,
-material suffixes, localized/numbered audio, textures and cube maps. Missing assets
+object IDs, decal geometry, direct resources, and local `.ent`, `.mat`, `.ps`, and
+`.snt` dependency graphs. It follows engine conventions for author-machine paths,
+compiled meshes, material suffixes, localized/numbered audio, textures and cube maps.
+Decal checks enforce bounded vertex/index counts, required finite arrays of the
+declared lengths, and triangle indices within the vertex range. The native loader
+uses the same checks and safely skips malformed decals.
+Missing assets
 produce a descriptive disconnection message. Scripted resource creation/effects also
 validate their file arguments. The host records which individual resources in a
 typed script effect are unavailable locally. Clients allow native fallback for only
@@ -396,9 +410,16 @@ Only the host loads and runs map/global scripts. A fixed registry broadcasts **1
 typed native script effects**, including item grants, presentation, lighting, entity
 properties and common creation/replacement operations. Clients do not compile script
 text from the connection. Nested native helper calls are suppressed to avoid duplicate
-effects. Current-map effect history initializes late joiners and is capped at 256 KiB;
+effects within the same VM context; synchronous authored callbacks entered by a
+native command replicate their own effects. Current-map effect history initializes
+late joiners and is capped at 256 KiB;
 after that limit, late joins are rejected until the next map. History replays transient
 effects too, so a late joiner can see earlier overlays or hear earlier sounds.
+
+A fresh peer also receives the host's currently held shared script items, including
+rewards from previous maps. Exact stack counts reconcile current-map replay without
+granting an item twice or replaying pickup callbacks. Existing peers retain their
+individual inventory counts through ordinary map transitions.
 
 The every-player option includes remote player bounds in host Player collision checks
 and forwards validated interaction callbacks. The host-only option excludes them.

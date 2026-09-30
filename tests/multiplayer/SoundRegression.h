@@ -3,6 +3,14 @@
 #include "LuxMultiplayerContent.h"
 #include "LuxMultiplayerScript.h"
 #include "LuxProp_Object.h"
+#include "LuxProp_Lever.h"
+
+static unsigned nestedScriptCallbacks=0;
+static void __stdcall CodexNestedScriptCallback(std::string& entity,int state) {
+    ++nestedScriptCallbacks;
+    gpBase->mpMapHandler->GetCurrentMap()->RunScript(
+        "GiveItem(\"codex_nested_script_reward\",\"Puzzle\",\"codex_nested_script_reward\",\"key_study.tga\",1);");
+}
 
 // Use the real host script entry point and reliable effect stream. The existing
 // isolated drawer prop supplies a health barrier which native snapshots do not
@@ -135,6 +143,33 @@ class cSoundRegression {
         }
         return true;
     }
+    bool hostNestedCallbackChecks(cLuxMap* map,cLuxMultiplayer* mp,tString& error) {
+        if(!gpBase->mpEngine->GetSystem()->GetLowLevel()->AddScriptFunc(
+            "void CodexNestedScriptCallback(string &in entity, int state)",(void*)CodexNestedScriptCallback)) {
+            error="nested script callback registration failed";return false;
+        }
+        map->ResetLatestEntity();
+        map->CreateEntity("codex_script_lever","entities/gameplay/lever_small01/lever_small01.ent",cMatrixf::Identity,1);
+        auto* lever=static_cast<cLuxProp_Lever*>(map->GetEntityByName("codex_script_lever",eLuxEntityType_Prop,eLuxPropType_Lever));
+        if(!lever) {error="nested script fixture did not create the retail lever prop";return false;}
+        if(!mp->GetEntities()->SyncCreatedProps()) {error="nested script lever definition failed: "+mp->GetEntities()->GetLastError();return false;}
+        lever->SetConnectionStateChangeCallback("CodexNestedScriptCallback");
+        const size_t start=mp->mvScriptHistory.size();
+        const int target=lever->GetLeverState()==1?-1:1;
+        map->RunScript("SetLeverStuckState(\"codex_script_lever\","+cString::ToString(target)+",false);");
+        if(nestedScriptCallbacks!=1 || lever->GetStuckState()!=target || lever->GetLeverState()!=target ||
+           !gpBase->mpInventory->GetItem("codex_nested_script_reward") || mp->mvScriptHistory.size()!=start+2) {
+            error="authored callback effects were lost while the outer native command was active";return false;
+        }
+        const uint32_t expected[]={123,80};
+        for(size_t i=0;i<2;++i) {
+            luxnet::Reader sent(mp->mvScriptHistory[start+i]);
+            if(sent.U32()!=mp->GetMapEpoch() || sent.U32()!=expected[i]) {
+                error="nested VM callback did not publish its own ordered effect";return false;
+            }
+        }
+        return true;
+    }
 public:
     // 0 pending, 1 complete, -1 failed.
     int Update(tString& error) {
@@ -181,6 +216,7 @@ public:
                         return fail(error,"host preload was not serialized by the production script entry point");
                 }
                 if(!hostAssetChecks(map,mp,fixture,error)) return fail(error,error);
+                if(!hostNestedCallbackChecks(map,mp,error)) return fail(error,error);
                 map->RunScript("SetPropHealth(\"codex_drawers_a\",123.5f);");
                 mark("host-sound-broadcast.txt","ten reported hints, two whitespace variants, valid SNT, then reliable health barrier");
             }
@@ -188,7 +224,8 @@ public:
         }
         if(phase==2) {
             if(!exists("host-sound-broadcast.txt") || fixture->GetHealth()!=123.5f ||
-               !map->GetWorld()->GetSoundEntity("codex_valid_sound") || !map->GetWorld()->GetParticleSystem("codex_valid_ps")) return 0;
+               !map->GetWorld()->GetSoundEntity("codex_valid_sound") || !map->GetWorld()->GetParticleSystem("codex_valid_ps") ||
+               !gpBase->mpInventory->GetItem("codex_nested_script_reward")) return 0;
             mark(role+"-sound-barrier.txt","all preceding sound preloads processed; session remains active and ready");
             phase=3;return 0;
         }

@@ -43,6 +43,23 @@ namespace LuxWorldWire
         return hash;
     }
 
+    inline uint64_t BodyId(const std::string& name, int32_t authoredId, int32_t entityId)
+    {
+        uint64_t hash = BodyId(name, authoredId);
+        if (entityId < 0) return hash; // Bodies without an owning map entity.
+        // Body IDs in an .ent are local to that file. Distinct map instances
+        // can share both the entity name and every authored body ID. Their
+        // stable map entity ID also survives host/client reconstruction.
+        hash ^= 0xff;
+        hash *= 1099511628211ull;
+        for (unsigned i = 0; i < 4; ++i)
+        {
+            hash ^= uint8_t(uint32_t(entityId) >> (i * 8));
+            hash *= 1099511628211ull;
+        }
+        return hash;
+    }
+
     struct Writer
     {
         std::vector<uint8_t> bytes;

@@ -123,7 +123,7 @@ class cDrawerRegression {
                 if(body->GetCollideCharacter() || !prop->IsPlayerCollisionTemporarilyDisabled(body))
                     return fail(error,"lease release removed native post-drop collision guard");
                 if(gpBase->mpMultiplayer->IsClient()) {
-                    const uint64_t id=LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID());
+                    const uint64_t id=cLuxMultiplayerWorld::GetBodyId(body);
                     auto track=world->mBodies.find(id);
                     if(track==world->mBodies.end()) return fail(error,"dropped body not indexed");
                     LuxWorldWire::Body snapshot={};snapshot.id=id;
@@ -183,7 +183,7 @@ class cDrawerRegression {
         }
         if(!prop) return fail(error,"retail contact fixture disappeared");
         auto* body=prop->GetBody(0);
-        const uint64_t id=LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID());
+        const uint64_t id=cLuxMultiplayerWorld::GetBodyId(body);
         if(SDL_GetTicks()-diagnosticAt>1500) {
             diagnosticAt=SDL_GetTicks();const cVector3f position=player->GetPosition(),box=body->GetWorldPosition();
             std::printf("%s contact phase=%u player=(%.4g %.4g %.4g) box=(%.4g %.4g %.4g) acc=%.4g speed=%.4g contacts=%u owned=%d\n",
@@ -340,7 +340,7 @@ public:
                 for(int j=0;j<check->GetBodyNum();++j) {
                     iPhysicsBody* body=check->GetBody(j);
                     if(body->GetName()!=check->GetBody(0)->GetName()) return fail(error,"fixture no longer has duplicate authored body names");
-                    uint64_t id=LuxWorldWire::BodyId(body->GetName(),body->GetUniqueID());
+                    uint64_t id=cLuxMultiplayerWorld::GetBodyId(body);
                     if(!ids.insert(id).second) return fail(error,"same-named retail bodies share a network ID");
                     if(body->GetMass()>0) {
                         auto found=world->mBodies.find(id);

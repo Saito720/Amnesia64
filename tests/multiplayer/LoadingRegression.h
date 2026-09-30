@@ -3,6 +3,44 @@
 
 class cLoadingPhaseObserver {
     uint32_t progressEpoch=0,lastProgress=0;
+    uint32_t heldEnemyPeer=0,heldEnemyEpoch=0;
+    Uint32 enemyHeldAt=0;
+    std::set<tString> checkedEnemyTransfers;
+    static tString enemyMarker(uint32_t peer,uint32_t epoch,const char* suffix) {
+        return "enemy-loading-"+cString::ToString(int(peer))+"-"+cString::ToString(int(epoch))+"-"+suffix;
+    }
+    bool ObserveHostEnemyLoading(tString& error) {
+        auto* mp=gpBase->mpMultiplayer;
+        if(!heldEnemyPeer) for(auto& peer:mp->mPeers) {
+            auto& state=peer.second;const tString key=enemyMarker(peer.first,mp->GetMapEpoch(),"checked.txt");
+            if(state.beginSent && state.transferRequested && !state.endSent && !state.ready && state.offset<mp->mvMapBytes.size() &&
+               !checkedEnemyTransfers.count(key) && exists("client-"+enemyMarker(peer.first,mp->GetMapEpoch(),"waiting.txt"))) {
+                heldEnemyPeer=peer.first;heldEnemyEpoch=mp->GetMapEpoch();enemyHeldAt=SDL_GetTicks();break;
+            }
+        }
+        if(!heldEnemyPeer) return true;
+        auto found=mp->mPeers.find(heldEnemyPeer);
+        if(found==mp->mPeers.end() || mp->GetMapEpoch()!=heldEnemyEpoch) {error="enemy loading test lost its held transfer";return false;}
+        // Hold MapChunk/MapEnd long enough for the client to acknowledge actual
+        // production dispatch of the delayed unreliable packets while unready.
+        found->second.transferRequested=false;
+        const tString sent="host-"+enemyMarker(heldEnemyPeer,heldEnemyEpoch,"sent.txt");
+        if(!exists(sent)) {
+            for(uint32_t epoch:{heldEnemyEpoch-1,heldEnemyEpoch}) {
+                LuxEnemyWire::State state;state.epoch=epoch;state.sequence=1;state.generation=1;state.name="codex_delayed_enemy";
+                luxnet::Writer terror(luxnet::EnemyTerror);terror.U32(epoch);terror.U32(1);terror.U32(1);terror.Float(0.75f);
+                if(!mp->Send(heldEnemyPeer,LuxEnemyWire::EncodeState(state),false) || !mp->Send(heldEnemyPeer,terror.data,false)) {
+                    error="could not send delayed enemy packets during loading";return false;
+                }
+            }
+            mark(sent,"real delayed enemy packets sent while map transfer is held");
+        }
+        if(exists("client-"+enemyMarker(heldEnemyPeer,heldEnemyEpoch,"checked.txt"))) {
+            found->second.transferRequested=true;
+            checkedEnemyTransfers.insert(enemyMarker(heldEnemyPeer,heldEnemyEpoch,"checked.txt"));heldEnemyPeer=0;
+        } else if(SDL_GetTicks()-enemyHeldAt>5000) {error="client did not dispatch delayed enemy packets while loading";return false;}
+        return true;
+    }
     bool screenshot[6]={},progressScreenshot=false;
     bool saveFrame(const tString& name,tString& error) {
         cBitmap* bitmap=gpBase->mpEngine->GetGraphics()->GetLowLevel()->CopyFrameBufferToBitmap();
@@ -17,11 +55,25 @@ public:
     unsigned samples[6]={},frames[6]={},progressSamples=0,progressFrames=0;
     bool Observe(tString& error) {
         cLuxMultiplayer* mp=gpBase->mpMultiplayer;
-        if(role!="client" || !mp->IsActive()) return true;
+        if(!mp->IsActive()) return true;
+        if(role=="host") return ObserveHostEnemyLoading(error);
+        if(role!="client") return true;
         const int phase=int(mp->GetLoadPhase());
         if(phase<0 || phase>=6) {error="invalid multiplayer loading phase";return false;}
         ++samples[phase];
         if(phase==eLuxMultiplayerLoadPhase_None) return true;
+        if(phase==eLuxMultiplayerLoadPhase_Downloading) {
+            const uint32_t peer=mp->GetLocalPeerId(),epoch=mp->GetMapEpoch();
+            mark("client-"+enemyMarker(peer,epoch,"waiting.txt"),"client downloading with no ready map replicas");
+            if(exists("host-"+enemyMarker(peer,epoch,"sent.txt")) &&
+               (mp->mlLastPacketType==luxnet::EnemyState || mp->mlLastPacketType==luxnet::EnemyTerror)) {
+                if(mp->IsReady() || !mp->GetEnemies()->mReplicas.empty() || mp->GetWorld()->mlLastTerrorSequence) {
+                    error="delayed enemy packet mutated an unready replica";return false;
+                }
+                mark("client-"+enemyMarker(peer,epoch,"checked.txt"),"real delayed enemy packets dispatched harmlessly before MapEnd");
+                mark("client-loading-enemy-discard.txt","validated delayed enemy state/terror packets discarded before map readiness");
+            }
+        }
         cGuiSet* gui=gpBase->mpEngine->GetGui()->GetSetFromName("LoadScreen");
         cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();
         if(mp->IsReady() || gpBase->mpEngine->GetUpdater()->GetCurrentContainerName()!="MultiplayerLoading" ||

@@ -20,6 +20,8 @@ public:
     explicit cLuxMultiplayerEntities(cLuxMultiplayer* session);
     void Reset();
     void Update(float dt);
+    // Approved native actions must settle before the host saves or resets a map.
+    bool HasPendingInteractions() const { return !mClaims.empty(); }
     void OnPeerDisconnected(uint32_t peer);
     bool SendInitialState(uint32_t peer);
     void CaptureMapBaseline();

@@ -56,7 +56,8 @@ namespace hpl {
 
 	//-----------------------------------------------------------------------
 
-	iScript* cScriptManager::CreateScript(const tString& asName, tString *apCompileMessages)
+	iScript* cScriptManager::CreateScript(const tString& asName, tString *apCompileMessages,
+		unsigned alMaxInitializationLineCallbacks)
 	{
 		tWString sPath;
 		iScript* pScript;
@@ -75,7 +76,7 @@ namespace hpl {
 		{
 			pScript = mpSystem->GetLowLevel()->CreateScript(asNewName);
 			
-			if(pScript->CreateFromFile(sPath, apCompileMessages)==false){
+			if(pScript->CreateFromFile(sPath, apCompileMessages, alMaxInitializationLineCallbacks)==false){
 				hplDelete(pScript);
 				EndLoad();
 				return NULL;

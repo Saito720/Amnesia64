@@ -21,6 +21,7 @@
 
 #include "LuxBase.h"
 #include "LuxAchievementHandler.h"
+#include "LuxMultiplayer.h"
 #include "LuxDebugHandler.h"
 
 //-----------------------------------------------------------------------
@@ -84,6 +85,9 @@ void iLuxAchievementHandler::CreateAchievement(int alID, const tString& asName)
 
 void iLuxAchievementHandler::UnlockAchievement(int alID)
 {
+    // Restoring journal/quest history establishes state, not a fresh account
+    // achievement. This also covers grants reached indirectly by old maps.
+    if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsInstallingInitialState()) return;
 	if(mbRegistered == false)
 	{
 		Error("Failed to activate Achievement %d. iLuxAchievementHandler::RegisterAchievements() has not been called\n", alID);

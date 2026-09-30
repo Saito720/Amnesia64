@@ -33,25 +33,42 @@ namespace hpl {
 		cSqScript(const tString& asName, asIScriptEngine *apScriptEngine,cScriptOutput *apScriptOutput, int alHandle); 
 		~cSqScript();
 
-		bool CreateFromFile(const tWString& asFileName, tString *apCompileMessages=NULL);
+		bool CreateFromFile(const tWString& asFileName, tString *apCompileMessages=NULL,
+			unsigned alMaxInitializationLineCallbacks=0);
+		bool CreateFromSource(const tString& asSection, const tString& asSource,
+			tString *apCompileMessages=NULL, bool abInitializeGlobals=true,
+			unsigned alMaxInitializationLineCallbacks=0);
+		bool InitializeGlobals(tString *apError=NULL, unsigned alMaxLineCallbacks=0);
 
 		int GetFuncHandle(const tString& asFunc);
+		int GetFuncHandleByDecl(const tString& asDecl);
+		bool HasFunctionNamed(const tString& asName);
+		bool HasScriptDefinedObjectTypes() const;
 		void AddArg(const tString& asArg);
 
 		bool Run(const tString& asFuncLine);
+		bool Run(const tString& asFuncLine, tString *apError, unsigned alMaxLineCallbacks);
 		bool Run(int alHandle);
+		bool RunTyped(int alHandle, const std::vector<tString>& avStringArgs,
+			const float *apFloatArg=NULL, tString *apError=NULL, unsigned alMaxLineCallbacks=0);
+		bool RunTypedInt(int alHandle, int alValue, tString *apError=NULL,
+			unsigned alMaxLineCallbacks=0);
 
 	private:
 		asIScriptEngine *mpScriptEngine;
 		cScriptOutput *mpScriptOutput;
         
-		asIScriptContext *mpContext;
 		asIScriptModule *mpModule;
+		bool mbGlobalsInitialized;
+		bool mbGlobalsInitializing;
 		
 		int mlHandle;
 		tString msModuleName;
 
 		char* LoadCharBuffer(const tWString& asFileName, int& alLength);
+		bool RunTypedInternal(int alHandle, const std::vector<tString>& avStringArgs,
+			const float *apFloatArg, const int *apIntArg, tString *apError,
+			unsigned alMaxLineCallbacks);
 	};
 };
 #endif // HPL_SCRIPT_H

@@ -406,15 +406,26 @@ Extensionless GUI sounds prefer an existing sound entity and otherwise resolve r
 audio (including the retail Archives `react_scare6.ogg`). Directory-only optional
 skybox/light texture references are treated as unset; actual missing files still fail.
 
-Only the host loads and runs map/global scripts. A fixed registry broadcasts **167
-typed native script effects**, including item grants, presentation, lighting, entity
-properties and common creation/replacement operations. Clients do not compile script
-text from the connection. Nested native helper calls are suppressed to avoid duplicate
+Authority map/global/inventory scripts run on the host. Maps may opt into
+[Version 2 multiplayer scripting](docs/multiplayer-scripting.md), with a separate,
+restricted client companion VM for each participant, including the host. The host
+transfers validated companion sources in memory; clients do not load replacement
+companions from disk. Version 2 adds explicit actor context, directed local work,
+private player variables, published snapshots and attributed deferred callbacks.
+The linked guide and its [searchable API edition](docs/multiplayer-scripting.html)
+are the master scripting reference.
+
+Unmodified maps retain legacy behavior. A fixed registry synchronizes supported
+typed native effects, including item grants, presentation, lighting, entity properties
+and common creation/replacement operations. Nested native helper calls are suppressed to avoid duplicate
 effects within the same VM context; synchronous authored callbacks entered by a
 native command replicate their own effects. Current-map effect history initializes
 late joiners and is capped at 256 KiB;
 after that limit, late joins are rejected until the next map. History replays transient
 effects too, so a late joiner can see earlier overlays or hear earlier sounds.
+Version 2 directed player commands and transient achievement awards are excluded
+from shared replay history. Client initialization waits for all queued baseline
+state and its initial published view, then acknowledges readiness.
 
 A fresh peer also receives the host's currently held shared script items, including
 rewards from previous maps. Exact stack counts reconcile current-map replay without
@@ -427,8 +438,11 @@ Remote collision proxies currently use bounding-box overlap, not exact character
 overlap, and treat the players' occupancy as a union. There is no priority ordering.
 The map-change option gates client level-door requests and immediately attributed
 remote script callbacks. Doors are resolved against the host's map, checked for lock
-state and player reach, and use host-owned destination/sound values. Deferred timers
-and other indirect script execution do not yet retain the originating player's identity.
+state and player reach, and use host-owned destination/sound values. Version 2
+timers and supported completion callbacks preserve the originating actor, module,
+session and character life. Explicit per-player collision observers coexist with
+the legacy combined occupancy registration. Other callback families retain their
+established native policy; opting in does not implement every personal override.
 
 ## Remaining integration work
 
@@ -443,8 +457,8 @@ and other indirect script execution do not yet retain the originating player's i
   restored from the host's saved-map collection.
 - General entity spawn/delete/replace lifecycle, including every break variant and
   procedural object. Body replication requires the corresponding body to exist locally.
-- Precise per-player trigger enter/leave semantics, remote look-at/use-item callbacks,
-  deferred trigger attribution, and full coverage of all script APIs.
+- Full coverage of all script APIs and callback families, exact character-shape
+  trigger geometry, personal journals/checkpoints and remote consumable state.
 - Further Internet playtests with sustained latency, jitter and disconnects, co-op save/resume,
   content-version manifests, and runtime missing-resource reporting for all asset managers.
 - AMFP-specific Tesla personal blackout/audio presentation on remote players. Shared
@@ -557,7 +571,7 @@ have exercised that path; each new build still needs a two-account playtest for
 latency, disconnects and campaign behavior beyond the controlled regression suite.
 Full-game smoke tests use isolated test configurations/profiles and a bounded run;
 they must not share a live player's configuration or overwrite retail assets.
-The current session/lobby protocol is version **14**; all testers must use the new build.
+The current session/lobby protocol is version **16**; all testers must use matching builds.
 See `tests/multiplayer/README.md` for profile cleanup, output paths and runner options.
 
 ## Source layout
@@ -576,4 +590,8 @@ See `tests/multiplayer/README.md` for profile cleanup, output paths and runner o
 - `LuxMultiplayerCache` / `LuxMultiplayerMapHash`: verified persistent map storage and SHA-256 identities.
 - `LuxMultiplayerContent`: map/dependency validation.
 - `LuxMultiplayerScript`: typed script-effect dispatch and nested-call protection.
+- `LuxScriptRuntime` / `LuxScriptExecution`: client VM, lifecycle, actor/module scope,
+  private timers, bounded execution and rollback.
+- `LuxScriptPackageProtocol` / `LuxScriptPlayerState`: client package framing,
+  private participant variables and copied published snapshots.
 - `LuxMultiplayerUI`: ImGui host/join controls and global SDL input/render integration.

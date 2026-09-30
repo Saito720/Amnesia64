@@ -1,0 +1,421 @@
+[
+  {
+    "id": "session",
+    "title": "Session, maps & persistence",
+    "names": [
+      "StartCredits",
+      "AddKeyPart",
+      "StartDemoEnd",
+      "AutoSave",
+      "CheckPoint",
+      "ChangeMap",
+      "ClearSavedMaps"
+    ]
+  },
+  {
+    "id": "world_entities",
+    "title": "World entities & lifecycle",
+    "names": [
+      "SetEntityActive",
+      "SetEntityVisible",
+      "GetEntityExists",
+      "SetEntityPos",
+      "GetEntityPosX",
+      "GetEntityPosY",
+      "GetEntityPosZ",
+      "SetEntityCustomFocusCrossHair",
+      "CreateEntityAtArea",
+      "ReplaceEntity",
+      "PlaceEntityAtEntity",
+      "SetEntityInteractionDisabled",
+      "SetPropActiveAndFade",
+      "SetPropHealth",
+      "AddPropHealth",
+      "GetPropHealth",
+      "ResetProp",
+      "PlayPropAnimation"
+    ]
+  },
+  {
+    "id": "world_physics",
+    "title": "Physics, movement & attachments",
+    "names": [
+      "GetEntitiesCollide",
+      "SetPropStaticPhysics",
+      "GetPropIsInteractedWith",
+      "RotatePropToSpeed",
+      "StopPropMovement",
+      "AddAttachedPropToProp",
+      "AttachPropToProp",
+      "RemoveAttachedPropFromProp",
+      "SetAllowStickyAreaAttachment",
+      "AttachPropToStickyArea",
+      "AttachBodyToStickyArea",
+      "DetachFromStickyArea",
+      "AddPropForce",
+      "AddPropImpulse",
+      "AddBodyForce",
+      "AddBodyImpulse",
+      "BreakJoint",
+      "SetBodyMass",
+      "GetBodyMass"
+    ]
+  },
+  {
+    "id": "world_mechanisms",
+    "title": "Doors, puzzles & connections",
+    "names": [
+      "SetSwingDoorLocked",
+      "SetSwingDoorClosed",
+      "SetSwingDoorDisableAutoClose",
+      "SetLevelDoorLocked",
+      "SetLevelDoorLockedSound",
+      "SetLevelDoorLockedText",
+      "GetSwingDoorLocked",
+      "GetSwingDoorClosed",
+      "GetSwingDoorState",
+      "SetPropObjectStuckState",
+      "SetWheelAngle",
+      "SetWheelStuckState",
+      "SetLeverStuckState",
+      "SetWheelInteractionDisablesStuck",
+      "SetLeverInteractionDisablesStuck",
+      "GetLeverState",
+      "SetMultiSliderStuckState",
+      "SetButtonSwitchedOn",
+      "SetMoveObjectState",
+      "SetMoveObjectStateExt",
+      "InteractConnectPropWithRope",
+      "InteractConnectPropWithMoveObject",
+      "ConnectEntities"
+    ]
+  },
+  {
+    "id": "lighting",
+    "title": "Lighting & prop effects",
+    "names": [
+      "SetLightVisible",
+      "FadeLightTo",
+      "SetLightFlickerActive",
+      "SetPropEffectActive",
+      "SetLampLit"
+    ]
+  },
+  {
+    "id": "enemies",
+    "title": "Enemies & AI",
+    "names": [
+      "SetEnemyDisabled",
+      "SetEnemyIsHallucination",
+      "FadeEnemyToSmoke",
+      "SetEnemyDisableTriggers",
+      "ShowEnemyPlayerPosition",
+      "AlertEnemyOfPlayerPresence",
+      "AddEnemyPatrolNode",
+      "ClearEnemyPatrolNodes",
+      "SetEnemySanityDecreaseActive",
+      "TeleportEnemyToNode",
+      "TeleportEnemyToEntity",
+      "ChangeManPigPose",
+      "SetTeslaPigFadeDisabled",
+      "SetTeslaPigSoundDisabled",
+      "SetTeslaPigEasyEscapeDisabled",
+      "ForceTeslaPigSighting",
+      "GetEnemyStateName"
+    ]
+  },
+  {
+    "id": "npc",
+    "title": "NPC presentation",
+    "names": [
+      "SetNPCAwake",
+      "SetNPCFollowPlayer"
+    ]
+  },
+  {
+    "id": "player_body",
+    "title": "Player body, movement & control",
+    "names": [
+      "SetPlayerActive",
+      "ChangePlayerStateToNormal",
+      "SetPlayerCrouching",
+      "AddPlayerBodyForce",
+      "SetPlayerPos",
+      "GetPlayerPosX",
+      "GetPlayerPosY",
+      "GetPlayerPosZ",
+      "GetPlayerSpeed",
+      "GetPlayerYSpeed",
+      "MovePlayerForward",
+      "SetPlayerMoveSpeedMul",
+      "SetPlayerRunSpeedMul",
+      "SetPlayerJumpForceMul",
+      "SetPlayerJumpDisabled",
+      "SetPlayerCrouchDisabled",
+      "TeleportPlayer"
+    ]
+  },
+  {
+    "id": "player_vitals",
+    "title": "Health, sanity & lantern",
+    "names": [
+      "SetInDarknessEffectsActive",
+      "SetPlayerSanity",
+      "AddPlayerSanity",
+      "GetPlayerSanity",
+      "SetPlayerHealth",
+      "AddPlayerHealth",
+      "GetPlayerHealth",
+      "SetPlayerLampOil",
+      "AddPlayerLampOil",
+      "GetPlayerLampOil",
+      "SetSanityDrainDisabled",
+      "GiveSanityBoost",
+      "GiveSanityBoostSmall",
+      "GiveSanityDamage",
+      "GivePlayerDamage",
+      "SetPlayerFallDamageDisabled",
+      "SetLanternActive",
+      "GetLanternActive",
+      "SetLanternDisabled"
+    ]
+  },
+  {
+    "id": "inventory",
+    "title": "Inventory & item use",
+    "names": [
+      "ExitInventory",
+      "SetInventoryDisabled",
+      "SetInventoryMessage",
+      "GiveItem",
+      "GiveItemFromFile",
+      "RemoveItem",
+      "HasItem"
+    ]
+  },
+  {
+    "id": "progression",
+    "title": "Quests, journals & progress",
+    "names": [
+      "AddNote",
+      "AddDiary",
+      "AddQuest",
+      "CompleteQuest",
+      "QuestIsCompleted",
+      "QuestIsAdded",
+      "SetNumberOfQuestsInMap"
+    ]
+  },
+  {
+    "id": "camera",
+    "title": "Camera & screen effects",
+    "names": [
+      "FadeIn",
+      "FadeOut",
+      "FadeImageTrailTo",
+      "FadeSepiaColorTo",
+      "FadeRadialBlurTo",
+      "SetRadialBlurStartDist",
+      "StartEffectFlash",
+      "StartScreenShake",
+      "FadePlayerFOVMulTo",
+      "FadePlayerAspectMulTo",
+      "FadePlayerRollTo",
+      "MovePlayerHeadPos",
+      "StartPlayerLookAt",
+      "StopPlayerLookAt",
+      "SetPlayerLookSpeedMul"
+    ]
+  },
+  {
+    "id": "interface",
+    "title": "Messages, hints & interface",
+    "names": [
+      "SetupLoadScreen",
+      "ShowPlayerCrossHairIcons",
+      "SetMessage",
+      "SetDeathHint",
+      "ReturnOpenJournal",
+      "GiveHint",
+      "RemoveHint",
+      "BlockHint",
+      "UnBlockHint"
+    ]
+  },
+  {
+    "id": "player_effects",
+    "title": "Insanity & flashback effects",
+    "names": [
+      "StartEffectEmotionFlash",
+      "GetFlashbackIsActive",
+      "SetInsanitySetEnabled",
+      "StartRandomInsanityEvent",
+      "StartInsanityEvent",
+      "StopCurrentInsanityEvent",
+      "InsanityEventIsActive"
+    ]
+  },
+  {
+    "id": "environment",
+    "title": "Sky, fog & map presentation",
+    "names": [
+      "SetMapDisplayNameEntry",
+      "SetSkyBoxActive",
+      "SetSkyBoxTexture",
+      "SetSkyBoxColor",
+      "SetFogActive",
+      "SetFogColor",
+      "SetFogProperties"
+    ]
+  },
+  {
+    "id": "particles",
+    "title": "Particles & player-centered weather",
+    "names": [
+      "StartPlayerSpawnPS",
+      "StopPlayerSpawnPS",
+      "CreateParticleSystemAtEntity",
+      "CreateParticleSystemAtEntityExt",
+      "DestroyParticleSystem"
+    ]
+  },
+  {
+    "id": "audio",
+    "title": "Sound, voices & music",
+    "names": [
+      "AddEffectVoice",
+      "StopAllEffectVoices",
+      "GetEffectVoiceActive",
+      "PlayGuiSound",
+      "SetPlayerPermaDeathSound",
+      "DisableDeathStartSound",
+      "PlaySoundAtEntity",
+      "FadeInSound",
+      "StopSound",
+      "PlayMusic",
+      "StopMusic",
+      "FadeGlobalSoundVolume",
+      "FadeGlobalSoundSpeed"
+    ]
+  },
+  {
+    "id": "account",
+    "title": "Account & achievements",
+    "names": [
+      "UnlockAchievement"
+    ]
+  },
+  {
+    "id": "timers",
+    "title": "Timers & deferred execution",
+    "names": [
+      "AddTimer",
+      "RemoveTimer",
+      "GetTimerTimeLeft"
+    ]
+  },
+  {
+    "id": "callbacks",
+    "title": "Callback bindings",
+    "names": [
+      "SetEffectVoiceOverCallback",
+      "SetLanternLitCallback",
+      "AddCombineCallback",
+      "RemoveCombineCallback",
+      "AddUseItemCallback",
+      "RemoveUseItemCallback",
+      "SetEntityPlayerLookAtCallback",
+      "SetEntityPlayerInteractCallback",
+      "SetEntityCallbackFunc",
+      "SetEntityConnectionStateChangeCallback",
+      "SetMultiSliderCallback",
+      "AddEntityCollideCallback",
+      "RemoveEntityCollideCallback"
+    ]
+  },
+  {
+    "id": "variables",
+    "title": "Map & cross-map variables",
+    "names": [
+      "SetLocalVarInt",
+      "SetLocalVarFloat",
+      "SetLocalVarString",
+      "AddLocalVarInt",
+      "AddLocalVarFloat",
+      "AddLocalVarString",
+      "GetLocalVarInt",
+      "GetLocalVarFloat",
+      "GetLocalVarString",
+      "SetGlobalVarInt",
+      "SetGlobalVarFloat",
+      "SetGlobalVarString",
+      "AddGlobalVarInt",
+      "AddGlobalVarFloat",
+      "AddGlobalVarString",
+      "GetGlobalVarInt",
+      "GetGlobalVarFloat",
+      "GetGlobalVarString"
+    ]
+  },
+  {
+    "id": "resources",
+    "title": "Preloading & resource caches",
+    "names": [
+      "CreateDataCache",
+      "DestroyDataCache",
+      "PreloadParticleSystem",
+      "PreloadSound"
+    ]
+  },
+  {
+    "id": "utility",
+    "title": "Math, strings, randomness & diagnostics",
+    "names": [
+      "Print",
+      "AddDebugMessage",
+      "ProgLog",
+      "ScriptDebugOn",
+      "RandFloat",
+      "RandInt",
+      "StringContains",
+      "StringSub",
+      "MathSin",
+      "MathCos",
+      "MathTan",
+      "MathAsin",
+      "MathAcos",
+      "MathAtan",
+      "MathAtan2",
+      "MathSqrt",
+      "MathPow",
+      "MathMin",
+      "MathMax",
+      "MathClamp",
+      "MathAbs",
+      "StringToInt",
+      "StringToFloat",
+      "StringToBool"
+    ]
+  },
+  {
+    "id": "version2-helpers",
+    "title": "Version 2 helpers",
+    "names": [
+      "SelectScriptPlayer",
+      "GetScriptPlayerId",
+      "GetScriptPlayerCount",
+      "GetScriptPlayerIdAt",
+      "RunClientCallback",
+      "AddPlayerCollideCallback",
+      "RemovePlayerCollideCallback",
+      "SetPlayerVarInt",
+      "GetPlayerVarInt",
+      "SetPlayerVarFloat",
+      "GetPlayerVarFloat",
+      "SetPlayerVarString",
+      "GetPlayerVarString",
+      "PublishPlayerVar",
+      "GetPublishedScriptVar"
+    ]
+  }
+]

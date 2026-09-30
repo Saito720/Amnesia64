@@ -58,7 +58,7 @@ try {
         Copy-Item -LiteralPath (Join-Path $workspace 'steam_appid.txt') -Destination $context.Output -Force
     }
     $options=@('/nologo','/EHsc','/std:c++17','/MDd','/Od','/Zi','/D_DEBUG','/DMEMORY_MANAGER_ACTIVE','/DUSE_SDL2','/DUSE_GAMEPAD','/DGLEW_STATIC','/D_NEWTON_USE_LIB','/DIL_STATIC_LIB','/DHAVE_LIBC','/DAL_LIBTYPE_STATIC',
-        "/I$workspace/HPL2/core/include","/I$workspace/HPL2/dependencies/include","/I$workspace/HPL2/dependencies/include/SDL2","/I$workspace/HPL2/dependencies/sources/imgui","/I$workspace/amnesia/src/game",("/I"+$context.Output),
+        "/I$workspace/HPL2/core/include","/I$workspace/HPL2/dependencies/include","/I$workspace/HPL2/dependencies/include/SDL2","/I$workspace/HPL2/dependencies/sources/imgui","/I$workspace/HPL2/dependencies/sources/AngelScript/include","/I$workspace/amnesia/src/game",("/I"+$context.Output),
         (Join-Path $PSScriptRoot "$Kind.cpp"),("/Fo"+$context.Output+'/'),("/Fd"+$context.Output+'/harness.pdb'),("/Fe"+$context.Output+'/smoke.exe'))
     & $context.Compiler @backendOptions @options @additionalSources @objects @libraries /link /SUBSYSTEM:CONSOLE /INCREMENTAL:NO opengl32.lib ws2_32.lib crypt32.lib bcrypt.lib Iphlpapi.lib dbghelp.lib winmm.lib setupapi.lib Imm32.lib Version.lib Avrt.lib user32.lib gdi32.lib shell32.lib ole32.lib oleaut32.lib advapi32.lib uuid.lib
     if($LASTEXITCODE -ne 0) { throw "$Kind harness build failed." }

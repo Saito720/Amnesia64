@@ -133,6 +133,10 @@ void iLuxEntity::RunCallbackFunc(const tString& asType)
 {
 	if(msCallbackFunc=="")return;
 
+	if(asType=="OnPickup" || asType=="OnIgnite") {
+        cLuxScriptLocalPlayerScope player;
+        mpMap->RunScript(msCallbackFunc + "(\""+msName+"\", \""+asType+"\")" );return;
+    }
 	mpMap->RunScript(msCallbackFunc + "(\""+msName+"\", \""+asType+"\")" );
 }
 
@@ -147,6 +151,7 @@ void iLuxEntity::RunInteractCallbackFunc()
 		return;
 	}
 	if(msInteractCallback=="")return;
+    cLuxScriptLocalPlayerScope player;
 	
 	mpMap->RunScript(msInteractCallback + "(\""+msName+"\")");
 	

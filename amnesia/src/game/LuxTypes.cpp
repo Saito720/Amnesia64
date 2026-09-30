@@ -20,6 +20,9 @@
 #include "LuxTypes.h"
 #include "LuxMultiplayer.h"
 #include "LuxMultiplayerTriggerPolicy.h"
+#include "LuxMultiplayerTriggerGeometry.h"
+#include "LuxMultiplayerWorld.h"
+#include "LuxPlayer.h"
 
 #include "LuxEntity.h"
 #include "LuxArea.h"
@@ -158,7 +161,9 @@ void iLuxCollideCallbackContainer::CheckCollisionCallback(const tString& asName,
     
 	/////////////////////
 	//Iterate the collide callbacks
-	for(tLuxCollideCallbackListIt it = mlstCollideCallbacks.begin(); it != mlstCollideCallbacks.end(); ++it)
+	const size_t callbacksAtStart=mlstCollideCallbacks.size();
+	size_t callbacksChecked=0;
+	for(tLuxCollideCallbackListIt it = mlstCollideCallbacks.begin(); it != mlstCollideCallbacks.end() && callbacksChecked++ < callbacksAtStart; ++it)
 	{
 		cLuxCollideCallback *pCallback = *it;
 		iLuxEntity *pEntity = pCallback->mpCollideEntity;
@@ -167,6 +172,56 @@ void iLuxCollideCallbackContainer::CheckCollisionCallback(const tString& asName,
 		if(pEntity==NULL) continue;
 		if(pEntity->IsActive()==false) continue;
 
+        if(std::find(mlstDeleteCallbacks.begin(),mlstDeleteCallbacks.end(),pCallback)!=mlstDeleteCallbacks.end()) continue;
+        if(pCallback->mbPerPlayer)
+        {
+            cLuxMultiplayer* session=gpBase->mpMultiplayer;
+            const bool online=session && session->IsActive();
+            if(asName!="Player" || (online && !session->IsHost())) continue;
+            std::vector<cLuxEnemyPlayer> players;
+            if(online) {session->GetWorld()->PrepareEnemyPlayers();players=session->GetWorld()->GetEnemyPlayers();}
+            else players.push_back(cLuxEnemyPlayer::Local(0));
+            std::vector<LuxScriptPlayerOverlap> overlaps;
+            for(const auto& player:players)
+            {
+                if(!player.alive || !player.body || (online && player.peer!=session->GetLocalPeerId() &&
+                    !session->GetSettings().allPlayersTriggerScripts)) continue;
+                bool inside=false;
+                for(int body=0;body<pEntity->GetBodyNum();++body)
+                    if(LuxPlayerBodyTouches(apMap->GetPhysicsWorld(),player.body->GetCurrentBody(),pEntity->GetBody(body))) {inside=true;break;}
+                overlaps.push_back({player.peer,online?player.life:1,inside});
+            }
+            const uint64_t sessionId=online?session->GetSessionSerial():0;
+            const auto events=pCallback->mPlayerCollisionState.Sample(sessionId,overlaps,pCallback->mlStates,pCallback->mbOncePerPlayer,false);
+            for(const auto& event:events)
+            {
+                if(std::find(mlstDeleteCallbacks.begin(),mlstDeleteCallbacks.end(),pCallback)!=mlstDeleteCallbacks.end()) break;
+                // An earlier actor callback can kill, disconnect or respawn a
+                // later actor in this same sample. Do not dispatch stale work.
+                if(online) {
+                    if(!session->IsHost() || session->GetSessionSerial()!=sessionId) break;
+                    if(event.player==session->GetLocalPeerId()) {
+                        if(gpBase->mpPlayer->GetHealth()<=0 || session->GetWorld()->GetLocalPlayerLife()!=event.life) continue;
+                    } else {
+                        const auto& current=session->GetWorld()->GetRemotePlayers();
+                        const auto actor=current.find(event.player);
+                        if(actor==current.end() || actor->second.gameplay.life!=event.life ||
+                           !(actor->second.gameplay.flags&LuxWorldWire::PlayerAlive)) continue;
+                    }
+                } else if(gpBase->mpPlayer->GetHealth()<=0) continue;
+                LuxScriptExecutionContext context=pCallback->mScriptContext;
+                context.revised=true;context.domain=LuxScriptDomain::Authority;
+                context.hasPlayer=true;context.player=event.player;context.session=sessionId;
+                context.mapEpoch=online?session->GetMapEpoch():0;context.event=LuxNextScriptEventId();
+                if(context.module.empty()) context.module=apMap->GetFileName();
+                if(pCallback->mbOncePerPlayer) pCallback->mPlayerCollisionState.Consume(event.player);
+                cLuxScriptExecutionScope execution(context);
+                cLuxMultiplayerRemoteTriggerScope trigger(online && event.player!=session->GetLocalPeerId(),event.player);
+                apMap->RunScript(pCallback->msCallbackFunc+"(\"Player\", \""+pEntity->GetName()+"\", "+cString::ToString(event.state)+")");
+                if(pEntity->GetDestroyMe() || !pEntity->IsActive()) break;
+            }
+            continue;
+        }
 		bCollide = CheckEntityCollision(pEntity, apMap);
 		bool bRemotePlayerTrigger = false;
 		uint32_t lTriggerPeer=UINT32_MAX;
@@ -191,8 +246,21 @@ void iLuxCollideCallbackContainer::CheckCollisionCallback(const tString& asName,
 			if(lState == pCallback->mlStates || pCallback->mlStates==0)
 			{
 				tString sCommand = pCallback->msCallbackFunc+"(\"" + asName + "\", \""+ pEntity->GetName()+"\", "+cString::ToString(lState)+")" ;
-				cLuxMultiplayerRemoteTriggerScope remoteTrigger(bRemotePlayerTrigger,lTriggerPeer);
-				apMap->RunScript(sCommand);
+                LuxScriptExecutionContext context=pCallback->mScriptContext;
+                if(context.revised)
+                {
+                    cLuxMultiplayer* session=gpBase->mpMultiplayer;
+                    const bool online=session && session->IsActive();
+                    context.hasPlayer=asName=="Player";
+                    context.player=context.hasPlayer ? (bRemotePlayerTrigger?lTriggerPeer:(online?session->GetLocalPeerId():0)) : UINT32_MAX;
+                    context.session=online?session->GetSessionSerial():0;
+                    context.mapEpoch=online?session->GetMapEpoch():0;context.event=LuxNextScriptEventId();
+                }
+                cLuxScriptExecutionScope execution(context);
+                if(asName=="Player") {
+                    cLuxMultiplayerRemoteTriggerScope remoteTrigger(bRemotePlayerTrigger,lTriggerPeer);
+                    apMap->RunScript(sCommand);
+                } else apMap->RunScript(sCommand);
 			
 				///////////////////////
 				// Auto remove
@@ -275,7 +343,7 @@ void iLuxCollideCallbackContainer::AddCollideCallback(iLuxEntity *apEntity, cons
 	for(tLuxCollideCallbackListIt it = mlstCollideCallbacks.begin(); it != mlstCollideCallbacks.end(); ++it)
 	{
 		cLuxCollideCallback *pCallback = *it;
-		if(pCallback->mpCollideEntity == apEntity)
+		if(pCallback->mpCollideEntity == apEntity && !pCallback->mbPerPlayer)
 		{
 			Warning("A callback with entity '%s' already exists!\n", apEntity->GetName().c_str());	
 			return;
@@ -291,6 +359,7 @@ void iLuxCollideCallbackContainer::AddCollideCallback(iLuxEntity *apEntity, cons
 	pCallback->mbDeleteWhenColliding = abRemoveAtCollide;
 	pCallback->mbColliding = false;
 	pCallback->mRemotePlayerTrigger = {};
+	pCallback->mScriptContext = LuxCurrentScriptContext();
 	pCallback->mlStates = alStates;
 
 	apEntity->AddCollideCallbackParent(this);
@@ -300,11 +369,35 @@ void iLuxCollideCallbackContainer::AddCollideCallback(iLuxEntity *apEntity, cons
 
 //-----------------------------------------------------------------------
 
+void iLuxCollideCallbackContainer::AddPlayerCollideCallback(iLuxEntity *apEntity, const tString& asCallbackFunc, bool abOncePerPlayer, int alStates)
+{
+    if(!apEntity || this!=static_cast<iLuxCollideCallbackContainer*>(gpBase->mpPlayer) || alStates < -1 || alStates > 1) return;
+    for(auto* callback:mlstCollideCallbacks)
+        if(callback->mpCollideEntity==apEntity && callback->mbPerPlayer &&
+            std::find(mlstDeleteCallbacks.begin(),mlstDeleteCallbacks.end(),callback)==mlstDeleteCallbacks.end())
+        { Warning("A per-player callback with entity '%s' already exists!\n",apEntity->GetName().c_str());return; }
+    cLuxCollideCallback* callback=hplNew(cLuxCollideCallback,());
+    callback->mpCollideEntity=apEntity;callback->msCallbackFunc=asCallbackFunc;
+    callback->mbDeleteWhenColliding=false;callback->mbColliding=false;callback->mlStates=alStates;
+    callback->mbPerPlayer=true;callback->mbOncePerPlayer=abOncePerPlayer;
+    callback->mScriptContext=LuxCurrentScriptContext();
+    apEntity->AddCollideCallbackParent(this);
+    mlstCollideCallbacks.push_back(callback);
+}
+
+void iLuxCollideCallbackContainer::RemovePlayerCollideCallback(const tString& asEntityName)
+{
+    for(auto* callback:mlstCollideCallbacks)
+        if(callback->mbPerPlayer && callback->mpCollideEntity && callback->mpCollideEntity->GetName()==asEntityName &&
+           std::find(mlstDeleteCallbacks.begin(),mlstDeleteCallbacks.end(),callback)==mlstDeleteCallbacks.end())
+        { RemoveCollideCallback(callback);return; }
+}
 void iLuxCollideCallbackContainer::RemoveCollideCallback(cLuxCollideCallback *apCallback)
 {
 	if(mbUpdatingCollideCallbacks)
 	{
-		mlstDeleteCallbacks.push_back(apCallback);	
+		if(std::find(mlstDeleteCallbacks.begin(),mlstDeleteCallbacks.end(),apCallback)==mlstDeleteCallbacks.end())
+			mlstDeleteCallbacks.push_back(apCallback);
 	}
 	else
 	{
@@ -321,7 +414,7 @@ void iLuxCollideCallbackContainer::RemoveCollideCallback(const tString& asEntity
 	for(tLuxCollideCallbackListIt it = mlstCollideCallbacks.begin(); it != mlstCollideCallbacks.end(); ++it)
 	{
 		cLuxCollideCallback *pCallback = *it;
-		if(pCallback->mpCollideEntity->GetName() == asEntityName)
+		if(pCallback->mpCollideEntity->GetName() == asEntityName && !pCallback->mbPerPlayer)
 		{
 			RemoveCollideCallback(pCallback);	
 			break;
@@ -338,6 +431,7 @@ void iLuxCollideCallbackContainer::RemoveCollideCallbackInstantly(iLuxEntity *ap
 		cLuxCollideCallback *pCallback = *it;
 		if(pCallback->mpCollideEntity == apEntity)
 		{
+			mlstDeleteCallbacks.remove(pCallback);
 			hplDelete(pCallback);
 			it = mlstCollideCallbacks.erase(it);
 		}
@@ -407,6 +501,12 @@ kSerializeVar(msName, eSerializeType_String)
 kSerializeVar(msFunction, eSerializeType_String)
 kSerializeVar(mfCount, eSerializeType_Float32)
 kSerializeVar(mbDestroyMe, eSerializeType_Bool)
+kSerializeVar(mScriptContext.revised, eSerializeType_Bool)
+kSerializeVar(mScriptContext.domain, eSerializeType_Int32)
+kSerializeVar(mScriptContext.hasPlayer, eSerializeType_Bool)
+kSerializeVar(mScriptContext.player, eSerializeType_Int32)
+kSerializeVar(mScriptContext.module, eSerializeType_String)
+kSerializeVar(mlScriptPlayerLife, eSerializeType_Int32)
 kEndSerialize()
 
 //-----------------------------------------------------------------------
@@ -534,6 +634,10 @@ void cLuxCollideCallback_SaveData::FromCallback(cLuxCollideCallback *apCallback)
 	mlStates = apCallback->mlStates;
 	mbColliding = apCallback->mbColliding;
 	mRemotePlayerTrigger = apCallback->mRemotePlayerTrigger;
+	mbPerPlayer=apCallback->mbPerPlayer;mbOncePerPlayer=apCallback->mbOncePerPlayer;
+	mScriptContext=apCallback->mScriptContext;mPlayerCollisionState=apCallback->mPlayerCollisionState;
+	mbOfflinePlayerInside=mPlayerCollisionState.OfflineInside();
+	mbOfflinePlayerConsumed=mPlayerCollisionState.OfflineConsumed();
 }
 
 //-----------------------------------------------------------------------
@@ -545,6 +649,9 @@ void cLuxCollideCallback_SaveData::ToCallback(cLuxMap *apMap, iLuxCollideCallbac
 	apCallback->mlStates = mlStates;
 	apCallback->mbColliding = mbColliding;
 	apCallback->mRemotePlayerTrigger = mRemotePlayerTrigger;
+	apCallback->mbPerPlayer=mbPerPlayer;apCallback->mbOncePerPlayer=mbOncePerPlayer;
+	apCallback->mScriptContext=mScriptContext;apCallback->mPlayerCollisionState=mPlayerCollisionState;
+	if(mbPerPlayer && (!gpBase->mpMultiplayer || !gpBase->mpMultiplayer->IsActive())) apCallback->mPlayerCollisionState.RestoreOffline(mbOfflinePlayerInside,mbOfflinePlayerConsumed);
 
 	apCallback->mpCollideEntity = apMap->GetEntityByID(mlCollideEntity);
 	if(apCallback->mpCollideEntity==NULL)
@@ -565,6 +672,15 @@ kSerializeVar(msCallbackFunc, eSerializeType_String)
 kSerializeVar(mbDeleteWhenColliding, eSerializeType_Bool)
 kSerializeVar(mlStates, eSerializeType_Int32)
 kSerializeVar(mbColliding, eSerializeType_Bool)
+kSerializeVar(mbPerPlayer, eSerializeType_Bool)
+kSerializeVar(mbOncePerPlayer, eSerializeType_Bool)
+kSerializeVar(mbOfflinePlayerInside, eSerializeType_Bool)
+kSerializeVar(mbOfflinePlayerConsumed, eSerializeType_Bool)
+kSerializeVar(mScriptContext.revised, eSerializeType_Bool)
+kSerializeVar(mScriptContext.domain, eSerializeType_Int32)
+kSerializeVar(mScriptContext.hasPlayer, eSerializeType_Bool)
+kSerializeVar(mScriptContext.player, eSerializeType_Int32)
+kSerializeVar(mScriptContext.module, eSerializeType_String)
 kEndSerialize()
 
 //-----------------------------------------------------------------------

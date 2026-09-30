@@ -84,6 +84,7 @@ public:
 	void AfterWorldLoadEntitySetup();
 	
 	void OnEnter(bool abRunScript, bool abFirstTime);
+    void OnScriptPlayerReady(uint32_t peer);
 	void OnLeave(bool abRunScript);
 	
 	void Update(float afTimeStep);

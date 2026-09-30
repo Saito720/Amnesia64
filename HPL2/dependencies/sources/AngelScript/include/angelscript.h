@@ -628,6 +628,10 @@ public:
 	virtual int SaveByteCode(asIBinaryStream *out) = 0;
 	virtual int LoadByteCode(asIBinaryStream *in) = 0;
 
+	// HPL extension: borrow a caller-configured context for global initialization.
+	// Existing no-argument initialization and existing virtual slots are unchanged.
+	virtual int ResetGlobalVars(asIScriptContext *context) = 0;
+
 protected:
 	virtual ~asIScriptModule() {}
 };

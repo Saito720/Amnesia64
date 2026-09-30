@@ -30,6 +30,7 @@
 #include "LuxDebugHandler.h"
 #include "LuxSaveHandler.h"
 #include "LuxScriptHandler.h"
+#include "LuxScriptRuntime.h"
 #include "LuxHelpFuncs.h"
 #include "LuxEffectRenderer.h"
 #include "LuxMusicHandler.h"
@@ -590,8 +591,17 @@ bool cLuxBase::StartGame(const tString& asFile, const tString& asFolder, const t
 	}
 
 	//////////////////
-	//Global script
+    //Global script
+    if(!mpMultiplayer || !mpMultiplayer->IsClient()) {
+        tString error;
+        if(!mpScriptHandler->GetRuntime()->LoadPackage(sMapFolder+sMapFile,error)) {
+            msErrorMessage=cString::To16Char(error);return false;
+        }
+    }
 	mpGlobalDataHandler->LoadAndInitGlobalScript();
+    if(!mpGlobalDataHandler->GetScriptLoadError().empty()) {
+        msErrorMessage=cString::To16Char(mpGlobalDataHandler->GetScriptLoadError());return false;
+    }
 	
 	//////////////////
 	//Load map
@@ -602,6 +612,17 @@ bool cLuxBase::StartGame(const tString& asFile, const tString& asFolder, const t
 	///////////////////
 	//Send message that game has been started.
 	RunModuleMessage(eLuxUpdateableMessage_OnGameStart, NULL);
+    if(!mpInventory->GetScriptLoadError().empty()) {
+        msErrorMessage=cString::To16Char(mpInventory->GetScriptLoadError());return false;
+    }
+
+    if(!mpMultiplayer || !mpMultiplayer->IsClient()) {
+        tString error;
+        if(!mpScriptHandler->GetRuntime()->InitializeClient(error)) {
+            msErrorMessage=cString::To16Char(error);return false;
+        }
+        if(mpMultiplayer) mpMultiplayer->NotifyScriptPlayerReady(mpMultiplayer->IsActive()?mpMultiplayer->GetLocalPeerId():0);
+    }
 
 	return true;
 }

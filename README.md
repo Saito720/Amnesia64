@@ -3,6 +3,7 @@
 
 ## Key changes:
 - Experimental Steam multiplayer using Steamworks 1.65 lobbies and Steam Datagram Relay, with campaign host/join and a global tilde-key ImGui window. Direct IP remains available. See [multiplayer status, controls and tests](MULTIPLAYER.md).
+- Opt-in Version 2 multiplayer scripting adds authority hooks, restricted client companions and explicit player context. See the [master scripting reference](docs/multiplayer-scripting.md) or [searchable native API](docs/multiplayer-scripting.html).
 - Windowed mode supports resizing and maximizing, with the game rendering at the current window resolution. Resizing never changes the configured launch resolution; `0,0` uses the monitor's desktop resolution and respects the fullscreen setting.
 - Can be compiled in both 32-bit and 64-bit modes using Visual Studio 2026 with the v145 build tools.
 - Single solution file for all projects (main game, HPL2, dependencies and editors). No need to compile the engine separately.

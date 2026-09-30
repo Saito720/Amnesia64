@@ -16,6 +16,7 @@ public:
     void Update(float dt);
     void OnPeerDisconnected(uint32_t peer);
     bool SendInitialState(uint32_t peer);
+    bool HasPendingInitialState(uint32_t peer) const {return mInitial.count(peer)!=0;}
     bool HandleMessage(uint32_t peer, const std::vector<uint8_t>& data);
     void UpdateReplica(iLuxEnemy* enemy, float dt);
 private:

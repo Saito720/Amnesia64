@@ -18,6 +18,8 @@
  */
 
 #include "LuxMapHandler.h"
+#include "LuxScriptHandler.h"
+#include "LuxScriptRuntime.h"
 #include "LuxMultiplayer.h"
 #include "LuxMultiplayerEntities.h"
 #include "LuxMultiplayerWorld.h"
@@ -632,6 +634,11 @@ void cLuxMapHandler::CheckMapChange(float afTimeStep)
 	{
 		mpSavedGameMutex->Lock();
 
+        // Retain the current companion instances and scoped state until the
+        // prospective package and authority script have both loaded.
+        cLuxScriptRuntime* scriptRuntime=gpBase->mpScriptHandler->GetRuntime();
+        scriptRuntime->BeginMapChange();
+
 		//////////////////////
 		// Run onleave before saving!
 		mpCurrentMap->RunScript("OnLeave()");//since script is not run in SetCurrenMap
@@ -659,12 +666,15 @@ void cLuxMapHandler::CheckMapChange(float afTimeStep)
 		cLuxMap *pMap = LoadMap(mMapChangeData.msMapFile,true);
 		if(pMap == NULL)
 		{
+
+            scriptRuntime->RollbackMapChange();
 			Error("Could not load map '%s'!\n", mMapChangeData.msMapFile.c_str());
 			mpSavedGameMutex->Unlock();
 			if(gpBase->mpMultiplayer)
 				gpBase->mpMultiplayer->CancelHostMapChange("Host could not load map '"+mMapChangeData.msMapFile+"'.");
 			return;
 		}
+        scriptRuntime->CommitMapChange();
 		
 		if(pLastMap)
 		{
@@ -704,6 +714,13 @@ void cLuxMapHandler::CheckMapChange(float afTimeStep)
 		// Run enter script! (otherwise a save in oneter will not be correct!)
 		if(bFirstTime) mpCurrentMap->RunScript("OnStart()");
 		mpCurrentMap->RunScript("OnEnter()");
+        if(!gpBase->mpMultiplayer || !gpBase->mpMultiplayer->IsClient()) {
+            tString scriptError;
+            if(!gpBase->mpScriptHandler->GetRuntime()->InitializeClient(scriptError))
+                Error("Client map initialization: %s\n",scriptError.c_str());
+            else if(gpBase->mpMultiplayer)
+                gpBase->mpMultiplayer->NotifyScriptPlayerReady(gpBase->mpMultiplayer->IsActive()?gpBase->mpMultiplayer->GetLocalPeerId():0);
+        }
 
 
 		mpSavedGameMutex->Unlock();

@@ -56,7 +56,15 @@ class cMapCacheRegression {
            player->GetHelperFlashback()->IsActive()!=normal ||
            gpBase->mpMapHandler->GetPostEffect_ImageTrail()->IsActive()!=normal) {
             error=normal?"ordinary map change cleared native persistent player/flashback/image-trail state":
-                "debug map restart retained player/flashback/image-trail state that native StartGame resets";return false;
+                "debug map restart retained player/flashback/image-trail state that native StartGame resets";
+            error+=" [jumpDisabled="+cString::ToString(int(player->GetJumpDisabled()))+
+                " tinderboxes="+cString::ToString(player->GetTinderboxes())+
+                " move="+cString::ToString(player->GetScriptMoveSpeedMul())+
+                " run="+cString::ToString(player->GetScriptRunSpeedMul())+
+                " flashback="+cString::ToString(int(player->GetHelperFlashback()->IsActive()))+
+                " imageTrail="+cString::ToString(int(gpBase->mpMapHandler->GetPostEffect_ImageTrail()->IsActive()))+
+                " life="+cString::ToString(int(gpBase->mpMultiplayer->GetWorld()->GetLocalPlayerLife()))+"]";
+            return false;
         }
         return true;
     }

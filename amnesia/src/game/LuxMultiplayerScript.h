@@ -9,7 +9,8 @@
 static const uint32_t LuxScriptOptionalResources=0x80000000u;
 bool LuxValidateMultiplayerScriptEffect(luxnet::Reader& r, std::string& error,uint32_t* unavailableResources=NULL);
 
-// A fixed, typed registry; clients never compile script text from the network.
+// A fixed typed registry for native effects. Client companions are compiled
+// separately by the restricted runtime, never by this command decoder.
 // Native helpers within one VM context are one command. Authored callbacks
 // entered by that command execute in another context and have their own effects.
 class cLuxMultiplayerScriptScope {
@@ -17,7 +18,9 @@ public:
     template<class... Args> cLuxMultiplayerScriptScope(uint32_t id,const Args&... args) {
         mpPreviousContext=smContext;
         const void* context=hpl::GetActiveScriptContext();smContext=context;
-        if(context && context!=mpPreviousContext && gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsHost()) {
+        const auto& execution=LuxCurrentScriptContext();
+        if(context && context!=mpPreviousContext && execution.domain!=LuxScriptDomain::Client &&
+            execution.domain!=LuxScriptDomain::Replication && gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsHost()) {
             luxnet::Writer w(luxnet::ScriptEffect);w.U32(gpBase->mpMultiplayer->GetMapEpoch());
             const size_t commandOffset=w.data.size();w.U32(id);
             const size_t argumentsOffset=w.data.size();

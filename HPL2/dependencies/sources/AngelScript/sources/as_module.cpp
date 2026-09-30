@@ -167,13 +167,21 @@ int asCModule::Build()
 // interface
 int asCModule::ResetGlobalVars()
 {
+	return ResetGlobalVars(0);
+}
+
+// HPL extension: the optional context is borrowed and may carry a line budget.
+int asCModule::ResetGlobalVars(asIScriptContext *context)
+{
+	if( context && (context->GetEngine() != engine || context->GetState() == asEXECUTION_ACTIVE ||
+		context->GetState() == asEXECUTION_SUSPENDED) ) return asINVALID_ARG;
 	if( isGlobalVarInitialized ) 
 		CallExit();
 
 	// TODO: The application really should do this manually through a context
 	//       otherwise it cannot properly handle script exceptions that may be
 	//       thrown by object initializations.
-	return CallInit();
+	return CallInit(context);
 }
 
 // interface
@@ -187,6 +195,11 @@ int asCModule::GetFunctionIdByIndex(int index)
 
 // internal
 int asCModule::CallInit()
+{
+	return CallInit(0);
+}
+
+int asCModule::CallInit(asIScriptContext *context)
 {
 	if( isGlobalVarInitialized ) 
 		return asERROR;
@@ -202,7 +215,7 @@ int asCModule::CallInit()
 	}
 
 	// Call the init function for each of the global variables
-	asIScriptContext *ctx = 0;
+	asIScriptContext *ctx = context;
 	int r = asEXECUTION_FINISHED;
 	for( n = 0; n < scriptGlobals.GetLength() && r == asEXECUTION_FINISHED; n++ )
 	{
@@ -249,7 +262,7 @@ int asCModule::CallInit()
 		}
 	}
 
-	if( ctx )
+	if( ctx && !context )
 	{
 		ctx->Release();
 		ctx = 0;

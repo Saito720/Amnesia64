@@ -2,6 +2,8 @@
 #define LUX_MULTIPLAYER_H
 #include "LuxBase.h"
 #include "LuxMultiplayerInventoryProtocol.h"
+#include "LuxScriptExecution.h"
+#include "LuxScriptPackageProtocol.h"
 #include "network/NetworkTransport.h"
 #include <cstdint>
 #include <cstdarg>
@@ -78,7 +80,18 @@ public:
     bool IsActive() const { return mTransport.IsActive(); }
     bool IsHost() const { return mTransport.IsHost(); }
     bool IsClient() const { return IsActive() && !IsHost(); }
-    bool IsReady() const { return mbReady; }
+    bool IsReady() const { return mbReady && mbScriptInitialized; }
+    bool IsInstallingInitialState() const {return IsClient() && mbReady && !mbScriptInitialized;}
+    bool SendTransientScriptEffect(const std::vector<uint8_t>& effect);
+    bool SendPublishedScriptState(uint32_t peer,bool initial=false);
+    bool RegisterPlayerCompletion(const tString& kind,const tString& function,bool booleanArgument,
+        bool persistent,tString& token,tString& error);
+    bool HandlePlayerCompletionCommand(const tString& command);
+    void ClearScriptCompletions();
+    void BeginScriptMapChange();
+    void CommitScriptMapChange();
+    void RollbackScriptMapChange();
+    void NotifyScriptPlayerReady(uint32_t peer);
     bool ShouldSuppressOfflineSaves() const;
     const tString& GetStatus() const { return msStatus; }
     eLuxMultiplayerLoadPhase GetLoadPhase() const { return mLoadPhase; }
@@ -126,6 +139,8 @@ public:
     void ForgetRemoteItem(const tString& item);
     bool HasRemoteItem(const tString& item) const;
     void BroadcastScriptEffect(const std::vector<uint8_t>& effect);
+    bool SendScriptPlayerCommand(uint32_t peer,const std::vector<uint8_t>& effect,uint32_t revision=0);
+    bool SendClientScriptEvent(uint32_t peer,const tString& module,const tString& function,const std::vector<tString>& args);
     bool AllowObjectBreak(const tString& name);
     bool AllowPhysicsJointBreak(iLuxProp* prop, iPhysicsJoint* joint);
     bool BeginNativeInteraction(iLuxEntity* entity);
@@ -136,12 +151,18 @@ public:
     void RecordNativeDiaryDecision(bool open);
     bool IsApplyingScriptEffect() const { return mbApplyingScriptEffect; }
     bool SetRemoteScriptTrigger(bool remote) { bool old=mbRemoteScriptTrigger;mbRemoteScriptTrigger=remote;return old; }
-    uint32_t GetScriptPlayerPeer() const { return mbRemoteScriptTrigger ? mlScriptPlayerPeer : mlLocalPeer; }
+    uint32_t GetScriptPlayerPeer() const {
+        const auto& context=LuxCurrentScriptContext();
+        if(context.revised) return context.hasPlayer?context.player:UINT32_MAX;
+        return mbRemoteScriptTrigger ? mlScriptPlayerPeer : mlLocalPeer;
+    }
     uint32_t SetScriptPlayerPeer(uint32_t peer) { uint32_t old=mlScriptPlayerPeer;mlScriptPlayerPeer=peer;return old; }
 private:
     struct Peer {
         bool greeted=false, ready=false, beginSent=false, endSent=false, transferRequested=false;
         bool inventoryInitialized=false;
+        bool scriptPackageSent=false,scriptInitializationSent=false,scriptInitialized=false;
+        uint32_t scriptPackageOffset=0;
         uint32_t offset=0;
         float age=0, requestCooldown=0;
         float interactionTokens=32;
@@ -192,6 +213,25 @@ private:
     std::map<uint32_t,uint64_t> mSteamPeerIdentities;
     std::vector<uint8_t> mvMapBytes;
     std::vector<std::vector<uint8_t> > mvScriptHistory;
+    std::vector<uint8_t> mvScriptPackage;
+    struct ScriptCompletionBinding {
+        LuxScriptExecutionContext context;
+        tString kind,function;
+        uint32_t life=0,lastSequence=0;
+        bool booleanArgument=false,persistent=false;
+    };
+    std::map<uint32_t,ScriptCompletionBinding> mScriptCompletions;
+    std::map<uint32_t,ScriptCompletionBinding> mSavedScriptCompletions;
+    uint32_t mlNextScriptCompletion=0,mlScriptCompletionSequence=0;
+    std::set<uint32_t> mPendingScriptReadyPlayers,mNotifiedScriptReadyPlayers;
+    std::set<uint32_t> mSavedPendingScriptReadyPlayers,mSavedNotifiedScriptReadyPlayers;
+    bool mbScriptMapChangeSaved=false;
+    uint64_t mlSavedScriptSession=0;
+    uint32_t mlSavedScriptMapEpoch=0;
+    bool RunPlayerCompletion(uint32_t peer,uint32_t token,uint32_t sequence,bool booleanArgument,bool value);
+    void ForgetScriptPlayer(uint32_t peer);
+    luxnet::ScriptPackageReceiver mScriptPackageReceiver;
+    bool mbScriptInitialized=false;
     size_t mlScriptHistoryBytes;
     uint32_t mlLocalPeer, mlMapEpoch, mlMapChecksum, mlExpectedMapBytes;
     uint32_t mlScriptPlayerPeer=UINT32_MAX;
@@ -229,11 +269,38 @@ private:
 
 class cLuxMultiplayerRemoteTriggerScope {
 public:
-    explicit cLuxMultiplayerRemoteTriggerScope(bool remote,uint32_t peer=UINT32_MAX):mpSession(gpBase->mpMultiplayer),mbOld(false),mlOldPeer(UINT32_MAX) {
+    explicit cLuxMultiplayerRemoteTriggerScope(bool remote,uint32_t peer=UINT32_MAX):mpSession(gpBase->mpMultiplayer),mbOld(false),mlOldPeer(UINT32_MAX),mExecutionScope(Context(remote,peer)) {
         if(mpSession) {mbOld=mpSession->SetRemoteScriptTrigger(remote);mlOldPeer=mpSession->SetScriptPlayerPeer(peer);}
     }
     ~cLuxMultiplayerRemoteTriggerScope() {if(mpSession) {mpSession->SetRemoteScriptTrigger(mbOld);mpSession->SetScriptPlayerPeer(mlOldPeer);}}
 private:
+    static LuxScriptExecutionContext Context(bool remote,uint32_t peer) {
+        auto context=LuxCurrentScriptContext();
+        cLuxMultiplayer* session=gpBase->mpMultiplayer;
+        const bool active=session && session->IsActive();
+        context.hasPlayer=true;context.player=remote?peer:(active?session->GetLocalPeerId():0);
+        context.session=active?session->GetSessionSerial():0;
+        context.mapEpoch=active?session->GetMapEpoch():0;context.event=LuxNextScriptEventId();
+        return context;
+    }
     cLuxMultiplayer* mpSession;bool mbOld;uint32_t mlOldPeer;
+    cLuxScriptExecutionScope mExecutionScope;
+};
+
+// Native local-player triggers provide an actor only when their caller has
+// not already supplied one (for example an authorized remote interaction).
+class cLuxScriptLocalPlayerScope {
+public:
+    cLuxScriptLocalPlayerScope():mScope(Context()) {}
+private:
+    static LuxScriptExecutionContext Context() {
+        auto context=LuxCurrentScriptContext();if(context.hasPlayer) return context;
+        const auto* session=gpBase->mpMultiplayer;const bool active=session && session->IsActive();
+        context.hasPlayer=true;context.player=active?session->GetLocalPeerId():0;
+        context.session=active?session->GetSessionSerial():0;
+        context.mapEpoch=active?session->GetMapEpoch():0;context.event=LuxNextScriptEventId();
+        return context;
+    }
+    cLuxScriptExecutionScope mScope;
 };
 #endif

@@ -306,6 +306,7 @@ float cLuxMultiplayerWorld::MeasurePlayerStrideSpeed(cMeshEntity* mesh, const ch
 
 void cLuxMultiplayerWorld::Reset()
 {
+    mScriptPlayerValues.clear();mlScriptPlayerRevision=0;
     RestorePlayerCollisionMask();
     // The current map is still alive during OnMapLeave and a map download. On
     // other reset paths its world may already be gone and owns the colliders.
@@ -338,7 +339,10 @@ void cLuxMultiplayerWorld::Reset()
     mlSequence = mlLeaseCounter = mlLocalLease = mlRequestCounter = mlPendingRequest = 0;
     mlDamageSequence = mlLastDamageSequence = mlLastTerrorSequence = 0;
     mlStimulusSequence=0;mHearingBudgets.clear();
-    mlLocalPlayerLife=1;
+    // Character incarnation increases across map/transport resets; session
+    // identity separately isolates sessions. Saved timers rebind map epochs,
+    // so recycling life=1 here could revive pre-respawn work on a map revisit.
+    // The member initializes once; only a character reset/respawn advances it.
     mlPendingBody = 0;
     mPendingState = mPendingPreviousState = eLuxPlayerState_Normal;
     mvPendingFocus = 0;
@@ -2022,6 +2026,74 @@ void cLuxMultiplayerWorld::EndLease(uint32_t alToken, bool abBroadcast)
     }
 }
 
+uint32_t cLuxMultiplayerWorld::ApplyScriptPlayerValue(uint32_t peer,uint32_t command,float value,float& absolute,bool lethal)
+{
+    auto player=mPlayers.find(peer);
+    if(!mpSession->IsHost() || player==mPlayers.end() || !std::isfinite(value)) return 0;
+    auto& state=player->second.gameplay;
+    uint32_t field=0;float* current=NULL;
+    switch(command) {
+    case 36: case 37: case 45: case 46: case 168: field=36;current=&state.sanity;break;
+    case 38: case 39: case 47: field=38;current=&state.health;break;
+    case 40: case 41: field=40;current=&state.lampOil;break;
+    default:return 0;
+    }
+    absolute=value;
+    if(command==37 || command==39 || command==41) absolute=*current+value;
+    const bool unchangedHealth=command==39 && (state.health<=0 || (state.health>=100 && value>0));
+    if(unchangedHealth) absolute=state.health;
+    if(command==47 || command==168) absolute=state.health>0?*current-value:*current;
+    if(command==45) absolute=*current<25?100:(*current<50?90:(*current<75?80:*current+5));
+    if(command==46) absolute=*current+(*current<25?20:(*current<50?15:(*current<75?10:5)));
+    const bool sanityDeath=gpBase->mbHardMode &&
+        ((command==36 && value<=0) || ((command==37 || command==168) && absolute<0));
+    const float maximum=field==38 && (command!=39 || unchangedHealth)?10000.0f:100.0f;
+    absolute=cMath::Clamp(absolute,command==47 && !lethal && state.health>0?10.0f:0.0f,maximum);
+    const bool respawn=field==38 && state.health<=0 && absolute>0;
+    *current=absolute;
+    if(sanityDeath) state.health=0;
+    if(respawn && state.health>0 && !++state.life) ++state.life;
+    if(state.health<=0) state.flags &= ~PlayerAlive;
+    else state.flags |= PlayerAlive;
+    if(!++mlScriptPlayerRevision) ++mlScriptPlayerRevision;
+    for(uint32_t key:{36u,38u,40u}) {
+        ScriptPlayerValue pending;pending.revision=mlScriptPlayerRevision;pending.life=state.life;
+        pending.value=key==36?state.sanity:(key==38?state.health:state.lampOil);
+        mScriptPlayerValues[peer][key]=pending;
+    }
+    return mlScriptPlayerRevision;
+}
+
+uint32_t cLuxMultiplayerWorld::ApplyScriptPlayerPosition(uint32_t peer,const cVector3f& feet,const float* yaw)
+{
+    auto player=mPlayers.find(peer);
+    if(!mpSession->IsHost() || player==mPlayers.end() || !std::isfinite(feet.x) || !std::isfinite(feet.y) ||
+       !std::isfinite(feet.z) || std::fabs(feet.x)>100000 || std::fabs(feet.z)>100000 ||
+       std::fabs(feet.y+player->second.size.y*0.5f)>100000 || (yaw && (!std::isfinite(*yaw) || std::fabs(*yaw)>100000))) return 0;
+    auto& state=player->second;
+    state.position=feet+cVector3f(0,state.size.y*0.5f,0);
+    state.renderPosition=state.position;state.renderFeetPosition=feet;state.resetModelPose=true;
+    if(yaw) {
+        state.yaw=*yaw;state.gameplay.pitch=0;
+        state.gameplay.forward[0]=-std::sin(*yaw);state.gameplay.forward[1]=0;state.gameplay.forward[2]=-std::cos(*yaw);
+    }
+    if(!++mlScriptPlayerRevision) ++mlScriptPlayerRevision;
+    for(uint32_t field=ScriptFeetX;field<=static_cast<uint32_t>(yaw?ScriptYaw:ScriptFeetZ);++field) {
+        ScriptPlayerValue pending;pending.revision=mlScriptPlayerRevision;pending.life=state.gameplay.life;
+        pending.value=field==ScriptFeetX?feet.x:(field==ScriptFeetY?feet.y:(field==ScriptFeetZ?feet.z:*yaw));
+        mScriptPlayerValues[peer][field]=pending;
+    }
+    return mlScriptPlayerRevision;
+}
+
+void cLuxMultiplayerWorld::AcknowledgeScriptPlayerValue(uint32_t peer,uint32_t revision,uint32_t poseSequence)
+{
+    auto pending=mScriptPlayerValues.find(peer);if(pending==mScriptPlayerValues.end()) return;
+    for(auto& field:pending->second) if(field.second.revision==revision) {
+        field.second.acknowledged=true;field.second.ackPose=poseSequence;
+    }
+}
+
 bool cLuxMultiplayerWorld::HandleMessage(uint32_t alPeer, const std::vector<uint8_t>& avMessage)
 {
     if (!mpSession->IsActive() || !mpMap) return true;
@@ -2042,7 +2114,35 @@ bool cLuxMultiplayerWorld::HandleMessage(uint32_t alPeer, const std::vector<uint
             (mpSession->IsHost() && peer != alPeer)) return false;
         if (peer == mpSession->GetLocalPeerId() || mDepartedPlayers.count(peer)) return true;
         std::map<uint32_t, cLuxMultiplayerRemotePlayer>::iterator old = mPlayers.find(peer);
-        if (old != mPlayers.end() && !Newer(sequence, old->second.sequence)) return true;
+        if (old != mPlayers.end() && (!Newer(sequence, old->second.sequence) ||
+            (player.gameplay.life!=old->second.gameplay.life && !Newer(player.gameplay.life,old->second.gameplay.life)))) return true;
+        if(mpSession->IsHost()) {
+            auto pending=mScriptPlayerValues.find(peer);
+            if(pending!=mScriptPlayerValues.end()) {
+                for(auto field=pending->second.begin();field!=pending->second.end();) {
+                    const auto& value=field->second;
+                    if(value.life!=player.gameplay.life || (value.acknowledged && Newer(sequence,value.ackPose))) {
+                        field=pending->second.erase(field);continue;
+                    }
+                    if(field->first==36) player.gameplay.sanity=value.value;
+                    else if(field->first==38) {
+                        player.gameplay.health=value.value;
+                        if(value.value<=0) player.gameplay.flags &= ~PlayerAlive;
+                        else player.gameplay.flags |= PlayerAlive;
+                    }
+                    else if(field->first==40) player.gameplay.lampOil=value.value;
+                    else if(field->first==ScriptFeetX) player.position.x=value.value;
+                    else if(field->first==ScriptFeetY) player.position.y=value.value+player.size.y*0.5f;
+                    else if(field->first==ScriptFeetZ) player.position.z=value.value;
+                    else if(field->first==ScriptYaw) {
+                        player.yaw=value.value;player.gameplay.pitch=0;
+                        player.gameplay.forward[0]=-std::sin(value.value);player.gameplay.forward[1]=0;player.gameplay.forward[2]=-std::cos(value.value);
+                    }
+                    ++field;
+                }
+                if(pending->second.empty()) mScriptPlayerValues.erase(pending);
+            }
+        }
         const cVector3f feet = player.position - cVector3f(0, player.size.y * 0.5f, 0);
         const bool resetPose = old == mPlayers.end() || old->second.age > 2 ||
             old->second.gameplay.life != player.gameplay.life ||
@@ -2074,7 +2174,15 @@ bool cLuxMultiplayerWorld::HandleMessage(uint32_t alPeer, const std::vector<uint
         if(old!=mPlayers.end() && old->second.gameplay.life!=player.gameplay.life) mEnemyTerror.erase(peer);
         mPlayers[peer] = player;
         PrepareEnemyPlayers();
-        if (mpSession->IsHost()) mpSession->Broadcast(avMessage, false);
+        if (mpSession->IsHost()) {
+            // Forward the authority view, including pending script overlays;
+            // an in-flight owner pose must not rewind other clients meanwhile.
+            Writer forwarded(Pose,mpSession->GetMapEpoch());forwarded.U32(peer);forwarded.U32(sequence);
+            forwarded.F32(player.position.x);forwarded.F32(player.position.y);forwarded.F32(player.position.z);
+            forwarded.F32(player.size.x);forwarded.F32(player.size.y);forwarded.F32(player.size.z);forwarded.F32(player.yaw);
+            WriteLantern(forwarded,player.lantern);WritePlayerState(forwarded,player.gameplay);
+            mpSession->Broadcast(forwarded.bytes, false);
+        }
         return true;
     }
     if (type == Bodies)
@@ -2250,6 +2358,7 @@ bool cLuxMultiplayerWorld::HandleMessage(uint32_t alPeer, const std::vector<uint
 
 void cLuxMultiplayerWorld::OnPeerDisconnected(uint32_t alPeer)
 {
+    mScriptPlayerValues.erase(alPeer);
     RefreshBodies();
     mDepartedPlayers.insert(alPeer);
     std::map<uint32_t, std::deque<std::vector<uint8_t> > >::iterator pending = mInitialPackets.find(alPeer);

@@ -261,7 +261,8 @@ void cLuxEffect_EmotionFlash::Start(const tString &asTextCat, const tString &asT
 	gpBase->mpEffectHandler->GetRadialBlur()->SetBlurStartDist(0.6f);
 
 	//Disable enemies
-	gpBase->mpMapHandler->GetCurrentMap()->BroadcastEnemyMessage(eLuxEnemyMessage_Reset, false,0,0);
+	if(!LuxCurrentScriptContext().revised)
+		gpBase->mpMapHandler->GetCurrentMap()->BroadcastEnemyMessage(eLuxEnemyMessage_Reset, false,0,0);
 
 }
 
@@ -1085,8 +1086,10 @@ void cLuxEffect_PlayVoice::Update(float afTimeStep)
 		mfVolumeMul = fPreVolMul;
 		SetActive(false);
 
-		if(sCallback!="")
-			gpBase->mpMapHandler->GetCurrentMap()->RunScript(sCallback+"()");
+		if(sCallback!="") {
+            cLuxScriptLocalPlayerScope player;
+            gpBase->mpMapHandler->GetCurrentMap()->RunScript(sCallback+"()");
+        }
 		
 		return;
 	}
@@ -1140,8 +1143,10 @@ void cLuxEffect_PlayVoice::Update(float afTimeStep)
 		Reset();
 		SetActive(false);
 		
-		if(msOverCallback!="")
-			gpBase->mpMapHandler->GetCurrentMap()->RunScript(msOverCallback+"()");
+		if(msOverCallback!="") {
+            cLuxScriptLocalPlayerScope player;
+            gpBase->mpMapHandler->GetCurrentMap()->RunScript(msOverCallback+"()");
+        }
 	}
 }
 

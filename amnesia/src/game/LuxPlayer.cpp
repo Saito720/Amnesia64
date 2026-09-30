@@ -888,6 +888,13 @@ void cLuxPlayer::SetHealth(float afX)
 	}
 }
 
+void cLuxPlayer::ApplyScriptVitals(float health,float sanity,float oil)
+{
+    // Feedback/death decisions have already run through the directed command.
+    // Install its committed result without repeating sanity collapse or flashes.
+    SetHealth(health);mfSanity=sanity;mfLampOil=oil;
+}
+
 void cLuxPlayer::SetSanity(float afX)
 {
 	mfSanity = afX;

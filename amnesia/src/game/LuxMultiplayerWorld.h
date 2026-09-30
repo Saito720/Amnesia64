@@ -41,6 +41,7 @@ public:
     bool HandleMessage(uint32_t alPeer, const std::vector<uint8_t>& avMessage);
     void OnPeerDisconnected(uint32_t alPeer);
     bool SendInitialState(uint32_t alPeer);
+    bool HasPendingInitialState(uint32_t peer) const {return mInitialPackets.count(peer)!=0;}
     static uint64_t GetBodyId(iPhysicsBody* body);
     uint32_t GetBodyGeneration(iPhysicsBody* body);
     void BindBodyGeneration(iPhysicsBody* body, uint32_t generation);
@@ -62,6 +63,11 @@ public:
     bool IsEntityLeased(iLuxProp* apProp) const;
     static bool IsInteractionState(eLuxPlayerState aState);
     const std::map<uint32_t, cLuxMultiplayerRemotePlayer>& GetRemotePlayers() const { return mPlayers; }
+    // Pending script values remain authoritative over pre-command owner poses.
+    uint32_t ApplyScriptPlayerValue(uint32_t peer,uint32_t command,float value,float& absolute,bool lethal=true);
+    uint32_t ApplyScriptPlayerPosition(uint32_t peer,const cVector3f& feet,const float* yaw=NULL);
+    void AcknowledgeScriptPlayerValue(uint32_t peer,uint32_t revision,uint32_t poseSequence);
+    uint32_t GetLocalPoseSequence() const {return mlSequence;}
     std::vector<cLuxEnemyPlayer> GetEnemyPlayers() const;
     float GetEnemyTerror(uint32_t peer) const;
     void SetEnemyTerror(uint32_t peer, float amount);
@@ -144,6 +150,14 @@ private:
     std::set<uint32_t> mDepartedPlayers;
     std::map<int, std::vector<uint8_t> > mStickyStates;
     std::map<uint32_t, cLuxMultiplayerRemotePlayer> mPlayers;
+    enum ScriptPlayerField { ScriptFeetX=1000,ScriptFeetY,ScriptFeetZ,ScriptYaw };
+    struct ScriptPlayerValue {
+        uint32_t revision=0,life=0,ackPose=0;
+        float value=0;
+        bool acknowledged=false;
+    };
+    std::map<uint32_t,std::map<uint32_t,ScriptPlayerValue> > mScriptPlayerValues;
+    uint32_t mlScriptPlayerRevision=0;
     // Ordinary scene history keeps the fallback cylinders and attached lights
     // on the same presentation timeline as the rest of the physics world.
     std::map<uint32_t, std::unique_ptr<cNode3D> > mPlayerRenderNodes;

@@ -29,6 +29,8 @@
 using namespace std;
 
 namespace luxnet { struct Reader; }
+class cLuxScriptRuntime;
+class CScriptString;
 
 class cLuxScriptHandler : public iLuxUpdateable
 {
@@ -42,9 +44,11 @@ public:
 	void Reset();
 
 	void OnDraw(float afFrameTime);
+    cLuxScriptRuntime* GetRuntime() const {return mpRuntime;}
 
 private:
 	iLowLevelSystem *mpLowLevelSystem;
+    cLuxScriptRuntime* mpRuntime;
 
 	//Temp:
 	static int mlRopeIdCount;
@@ -55,6 +59,27 @@ private:
 	// Helpers
 	void InitScriptFunctions();
 	void AddFunc(const tString& asFunc, void *apFuncPtr);
+    static bool __stdcall SelectScriptPlayer(int player);
+    static int __stdcall GetScriptPlayerId();
+    static int __stdcall GetScriptPlayerCount();
+    static int __stdcall GetScriptPlayerIdAt(int index);
+    static void __stdcall RunClientCallback(string& function,string& argument);
+    static void __stdcall SetPlayerVarInt(string& name,int value,bool campaign);
+    static int __stdcall GetPlayerVarInt(string& name,bool campaign);
+    static void __stdcall SetPlayerVarFloat(string& name,float value,bool campaign);
+    static float __stdcall GetPlayerVarFloat(string& name,bool campaign);
+    static void __stdcall SetPlayerVarString(string& name,string& value,bool campaign);
+    static CScriptString* __stdcall GetPlayerVarString(string& name,bool campaign);
+    static void __stdcall PublishPlayerVar(string& name,string& value);
+    static CScriptString* __stdcall GetPublishedScriptVar(string& name);
+    static void __stdcall SetPlayerVarIntMap(string& name,int value) {SetPlayerVarInt(name,value,false);}
+    static int __stdcall GetPlayerVarIntMap(string& name) {return GetPlayerVarInt(name,false);}
+    static void __stdcall SetPlayerVarFloatMap(string& name,float value) {SetPlayerVarFloat(name,value,false);}
+    static float __stdcall GetPlayerVarFloatMap(string& name) {return GetPlayerVarFloat(name,false);}
+    static void __stdcall SetPlayerVarStringMap(string& name,string& value) {SetPlayerVarString(name,value,false);}
+    static CScriptString* __stdcall GetPlayerVarStringMap(string& name) {return GetPlayerVarString(name,false);}
+    static void __stdcall AddPlayerCollideCallback(string& child,string& function,bool oncePerPlayer,int states);
+    static void __stdcall RemovePlayerCollideCallback(string& child);
 
 	static bool GetEntities(const tString& asName,tLuxEntityList &alstEntities, eLuxEntityType aType, int alSubType);
 	static iLuxEntity* GetEntity(const tString& asName, eLuxEntityType aType, int alSubType);
@@ -76,6 +101,7 @@ private:
 
 	static bool __stdcall StringContains(string& asString, string& asSubString);
 	static string& __stdcall StringSub(string& asString, int alStart, int alCount);
+    static CScriptString* __stdcall ClientStringSub(string& asString,int alStart,int alCount);
 
 	//Function syntax: Func(string &in asTimer)
 	static void __stdcall AddTimer(string& asName, float afTime, string& asFunction);

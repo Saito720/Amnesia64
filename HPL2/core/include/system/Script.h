@@ -21,6 +21,7 @@
 #define HPL_SCRIPT_H
 
 #include "resources/ResourceBase.h"
+#include <vector>
 
 #ifdef __GNUC__
 	#if defined __ppc__ || defined(__LP64__)
@@ -48,7 +49,8 @@ namespace hpl {
 		void Unload(){}
 		void Destroy(){}
 		
-		virtual bool CreateFromFile(const tWString& asFile, tString *apCompileMessages=NULL)=0;
+		virtual bool CreateFromFile(const tWString& asFile, tString *apCompileMessages=NULL,
+			unsigned alMaxInitializationLineCallbacks=0)=0;
 		
 		virtual int GetFuncHandle(const tString& asFunc)=0;
 		
@@ -60,8 +62,28 @@ namespace hpl {
 		 * \return true if everything was ok, else false
 		 */
 		virtual bool Run(const tString& asFuncLine)=0;
+		// Budgeted text dispatch for trusted authority callback expressions.
+		// A nested call shares its caller's remaining execution budget.
+		virtual bool Run(const tString& asFuncLine, tString *apError, unsigned alMaxLineCallbacks)=0;
 		
 		virtual bool Run(int alHandle)=0;
+		// Source stays in memory. Deferred globals are initialized explicitly once
+		// the owning runtime and its world state are ready.
+		virtual bool CreateFromSource(const tString& asSection, const tString& asSource,
+			tString *apCompileMessages=NULL, bool abInitializeGlobals=true,
+			unsigned alMaxInitializationLineCallbacks=0)=0;
+		virtual bool InitializeGlobals(tString *apError=NULL, unsigned alMaxLineCallbacks=0)=0;
+		virtual int GetFuncHandleByDecl(const tString& asDecl)=0;
+		virtual bool HasFunctionNamed(const tString& asName)=0;
+		// Calls either string arguments (including none) or one float argument.
+		// Each call has an independent VM context, including nested callbacks.
+		// A zero budget preserves unlimited top-level legacy execution; nested
+		// calls inherit any active budget and bounded nesting depth.
+		virtual bool RunTyped(int alHandle, const std::vector<tString>& avStringArgs,
+			const float *apFloatArg=NULL, tString *apError=NULL, unsigned alMaxLineCallbacks=0)=0;
+		// Strict void(int) dispatch for actor IDs; uses the same context/budget rules.
+		virtual bool RunTypedInt(int alHandle, int alValue, tString *apError=NULL,
+			unsigned alMaxLineCallbacks=0)=0;
 	};
 };
 #endif // HPL_SCRIPT_H

@@ -115,6 +115,8 @@ public:
 
 	// Script global variables
 	virtual int         ResetGlobalVars();
+	// HPL extension: preserve a caller's watchdog during global initialization.
+	virtual int         ResetGlobalVars(asIScriptContext *context);
 	virtual int         GetGlobalVarCount();
 	virtual int         GetGlobalVarIndexByName(const char *name);
 	virtual int         GetGlobalVarIndexByDecl(const char *decl);
@@ -169,6 +171,7 @@ public:
 	void InternalReset();
 
 	int  CallInit();
+	int  CallInit(asIScriptContext *context);
 	void CallExit();
 
 	void JITCompile();

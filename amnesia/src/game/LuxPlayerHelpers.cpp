@@ -984,8 +984,10 @@ void cLuxPlayerFlashback::Update(float afTimeStep)
 			mfFlashbackStartCount = 6.0f; //Incase there is something in queue, wait 6 seconds and then start that.
 
 			cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
-			if(msCallback != "")
-				pMap->RunScript(msCallback + "()");
+			if(msCallback != "") {
+                cLuxScriptLocalPlayerScope player;
+                pMap->RunScript(msCallback + "()");
+            }
 		}
 	}
 	
@@ -1088,9 +1090,12 @@ void cLuxPlayerLookAt::Update(float afTimeStep)
 	mpPlayer->GetCharacterBody()->SetYaw(pCam->GetYaw()); 
 
 	float fTotalDist = vDist.x*vDist.x + vDist.y*vDist.y;
-	if(fTotalDist < 0.01)
+	if(fTotalDist < 0.01 && !msAtTargetCallback.empty())
 	{
-		gpBase->mpMapHandler->GetCurrentMap()->RunScript(msAtTargetCallback+"()");
+		const tString callback=msAtTargetCallback;
+        if(callback.find("__LuxPlayerCompletion_")==0) msAtTargetCallback.clear();
+        cLuxScriptLocalPlayerScope player;
+        gpBase->mpMapHandler->GetCurrentMap()->RunScript(callback+"()");
 	}
 }
 
@@ -1838,6 +1843,7 @@ void cLuxPlayerLantern::SetActive(bool abX, bool abUseEffects, bool abCheckForOi
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	if(pMap->GetLanternLitCallback()!="")
 	{
+		cLuxScriptLocalPlayerScope player;
 		pMap->RunScript(pMap->GetLanternLitCallback()+"(" + (mbActive ? "true" : "false") + ")" );
 	}
 }

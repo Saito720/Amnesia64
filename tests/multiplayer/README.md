@@ -11,6 +11,8 @@ From the repository root:
 ./tests/multiplayer/run-game.ps1
 # One-account full-game Steam lobby smoke:
 ./tests/multiplayer/run-game.ps1 -Backend Steamworks -SteamHostOnly
+# Restricted client scripting and selected-character callbacks:
+./tests/multiplayer/run-game.ps1 -ScriptsOnly
 ```
 
 The default runs rebuild Debug x64 with the **Standalone** backend first, so
@@ -20,7 +22,89 @@ running Steam client with access to the configured AppID. The UI harness stubs
 Steam services and never sends invitations. Build and run with the same backend.
 Switching a test to Standalone changes the normal Debug game build too; rebuild
 the game without `/p:HplUseSteamworks=false` to return to Steam afterward.
-The current session/lobby protocol is **15**; all instances must use matching builds.
+The current session/lobby protocol is **16**; all instances must use matching builds.
+
+`-ScriptsOnly` creates an isolated Old Archives copy and script companions under
+`bld/`. It checks client API/class restrictions, lifecycle signatures, typed
+updates, module globals, timer ownership, client/authority context restoration,
+and execution limits, then transfers the package between two real game instances.
+The host selects the remote character for a health mutation and one personal
+client callback; the host character must remain unchanged. Selecting the host
+afterward checks its separate local client context. Retail files are never edited.
+The fixture also checks a world position change without a selected player,
+immediate selected-player position queries, and host-issued lantern completions.
+`ServerOnPlayerReady(int)` must run once for each participant with the matching
+selected actor and working authority-side player enumeration.
+Map and campaign player variables exercise all six typed accessors. Published
+copies must reach only their selected participant, preserve literal strings,
+and remain unchanged when scripts mutate a returned string handle. Client
+modules cannot call the private player-variable accessors or publish new values.
+Global and inventory authority timers use identical callback names and must
+resume in their original modules with the captured player. Generic world
+callbacks retain no actor; an explicit player interaction carries the host actor.
+Completion callbacks must return to authority with the original actor; malformed
+tokens and a different actor claiming the token must not invoke that callback.
+A failed normal map change after loading a prospective companion must restore
+the previous client VM, private globals, pending timer, player variables,
+published state, completion token and player-ready deduplication. Unattributed
+authority timers must not acquire a remote player's permission scope.
+Core VM checks can also run without retail assets using
+`./tests/RunScriptCoreTests.ps1` after a Debug x64 engine build.
+
+The review regressions additionally check bounded authority callback expressions
+and global initializers, shared allowances through nested native callbacks,
+recursive nesting limits, failed initialization/rebuild recovery and retained
+client failure latches. The live fixture exercises copied client `StringSub`
+handles and extreme bounds, selected local force components, collision callback
+remove/readd/removal, and actual body baselines at the earliest client start hook.
+Initialization markers must wait until native/body/enemy baseline queues drain.
+Production Newton tests cover authority overlays in forwarded poses, acknowledgement
+retirement, revival life changes and rejection of stale life snapshots.
+
+`./tests/RunMultiplayerProtocolTests.ps1` runs six independent protocol suites.
+The script package suite covers fragmented UTF-8 bytes, the empty legacy marker,
+size limits, truncated headers and data, corrupted hashes, ordering and stale map
+generations. It also checks private player-variable isolation and map/campaign
+lifetimes, epoch rebinding, storage budgets, copied publications, complete empty
+replacement, duplicate keys, invalid modules and malformed snapshot framing.
+Session tests also cover nested script context restoration, timer
+owner/life identity, per-player collision occupancy and one-shot lifetime.
+Protocol 16 adds the client script package, initialization acknowledgement,
+typed client event and directed player-command messages; prior protocol 15
+integration results below remain historical evidence for that earlier build.
+
+Verified on 2026-09-30 with protocol 16: Debug and Release builds passed for
+Standalone and Steamworks, along with the core scripting VM suite, all six
+protocol suites and the real Newton world tests, including character-life
+identity across map resets. Two local game instances passed focused scripting
+and failed-map rollback runs `3c1239de9e2b` (Standalone) and `13bfdaafeacf`
+(Steamworks), plus full gameplay runs `f133a97bc91a` (Standalone) and
+`9ebf233a6ba8` (Steamworks).
+
+The final implementation review on 2026-09-30 also passed Debug and Release x64
+builds for both backends, all six protocol suites, core VM execution/initialization
+and cross-engine diagnostic checks, and production Newton reconciliation/backpressure
+checks. Focused scripting runs passed as `e4441f355036` (Standalone) and
+`25ab3a9c7f60` (Steamworks); full gameplay/cache runs passed as `21e7615baaa2`
+(Standalone) and `0d21f68b81ac` (Steamworks). Game builds emitted no compiler
+warnings or errors; harness builds retain the MSVC command-option and
+nonincremental-link warnings. The normal Steam-enabled game/harness outputs are
+restored after backend switching.
+
+An earlier Standalone run hit a grouped map-persistence assertion. Exact-field
+diagnostics were added; the matching-backend rerun passed without behavior or
+timeout changes, so the earlier failure remains unreproduced. Separate-account
+Steam relay gameplay and live achievement awards remain untested.
+
+For the opt-in scripting fixture, run:
+
+```powershell
+./tests/multiplayer/run-game.ps1 -ScriptsOnly
+```
+
+This uses generated map/configuration/companion files in the isolated run
+directory. See [the Version 2 author guide](../../docs/multiplayer-scripting.md)
+for the corresponding file layout, native helpers and lifetime contract.
 
 For the duplicate-name reconstruction and reconnect regression, run:
 

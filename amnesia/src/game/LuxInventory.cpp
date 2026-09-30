@@ -18,6 +18,8 @@
  */
 
 #include "LuxInventory.h"
+#include "LuxScriptHandler.h"
+#include "LuxScriptRuntime.h"
 #include "LuxMultiplayer.h"
 
 #include "LuxPlayer.h"
@@ -1033,6 +1035,8 @@ void cLuxInventory::ExitPressed()
 
 void cLuxInventory::LoadScript()
 {
+    msScriptLoadError.clear();
+    if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return;
 	/////////////////////
 	// Destroy old
 	if(mpScript)
@@ -1044,7 +1048,20 @@ void cLuxInventory::LoadScript()
 	/////////////////////
 	// Load script
 	tString sFile = gpBase->mpMapHandler->GetMapFolder() + "inventory.hps";
-	mpScript  = gpBase->mpEngine->GetResources()->GetScriptManager()->CreateScript(sFile);
+	cLuxScriptRuntime* runtime=gpBase->mpScriptHandler->GetRuntime();
+    cLuxScriptAuthorityInitializationScope initialization(runtime->IsRevised(),"inventory",
+        gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()?gpBase->mpMultiplayer->GetSessionSerial():0,
+        gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()?gpBase->mpMultiplayer->GetMapEpoch():0);
+    tString compileMessages;
+    mpScript = gpBase->mpEngine->GetResources()->GetScriptManager()->CreateScript(sFile,&compileMessages,
+        runtime->IsRevised()?cLuxScriptRuntime::ExecutionLineBudget:0);
+    if(!mpScript && runtime->IsRevised() && cPlatform::FileExists(cString::To16Char(sFile)))
+        msScriptLoadError="Could not load authority module "+sFile+": "+compileMessages;
+    tString error;if(mpScript && !runtime->ValidateAuthorityScript(mpScript,"inventory",error)) {
+        msScriptLoadError=error;
+        Error("Invalid authority script: %.4096s\n",error.c_str());
+        gpBase->mpEngine->GetResources()->GetScriptManager()->Destroy(mpScript);mpScript=NULL;
+    }
 	if(mpScript==NULL)
 	{
 		Error("Inventory script '%s' not found!\n", sFile.c_str());
@@ -1349,12 +1366,30 @@ cLuxCombineItemsCallback*  cLuxInventory::GetCombineCallback(const tString& asIt
 
 //-----------------------------------------------------------------------
 
+void cLuxInventory::OnScriptPlayerReady(uint32_t peer)
+{
+    tString error;
+    if(!gpBase->mpScriptHandler->GetRuntime()->RunAuthorityPlayerReady(mpScript,"inventory",peer,error))
+        Error("Player ready callback: %.4096s\n",error.c_str());
+}
+
 void cLuxInventory::RunScript(const tString& asCommand)
 {
     if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return;
 	if(mpScript==NULL) return;
 
-    mpScript->Run(asCommand);
+    tString error;
+    cLuxScriptRuntime* runtime=gpBase->mpScriptHandler->GetRuntime();
+    auto context=LuxCurrentScriptContext();context.module="inventory";
+    if(runtime->IsRevised() && asCommand!="OnGameStart()" && !context.revised) {
+        context.hasPlayer=true;context.player=gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()?gpBase->mpMultiplayer->GetScriptPlayerPeer():0;
+        context.session=gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()?gpBase->mpMultiplayer->GetSessionSerial():0;
+        context.mapEpoch=gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()?gpBase->mpMultiplayer->GetMapEpoch():0;
+    }
+    cLuxScriptExecutionScope scope(context);
+    const bool ok=asCommand=="OnGameStart()"?runtime->RunAuthorityHook(mpScript,"OnGameStart",error,NULL,"inventory"):
+        runtime->RunAuthorityCommand(mpScript,asCommand,error);
+    if(!ok) Error("Inventory script: %s\n",error.c_str());
 }
 
 bool cLuxInventory::RecompileScript(tString *apOutput)
@@ -1363,7 +1398,16 @@ bool cLuxInventory::RecompileScript(tString *apOutput)
 		gpBase->mpEngine->GetResources()->GetScriptManager()->Destroy(mpScript);
 	
 	tString sFile = gpBase->mpMapHandler->GetMapFolder() + "inventory.hps";
-	mpScript = gpBase->mpEngine->GetResources()->GetScriptManager()->CreateScript(sFile, apOutput);
+	cLuxScriptRuntime* runtime=gpBase->mpScriptHandler->GetRuntime();
+    cLuxScriptAuthorityInitializationScope initialization(runtime->IsRevised(),"inventory",
+        gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()?gpBase->mpMultiplayer->GetSessionSerial():0,
+        gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()?gpBase->mpMultiplayer->GetMapEpoch():0);
+    mpScript = gpBase->mpEngine->GetResources()->GetScriptManager()->CreateScript(sFile, apOutput,
+        runtime->IsRevised()?cLuxScriptRuntime::ExecutionLineBudget:0);
+    tString error;if(mpScript && !runtime->ValidateAuthorityScript(mpScript,"inventory",error)) {
+        if(apOutput) *apOutput+=error;
+        gpBase->mpEngine->GetResources()->GetScriptManager()->Destroy(mpScript);mpScript=NULL;
+    }
 
 	return mpScript != NULL;
 }

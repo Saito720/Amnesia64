@@ -24,6 +24,7 @@ public:
     bool HasPendingInteractions() const { return !mClaims.empty(); }
     void OnPeerDisconnected(uint32_t peer);
     bool SendInitialState(uint32_t peer);
+    bool HasPendingInitialState(uint32_t peer) const {return mInitial.count(peer)!=0;}
     void CaptureMapBaseline();
     bool SendMapBaseline(uint32_t peer);
     const std::string& GetLastError() const {return msLastError;}

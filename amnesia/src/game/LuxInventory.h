@@ -175,6 +175,7 @@ friend class cLuxInventory_Slot;
 friend class cLuxInventory_Item;
 public:	
 	cLuxInventory();
+    const tString& GetScriptLoadError() const {return msScriptLoadError;}
 	~cLuxInventory();
 
 	void OnScreenResize();
@@ -188,6 +189,7 @@ public:
 	void Reset();
 	
 	void OnGameStart();
+    void OnScriptPlayerReady(uint32_t peer);
 
 	void Update(float afTimeStep);
 
@@ -412,6 +414,7 @@ private:
 	cGuiSet *mpGuiSet;
 
 	iScript *mpScript;
+    tString msScriptLoadError;
 
 	iFontData *mpFontDefault;
 	iFontData *mpFontHeader;

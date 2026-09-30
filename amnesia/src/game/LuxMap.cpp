@@ -18,6 +18,10 @@
  */
 
 #include "LuxMap.h"
+#include "LuxScriptHandler.h"
+#include "LuxScriptRuntime.h"
+#include "LuxGlobalDataHandler.h"
+#include "LuxInventory.h"
 #include "LuxMultiplayer.h"
 #include "LuxMultiplayerWorld.h"
 #include "LuxMultiplayerEntities.h"
@@ -133,6 +137,13 @@ bool cLuxMap::LoadFromFile(const tString & asFile, bool abLoadEntities)
 {
 	msFileName = asFile;
 
+    if(!gpBase->mpMultiplayer || !gpBase->mpMultiplayer->IsClient()) {
+        tString error;
+        if(!gpBase->mpScriptHandler->GetRuntime()->LoadPackage(asFile,error)) {
+            Error("Script package: %s\n",error.c_str());gpBase->msErrorMessage=cString::To16Char(error);return false;
+        }
+    }
+
 	gpBase->mpCurrentMapLoading = this;	
 
 	//////////////////////////////
@@ -175,7 +186,18 @@ bool cLuxMap::LoadFromFile(const tString & asFile, bool abLoadEntities)
 	if(bScriptExists)
 	{
 		tString sCompileMessages = "";
-		mpScript = mpEngine->GetResources()->GetScriptManager()->CreateScript(sScriptFile, &sCompileMessages);
+        cLuxScriptRuntime* runtime=gpBase->mpScriptHandler->GetRuntime();
+        cLuxScriptAuthorityInitializationScope initialization(runtime->IsRevised(),"map",
+            gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()?gpBase->mpMultiplayer->GetSessionSerial():0,
+            gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()?gpBase->mpMultiplayer->GetMapEpoch():0);
+		mpScript = mpEngine->GetResources()->GetScriptManager()->CreateScript(sScriptFile, &sCompileMessages,
+            runtime->IsRevised()?cLuxScriptRuntime::ExecutionLineBudget:0);
+		if(mpScript && !runtime->ValidateAuthorityScript(mpScript,"map",sCompileMessages)) {
+            Error("Invalid map script: %.4096s\n",sCompileMessages.c_str());
+            gpBase->msErrorMessage=cString::To16Char(sCompileMessages);
+            mpEngine->GetResources()->GetScriptManager()->Destroy(mpScript);mpScript=NULL;
+            gpBase->mpCurrentMapLoading=NULL;return false;
+        }
 		if(mpScript==NULL)
 		{
 			//Only get errors!
@@ -192,7 +214,13 @@ bool cLuxMap::LoadFromFile(const tString & asFile, bool abLoadEntities)
 				}
 			}
 
-			FatalError("Could not load script file '%s'!\n%s", sScriptFile.c_str(), sErrorMess.c_str());
+			if(runtime->IsRevised()) {
+                sErrorMess=sCompileMessages;
+                Error("Could not load authority script %.512s: %.4096s\n",sScriptFile.c_str(),sErrorMess.c_str());
+                gpBase->msErrorMessage=cString::To16Char(sErrorMess);
+                gpBase->mpCurrentMapLoading=NULL;return false;
+            }
+            FatalError("Could not load script file '%s'!\n%s", sScriptFile.c_str(), sErrorMess.c_str());
 		}
 	}
 	else
@@ -370,11 +398,11 @@ void cLuxMap::OnEnter(bool abRunScript, bool abFirstTime)
 		{
 			if(abFirstTime)
 			{
-				mpScript->Run("OnStart()");
+                RunScript("OnStart()");
 				CalculateTotalCompletionAmount();
 			}
 
-			mpScript->Run("OnEnter()");
+            RunScript("OnEnter()");
 		}
 	}
 	
@@ -387,7 +415,7 @@ void cLuxMap::OnLeave(bool abRunScript)
 {
 	if(abRunScript)
 	{
-		if(mpScript) mpScript->Run("OnLeave()");
+        RunScript("OnLeave()");
 	}
 }
 
@@ -415,17 +443,57 @@ void cLuxMap::Update(float afTimeStep)
 	UpdateToBeDesotroyedEntities(true);
 
 	UpdateLampLightConnections(afTimeStep);
+    cLuxScriptRuntime* runtime=gpBase->mpScriptHandler->GetRuntime();
+    if(runtime->IsRevised() && (!gpBase->mpMultiplayer || !gpBase->mpMultiplayer->IsActive() || gpBase->mpMultiplayer->IsReady())) {
+        tString error;
+        if(!gpBase->mpMultiplayer || !gpBase->mpMultiplayer->IsClient()) {
+            if(!runtime->RunAuthorityHook(mpScript,"OnUpdate",error,&afTimeStep))
+                Error("Authority update: %s\n",error.c_str());
+        }
+        if(!runtime->UpdateClient(afTimeStep,error)) Warning("Client update: %s\n",error.c_str());
+    }
 }
 
 //-----------------------------------------------------------------------
 
+void cLuxMap::OnScriptPlayerReady(uint32_t peer)
+{
+    tString error;
+    if(!gpBase->mpScriptHandler->GetRuntime()->RunAuthorityPlayerReady(mpScript,"map",peer,error))
+        Error("Player ready callback: %.4096s\n",error.c_str());
+}
+
 void cLuxMap::RunScript(const tString& asCommand)
 {
+    if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->HandlePlayerCompletionCommand(asCommand)) return;
 	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsClient()) return;
-	if(mpScript==NULL) return;
 	if(this != gpBase->mpMapHandler->GetCurrentMap()) return;
 
-    mpScript->Run(asCommand);
+    cLuxScriptRuntime* runtime=gpBase->mpScriptHandler->GetRuntime();tString error;
+    const bool lifecycle=asCommand=="OnStart()" || asCommand=="OnEnter()" || asCommand=="OnLeave()";
+    auto context=LuxCurrentScriptContext();
+    if(!lifecycle && context.revised && context.module=="global") {
+        gpBase->mpGlobalDataHandler->RunScript(asCommand);return;
+    }
+    if(!lifecycle && context.revised && context.module=="inventory") {
+        gpBase->mpInventory->RunScript(asCommand);return;
+    }
+    context.module="map";
+    if(runtime->IsRevised() && !lifecycle && !context.revised) {
+        context.revised=true;context.domain=LuxScriptDomain::Authority;
+        if(!context.hasPlayer) context.player=UINT32_MAX;
+        context.session=gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()?gpBase->mpMultiplayer->GetSessionSerial():0;
+        context.mapEpoch=gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()?gpBase->mpMultiplayer->GetMapEpoch():0;
+        context.event=LuxNextScriptEventId();
+    }
+    cLuxScriptExecutionScope scope(context);
+    const bool ok=lifecycle?runtime->RunAuthorityHook(mpScript,asCommand.substr(0,asCommand.size()-2),error):
+        runtime->RunAuthorityCommand(mpScript,asCommand,error);
+    if(!ok) Error("Map script: %s\n",error.c_str());
+    if(asCommand=="OnLeave()") {
+        runtime->LeaveClient(error);
+        if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->ClearScriptCompletions();
+    }
 }
 
 bool cLuxMap::RecompileScript(tString *apOutput)
@@ -437,7 +505,16 @@ bool cLuxMap::RecompileScript(tString *apOutput)
 	tString sScriptFile = cString::SetFileExt(msFileName,"hps");
 	if(gpBase->mpEngine->GetResources()->GetFileSearcher()->GetFilePath(sScriptFile)!=_W(""))
 	{
-		mpScript = mpEngine->GetResources()->GetScriptManager()->CreateScript(sScriptFile, apOutput);
+		cLuxScriptRuntime* runtime=gpBase->mpScriptHandler->GetRuntime();
+        cLuxScriptAuthorityInitializationScope initialization(runtime->IsRevised(),"map",
+            gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()?gpBase->mpMultiplayer->GetSessionSerial():0,
+            gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsActive()?gpBase->mpMultiplayer->GetMapEpoch():0);
+        mpScript = mpEngine->GetResources()->GetScriptManager()->CreateScript(sScriptFile, apOutput,
+            runtime->IsRevised()?cLuxScriptRuntime::ExecutionLineBudget:0);
+        tString error;if(mpScript && !runtime->ValidateAuthorityScript(mpScript,"map",error)) {
+            if(apOutput) *apOutput+=error;
+            mpEngine->GetResources()->GetScriptManager()->Destroy(mpScript);mpScript=NULL;
+        }
 		
 		return mpScript != NULL;
 	}
@@ -1074,6 +1151,24 @@ cLuxUseItemCallback* cLuxMap::GetUseItemCallback(const tString& asItem, const tS
 
 //-----------------------------------------------------------------------
 
+static bool LuxTimerActorState(const LuxScriptExecutionContext& context, uint32_t& life)
+{
+    life=0;
+    cLuxMultiplayer* session=gpBase->mpMultiplayer;
+    const bool online=session && session->IsActive();
+    if(context.session!=(online?session->GetSessionSerial():0) || context.player==UINT32_MAX) return false;
+    if(!online || context.player==session->GetLocalPeerId())
+    {
+        if(!online && context.player!=0) return false;
+        life=online?session->GetWorld()->GetLocalPlayerLife():1;
+        return gpBase->mpPlayer && gpBase->mpPlayer->GetHealth()>0;
+    }
+    const auto& players=session->GetWorld()->GetRemotePlayers();
+    const auto player=players.find(context.player);
+    if(player==players.end()) return false;
+    life=player->second.gameplay.life;
+    return (player->second.gameplay.flags&LuxWorldWire::PlayerAlive)!=0;
+}
 void cLuxMap::AddTimer(const tString& asName, float afTime, const tString& asFunction)
 {
 	cLuxEventTimer *pTimer = hplNew( cLuxEventTimer, ());
@@ -1081,10 +1176,17 @@ void cLuxMap::AddTimer(const tString& asName, float afTime, const tString& asFun
 	pTimer->mfCount = afTime > 0 ? afTime : 0.001f; //Not allow 0 or lower for time!
 	pTimer->msFunction = asFunction;
 	pTimer->mbDestroyMe = false;
+	pTimer->mScriptContext=LuxCurrentScriptContext();
+	if(pTimer->mScriptContext.revised)
+	{
+		if(pTimer->mScriptContext.module.empty()) pTimer->mScriptContext.module=msFileName;
+		if(pTimer->mScriptContext.hasPlayer && !LuxTimerActorState(pTimer->mScriptContext,pTimer->mlScriptPlayerLife))
+		{ hplDelete(pTimer);return; }
+	}
 	if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsHost())
 	{
 		const uint32_t peer = gpBase->mpMultiplayer->GetScriptPlayerPeer();
-		if(peer!=gpBase->mpMultiplayer->GetLocalPeerId())
+		if(peer!=UINT32_MAX && peer!=gpBase->mpMultiplayer->GetLocalPeerId())
 			pTimer->mScriptPlayerTrigger = {true,peer,gpBase->mpMultiplayer->GetSessionSerial()};
 	}
 
@@ -1098,7 +1200,7 @@ void cLuxMap::RemoveTimer(const tString& asName)
 	for(tLuxEventTimerListIt it= mlstTimers.begin(); it != mlstTimers.end(); )
 	{
 		cLuxEventTimer *pTimer = *it;
-		if(pTimer->msName == asName)
+		if(pTimer->msName == asName && LuxScriptSameOwner(pTimer->mScriptContext,LuxCurrentScriptContext()))
 		{
 			if(mbUpdatingTimers)
 			{
@@ -1127,7 +1229,7 @@ cLuxEventTimer* cLuxMap::GetTimer(const tString& asName)
 	for(tLuxEventTimerListIt it= mlstTimers.begin(); it != mlstTimers.end();++it)
 	{
 		cLuxEventTimer *pTimer = *it;
-		if(pTimer->msName == asName)
+		if(pTimer->msName == asName && LuxScriptSameOwner(pTimer->mScriptContext,LuxCurrentScriptContext()))
 		{
 			return pTimer;
 		}
@@ -1384,7 +1486,24 @@ void cLuxMap::UpdateTimers(float afTimeStep)
 			const auto& origin = pTimer->mScriptPlayerTrigger;
 			const uint32_t peer = bHost ? origin.PeerInSession(gpBase->mpMultiplayer->GetSessionSerial()) : UINT32_MAX;
 			cLuxMultiplayerRemoteTriggerScope trigger(bHost && origin.remote,peer);
-			RunScript(pTimer->msFunction+"(\""+pTimer->msName+"\")");
+            LuxScriptExecutionContext context=pTimer->mScriptContext;
+            bool valid=true;
+            if(context.revised)
+            {
+                uint32_t life=0;
+                if(context.hasPlayer) valid=LuxTimerActorState(context,life) && life==pTimer->mlScriptPlayerLife;
+                cLuxMultiplayer* session=gpBase->mpMultiplayer;
+                const bool online=session && session->IsActive();
+                // This timer is restored with its owning map, so a revisit
+                // rebinds its transport epoch without reviving a stale actor.
+                context.mapEpoch=online?session->GetMapEpoch():0;
+                if(!context.hasPlayer) context.session=online?session->GetSessionSerial():0;
+            }
+            if(valid)
+            {
+                cLuxScriptExecutionScope execution(context);
+                RunScript(pTimer->msFunction+"(\""+pTimer->msName+"\")");
+            }
 			it = mlstTimers.erase(it);
 			hplDelete(pTimer);
 			

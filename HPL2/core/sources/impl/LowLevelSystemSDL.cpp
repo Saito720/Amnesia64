@@ -221,7 +221,7 @@ namespace hpl {
 		if (fmt == NULL)
 			return;	
 		va_start(ap, fmt);
-		vsprintf(text, fmt, ap);
+		vsnprintf(text, sizeof(text), fmt, ap);
 		va_end(ap);
 
 		tString sMess = "FATAL ERROR: ";
@@ -250,7 +250,7 @@ namespace hpl {
 		if (fmt == NULL)
 			return;	
 		va_start(ap, fmt);
-		vsprintf(text, fmt, ap);
+		vsnprintf(text, sizeof(text), fmt, ap);
 		va_end(ap);
 
 		tString sMess = "ERROR: ";
@@ -270,7 +270,7 @@ namespace hpl {
 		if (fmt == NULL)
 			return;	
 		va_start(ap, fmt);
-		vsprintf(text, fmt, ap);
+		vsnprintf(text, sizeof(text), fmt, ap);
 		va_end(ap);
 
 		tString sMess = "WARNING: ";
@@ -290,7 +290,7 @@ namespace hpl {
 		if (fmt == NULL)
 			return;	
 		va_start(ap, fmt);
-		vsprintf(text, fmt, ap);
+		vsnprintf(text, sizeof(text), fmt, ap);
 		va_end(ap);
 
 		tString sMess = "";
@@ -336,7 +336,7 @@ namespace hpl {
 		if (fmt == NULL)
 			return;	
 		va_start(ap, fmt);
-		vsprintf(text, fmt, ap);
+		vsnprintf(text, sizeof(text), fmt, ap);
 		va_end(ap);
 
 		tString sMess = "";
@@ -361,7 +361,11 @@ namespace hpl {
 
 	void cScriptOutput::AddMessage(const asSMessageInfo *msg)
 	{
-		char sMess[1024];
+		// Network-delivered source may produce very long diagnostics or many
+		// errors. Bound both each formatted line and the accumulated output.
+		const size_t lMaximumOutput=64*1024;
+		if(msMessage.size()>=lMaximumOutput) return;
+		char sMess[1024]={0};
 
 		tString type = "ERR ";
 		if( msg->type == asMSGTYPE_WARNING ) 
@@ -369,9 +373,11 @@ namespace hpl {
 		else if( msg->type == asMSGTYPE_INFORMATION ) 
 			type = "INFO";
 
-		sprintf(sMess,"%s (%d, %d) : %s : %s\n", msg->section, msg->row, msg->col, type.c_str(), msg->message);
+		snprintf(sMess,sizeof(sMess),"%s (%d, %d) : %s : %s\n", msg->section, msg->row, msg->col, type.c_str(), msg->message);
 
-		msMessage += sMess;
+		const size_t lRemaining=lMaximumOutput-msMessage.size();
+		const tString sLine(sMess);
+		msMessage.append(sLine,0,sLine.size()<lRemaining?sLine.size():lRemaining);
 	}
 	//-----------------------------------------------------------------------
 
@@ -383,13 +389,13 @@ namespace hpl {
 			{
 				tString sSub = msMessage.substr(0,500);
 				msMessage = msMessage.substr(500);
-				Log(sSub.c_str());
+				Log("%s", sSub.c_str());
 			}
-			Log(msMessage.c_str());
+			Log("%s", msMessage.c_str());
 		}
 		else
 		{
-			Log(msMessage.c_str());
+			Log("%s", msMessage.c_str());
 		}
 	}
 	//-----------------------------------------------------------------------

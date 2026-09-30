@@ -24,6 +24,7 @@
 
 #include "StdAfx.h"
 #include "LuxMultiplayerTriggerPolicy.h"
+#include "LuxScriptExecution.h"
 
 //----------------------------------------------
 
@@ -658,6 +659,9 @@ public:
 	bool mbColliding;
 	// Runtime attribution only; remote players do not persist in offline saves.
 	luxnet::PlayerScriptOrigin mRemotePlayerTrigger;
+	bool mbPerPlayer=false, mbOncePerPlayer=false;
+	LuxScriptExecutionContext mScriptContext;
+	cLuxScriptPlayerCollisionState mPlayerCollisionState;
 };
 
 typedef std::list<cLuxCollideCallback*> tLuxCollideCallbackList;
@@ -679,6 +683,8 @@ public:
 	bool HasCollideCallbacks(){ return mlstCollideCallbacks.empty() == false;}
 	tLuxCollideCallbackList* GetCollideCallbackList(){ return &mlstCollideCallbacks;}
 	void AddCollideCallback(iLuxEntity *apEntity, const tString& asCallbackFunc, bool abRemoveAtCollide, int alStates);
+	void AddPlayerCollideCallback(iLuxEntity *apEntity, const tString& asCallbackFunc, bool abOncePerPlayer, int alStates);
+	void RemovePlayerCollideCallback(const tString& asEntityName);
 	void RemoveCollideCallback(cLuxCollideCallback *apCallback);
 	void RemoveCollideCallback(const tString& asEntityName);
 	void RemoveCollideCallbackInstantly(iLuxEntity *apEntity);
@@ -736,6 +742,8 @@ public:
 	bool mbDestroyMe;
 	// Session-only attribution survives in-memory map saves, never offline saves.
 	luxnet::PlayerScriptOrigin mScriptPlayerTrigger;
+	LuxScriptExecutionContext mScriptContext;
+	uint32_t mlScriptPlayerLife=0;
 };
 
 typedef std::list<cLuxEventTimer*> tLuxEventTimerList;
@@ -859,6 +867,10 @@ public:
 	bool mbColliding;
 	// Copied for map revisits in this process; omitted from offline serialization.
 	luxnet::PlayerScriptOrigin mRemotePlayerTrigger;
+	bool mbPerPlayer=false, mbOncePerPlayer=false;
+	bool mbOfflinePlayerInside=false, mbOfflinePlayerConsumed=false;
+	LuxScriptExecutionContext mScriptContext;
+	cLuxScriptPlayerCollisionState mPlayerCollisionState;
 };
 
 

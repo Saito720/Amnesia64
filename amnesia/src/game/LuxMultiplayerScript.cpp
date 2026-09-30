@@ -1,6 +1,7 @@
 #include "LuxMultiplayerScript.h"
 #include "LuxScriptHandler.h"
 #include "LuxMultiplayerContent.h"
+#include "LuxPlayer.h"
 
 const void* cLuxMultiplayerScriptScope::smContext=NULL;
 
@@ -219,7 +220,7 @@ bool cScriptResourceValidation::Read(luxnet::Reader& r) {
         if(!r.Done()) return false;
         return resources.Invoke([&] { cLuxScriptHandler::SetInsanitySetEnabled(asSet, abX); });
     }
-    // 26-28 are reserved: insanity event playback is local to each player.
+    // Directed local insanity playback uses IDs 26-28 below.
     case 29: { // PlayGuiSound
         std::string asSoundEntFile = r.String(4096);
         float afVolume = r.Float();
@@ -1140,6 +1141,40 @@ bool cScriptResourceValidation::Read(luxnet::Reader& r) {
         std::string name=r.String(4096);
         if(!r.Done()) return false;
         return resources.Invoke([&] { cLuxScriptHandler::StopPropMovement(name); });
+    }
+    case 169: { // Committed player values after a directed native feedback event.
+        const float health=r.Float(),sanity=r.Float(),oil=r.Float();
+        if(!r.Done()) return false;
+        return resources.Invoke([&] {gpBase->mpPlayer->ApplyScriptVitals(health,sanity,oil);});
+    }
+    case 26: {
+        if(!r.Done()) return false;
+        return resources.Invoke([&] {cLuxScriptHandler::StartRandomInsanityEvent();});
+    }
+    case 27: {
+        std::string name=r.String(4096);if(!r.Done()) return false;
+        return resources.Invoke([&] {cLuxScriptHandler::StartInsanityEvent(name);});
+    }
+    case 28: {
+        if(!r.Done()) return false;
+        return resources.Invoke([&] {cLuxScriptHandler::StopCurrentInsanityEvent();});
+    }
+    case 168: { // Directed sanity damage, including its local feedback.
+        const float amount=r.Float();const bool effect=r.U8()!=0;
+        if(!r.Done() || amount<0) return false;
+        return resources.Invoke([&] {cLuxScriptHandler::GiveSanityDamage(amount,effect);});
+    }
+    case 170: {
+        std::string callback=r.String(128);if(!r.Done()) return false;
+        return resources.Invoke([&] {cLuxScriptHandler::SetEffectVoiceOverCallback(callback);});
+    }
+    case 171: {
+        std::string callback=r.String(128);if(!r.Done()) return false;
+        return resources.Invoke([&] {cLuxScriptHandler::SetLanternLitCallback(callback);});
+    }
+    case 172: { // Account award from a live authority event, never replay history.
+        std::string name=r.String(128);if(!r.Done()) return false;
+        return resources.Invoke([&] {cLuxScriptHandler::UnlockAchievement(name);});
     }
     case 167: { // CheckPoint: clients retain the host's local respawn position and death hint.
         std::string name=r.String(4096),start=r.String(4096),callback=r.String(4096);

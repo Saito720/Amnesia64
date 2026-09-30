@@ -149,6 +149,7 @@ public:
 	const tString& GetCurrentPermaDeathSound(){ return msCurrentPermaDeathSound;}
 
 	void SetHealth(float afX);
+    void ApplyScriptVitals(float health,float sanity,float oil);
 	void SetSanity(float afX);
 	void SetLampOil(float afX);
 

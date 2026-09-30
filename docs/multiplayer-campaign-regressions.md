@@ -1,7 +1,12 @@
 # Multiplayer campaign regression checks
 
-Use the same protocol-15 build on both peers. Keep **every player may trigger
+Use the same protocol-16 build on both peers. Keep **every player may trigger
 Player callbacks** enabled for the client interaction tests.
+
+These checks describe the existing campaign/native behavior. Opt-in client
+companions, actor ownership and their limits are documented in the
+[master multiplayer scripting reference](multiplayer-scripting.md).
+Verification results naming older protocols remain historical results.
 
 ## Changes under test
 

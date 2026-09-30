@@ -20,6 +20,16 @@
 #include "LuxScriptHandler.h"
 #include "LuxMultiplayerScript.h"
 #include "LuxMultiplayerWorld.h"
+#include "LuxScriptRuntime.h"
+#include "LuxScriptExecution.h"
+#include "LuxScriptPlayerState.h"
+#include "impl/scriptstring.h"
+#include <angelscript.h>
+#include <cmath>
+#include <iomanip>
+#include <limits>
+#include <locale>
+#include <sstream>
 
 #include "LuxMap.h"
 #include "LuxPlayer.h"
@@ -60,6 +70,7 @@
 #include "LuxEnemy_ManPig.h"
 
 #include "LuxArea_Sticky.h"
+#include "LuxAreaNodes.h"
 
 #include "LuxEnemy.h"
 #include "LuxEnemyPathfinder.h"
@@ -85,7 +96,7 @@ string gsScriptNull="";
 cLuxScriptHandler::cLuxScriptHandler() : iLuxUpdateable("LuxScriptHandler")
 {
 	mpLowLevelSystem = gpBase->mpEngine->GetSystem()->GetLowLevel();
-
+    mpRuntime=new cLuxScriptRuntime;
 	
 	InitScriptFunctions();
 }
@@ -94,6 +105,7 @@ cLuxScriptHandler::cLuxScriptHandler() : iLuxUpdateable("LuxScriptHandler")
 
 cLuxScriptHandler::~cLuxScriptHandler()
 {
+    delete mpRuntime;
 }
 
 //-----------------------------------------------------------------------
@@ -115,7 +127,7 @@ void cLuxScriptHandler::OnStart()
 
 void cLuxScriptHandler::Reset()
 {
-
+    mpRuntime->Reset();
 }
 
 //-----------------------------------------------------------------------
@@ -155,6 +167,270 @@ void cLuxScriptHandler::OnDraw(float afFrameTime)
 void cLuxScriptHandler::AddFunc(const tString& asFunc, void *apFuncPtr)
 {
 	mpLowLevelSystem->AddScriptFunc(asFunc,apFuncPtr);
+    // A client can retain an object handle returned by a native. The legacy
+    // StringSub scratch reference is not a reference-counted script object.
+    if(asFunc.find("string& StringSub(")==0)
+        mpRuntime->RegisterNative("string@ StringSub(string &in value,int start,int count)",(void*)ClientStringSub);
+    else mpRuntime->RegisterNative(asFunc,apFuncPtr);
+}
+
+namespace {
+void ScriptFailure(const tString& message) {
+    if(asIScriptContext* script=asGetActiveContext()) script->SetException(message.substr(0,1024).c_str());
+    else Warning("%.1024s\n",message.c_str());
+}
+bool RevisedAuthorityPlayer(uint32_t& peer) {
+    const auto& context=LuxCurrentScriptContext();
+    if(!context.revised || context.domain!=LuxScriptDomain::Authority) {
+        ScriptFailure("This operation requires a revised authority script context.");return false;
+    }
+    if(!context.hasPlayer || context.player==UINT32_MAX) {
+        ScriptFailure("SelectScriptPlayer is required outside an attributed player event.");return false;
+    }
+    peer=context.player;return true;
+}
+bool PlayerVariableContext(const tString& name,bool published=false) {
+    const auto& context=LuxCurrentScriptContext();
+    if(published) {
+        if(!context.revised || !context.hasPlayer || context.player==UINT32_MAX ||
+           (context.domain!=LuxScriptDomain::Authority && context.domain!=LuxScriptDomain::Client)) {
+            ScriptFailure("Published variables require a current client or selected authority player.");return false;
+        }
+    } else {uint32_t peer;if(!RevisedAuthorityPlayer(peer)) return false;}
+    const cLuxMultiplayer* session=gpBase->mpMultiplayer;
+    const bool active=session && session->IsActive();
+    if(context.session!=(active?session->GetSessionSerial():0) ||
+       context.mapEpoch!=(active?session->GetMapEpoch():0) || !luxscript::ValidModule(context.module) ||
+       !luxscript::ValidVariable(name,"")) {
+        ScriptFailure("Player variables require a current module context and a bounded nonempty name.");return false;
+    }
+    return true;
+}
+void WritePlayerVariable(const tString& name,const tString& value,bool campaign) {
+    if(!PlayerVariableContext(name)) return;
+    tString error;
+    if(!gpBase->mpScriptHandler->GetRuntime()->GetPlayerState().Set(LuxCurrentScriptContext(),name,value,campaign,error))
+        ScriptFailure(error);
+}
+tString ReadPlayerVariable(const tString& name,bool campaign) {
+    if(!PlayerVariableContext(name)) return "";
+    return gpBase->mpScriptHandler->GetRuntime()->GetPlayerState().Get(LuxCurrentScriptContext(),name,campaign);
+}
+bool RequireLocalPresentationState(const char* operation) {
+    const auto& context=LuxCurrentScriptContext();
+    if(!context.revised || context.domain!=LuxScriptDomain::Authority) return true;
+    uint32_t peer;if(!RevisedAuthorityPlayer(peer)) return false;
+    cLuxMultiplayer* session=gpBase->mpMultiplayer;
+    if(peer==(session && session->IsActive()?session->GetLocalPeerId():0)) return true;
+    ScriptFailure(tString(operation)+" has no replicated remote state; query it in the client companion.");return false;
+}
+bool BindPlayerCompletion(const tString& kind,tString& function,bool booleanArgument,bool persistent) {
+    const auto& context=LuxCurrentScriptContext();
+    if(!context.revised || context.domain!=LuxScriptDomain::Authority) return true;
+    cLuxMultiplayer* session=gpBase->mpMultiplayer;
+    if(!session) {ScriptFailure("Player completion dispatcher is unavailable.");return false;}
+    tString token,error;
+    if(!session->RegisterPlayerCompletion(kind,function,booleanArgument,persistent,token,error)) {
+        ScriptFailure(error);return false;
+    }
+    function=token;return true;
+}
+bool HasSelectedInventoryPlayer() {
+    const auto& context=LuxCurrentScriptContext();
+    return context.revised && context.domain==LuxScriptDomain::Authority && context.hasPlayer;
+}
+bool RouteSelectedInventoryGive(const luxnet::InventoryItem& item) {
+    if(!HasSelectedInventoryPlayer()) return false;
+    uint32_t peer;if(!RevisedAuthorityPlayer(peer)) return true;
+    cLuxMultiplayer* session=gpBase->mpMultiplayer;
+    const uint32_t local=session && session->IsActive()?session->GetLocalPeerId():0;
+    if(peer!=local && (!session || !session->IsHost() || !session->GetWorld()->GetRemotePlayers().count(peer))) {
+        ScriptFailure("Selected inventory player is unavailable.");return true;
+    }
+    if(session && session->IsHost()) {
+        if(!session->GiveInventoryItem(peer,item)) ScriptFailure("Could not give the selected player this item.");
+    } else {
+        gpBase->mpInventory->AddItem(item.name,static_cast<eLuxItemType>(item.type),item.subtype,item.image,item.amount,item.value,item.extra);
+    }
+    return true;
+}
+
+// Keeps native helper calls in the same target context. A host-local target is
+// replication application for the duration of the call, so it cannot also
+// fan out through the legacy global ScriptEffect path.
+class cLuxScriptPlayerCommandScope {
+public:
+    template<class... Args> cLuxScriptPlayerCommandScope(uint32_t id,const Args&... arguments)
+        : mPrevious(LuxCurrentScriptContext()) {
+        // Keep an explicit capability boundary even if a shared native gains
+        // this helper accidentally. World mutation always stays authoritative.
+        if(!luxnet::IsPlayerScriptCommand(id)) return;
+        if(!mPrevious.revised || mPrevious.domain!=LuxScriptDomain::Authority) return;
+        uint32_t peer;if(!RevisedAuthorityPlayer(peer)) {mbHandled=true;return;}
+        cLuxMultiplayer* session=gpBase->mpMultiplayer;
+        const uint32_t local=session && session->IsActive()?session->GetLocalPeerId():0;
+        if(peer==local) {LuxCurrentScriptContext().domain=LuxScriptDomain::Replication;return;}
+        mbHandled=true;
+        if(!session || !session->IsHost() || !session->GetWorld()->GetRemotePlayers().count(peer)) {
+            ScriptFailure("Selected script player is unavailable.");return;
+        }
+        luxnet::Writer packet(luxnet::ScriptEffect);packet.U32(session->GetMapEpoch());packet.U32(id);
+        int unused[]={0,(Write(packet,arguments),0)...};(void)unused;
+        luxnet::Reader check(packet.data);check.U32();tString error;
+        if(!LuxValidateMultiplayerScriptEffect(check,error)) {ScriptFailure(error);return;}
+        uint32_t revision=0;bool reconcileVitals=false;
+        if((id>=36 && id<=41) || id==45 || id==46 || id==47 || id==168) {
+            luxnet::Reader values(packet.data);values.U32();values.U32();
+            const float value=(id==45 || id==46)?0:values.Float();bool lethal=true;
+            if(id==47) {values.String(4096);values.U8();lethal=values.U8()!=0;}
+            float absolute=0;revision=session->GetWorld()->ApplyScriptPlayerValue(peer,id,value,absolute,lethal);
+            if(!revision) {ScriptFailure("Could not update selected player's authoritative value.");return;}
+            reconcileVitals=true;
+        } else if(id==35 || id==61) {
+            luxnet::Reader values(packet.data);values.U32();values.U32();
+            cVector3f feet;float yaw=0;bool hasYaw=false;
+            if(id==35) {feet.x=values.Float();feet.y=values.Float();feet.z=values.Float();}
+            else {
+                const tString start=values.String(4096);auto* map=gpBase->mpMapHandler->GetCurrentMap();
+                cLuxNode_PlayerStart* node=map?map->GetPlayerStart(start):NULL;
+                if(!node) {ScriptFailure("TeleportPlayer start position was not found.");return;}
+                feet=node->GetPosition();yaw=node->GetAngle();hasYaw=true;
+            }
+            revision=session->GetWorld()->ApplyScriptPlayerPosition(peer,feet,hasYaw?&yaw:NULL);
+            if(!revision) {ScriptFailure("Could not update selected player's position.");return;}
+        }
+        // Preserve the original native feedback, then reconcile all three
+        // values without re-running sanity/death side effects. The ack belongs
+        // to the final result, never to the preceding feedback command.
+        if(!session->SendScriptPlayerCommand(peer,packet.data,reconcileVitals?0:revision)) {
+            ScriptFailure("Could not deliver selected-player script command.");return;
+        }
+        if(reconcileVitals) {
+            const auto& state=session->GetWorld()->GetRemotePlayers().find(peer)->second.gameplay;
+            luxnet::Writer result(luxnet::ScriptEffect);result.U32(session->GetMapEpoch());result.U32(169);
+            result.Float(state.health);result.Float(state.sanity);result.Float(state.lampOil);
+            if(!session->SendScriptPlayerCommand(peer,result.data,revision)) ScriptFailure("Could not reconcile selected-player script values.");
+        }
+    }
+    ~cLuxScriptPlayerCommandScope() {LuxCurrentScriptContext()=mPrevious;}
+    bool Handled() const {return mbHandled;}
+private:
+    LuxScriptExecutionContext mPrevious;
+    bool mbHandled=false;
+    static void Write(luxnet::Writer& packet,const tString& value) {packet.String(value);}
+    static void Write(luxnet::Writer& packet,float value) {packet.Float(value);}
+    static void Write(luxnet::Writer& packet,int value) {packet.U32(static_cast<uint32_t>(value));}
+    static void Write(luxnet::Writer& packet,bool value) {packet.U8(value?1:0);}
+};
+}
+
+bool __stdcall cLuxScriptHandler::SelectScriptPlayer(int player) {
+    auto& context=LuxCurrentScriptContext();
+    if(!context.revised || context.domain!=LuxScriptDomain::Authority) {
+        ScriptFailure("SelectScriptPlayer requires a revised authority context.");return false;
+    }
+    cLuxMultiplayer* session=gpBase->mpMultiplayer;
+    const uint32_t local=session && session->IsActive()?session->GetLocalPeerId():0;
+    if(player<0 || (uint32_t(player)!=local && (!session || !session->IsHost() ||
+        !session->GetWorld()->GetRemotePlayers().count(uint32_t(player))))) {
+        ScriptFailure("Cannot select an unavailable player.");return false;
+    }
+    context.hasPlayer=true;context.player=uint32_t(player);return true;
+}
+int __stdcall cLuxScriptHandler::GetScriptPlayerId() {
+    const auto& context=LuxCurrentScriptContext();
+    if(context.revised) return context.hasPlayer?static_cast<int>(context.player):-1;
+    return gpBase->mpMultiplayer?static_cast<int>(gpBase->mpMultiplayer->GetScriptPlayerPeer()):0;
+}
+int __stdcall cLuxScriptHandler::GetScriptPlayerCount() {
+    const auto& context=LuxCurrentScriptContext();
+    if(!context.revised || context.domain!=LuxScriptDomain::Authority) {
+        ScriptFailure("GetScriptPlayerCount requires a revised authority context.");return 0;
+    }
+    cLuxMultiplayer* session=gpBase->mpMultiplayer;
+    return 1+(session && session->IsHost()?static_cast<int>(session->GetWorld()->GetRemotePlayers().size()):0);
+}
+int __stdcall cLuxScriptHandler::GetScriptPlayerIdAt(int index) {
+    const auto& context=LuxCurrentScriptContext();
+    if(!context.revised || context.domain!=LuxScriptDomain::Authority) {
+        ScriptFailure("GetScriptPlayerIdAt requires a revised authority context.");return -1;
+    }
+    cLuxMultiplayer* session=gpBase->mpMultiplayer;
+    if(index<0) return -1;
+    if(index==0) return session && session->IsActive()?static_cast<int>(session->GetLocalPeerId()):0;
+    if(session && session->IsHost()) {
+        // Local first, followed by connected, posed actors in stable ID order.
+        for(const auto& player:session->GetWorld()->GetRemotePlayers()) if(--index==0) return static_cast<int>(player.first);
+    }
+    return -1;
+}
+void __stdcall cLuxScriptHandler::RunClientCallback(string& function,string& argument) {
+    uint32_t peer;if(!RevisedAuthorityPlayer(peer)) return;
+    if(!cLuxScriptRuntime::IsIdentifier(function) || argument.size()>4096) {ScriptFailure("Invalid client event function or argument.");return;}
+    cLuxMultiplayer* session=gpBase->mpMultiplayer;const tString module=LuxCurrentScriptContext().module;
+    if(session && session->IsHost() && peer!=session->GetLocalPeerId()) {
+        if(!session->SendClientScriptEvent(peer,module,function,std::vector<tString>{argument})) ScriptFailure("Cannot deliver client callback: the selected player's client module must be initialized. Put initial presentation in ClientOnEnter.");
+    } else {
+        tString error;if(!gpBase->mpScriptHandler->GetRuntime()->RunClientEvent(module,function,std::vector<tString>{argument},error)) ScriptFailure(error);
+    }
+}
+void __stdcall cLuxScriptHandler::SetPlayerVarInt(string& name,int value,bool campaign) {
+    WritePlayerVariable(name,cString::ToString(value),campaign);
+}
+int __stdcall cLuxScriptHandler::GetPlayerVarInt(string& name,bool campaign) {
+    const tString value=ReadPlayerVariable(name,campaign);
+    if(value.empty()) return 0;
+    std::istringstream input(value);input.imbue(std::locale::classic());int result=0;
+    if(!(input>>result) || !(input>>std::ws).eof()) {ScriptFailure("Player variable is not an integer.");return 0;}
+    return result;
+}
+void __stdcall cLuxScriptHandler::SetPlayerVarFloat(string& name,float value,bool campaign) {
+    if(!std::isfinite(value)) {ScriptFailure("Player variable floats must be finite.");return;}
+    std::ostringstream output;output.imbue(std::locale::classic());
+    output<<std::setprecision(std::numeric_limits<float>::max_digits10)<<value;
+    WritePlayerVariable(name,output.str(),campaign);
+}
+float __stdcall cLuxScriptHandler::GetPlayerVarFloat(string& name,bool campaign) {
+    const tString value=ReadPlayerVariable(name,campaign);
+    if(value.empty()) return 0;
+    std::istringstream input(value);input.imbue(std::locale::classic());float result=0;
+    if(!(input>>result) || !(input>>std::ws).eof() || !std::isfinite(result)) {
+        ScriptFailure("Player variable is not a finite float.");return 0;
+    }
+    return result;
+}
+void __stdcall cLuxScriptHandler::SetPlayerVarString(string& name,string& value,bool campaign) {
+    WritePlayerVariable(name,value,campaign);
+}
+CScriptString* __stdcall cLuxScriptHandler::GetPlayerVarString(string& name,bool campaign) {
+    return new CScriptString(ReadPlayerVariable(name,campaign));
+}
+void __stdcall cLuxScriptHandler::PublishPlayerVar(string& name,string& value) {
+    if(!PlayerVariableContext(name)) return;
+    const auto& context=LuxCurrentScriptContext();tString error;
+    if(!gpBase->mpScriptHandler->GetRuntime()->GetPlayerState().Publish(context,name,value,error)) {
+        ScriptFailure(error);return;
+    }
+    cLuxMultiplayer* session=gpBase->mpMultiplayer;
+    if(session && session->IsHost() && !session->SendPublishedScriptState(context.player))
+        ScriptFailure("Could not deliver the selected player's published state.");
+}
+CScriptString* __stdcall cLuxScriptHandler::GetPublishedScriptVar(string& name) {
+    if(!PlayerVariableContext(name,true)) return new CScriptString();
+    return new CScriptString(gpBase->mpScriptHandler->GetRuntime()->GetPlayerState().GetPublished(LuxCurrentScriptContext(),name));
+}
+void __stdcall cLuxScriptHandler::AddPlayerCollideCallback(string& child,string& function,bool oncePerPlayer,int states) {
+    const auto& context=LuxCurrentScriptContext();
+    if(!context.revised || context.domain!=LuxScriptDomain::Authority || !cLuxScriptRuntime::IsIdentifier(function) || (states!=-1 && states!=0 && states!=1)) {
+        ScriptFailure("AddPlayerCollideCallback requires a revised authority context and valid callback/state.");return;
+    }
+    iLuxEntity* entity=GetEntity(child,eLuxEntityType_LastEnum,-1);
+    if(entity) gpBase->mpPlayer->AddPlayerCollideCallback(entity,function,oncePerPlayer,states);
+}
+void __stdcall cLuxScriptHandler::RemovePlayerCollideCallback(string& child) {
+    const auto& context=LuxCurrentScriptContext();
+    if(!context.revised || context.domain!=LuxScriptDomain::Authority) {ScriptFailure("RemovePlayerCollideCallback requires authority.");return;}
+    gpBase->mpPlayer->RemovePlayerCollideCallback(child);
 }
 
 //-----------------------------------------------------------------------
@@ -374,6 +650,28 @@ iPhysicsBody* cLuxScriptHandler::GetBodyInEntity(iLuxEntity* apEntity, const tSt
 
 void cLuxScriptHandler::InitScriptFunctions()
 {
+    AddFunc("bool SelectScriptPlayer(int player)",(void*)SelectScriptPlayer);
+    AddFunc("int GetScriptPlayerId()",(void*)GetScriptPlayerId);
+    AddFunc("int GetScriptPlayerCount()",(void*)GetScriptPlayerCount);
+    AddFunc("int GetScriptPlayerIdAt(int index)",(void*)GetScriptPlayerIdAt);
+    AddFunc("void RunClientCallback(string &in function,string &in argument)",(void*)RunClientCallback);
+    // AS 2.19 has no default arguments: explicit overloads provide map scope.
+    AddFunc("void SetPlayerVarInt(string &in name,int value)",(void*)SetPlayerVarIntMap);
+    AddFunc("void SetPlayerVarInt(string &in name,int value,bool campaign)",(void*)SetPlayerVarInt);
+    AddFunc("int GetPlayerVarInt(string &in name)",(void*)GetPlayerVarIntMap);
+    AddFunc("int GetPlayerVarInt(string &in name,bool campaign)",(void*)GetPlayerVarInt);
+    AddFunc("void SetPlayerVarFloat(string &in name,float value)",(void*)SetPlayerVarFloatMap);
+    AddFunc("void SetPlayerVarFloat(string &in name,float value,bool campaign)",(void*)SetPlayerVarFloat);
+    AddFunc("float GetPlayerVarFloat(string &in name)",(void*)GetPlayerVarFloatMap);
+    AddFunc("float GetPlayerVarFloat(string &in name,bool campaign)",(void*)GetPlayerVarFloat);
+    AddFunc("void SetPlayerVarString(string &in name,string &in value)",(void*)SetPlayerVarStringMap);
+    AddFunc("void SetPlayerVarString(string &in name,string &in value,bool campaign)",(void*)SetPlayerVarString);
+    AddFunc("string@ GetPlayerVarString(string &in name)",(void*)GetPlayerVarStringMap);
+    AddFunc("string@ GetPlayerVarString(string &in name,bool campaign)",(void*)GetPlayerVarString);
+    AddFunc("void PublishPlayerVar(string &in name,string &in value)",(void*)PublishPlayerVar);
+    AddFunc("string@ GetPublishedScriptVar(string &in name)",(void*)GetPublishedScriptVar);
+    AddFunc("void AddPlayerCollideCallback(string &in child,string &in function,bool oncePerPlayer,int states)",(void*)AddPlayerCollideCallback);
+    AddFunc("void RemovePlayerCollideCallback(string &in child)",(void*)RemovePlayerCollideCallback);
 	AddFunc("void Print(string &in asString)", (void *)Print);
 	AddFunc("void AddDebugMessage(string &in asString, bool abCheckForDuplicates)",(void *)AddDebugMessage);
 	AddFunc("void ProgLog(string &in asLevel, string &in asMessage)", (void *)ProgLog);
@@ -460,10 +758,10 @@ void cLuxScriptHandler::InitScriptFunctions()
 	AddFunc("void StartRandomInsanityEvent()", (void *)StartRandomInsanityEvent);
 	AddFunc("void StartInsanityEvent(string &in asEventName)", (void *)StartInsanityEvent);
 	AddFunc("void StopCurrentInsanityEvent()", (void *)StopCurrentInsanityEvent);
-	AddFunc("void InsanityEventIsActive()", (void *)InsanityEventIsActive);
+	AddFunc("bool InsanityEventIsActive()", (void *)InsanityEventIsActive);
 
 	AddFunc("void StartPlayerSpawnPS(string &in asSPSFile)", (void *)StartPlayerSpawnPS);
-	AddFunc("void StopPlayerSpawnPS()", (void *)StartPlayerSpawnPS);
+	AddFunc("void StopPlayerSpawnPS()", (void *)StopPlayerSpawnPS);
 
 	AddFunc("void PlayGuiSound(string &in asSoundFile, float afVolume)",(void *)PlayGuiSound);
 
@@ -707,7 +1005,9 @@ void cLuxScriptHandler::InitScriptFunctions()
 
 void __stdcall cLuxScriptHandler::Print(string& asString)
 {
-	Log("%s", asString.c_str());
+	// The engine logger has a fixed formatting buffer. Bound script text before
+	// it enters that buffer, including text supplied by a client module.
+	Log("%.1024s", asString.c_str());
 }
 
 void __stdcall cLuxScriptHandler::AddDebugMessage(string& asString, bool abCheckForDuplicates)
@@ -759,14 +1059,24 @@ string gsGlobalTemp="";
 
 string& __stdcall cLuxScriptHandler::StringSub(string& asString, int alStart, int alCount)
 {
-	gsGlobalTemp = cString::Sub(asString, alStart, alCount);
+    if(alStart<0 || static_cast<size_t>(alStart)>=asString.size()) gsGlobalTemp.clear();
+    else gsGlobalTemp=asString.substr(static_cast<size_t>(alStart),alCount<0?tString::npos:static_cast<size_t>(alCount));
 	return gsGlobalTemp;
+}
+
+CScriptString* __stdcall cLuxScriptHandler::ClientStringSub(string& asString,int alStart,int alCount)
+{
+    if(alStart<0 || static_cast<size_t>(alStart)>=asString.size()) return new CScriptString();
+    return new CScriptString(asString.substr(static_cast<size_t>(alStart),alCount<0?tString::npos:static_cast<size_t>(alCount)));
 }
 
 //-----------------------------------------------------------------------
 
 void __stdcall cLuxScriptHandler::AddTimer(string& asName, float afTime, string& asFunction)
 {
+    if(LuxCurrentScriptContext().domain==LuxScriptDomain::Client) {
+        tString error;if(!gpBase->mpScriptHandler->GetRuntime()->AddClientTimer(asName,afTime,asFunction,error)) ScriptFailure(error);return;
+    }
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	if(pMap==NULL) return;
 
@@ -776,6 +1086,7 @@ void __stdcall cLuxScriptHandler::AddTimer(string& asName, float afTime, string&
 
 void __stdcall cLuxScriptHandler::RemoveTimer(string& asName)
 {
+    if(LuxCurrentScriptContext().domain==LuxScriptDomain::Client) {gpBase->mpScriptHandler->GetRuntime()->RemoveClientTimer(asName);return;}
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	if(pMap==NULL) return;
 
@@ -786,6 +1097,7 @@ void __stdcall cLuxScriptHandler::RemoveTimer(string& asName)
 
 float __stdcall cLuxScriptHandler::GetTimerTimeLeft(string& asName)
 {
+    if(LuxCurrentScriptContext().domain==LuxScriptDomain::Client) return gpBase->mpScriptHandler->GetRuntime()->GetClientTimerTimeLeft(asName);
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 	if(pMap==NULL) return 0;
 
@@ -1128,6 +1440,8 @@ void __stdcall cLuxScriptHandler::SetFogProperties(float afStart, float afEnd, f
 
 void __stdcall cLuxScriptHandler::SetupLoadScreen(string &asTextCat, string &asTextEntry, int alRandomNum, string &asImageFile)
 {
+    cLuxScriptPlayerCommandScope target(10, asTextCat, asTextEntry, alRandomNum, asImageFile);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(10, asTextCat, asTextEntry, alRandomNum, asImageFile);
 	gpBase->mpLoadScreenHandler->SetupLoadText(asTextCat, asTextEntry, alRandomNum, asImageFile);
 }
@@ -1136,12 +1450,16 @@ void __stdcall cLuxScriptHandler::SetupLoadScreen(string &asTextCat, string &asT
 
 void __stdcall cLuxScriptHandler::FadeIn(float afTime)
 {
+    cLuxScriptPlayerCommandScope target(11, afTime);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(11, afTime);
 	gpBase->mpEffectHandler->GetFade()->FadeIn(afTime);
 }
 
 void __stdcall cLuxScriptHandler::FadeOut(float afTime)
 {
+    cLuxScriptPlayerCommandScope target(12, afTime);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(12, afTime);
 	gpBase->mpEffectHandler->GetFade()->FadeOut(afTime);
 }
@@ -1150,6 +1468,8 @@ void __stdcall cLuxScriptHandler::FadeOut(float afTime)
 
 void __stdcall cLuxScriptHandler::FadeImageTrailTo(float afAmount, float afSpeed)
 {
+    cLuxScriptPlayerCommandScope target(13, afAmount, afSpeed);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(13, afAmount, afSpeed);
 	gpBase->mpEffectHandler->GetImageTrail()->FadeTo(afAmount, afSpeed);
 }
@@ -1158,6 +1478,8 @@ void __stdcall cLuxScriptHandler::FadeImageTrailTo(float afAmount, float afSpeed
 
 void __stdcall cLuxScriptHandler::FadeSepiaColorTo(float afAmount, float afSpeed)
 {
+    cLuxScriptPlayerCommandScope target(14, afAmount, afSpeed);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(14, afAmount, afSpeed);
 	gpBase->mpEffectHandler->GetSepiaColor()->FadeTo(afAmount, afSpeed);
 }
@@ -1166,12 +1488,16 @@ void __stdcall cLuxScriptHandler::FadeSepiaColorTo(float afAmount, float afSpeed
 
 void __stdcall cLuxScriptHandler::FadeRadialBlurTo(float afSize, float afSpeed)
 {
+    cLuxScriptPlayerCommandScope target(15, afSize, afSpeed);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(15, afSize, afSpeed);
 	gpBase->mpEffectHandler->GetRadialBlur()->FadeTo(afSize, afSpeed);
 }
 
 void __stdcall cLuxScriptHandler::SetRadialBlurStartDist(float afStartDist)
 {
+    cLuxScriptPlayerCommandScope target(16, afStartDist);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(16, afStartDist);
 	gpBase->mpEffectHandler->GetRadialBlur()->SetBlurStartDist(afStartDist);
 }
@@ -1180,6 +1506,8 @@ void __stdcall cLuxScriptHandler::SetRadialBlurStartDist(float afStartDist)
 
 void __stdcall cLuxScriptHandler::StartEffectFlash(float afFadeIn, float afWhite, float afFadeOut)
 {
+    cLuxScriptPlayerCommandScope target(17, afFadeIn, afWhite, afFadeOut);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(17, afFadeIn, afWhite, afFadeOut);
 	gpBase->mpEffectHandler->GetFlash()->Start(afFadeOut, afWhite, afFadeOut);
 }
@@ -1188,6 +1516,8 @@ void __stdcall cLuxScriptHandler::StartEffectFlash(float afFadeIn, float afWhite
 
 void __stdcall cLuxScriptHandler::StartEffectEmotionFlash(string &asTextCat, string &asTextEntry, string &asSound)
 {
+    cLuxScriptPlayerCommandScope target(18, asTextCat, asTextEntry, asSound);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(18, asTextCat, asTextEntry, asSound);
 	gpBase->mpEffectHandler->GetEmotionFlash()->Start(asTextCat, asTextEntry, asSound);
 }
@@ -1196,6 +1526,8 @@ void __stdcall cLuxScriptHandler::StartEffectEmotionFlash(string &asTextCat, str
 
 void __stdcall cLuxScriptHandler::SetInDarknessEffectsActive(bool abX)
 {
+    cLuxScriptPlayerCommandScope target(19, abX);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(19, abX);
 	gpBase->mpPlayer->GetHelperInDarkness()->SetActive(abX);
 }
@@ -1206,6 +1538,8 @@ void __stdcall cLuxScriptHandler::AddEffectVoice(string& asVoiceFile, string& as
 												string& asTextCat, string& asTextEntry, bool abUsePostion, 
 												string& asPosEntity, float afMinDistance, float afMaxDistance)
 {
+    cLuxScriptPlayerCommandScope target(20, asVoiceFile, asEffectFile, asTextCat, asTextEntry, abUsePostion, asPosEntity, afMinDistance, afMaxDistance);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(20, asVoiceFile, asEffectFile, asTextCat, asTextEntry, abUsePostion, asPosEntity, afMinDistance, afMaxDistance);
 	cVector3f vPos(0);
 	if(abUsePostion)
@@ -1224,6 +1558,8 @@ void __stdcall cLuxScriptHandler::AddEffectVoice(string& asVoiceFile, string& as
 
 void __stdcall cLuxScriptHandler::StopAllEffectVoices(float afFadeOutTime)
 {
+    cLuxScriptPlayerCommandScope target(21, afFadeOutTime);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(21, afFadeOutTime);
 	gpBase->mpEffectHandler->GetPlayVoice()->StopVoices(1.0f/afFadeOutTime);
 }
@@ -1232,6 +1568,7 @@ void __stdcall cLuxScriptHandler::StopAllEffectVoices(float afFadeOutTime)
 
 bool __stdcall cLuxScriptHandler::GetEffectVoiceActive()
 {
+    if(!RequireLocalPresentationState("GetEffectVoiceActive")) return false;
 	return gpBase->mpEffectHandler->GetPlayVoice()->IsActive();
 }
 
@@ -1239,12 +1576,16 @@ bool __stdcall cLuxScriptHandler::GetEffectVoiceActive()
 
 void __stdcall cLuxScriptHandler::StartPlayerSpawnPS(string& asSPSFile)
 {
+    cLuxScriptPlayerCommandScope target(22, asSPSFile);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(22, asSPSFile);
 	gpBase->mpPlayer->GetHelperSpawnPS()->Start(asSPSFile);
 }
 
 void __stdcall cLuxScriptHandler::StopPlayerSpawnPS()
 {
+    cLuxScriptPlayerCommandScope target(23);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(23);
 	gpBase->mpPlayer->GetHelperSpawnPS()->Stop();
 }
@@ -1253,13 +1594,18 @@ void __stdcall cLuxScriptHandler::StopPlayerSpawnPS()
 
 void __stdcall cLuxScriptHandler::SetEffectVoiceOverCallback(string& asFunc)
 {
-	gpBase->mpEffectHandler->GetPlayVoice()->SetOverCallback(asFunc);
+    tString callback=asFunc;if(!BindPlayerCompletion("voice",callback,false,false)) return;
+    cLuxScriptPlayerCommandScope target(170,callback);
+    if(target.Handled()) return;
+	gpBase->mpEffectHandler->GetPlayVoice()->SetOverCallback(callback);
 }
 
 //-----------------------------------------------------------------------
 
 void __stdcall cLuxScriptHandler::StartScreenShake(float afAmount, float afTime, float afFadeInTime,float afFadeOutTime)
 {
+    cLuxScriptPlayerCommandScope target(24, afAmount, afTime, afFadeInTime, afFadeOutTime);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(24, afAmount, afTime, afFadeInTime, afFadeOutTime);
 	gpBase->mpEffectHandler->GetScreenShake()->Start(afAmount, afTime, afFadeInTime, afFadeOutTime);
 }
@@ -1268,6 +1614,7 @@ void __stdcall cLuxScriptHandler::StartScreenShake(float afAmount, float afTime,
 
 bool __stdcall cLuxScriptHandler::GetFlashbackIsActive()
 {
+    if(!RequireLocalPresentationState("GetFlashbackIsActive")) return false;
 	return gpBase->mpPlayer->GetHelperFlashback()->IsActive();
 }
 
@@ -1275,6 +1622,8 @@ bool __stdcall cLuxScriptHandler::GetFlashbackIsActive()
 
 void __stdcall cLuxScriptHandler::SetInsanitySetEnabled(string& asSet, bool abX)
 {
+    cLuxScriptPlayerCommandScope target(25, asSet, abX);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(25, asSet, abX);
 	if(abX)	gpBase->mpInsanityHandler->EnableSet(asSet);
 	else	gpBase->mpInsanityHandler->DisableSet(asSet);
@@ -1283,27 +1632,48 @@ void __stdcall cLuxScriptHandler::SetInsanitySetEnabled(string& asSet, bool abX)
 
 void __stdcall cLuxScriptHandler::StartRandomInsanityEvent()
 {
+    cLuxScriptPlayerCommandScope target(26);
+    if(target.Handled()) return;
 	gpBase->mpInsanityHandler->StartEvent();
 }
 
 void __stdcall cLuxScriptHandler::StartInsanityEvent(string& asEventName)
 {
+    cLuxScriptPlayerCommandScope target(27,asEventName);
+    if(target.Handled()) return;
 	gpBase->mpInsanityHandler->StartEvent(asEventName);
 }
 
 void __stdcall cLuxScriptHandler::StopCurrentInsanityEvent()
 {
+    cLuxScriptPlayerCommandScope target(28);
+    if(target.Handled()) return;
 	gpBase->mpInsanityHandler->StopCurrentEvent();
 }
 
 bool __stdcall cLuxScriptHandler::InsanityEventIsActive()
 {
+    if(!RequireLocalPresentationState("InsanityEventIsActive")) return false;
 	return gpBase->mpInsanityHandler->GetCurrentEvent() >= 0;
 }
 
 #pragma optimize("", off)
 void __stdcall cLuxScriptHandler::UnlockAchievement(string& asName)
 {
+    const auto& context=LuxCurrentScriptContext();
+    if(context.revised && context.domain==LuxScriptDomain::Authority && !context.hasPlayer) {
+        cLuxMultiplayer* session=gpBase->mpMultiplayer;
+        if(session && session->IsHost()) {
+            luxnet::Writer award(luxnet::ScriptEffect);award.U32(session->GetMapEpoch());award.U32(172);award.String(asName);
+            if(!session->SendTransientScriptEffect(award.data)) ScriptFailure("Could not deliver the session achievement event.");
+        } else {
+            auto local=context;local.domain=LuxScriptDomain::Replication;
+            cLuxScriptExecutionScope scope(local);UnlockAchievement(asName);
+        }
+        return;
+    }
+    cLuxScriptPlayerCommandScope target(172,asName);
+    if(target.Handled()) return;
 	bool bUnlockHardmode = false;
 
 	if (asName == "Benefactor")
@@ -1352,6 +1722,8 @@ void __stdcall cLuxScriptHandler::UnlockAchievement(string& asName)
 
 void __stdcall cLuxScriptHandler::PlayGuiSound(string& asSoundEntFile, float afVolume)
 {
+    cLuxScriptPlayerCommandScope target(29, asSoundEntFile, afVolume);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(29, asSoundEntFile, afVolume);
 	tString sExt = cString::ToLowerCase(cString::GetFileExt(asSoundEntFile));
 	const bool bSoundEntity = sExt == "snt" || (sExt.empty() &&
@@ -1376,6 +1748,8 @@ void __stdcall cLuxScriptHandler::PlayGuiSound(string& asSoundEntFile, float afV
 
 void __stdcall cLuxScriptHandler::SetPlayerActive(bool abActive)
 {
+    cLuxScriptPlayerCommandScope target(30, abActive);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(30, abActive);
 	gpBase->mpPlayer->SetActive(abActive);
 }
@@ -1384,6 +1758,8 @@ void __stdcall cLuxScriptHandler::SetPlayerActive(bool abActive)
 
 void __stdcall cLuxScriptHandler::ChangePlayerStateToNormal()
 {
+    cLuxScriptPlayerCommandScope target(31);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(31);
 	gpBase->mpPlayer->ChangeState(eLuxPlayerState_Normal);
 }
@@ -1392,6 +1768,8 @@ void __stdcall cLuxScriptHandler::ChangePlayerStateToNormal()
 
 void __stdcall cLuxScriptHandler::SetPlayerCrouching(bool abCrouch)
 {
+    cLuxScriptPlayerCommandScope target(32, abCrouch);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(32, abCrouch);
 	gpBase->mpPlayer->ChangeMoveState(eLuxMoveState_Normal);
 
@@ -1403,13 +1781,15 @@ void __stdcall cLuxScriptHandler::SetPlayerCrouching(bool abCrouch)
 
 void __stdcall cLuxScriptHandler::AddPlayerBodyForce(float afX, float afY, float afZ, bool abUseLocalCoords)
 {
+    cLuxScriptPlayerCommandScope target(33, afX, afY, afZ, abUseLocalCoords);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(33, afX, afY, afZ, abUseLocalCoords);
 	iCharacterBody *pBody = gpBase->mpPlayer->GetCharacterBody();
 
 	cVector3f vForce;
 	if(abUseLocalCoords)
 	{
-		vForce = pBody->GetForward()*afZ + pBody->GetRight()*afY + pBody->GetUp()*afY;
+		vForce = pBody->GetForward()*afZ + pBody->GetRight()*afX + pBody->GetUp()*afY;
 	}
 	else
 	{
@@ -1423,6 +1803,8 @@ void __stdcall cLuxScriptHandler::AddPlayerBodyForce(float afX, float afY, float
 
 void __stdcall cLuxScriptHandler::ShowPlayerCrossHairIcons(bool abX)
 {
+    cLuxScriptPlayerCommandScope target(34, abX);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(34, abX);
 	gpBase->mpPlayer->SetScriptShowFocusIconAndCrossHair(abX);
 }
@@ -1431,6 +1813,8 @@ void __stdcall cLuxScriptHandler::ShowPlayerCrossHairIcons(bool abX)
 
 void __stdcall cLuxScriptHandler::SetPlayerPos(float afX, float afY, float afZ)
 {
+    cLuxScriptPlayerCommandScope target(35, afX, afY, afZ);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(35, afX, afY, afZ);
 	return gpBase->mpPlayer->GetCharacterBody()->SetFeetPosition(cVector3f(afX, afY, afZ));
 }
@@ -1443,10 +1827,16 @@ static bool GetScriptRemotePlayer(const cLuxMultiplayerRemotePlayer*& player)
 {
 	player = NULL;
 	cLuxMultiplayer* session = gpBase->mpMultiplayer;
-	if(!session || !session->IsHost() || session->GetScriptPlayerPeer()==session->GetLocalPeerId()) return false;
+	const auto& context=LuxCurrentScriptContext();
+	if(context.domain==LuxScriptDomain::Client || context.domain==LuxScriptDomain::Replication) return false;
+	uint32_t peer=session?session->GetScriptPlayerPeer():0;
+	if(context.revised && !RevisedAuthorityPlayer(peer)) return true;
+	if(peer==(session && session->IsActive()?session->GetLocalPeerId():0)) return false;
+	if(!session || !session->IsHost()) {ScriptFailure("Selected script player is unavailable.");return true;}
 	const auto& players = session->GetWorld()->GetRemotePlayers();
-	auto found = players.find(session->GetScriptPlayerPeer());
+	auto found = players.find(peer);
 	if(found!=players.end()) player = &found->second;
+	else if(context.revised) ScriptFailure("Selected script player is unavailable.");
 	return true;
 }
 
@@ -1479,12 +1869,16 @@ float __stdcall cLuxScriptHandler::GetPlayerPosZ()
 
 void __stdcall cLuxScriptHandler::SetPlayerSanity(float afSanity)
 {
+    cLuxScriptPlayerCommandScope target(36, afSanity);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(36, afSanity);
 	gpBase->mpPlayer->SetSanity(afSanity);
 }
 
 void __stdcall cLuxScriptHandler::AddPlayerSanity(float afSanity)
 {
+    cLuxScriptPlayerCommandScope target(37, afSanity);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(37, afSanity);
 	gpBase->mpPlayer->AddSanity(afSanity);
 }
@@ -1498,12 +1892,16 @@ float __stdcall cLuxScriptHandler::GetPlayerSanity()
 
 void __stdcall cLuxScriptHandler::SetPlayerHealth(float afHealth)
 {
+    cLuxScriptPlayerCommandScope target(38, afHealth);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(38, afHealth);
 	gpBase->mpPlayer->SetHealth(afHealth);
 }
 
 void __stdcall cLuxScriptHandler::AddPlayerHealth(float afHealth)
 {
+    cLuxScriptPlayerCommandScope target(39, afHealth);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(39, afHealth);
 	gpBase->mpPlayer->AddHealth(afHealth);
 }
@@ -1517,12 +1915,16 @@ float __stdcall cLuxScriptHandler::GetPlayerHealth()
 
 void __stdcall cLuxScriptHandler::SetPlayerLampOil(float afOil)
 {
+    cLuxScriptPlayerCommandScope target(40, afOil);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(40, afOil);
 	gpBase->mpPlayer->SetLampOil(afOil);
 }
 
 void __stdcall cLuxScriptHandler::AddPlayerLampOil(float afOil)
 {
+    cLuxScriptPlayerCommandScope target(41, afOil);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(41, afOil);
 	gpBase->mpPlayer->AddLampOil(afOil);
 }
@@ -1556,12 +1958,16 @@ float __stdcall cLuxScriptHandler::GetPlayerYSpeed()
 
 void __stdcall cLuxScriptHandler::MovePlayerForward(float afAmount)
 {
+    cLuxScriptPlayerCommandScope target(42, afAmount);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(42, afAmount);
 	gpBase->mpPlayer->GetCharacterBody()->Move(eCharDir_Forward, afAmount);
 }
 
 void __stdcall cLuxScriptHandler::SetPlayerPermaDeathSound(string& asSound)
 {
+    cLuxScriptPlayerCommandScope target(43, asSound);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(43, asSound);
 	gpBase->mpPlayer->SetCurrentPermaDeathSound(asSound);
 }
@@ -1570,6 +1976,8 @@ void __stdcall cLuxScriptHandler::SetPlayerPermaDeathSound(string& asSound)
 
 void __stdcall cLuxScriptHandler::SetSanityDrainDisabled(bool abX)
 {
+    cLuxScriptPlayerCommandScope target(44, abX);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(44, abX);
 	gpBase->mpPlayer->SetSanityDrainDisabled(abX);
 }
@@ -1578,6 +1986,8 @@ void __stdcall cLuxScriptHandler::SetSanityDrainDisabled(bool abX)
 
 void __stdcall cLuxScriptHandler::GiveSanityBoost()
 {
+    cLuxScriptPlayerCommandScope target(45);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(45);
 	if(gpBase->mpPlayer->GetSanity() < 25.0f)
 		gpBase->mpPlayer->AddSanity(100.0f - gpBase->mpPlayer->GetSanity());
@@ -1594,6 +2004,8 @@ void __stdcall cLuxScriptHandler::GiveSanityBoost()
 
 void __stdcall cLuxScriptHandler::GiveSanityBoostSmall()
 {
+    cLuxScriptPlayerCommandScope target(46);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(46);
 	cLuxPlayer* pPlayer = gpBase->mpPlayer;
 
@@ -1612,6 +2024,8 @@ void __stdcall cLuxScriptHandler::GiveSanityBoostSmall()
 
  void __stdcall cLuxScriptHandler::GiveSanityDamage(float afAmount, bool abUseEffect)
 {
+    cLuxScriptPlayerCommandScope target(168,afAmount,abUseEffect);
+    if(target.Handled()) return;
 	if(abUseEffect)
 		gpBase->mpPlayer->GiveSanityDamage(afAmount);
 	else
@@ -1622,6 +2036,8 @@ void __stdcall cLuxScriptHandler::GiveSanityBoostSmall()
 
 void __stdcall cLuxScriptHandler::GivePlayerDamage(float afAmount, string& asType, bool abSpinHead, bool abLethal)
 {
+    cLuxScriptPlayerCommandScope target(47, afAmount, asType, abSpinHead, abLethal);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(47, afAmount, asType, abSpinHead, abLethal);
 	tString sLowType = cString::ToLowerCase(asType);
 	eLuxDamageType type = eLuxDamageType_BloodSplat;
@@ -1635,24 +2051,32 @@ void __stdcall cLuxScriptHandler::GivePlayerDamage(float afAmount, string& asTyp
 
 void __stdcall cLuxScriptHandler::FadePlayerFOVMulTo(float afX, float afSpeed)
 {
+    cLuxScriptPlayerCommandScope target(48, afX, afSpeed);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(48, afX, afSpeed);
 	gpBase->mpPlayer->FadeFOVMulTo(afX, afSpeed);
 }
 
 void __stdcall cLuxScriptHandler::FadePlayerAspectMulTo(float afX, float afSpeed)
 {
+    cLuxScriptPlayerCommandScope target(49, afX, afSpeed);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(49, afX, afSpeed);
 	gpBase->mpPlayer->FadeAspectMulTo(afX, afSpeed);
 }
 
 void __stdcall cLuxScriptHandler::FadePlayerRollTo(float afX, float afSpeedMul, float afMaxSpeed)
 {
+    cLuxScriptPlayerCommandScope target(50, afX, afSpeedMul, afMaxSpeed);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(50, afX, afSpeedMul, afMaxSpeed);
 	gpBase->mpPlayer->FadeRollTo(cMath::ToRad(afX), afSpeedMul, cMath::ToRad(afMaxSpeed));
 }
 
 void __stdcall cLuxScriptHandler::MovePlayerHeadPos(float afX, float afY, float afZ, float afSpeed, float afSlowDownDist)
 {
+    cLuxScriptPlayerCommandScope target(51, afX, afY, afZ, afSpeed, afSlowDownDist);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(51, afX, afY, afZ, afSpeed, afSlowDownDist);
 	gpBase->mpPlayer->MoveHeadPosAdd(eLuxHeadPosAdd_Script, cVector3f(afX, afY, afZ), afSpeed, afSlowDownDist);
 }
@@ -1662,7 +2086,10 @@ void __stdcall cLuxScriptHandler::MovePlayerHeadPos(float afX, float afY, float 
 
 void __stdcall cLuxScriptHandler::StartPlayerLookAt(string& asEntityName, float afSpeedMul, float afMaxSpeed, string & asAtTargetCallback)
 {
-    cLuxMultiplayerScriptScope networkEffect(52, asEntityName, afSpeedMul, afMaxSpeed, asAtTargetCallback);
+    tString callback=asAtTargetCallback;if(!BindPlayerCompletion("lookat",callback,false,false)) return;
+    cLuxScriptPlayerCommandScope target(52, asEntityName, afSpeedMul, afMaxSpeed, callback);
+    if(target.Handled()) return;
+    cLuxMultiplayerScriptScope networkEffect(52, asEntityName, afSpeedMul, afMaxSpeed, callback);
 	iLuxEntity *pEntity = GetEntity(asEntityName, eLuxEntityType_LastEnum, -1);
 	if(pEntity==NULL) return;
 
@@ -1677,12 +2104,15 @@ void __stdcall cLuxScriptHandler::StartPlayerLookAt(string& asEntityName, float 
 		return;
 	}
 
-	gpBase->mpPlayer->GetHelperLookAt()->SetTarget(vPos, afSpeedMul, afMaxSpeed, asAtTargetCallback);
+	gpBase->mpPlayer->GetHelperLookAt()->SetTarget(vPos, afSpeedMul, afMaxSpeed, callback);
 	gpBase->mpPlayer->GetHelperLookAt()->SetActive(true);
 }
 
 void __stdcall cLuxScriptHandler::StopPlayerLookAt()
 {
+    tString callback;if(!BindPlayerCompletion("lookat",callback,false,false)) return;
+    cLuxScriptPlayerCommandScope target(53);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(53);
 	gpBase->mpPlayer->GetHelperLookAt()->SetActive(false);
 }
@@ -1691,36 +2121,48 @@ void __stdcall cLuxScriptHandler::StopPlayerLookAt()
 
 void __stdcall cLuxScriptHandler::SetPlayerMoveSpeedMul(float afMul)
 {
+    cLuxScriptPlayerCommandScope target(54, afMul);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(54, afMul);
 	gpBase->mpPlayer->SetScriptMoveSpeedMul(afMul);
 }
 
 void __stdcall cLuxScriptHandler::SetPlayerRunSpeedMul(float afMul)
 {
+    cLuxScriptPlayerCommandScope target(55, afMul);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(55, afMul);
 	gpBase->mpPlayer->SetScriptRunSpeedMul(afMul);
 }
 
 void __stdcall cLuxScriptHandler::SetPlayerLookSpeedMul(float afMul)
 {
+    cLuxScriptPlayerCommandScope target(56, afMul);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(56, afMul);
 	gpBase->mpPlayer->SetLookSpeedMul(afMul);
 }
 
 void __stdcall cLuxScriptHandler::SetPlayerJumpForceMul(float afMul)
 {
+    cLuxScriptPlayerCommandScope target(57, afMul);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(57, afMul);
 	gpBase->mpPlayer->SetScriptJumpForceMul(afMul);
 }
 
 void __stdcall cLuxScriptHandler::SetPlayerJumpDisabled(bool abX)
 {
+    cLuxScriptPlayerCommandScope target(58, abX);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(58, abX);
 	gpBase->mpPlayer->SetJumpDisabled(abX);
 }
 
 void __stdcall cLuxScriptHandler::SetPlayerCrouchDisabled(bool abX)
 {
+    cLuxScriptPlayerCommandScope target(59, abX);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(59, abX);
 	gpBase->mpPlayer->SetCrouchDisabled(abX);
 }
@@ -1729,6 +2171,8 @@ void __stdcall cLuxScriptHandler::SetPlayerCrouchDisabled(bool abX)
 
 void __stdcall cLuxScriptHandler::SetPlayerFallDamageDisabled(bool abX)
 {
+    cLuxScriptPlayerCommandScope target(60, abX);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(60, abX);
 	gpBase->mpPlayer->SetNoFallDamage(abX);
 }
@@ -1737,6 +2181,8 @@ void __stdcall cLuxScriptHandler::SetPlayerFallDamageDisabled(bool abX)
 
 void __stdcall cLuxScriptHandler::TeleportPlayer(string &asStartPosName)
 {
+    cLuxScriptPlayerCommandScope target(61, asStartPosName);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(61, asStartPosName);
 	cLuxNode_PlayerStart *pNode = gpBase->mpMapHandler->GetCurrentMap()->GetPlayerStart(asStartPosName);
 	if(pNode==NULL)
@@ -1752,6 +2198,8 @@ void __stdcall cLuxScriptHandler::TeleportPlayer(string &asStartPosName)
 
 void __stdcall cLuxScriptHandler::SetLanternActive(bool abX, bool abUseEffects)
 {
+    cLuxScriptPlayerCommandScope target(62, abX, abUseEffects);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(62, abX, abUseEffects);
 	gpBase->mpPlayer->GetHelperLantern()->SetActive(abX, abUseEffects);
 }
@@ -1760,6 +2208,8 @@ void __stdcall cLuxScriptHandler::SetLanternActive(bool abX, bool abUseEffects)
 
 bool __stdcall cLuxScriptHandler::GetLanternActive()
 {
+	const cLuxMultiplayerRemotePlayer* player;
+	if(GetScriptRemotePlayer(player)) return player && (player->gameplay.flags&LuxWorldWire::PlayerLantern)!=0;
 	return gpBase->mpPlayer->GetHelperLantern()->IsActive();
 }
 
@@ -1767,6 +2217,8 @@ bool __stdcall cLuxScriptHandler::GetLanternActive()
 
 void __stdcall cLuxScriptHandler::SetLanternDisabled(bool abX)
 {
+    cLuxScriptPlayerCommandScope target(63, abX);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(63, abX);
 	gpBase->mpPlayer->GetHelperLantern()->SetDisabled(abX);
 }
@@ -1775,15 +2227,20 @@ void __stdcall cLuxScriptHandler::SetLanternDisabled(bool abX)
 
 void __stdcall cLuxScriptHandler::SetLanternLitCallback(string &asCallback)
 {
+    tString callback=asCallback;if(!BindPlayerCompletion("lantern",callback,true,true)) return;
+    cLuxScriptPlayerCommandScope target(171,callback);
+    if(target.Handled()) return;
 	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
 
-	pMap->SetLanternLitCallback(asCallback);
+	pMap->SetLanternLitCallback(callback);
 }
 
 //-----------------------------------------------------------------------
 
 void __stdcall cLuxScriptHandler::SetMessage(string &asTextCategory, string &asTextEntry, float afTime)
 {
+    cLuxScriptPlayerCommandScope target(64, asTextCategory, asTextEntry, afTime);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(64, asTextCategory, asTextEntry, afTime);
 	gpBase->mpMessageHandler->SetMessage(kTranslate(asTextCategory, asTextEntry), afTime);
 }
@@ -1792,6 +2249,8 @@ void __stdcall cLuxScriptHandler::SetMessage(string &asTextCategory, string &asT
 
 void __stdcall cLuxScriptHandler::SetDeathHint(string &asTextCategory, string &asTextEntry)
 {
+    cLuxScriptPlayerCommandScope target(65, asTextCategory, asTextEntry);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(65, asTextCategory, asTextEntry);
 	gpBase->mpPlayer->GetHelperDeath()->SetHint(asTextCategory, asTextEntry);
 }
@@ -1800,6 +2259,8 @@ void __stdcall cLuxScriptHandler::SetDeathHint(string &asTextCategory, string &a
 
 void __stdcall cLuxScriptHandler::DisableDeathStartSound()
 {
+    cLuxScriptPlayerCommandScope target(66);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(66);
 	gpBase->mpPlayer->GetHelperDeath()->DisableStartSound();
 }
@@ -1915,24 +2376,32 @@ void __stdcall cLuxScriptHandler::SetNumberOfQuestsInMap(int alNumberOfQuests)
 
 void __stdcall cLuxScriptHandler::GiveHint(string& asName, string& asMessageCat, string& asMessageEntry, float afTimeShown)
 {
+    cLuxScriptPlayerCommandScope target(73, asName, asMessageCat, asMessageEntry, afTimeShown);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(73, asName, asMessageCat, asMessageEntry, afTimeShown);
 	gpBase->mpHintHandler->Add(asName, kTranslate(asMessageCat, asMessageEntry), afTimeShown);
 }
 
 void __stdcall cLuxScriptHandler::RemoveHint(string &asName)
 {
+    cLuxScriptPlayerCommandScope target(74, asName);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(74, asName);
 	gpBase->mpHintHandler->Remove(asName);
 }
 
 void __stdcall cLuxScriptHandler::BlockHint(string& asName)
 {
+    cLuxScriptPlayerCommandScope target(75, asName);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(75, asName);
 	gpBase->mpHintHandler->Block(asName);
 }
 
 void __stdcall cLuxScriptHandler::UnBlockHint(string& asName)
 {
+    cLuxScriptPlayerCommandScope target(76, asName);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(76, asName);
 	gpBase->mpHintHandler->UnBlock(asName);
 }
@@ -1941,6 +2410,8 @@ void __stdcall cLuxScriptHandler::UnBlockHint(string& asName)
 
 void __stdcall cLuxScriptHandler::ExitInventory()
 {
+    cLuxScriptPlayerCommandScope target(77);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(77);
 	if(gpBase->mpInputHandler->GetState() != eLuxInputState_Inventory) return;
 
@@ -1951,12 +2422,16 @@ void __stdcall cLuxScriptHandler::ExitInventory()
 
 void __stdcall cLuxScriptHandler::SetInventoryDisabled(bool abX)
 {
+    cLuxScriptPlayerCommandScope target(78, abX);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(78, abX);
 	gpBase->mpInventory->SetDisabled(abX);
 }
 
 void __stdcall cLuxScriptHandler::SetInventoryMessage(string &asTextCategory, string &asTextEntry, float afTime)
 {
+    cLuxScriptPlayerCommandScope target(79, asTextCategory, asTextEntry, afTime);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(79, asTextCategory, asTextEntry, afTime);
 	gpBase->mpInventory->SetMessageText(kTranslate(asTextCategory, asTextEntry), afTime);
 }
@@ -1968,6 +2443,7 @@ void __stdcall cLuxScriptHandler::GiveItem(string& asName, string& asType, strin
 	eLuxItemType type = gpBase->mpInventory->GetItemTypeFromString(asType);
     luxnet::InventoryItem item;item.name=asName;item.type=type;item.subtype=asSubTypeName;item.image=asImageName;item.amount=afAmount;
     if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->RouteInventoryGive(item)) return;
+    if(RouteSelectedInventoryGive(item)) return;
     cLuxMultiplayerScriptScope networkEffect(80, asName, asType, asSubTypeName, asImageName, afAmount);
 	gpBase->mpInventory->AddItem(asName,type,asSubTypeName,asImageName, afAmount, "", "");
     if(gpBase->mpMultiplayer) gpBase->mpMultiplayer->RecordSharedItem(asName,asSubTypeName);
@@ -1977,7 +2453,7 @@ void __stdcall cLuxScriptHandler::GiveItem(string& asName, string& asType, strin
 
 void __stdcall cLuxScriptHandler::GiveItemFromFile(string& asName, string& asFileName)
 {
-    if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsCombiningInventory()) {
+    if((gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsCombiningInventory()) || HasSelectedInventoryPlayer()) {
         cLuxMap* map=gpBase->mpMapHandler->GetCurrentMap();if(!map) return;
         map->ResetLatestEntity();map->CreateEntity(asName,asFileName,cMatrixf::Identity,1);
         iLuxEntity* entity=map->GetLatestEntity();
@@ -1985,7 +2461,7 @@ void __stdcall cLuxScriptHandler::GiveItemFromFile(string& asName, string& asFil
             auto* source=static_cast<cLuxProp_Item*>(entity);luxnet::InventoryItem item;
             item.name=asName;item.type=source->GetItemType();item.subtype=source->GetSubItemTypeName();
             item.image=source->GetImageFile();item.amount=source->GetAmount();
-            gpBase->mpMultiplayer->RouteInventoryGive(item);
+            if(!gpBase->mpMultiplayer || !gpBase->mpMultiplayer->RouteInventoryGive(item)) RouteSelectedInventoryGive(item);
         }
         if(entity) map->DestroyEntity(entity);
         return;
@@ -2026,6 +2502,9 @@ void __stdcall cLuxScriptHandler::RemoveItem(string& asName)
 
 bool __stdcall cLuxScriptHandler::HasItem(string& asName)
 {
+    if(LuxCurrentScriptContext().revised && LuxCurrentScriptContext().domain==LuxScriptDomain::Authority && !LuxCurrentScriptContext().hasPlayer) {
+        ScriptFailure("HasItem requires a selected player or an attributed inventory event.");return false;
+    }
     if(gpBase->mpMultiplayer && gpBase->mpMultiplayer->IsCombiningInventory())
         return gpBase->mpMultiplayer->HasRemoteItem(asName) ||
             (gpBase->mpMultiplayer->GetScriptPlayerPeer()==gpBase->mpMultiplayer->GetLocalPeerId() && gpBase->mpInventory->GetItem(asName));
@@ -2339,12 +2818,16 @@ void __stdcall cLuxScriptHandler::SetLightFlickerActive(string& asLightName, boo
 
 void __stdcall cLuxScriptHandler::PlayMusic(string& asMusicFile, bool abLoop, float afVolume, float afFadeTime, int alPrio, bool abResume)
 {
+    cLuxScriptPlayerCommandScope target(94, asMusicFile, abLoop, afVolume, afFadeTime, alPrio, abResume);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(94, asMusicFile, abLoop, afVolume, afFadeTime, alPrio, abResume);
 	gpBase->mpMusicHandler->Play(asMusicFile, abLoop, afVolume, afFadeTime,alPrio,abResume, false);
 }
 
 void __stdcall cLuxScriptHandler::StopMusic(float afFadeTime, int alPrio)
 {
+    cLuxScriptPlayerCommandScope target(95, afFadeTime, alPrio);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(95, afFadeTime, alPrio);
 	gpBase->mpMusicHandler->Stop(afFadeTime, alPrio);
 }
@@ -2353,6 +2836,8 @@ void __stdcall cLuxScriptHandler::StopMusic(float afFadeTime, int alPrio)
 
 void __stdcall cLuxScriptHandler::FadeGlobalSoundVolume(float afDestVolume, float afTime)
 {
+    cLuxScriptPlayerCommandScope target(96, afDestVolume, afTime);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(96, afDestVolume, afTime);
 	bool abDestroy = afDestVolume==1;
 	cSoundHandler *pSoundHandler = gpBase->mpEngine->GetSound()->GetSoundHandler();
@@ -2368,6 +2853,8 @@ void __stdcall cLuxScriptHandler::FadeGlobalSoundVolume(float afDestVolume, floa
 
 void __stdcall cLuxScriptHandler::FadeGlobalSoundSpeed(float afDestSpeed, float afTime)
 {
+    cLuxScriptPlayerCommandScope target(97, afDestSpeed, afTime);
+    if(target.Handled()) return;
     cLuxMultiplayerScriptScope networkEffect(97, afDestSpeed, afTime);
 	bool abDestroy = afDestSpeed==1;
 	cSoundHandler *pSoundHandler = gpBase->mpEngine->GetSound()->GetSoundHandler();
@@ -2823,7 +3310,7 @@ void __stdcall cLuxScriptHandler::AddAttachedPropToProp(string& asPropName, stri
 {
     cLuxMultiplayerScriptScope networkEffect(111, asPropName, asAttachName, asAttachFile, afPosX, afPosY, afPosZ, afRotX, afRotY, afRotZ);
 	Warning("AddAttachedPropToProp is deprectated, use AttachPropToProp instead!\n");
-	AttachPropToProp(asPropName, asAttachName, asAttachFile, afPosX, afPosY, afRotZ, afRotX, afRotY, afRotZ);
+	AttachPropToProp(asPropName, asAttachName, asAttachFile, afPosX, afPosY, afPosZ, afRotX, afRotY, afRotZ);
 }
 
 //-----------------------------------------------------------------------
@@ -3191,6 +3678,9 @@ void __stdcall cLuxScriptHandler::FadeEnemyToSmoke(string& asName, bool abPlaySo
 
 void __stdcall cLuxScriptHandler::ShowEnemyPlayerPosition(string& asName)
 {
+    if(LuxCurrentScriptContext().revised && LuxCurrentScriptContext().domain==LuxScriptDomain::Authority) {
+        uint32_t player;if(!RevisedAuthorityPlayer(player)) return;
+    }
     cLuxMultiplayerScriptScope networkEffect(137, asName);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Enemy,-1)
 
@@ -3211,6 +3701,9 @@ void __stdcall cLuxScriptHandler::ShowEnemyPlayerPosition(string& asName)
 
 void __stdcall cLuxScriptHandler::AlertEnemyOfPlayerPresence(string& asName)
 {
+    if(LuxCurrentScriptContext().revised && LuxCurrentScriptContext().domain==LuxScriptDomain::Authority) {
+        uint32_t player;if(!RevisedAuthorityPlayer(player)) return;
+    }
     cLuxMultiplayerScriptScope networkEffect(138, asName);
 	BEGIN_SET_PROPERTY(eLuxEntityType_Enemy,-1)
 

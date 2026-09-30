@@ -6,6 +6,7 @@
 #include "../amnesia/src/game/LuxMultiplayerInventoryPolicy.h"
 #include "../amnesia/src/game/LuxMultiplayerEffectsProtocol.h"
 #include "../amnesia/src/game/LuxMultiplayerTriggerPolicy.h"
+#include "../amnesia/src/game/LuxScriptExecution.h"
 #include "../amnesia/src/game/LuxMultiplayerMapHash.h"
 #include <cassert>
 #include <iostream>
@@ -346,6 +347,97 @@ static void CheckJointBreakRequests() {
         assert(r.pos<=bytes.size());
     }
 }
+static void CheckScriptExecutionContexts() {
+    const auto original=LuxCurrentScriptContext();
+    LuxScriptExecutionContext authority;
+    authority.domain=LuxScriptDomain::Authority;authority.revised=true;
+    authority.hasPlayer=true;authority.player=7;authority.session=12;
+    authority.event=31;authority.mapEpoch=4;authority.module="map_a";
+    {
+        cLuxScriptExecutionScope outer(authority);
+        assert(LuxCurrentScriptContext().player==7);
+        auto client=authority;client.domain=LuxScriptDomain::Client;client.player=9;
+        try {
+            cLuxScriptExecutionScope inner(client);
+            assert(LuxCurrentScriptContext().domain==LuxScriptDomain::Client);
+            LuxCurrentScriptContext().player=13;
+            throw 1;
+        } catch(int) {}
+        assert(LuxCurrentScriptContext().domain==LuxScriptDomain::Authority);
+        assert(LuxCurrentScriptContext().player==7 && LuxCurrentScriptContext().event==31);
+        {
+            cLuxScriptAuthorityInitializationScope initialization(true,"global",22,9);
+            const auto& current=LuxCurrentScriptContext();
+            assert(current.revised && current.domain==LuxScriptDomain::Authority && current.module=="global");
+            assert(!current.hasPlayer && current.player==UINT32_MAX && current.session==22 && current.mapEpoch==9);
+        }
+        assert(LuxCurrentScriptContext().player==7 && LuxCurrentScriptContext().session==12 && LuxCurrentScriptContext().mapEpoch==4);
+    }
+    assert(LuxCurrentScriptContext().domain==original.domain && LuxCurrentScriptContext().player==original.player);
+    assert(LuxScriptActorMatches(authority,3,12,7,3,true));
+    assert(!LuxScriptActorMatches(authority,3,13,7,3,true));
+    assert(!LuxScriptActorMatches(authority,3,12,9,3,true));
+    assert(!LuxScriptActorMatches(authority,3,12,7,4,true));
+    assert(!LuxScriptActorMatches(authority,3,12,7,3,false));
+    auto invalid=authority;invalid.player=UINT32_MAX;
+    assert(!LuxScriptActorMatches(invalid,3,12,UINT32_MAX,3,true));
+    auto world=authority;world.hasPlayer=false;
+    assert(LuxScriptActorMatches(world,0,13,UINT32_MAX,0,false));
+    assert(LuxScriptSameOwner(authority,authority));
+    auto nextEvent=authority;nextEvent.event++;nextEvent.mapEpoch++;
+    assert(LuxScriptSameOwner(authority,nextEvent)); // Legitimate map revisit.
+    auto other=authority;other.player=9;assert(!LuxScriptSameOwner(authority,other));
+    other=authority;other.domain=LuxScriptDomain::Client;assert(!LuxScriptSameOwner(authority,other));
+    other=authority;other.module="map_b";assert(!LuxScriptSameOwner(authority,other));
+    other=authority;other.session++;assert(!LuxScriptSameOwner(authority,other));
+    assert(!LuxScriptSameOwner(authority,world));
+    LuxScriptExecutionContext legacy;
+    assert(!LuxScriptSameOwner(authority,legacy) && LuxScriptSameOwner(legacy,legacy));
+    const uint64_t first=LuxNextScriptEventId();assert(LuxNextScriptEventId()>first);
+}
+static void CheckPerPlayerScriptCollisions() {
+    cLuxScriptPlayerCollisionState state;
+    auto events=state.Sample(1,{{0,1,false},{7,2,true},{9,3,true}},0,false);
+    assert(events.size()==2 && events[0].player==7 && events[1].player==9);
+    events=state.Sample(1,{{0,1,true},{7,2,true},{9,3,true}},0,false);
+    assert(events.size()==1 && events[0].player==0 && events[0].state==1);
+    events=state.Sample(1,{{0,1,true},{7,2,false},{9,3,true}},0,false);
+    assert(events.size()==1 && events[0].player==7 && events[0].state==-1);
+    assert(state.Sample(1,{{0,1,true},{7,2,false}},0,false).empty()); // Disconnect isn't a personal leave.
+    events=state.Sample(1,{{0,2,true},{7,3,true}},0,false);
+    assert(events.size()==2 && events[0].state==1 && events[1].state==1); // New lives do not inherit old overlaps.
+    assert(state.Sample(1,{{0,2,true},{7,3,true},{7,3,false},{UINT32_MAX,1,true}},0,false).empty());
+
+    cLuxScriptPlayerCollisionState once;
+    assert(once.Sample(1,{{7,1,true},{9,1,true}},1,true).size()==2);
+    assert(once.Sample(1,{{7,1,false},{9,1,false}},1,true).empty());
+    assert(once.Sample(1,{{7,2,true},{9,2,true}},1,true).empty()); // Once per participant, not life.
+    events=once.Sample(1,{{7,2,true},{9,2,true},{11,1,true}},1,true);
+    assert(events.size()==1 && events[0].player==11);
+    assert(once.Sample(2,{{7,1,true}},1,true).size()==1); // Rehost is a different identity namespace.
+
+    cLuxScriptPlayerCollisionState exits;
+    assert(exits.Sample(1,{{7,1,true}},-1,true).empty());
+    events=exits.Sample(1,{{7,1,false}},-1,true);
+    assert(events.size()==1 && events[0].state==-1);
+    assert(exits.Sample(1,{{7,1,true}},-1,true).empty());
+    assert(exits.Sample(1,{{7,1,false}},-1,true).empty());
+
+    cLuxScriptPlayerCollisionState offline;
+    assert(offline.Sample(0,{{0,1,true}},1,true).size()==1);
+    cLuxScriptPlayerCollisionState restored;
+    restored.RestoreOffline(offline.OfflineInside(),offline.OfflineConsumed());
+    assert(restored.Sample(0,{{0,1,true}},1,true).empty());
+    assert(restored.Sample(0,{{0,1,false}},1,true).empty());
+    assert(restored.Sample(0,{{0,1,true}},1,true).empty());
+    cLuxScriptPlayerCollisionState deferred;
+    assert(deferred.Sample(1,{{7,1,true}},1,true,false).size()==1);
+    assert(deferred.Sample(1,{{7,1,false}},1,true,false).empty());
+    assert(deferred.Sample(1,{{7,1,true}},1,true,false).size()==1); // Undelivered work was not consumed.
+    deferred.Consume(7);
+    assert(deferred.Sample(1,{{7,1,false}},1,true,false).empty());
+    assert(deferred.Sample(1,{{7,1,true}},1,true,false).empty());
+}
 static void CheckPlayerTriggerOrigins() {
     struct Sample { bool host,remote,remoteOrigin; };
     const std::vector<std::vector<Sample>> scenarios={
@@ -464,6 +556,8 @@ int main() {
     badRope=rope;badRope.length=-1;assert(!validRope(WriteRope(badRope)));
     CheckMapHashes();
     CheckPlayerTriggerOrigins();
+    CheckScriptExecutionContexts();
+    CheckPerPlayerScriptCollisions();
     CheckNativeEntityStates();
     CheckInventoryTransfersAndRecipes();
     CheckJointBreakRequests();

@@ -8,7 +8,7 @@
 #include <vector>
 
 namespace luxnet {
-static const uint32_t ProtocolVersion = 15;
+static const uint32_t ProtocolVersion = 16;
 static const uint32_t MaxMapBytes = 16 * 1024 * 1024;
 static const uint32_t MapChunkBytes = 32 * 1024;
 enum Packet : uint8_t { Hello=1, MapBegin, MapChunk, MapEnd, Ready, Reject,
@@ -16,7 +16,17 @@ enum Packet : uint8_t { Hello=1, MapBegin, MapChunk, MapEnd, Ready, Reject,
     NativeRequest, NativeGrant, NativeResult, EntityState, ItemRemoved, MapRequest,
     MapPreparing, MapCancelled, NativeDiaryResult, WorldEffect, JointBreakRequest,
     EnemyState, EnemyRemoved, EnemyDamage, EnemyTerror, EnemyStimulus, ItemUseRequest, RopeState, ItemCallbacks, ItemCombineRequest,
-    InventoryGrant=31, InventoryRemove=32, EntityDefinition=40, SameMapTeleport=41, EntityRemoved=42, PlayerIdentities=43, SharedInventoryState=44 };
+    InventoryGrant=31, InventoryRemove=32, EntityDefinition=40, SameMapTeleport=41, EntityRemoved=42, PlayerIdentities=43, SharedInventoryState=44,
+    ScriptPackage=45, ScriptInitialized=46, ClientScriptEvent=47, PlayerScriptCommand=48, PlayerScriptAck=49, ScriptCompletion=50,
+    PublishedScriptState=51 };
+
+// Directed delivery is limited to owning-player operations. Optional resource
+// framing never expands that capability to a shared-world native.
+inline bool IsPlayerScriptCommand(uint32_t command) {
+    command &= 0x7fffffffu;
+    return (command>=10 && command<=66) || (command>=73 && command<=79) ||
+        (command>=94 && command<=97) || (command>=168 && command<=172);
+}
 
 struct Writer {
     std::vector<uint8_t> data;

@@ -39,7 +39,8 @@ namespace hpl {
 		 * \param asName name of the script.
 		 * \return 
 		 */
-		iScript* CreateScript(const tString& asName, tString *apCompileMessages=NULL);
+		iScript* CreateScript(const tString& asName, tString *apCompileMessages=NULL,
+			unsigned alMaxInitializationLineCallbacks=0);
 
 		void Destroy(iResourceBase* apResource);
 		void Unload(iResourceBase* apResource);

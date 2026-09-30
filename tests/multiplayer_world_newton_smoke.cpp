@@ -104,6 +104,7 @@ struct SmokeBase
     cLuxInputHandler* mpInputHandler;
     SmokeEngine* mpEngine;
     SmokeConfig* mpGameCfg;
+    bool mbHardMode=false;
 };
 SmokeBase* gpBase;
 int hplMain(const tString&) { return 0; } // HPL's Windows entry point is unused.
@@ -285,6 +286,50 @@ static std::vector<uint8_t> PosePacket(uint32_t peer, uint32_t sequence, const c
     return writer.bytes;
 }
 
+static void CheckScriptPlayerReconciliation()
+{
+    Fixture host(true,0),observer(false,2);
+    host.Activate();PlayerState owner;owner.life=7;owner.health=75;owner.sanity=20;owner.lampOil=25;
+    assert(host.replication.HandleMessage(1,PosePacket(1,10,0,1.8f,owner)));
+    host.session.sent.clear();float absolute=0;
+    const uint32_t health=host.replication.ApplyScriptPlayerValue(1,38,50,absolute);
+    assert(health && absolute==50);
+    assert(host.replication.HandleMessage(1,PosePacket(1,11,0,1.8f,owner)));
+    assert(host.replication.GetRemotePlayers().at(1).gameplay.health==50);
+    Deliver(host,observer);
+    assert(observer.replication.GetRemotePlayers().at(1).gameplay.health==50);
+    host.Activate();host.replication.AcknowledgeScriptPlayerValue(1,health,11);
+    owner.health=48;
+    assert(host.replication.HandleMessage(1,PosePacket(1,12,0,1.8f,owner)));
+    assert(host.replication.GetRemotePlayers().at(1).gameplay.health==48);
+
+    const cVector3f feet(6,2,8);const float yaw=1.2f;
+    const uint32_t position=host.replication.ApplyScriptPlayerPosition(1,feet,&yaw);
+    assert(position);
+    assert(host.replication.HandleMessage(1,PosePacket(1,13,0,1.8f,owner)));
+    assert(cMath::Vector3Dist(host.replication.GetRemotePlayers().at(1).position,feet+cVector3f(0,0.9f,0))<0.001f);
+    Deliver(host,observer);
+    assert(cMath::Vector3Dist(observer.replication.GetRemotePlayers().at(1).position,feet+cVector3f(0,0.9f,0))<0.001f);
+    assert(std::fabs(observer.replication.GetRemotePlayers().at(1).yaw-yaw)<0.001f);
+    host.Activate();host.replication.AcknowledgeScriptPlayerValue(1,position,13);
+    assert(host.replication.HandleMessage(1,PosePacket(1,14,cVector3f(7,4,9),1.8f,owner)));
+    assert(host.replication.GetRemotePlayers().at(1).position==cVector3f(7,4,9));
+
+    assert(host.replication.ApplyScriptPlayerValue(1,38,0,absolute));
+    const uint32_t revival=host.replication.ApplyScriptPlayerValue(1,38,80,absolute);
+    assert(revival && host.replication.GetRemotePlayers().at(1).gameplay.life==8);
+    host.session.sent.clear();
+    // Even a newer pose sequence from the outgoing life cannot undo revival.
+    assert(host.replication.HandleMessage(1,PosePacket(1,15,0,1.8f,owner)));
+    assert(host.session.sent.empty() && host.replication.GetRemotePlayers().at(1).gameplay.life==8);
+    owner.life=8;owner.health=80;
+    assert(host.replication.HandleMessage(1,PosePacket(1,16,0,1.8f,owner)));
+    host.replication.AcknowledgeScriptPlayerValue(1,revival,16);
+    owner.health=79;
+    assert(host.replication.HandleMessage(1,PosePacket(1,17,0,1.8f,owner)));
+    assert(host.replication.GetRemotePlayers().at(1).gameplay.health==79);
+}
+
 #include "multiplayer_contact_newton_tests.h"
 #include "../amnesia/src/game/LuxMultiplayerTriggerGeometry.h"
 
@@ -464,6 +509,19 @@ static void CheckEnemyQueriesAndEvents()
     assert(client.replication.HandlePlayerEvent(0,oldTerror.data) && client.replication.GetEnemyTerror(1)==0);
     for(int i=0;i<4;++i) delayedDamage[9+i]=uint8_t(client.replication.GetLocalPlayerLife()>>(i*8));
     assert(client.replication.HandlePlayerEvent(0,delayedDamage) && client.player.health==87);
+    // Saved actor timers rebind the map epoch on revisit. Their life identity
+    // must therefore survive production world teardown/load without recycling.
+    LuxScriptExecutionContext timerActor;timerActor.revised=true;timerActor.hasPlayer=true;
+    timerActor.player=1;timerActor.session=23;timerActor.mapEpoch=7;
+    const uint32_t respawnedLife=client.replication.GetLocalPlayerLife();
+    client.replication.Reset();
+    assert(client.replication.GetLocalPlayerLife()==respawnedLife);
+    client.replication.OnMapLoaded(&client.map);
+    assert(client.replication.GetLocalPlayerLife()==respawnedLife);
+    timerActor.mapEpoch=9; // Legitimate saved-map epoch rebinding.
+    assert(!LuxScriptActorMatches(timerActor,oldLife,23,1,client.replication.GetLocalPlayerLife(),true));
+    assert(LuxScriptActorMatches(timerActor,respawnedLife,23,1,client.replication.GetLocalPlayerLife(),true));
+    assert(!LuxScriptActorMatches(timerActor,respawnedLife,24,1,client.replication.GetLocalPlayerLife(),true));
     host.Activate();
     host.replication.Shutdown();client.Activate();client.replication.Shutdown();
     std::cout<<"Enemy query proxies: independent collision/crouch/death cleanup, host0/client damage routing and duplicate rejection, bounded near-player hearing passed.\n";
@@ -837,14 +895,18 @@ int main()
     CheckStickyAndControlHandoffs();
     CheckRotatedTriggerShape();
     CheckRopeForceAuthority();
+    CheckScriptPlayerReconciliation();
     Fixture host(true, 0), client(false, 1);
     client.body->SetPosition(cVector3f(20, 0, 0));
     host.Activate(); host.session.blocked = true;
     assert(host.replication.SendInitialState(1));
+    assert(host.replication.HasPendingInitialState(1));
     host.replication.Update(1.0f / 60);
     assert(host.session.sent.empty());
+    assert(host.replication.HasPendingInitialState(1));
     host.session.blocked = false;
     host.replication.Update(1.0f / 60);
+    assert(!host.replication.HasPendingInitialState(1));
     Deliver(host, client);
     assert(cMath::Vector3Dist(host.body->GetLocalPosition(), client.body->GetLocalPosition()) < 0.001f);
 

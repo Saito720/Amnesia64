@@ -30,11 +30,13 @@ class cLuxGlobalDataHandler : public iLuxUpdateable
 {
 friend class cLuxGlobalDataHandler_SaveData;
 public:	
+    const tString& GetScriptLoadError() const {return msScriptLoadError;}
 	cLuxGlobalDataHandler();
 	~cLuxGlobalDataHandler();
 	
 	void LoadAndInitGlobalScript();
 	void OnGameStart();
+    void OnScriptPlayerReady(uint32_t peer);
 	void OnStart();
 	void Update(float afTimeStep);
 	void Reset();
@@ -63,6 +65,7 @@ public:
 private:
 	tLuxScriptVarMap m_mapVars;
 	iScript *mpScript;
+    tString msScriptLoadError;
 
 	float mfEnemyActivateSoundCount;
 

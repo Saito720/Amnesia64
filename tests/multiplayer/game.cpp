@@ -79,6 +79,7 @@ static void printStatus(const char* message) {
 #include "QuitRegression.h"
 #include "DoorBreakRegression.h"
 #include "FontRegression.h"
+#include "ScriptRuntimeRegression.h"
 class cGameSmoke : public iUpdateable, public iRendererCallback {
     int state=0;
     Uint32 started=0, readyAt=0, statusAt=0;
@@ -117,6 +118,8 @@ class cGameSmoke : public iUpdateable, public iRendererCallback {
     bool quitTests=std::getenv("CODEX_MP_QUIT")!=NULL;
     cDoorBreakRegression doorBreakRegression;
     bool doorBreakOnly=std::getenv("CODEX_MP_DOOR_BREAK")!=NULL;
+    cScriptRuntimeRegression scriptRuntimeRegression;
+    bool scriptsOnly=std::getenv("CODEX_MP_SCRIPTS")!=NULL;
     cVector2l resizeValidated=0;
     bool genericEffectsDone=false;
     cMapCacheRegression mapCacheRegression;
@@ -284,6 +287,7 @@ public:
             if(enemiesOnly) {state=70;return;}
             if(backHallOnly) {state=71;return;}
             if(doorBreakOnly) {state=73;return;}
+            if(scriptsOnly) {state=76;return;}
             if(role=="settings") {
                 const int borderless=borderlessSettingsRegression.Update(loadingError);
                 if(borderless<0) {fail(loadingError);return;}
@@ -329,6 +333,14 @@ public:
             if(!door) return;
             mark(role+"-passed.txt","PASS: retail enemy door damage, broken visuals and debris, repeated baselines, reconnect, and saved-map revisit.");
             printStatus("PASS: retail Grunt door-break replication regression");
+            result=0;state=99;gpBase->mpEngine->Exit();return;
+        }
+        if(state==76) {
+            const int scripts=scriptRuntimeRegression.Update(loadingError);
+            if(scripts<0) {fail(loadingError);return;}
+            if(!scripts) return;
+            mark(role+"-passed.txt","PASS: restricted client VM, typed lifecycle, isolated timers, package transfer, world mutation, selected-player state, host-local execution and authority completion tokens.");
+            printStatus("PASS: multiplayer script runtime and selected-player callbacks");
             result=0;state=99;gpBase->mpEngine->Exit();return;
         }
         if(state==1) {

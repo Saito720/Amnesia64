@@ -13,6 +13,10 @@
 #include "LuxMultiplayerEnemies.h"
 #include "LuxMultiplayerEnemyProtocol.h"
 #include "LuxMultiplayerScript.h"
+#include "LuxScriptHandler.h"
+#include "LuxScriptRuntime.h"
+#include "LuxScriptExecution.h"
+#include "LuxScriptPlayerState.h"
 #include "LuxMultiplayerInventoryPolicy.h"
 #include "LuxSteamLaunch.h"
 #include "LuxMap.h"
@@ -197,7 +201,7 @@ bool cLuxMultiplayer::Host(const cLuxMultiplayerSettings& settings) {
     bool ok=gpBase->StartGame(map,folder,start);
     mbLoading=false;
     if(!ok) {Stop("Unable to load the hosted map.");return false;}
-    mbReady=true;
+    mbReady=true;mbScriptInitialized=true;
     msStatus=settings.useSteam ? "Creating Steam lobby..." : "Hosting on UDP port "+cString::ToString(settings.port)+". Waiting for players.";
     return true;
 }
@@ -271,6 +275,7 @@ bool cLuxMultiplayer::HostCurrentMap(const cLuxMultiplayerSettings& settings) {
     mpEnemies->OnMapLoaded(current);
     mpEffects->OnMapLoaded(current);
     mbSessionWorld=true;mbReady=true;
+    NotifyScriptPlayerReady(GetLocalPeerId());
     mbRestoreFocusWait=gpBase->mpEngine->GetWaitIfAppOutOfFocus();
     gpBase->mpEngine->SetWaitIfAppOutOfFocus(false);
     gpBase->mpDebugHandler->SetFastForward(false);
@@ -315,6 +320,8 @@ bool cLuxMultiplayer::JoinSteamLobby(const tString& code) {
     return true;
 }
 void cLuxMultiplayer::BeginClientSession() {
+    if(!++mlSessionSerial) ++mlSessionSerial;
+    mbScriptInitialized=false;mScriptPackageReceiver.Reset();ClearScriptCompletions();
     mbSessionWorld=true;
     mbRestoreFocusWait=gpBase->mpEngine->GetWaitIfAppOutOfFocus();
     gpBase->mpEngine->SetWaitIfAppOutOfFocus(false);
@@ -373,6 +380,11 @@ void cLuxMultiplayer::AcceptSteamInvite() {
     if(JoinSteamLobby(std::to_string(lobby))) mlPendingSteamInvite=0;
 }
 void cLuxMultiplayer::Stop(const tString& reason) {
+    CommitScriptMapChange();
+    if(IsClient()) {
+        tString scriptError;gpBase->mpScriptHandler->GetRuntime()->LeaveClient(scriptError);
+    }
+    mbScriptInitialized=false;mScriptPackageReceiver.Reset();mvScriptPackage.clear();ClearScriptCompletions();
     std::vector<hpl::cNetworkEvent> diagnostics;mTransport.DrainDiagnostics(diagnostics);
     for(const auto& event:diagnostics) MultiplayerLog("transport %s",event.reason.c_str());
     if(IsActive()) {
@@ -392,6 +404,7 @@ void cLuxMultiplayer::Stop(const tString& reason) {
     mpEnemies->Reset();mpEffects->Reset();mpWorld->Shutdown();mpEntities->Reset();
     FlushDiagnosticSummary();
     mTransport.Stop();mPeers.clear();mSteamPeerIdentities.clear();
+    gpBase->mpScriptHandler->GetRuntime()->GetPlayerState().RebindMap(0,0);
     mvMapBytes.clear();mvScriptHistory.clear();mlScriptHistoryBytes=0;
     msPendingHostMap.clear();
     mbMapPreparing=false;mbResumeReady=false;mlMapTransition=0;
@@ -421,6 +434,8 @@ void cLuxMultiplayer::RemoveReceivedMapFiles() {
     msReceivedMapPath.clear();
 }
 void cLuxMultiplayer::Reset() {
+    CommitScriptMapChange();
+    ClearScriptCompletions();
     mPendingRecoveredItems.clear();mAutoCombineItems.clear();mbCombiningInventory=mbGroupInventory=mbAutoCombiningInventory=false;
     mSharedScriptItems.clear();
     mRemoteItems.clear();
@@ -509,13 +524,18 @@ bool cLuxMultiplayer::CaptureMap(cLuxMap* map,const tString& start,const std::ve
     mbMapResetsGame=mbLoading;
     mbMapHardMode=gpBase->mbHardMode;
     ++mlMapEpoch;if(!mlMapEpoch) ++mlMapEpoch;
+    ClearScriptCompletions();
+    gpBase->mpScriptHandler->GetRuntime()->GetPlayerState().RebindMap(mlSessionSerial,mlMapEpoch);
     msMapName=cString::GetFileName(map->GetFileName());msStartPos=start;
     mTransport.SetSteamMapName(msMapName);
     mlMapChecksum=Checksum(mvMapBytes);
     msMapHash=MapHash(mvMapBytes);
     mvScriptHistory.clear();mlScriptHistoryBytes=0;mbHistoryComplete=true;
+    mvScriptPackage.clear();gpBase->mpScriptHandler->GetRuntime()->ExportPackage(mvScriptPackage);
+    mbScriptInitialized=true;
     mbMapPreparing=false;msPreparingMap.clear();
-    for(auto& peer:mPeers) {peer.second.ready=false;peer.second.beginSent=false;peer.second.endSent=false;peer.second.transferRequested=false;peer.second.offset=0;peer.second.age=0;}
+    for(auto& peer:mPeers) {peer.second.ready=false;peer.second.beginSent=false;peer.second.endSent=false;peer.second.transferRequested=false;peer.second.offset=0;peer.second.age=0;
+        peer.second.scriptPackageSent=false;peer.second.scriptInitializationSent=false;peer.second.scriptInitialized=false;peer.second.scriptPackageOffset=0;}
     for(auto& peer:mPeers) {peer.second.lastJoinLogTime=cPlatform::GetApplicationTime();peer.second.mapSendFailureLogged=false;}
     MultiplayerLog("host captured map '%s' (epoch %u, bytes=%u, peers=%u).",msMapName.c_str(),mlMapEpoch,
         static_cast<unsigned>(mvMapBytes.size()),static_cast<unsigned>(mPeers.size()));
@@ -534,7 +554,7 @@ void cLuxMultiplayer::OnMapLoaded(cLuxMap* map,const tString& start) {
 void cLuxMultiplayer::RejectPeer(uint32_t peer,const tString& reason) {
     if(IsHost()) LogPeerJoinState(peer,"rejecting peer");
     LogDiagnosticWarning("session","rejecting peer %u: %s",peer,reason.c_str());
-    if(IsHost()) {mTransport.Disconnect(peer,reason);mpWorld->OnPeerDisconnected(peer);mpEntities->OnPeerDisconnected(peer);mpEffects->OnPeerDisconnected(peer);mpEnemies->OnPeerDisconnected(peer);mPeers.erase(peer);BroadcastPlayerIdentities();}
+    if(IsHost()) {ForgetScriptPlayer(peer);mTransport.Disconnect(peer,reason);mpWorld->OnPeerDisconnected(peer);mpEntities->OnPeerDisconnected(peer);mpEffects->OnPeerDisconnected(peer);mpEnemies->OnPeerDisconnected(peer);mPeers.erase(peer);BroadcastPlayerIdentities();}
     else {Stop(reason);ShowWindow();}
 }
 void cLuxMultiplayer::HandleEvent(const hpl::cNetworkEvent& event) {
@@ -562,7 +582,7 @@ void cLuxMultiplayer::HandleEvent(const hpl::cNetworkEvent& event) {
             IsHost()?"host":"client",event.peer,msMapName.c_str(),mlMapEpoch,event.reason.c_str());
         if(IsHost()) LogPeerJoinState(event.peer,"peer disconnected");
         mLoggedUnregisteredPeers.erase(event.peer);
-        if(IsHost()) {mPeers.erase(event.peer);mpWorld->OnPeerDisconnected(event.peer);mpEntities->OnPeerDisconnected(event.peer);mpEffects->OnPeerDisconnected(event.peer);mpEnemies->OnPeerDisconnected(event.peer);BroadcastPlayerIdentities();}
+        if(IsHost()) {ForgetScriptPlayer(event.peer);mPeers.erase(event.peer);mpWorld->OnPeerDisconnected(event.peer);mpEntities->OnPeerDisconnected(event.peer);mpEffects->OnPeerDisconnected(event.peer);mpEnemies->OnPeerDisconnected(event.peer);BroadcastPlayerIdentities();}
         else {Stop("Disconnected: "+event.reason);ShowWindow();}
     } else if(event.type==hpl::eNetworkEventType::Message) HandlePacket(event.peer,event.data);
 }
@@ -588,6 +608,13 @@ void cLuxMultiplayer::SendMap(uint32_t peer,Peer& state) {
         }
         state.beginSent=true;
         MultiplayerLog("host queued MapBegin (peer %u, epoch %u, map='%s', bytes=%u).",peer,mlMapEpoch,msMapName.c_str(),static_cast<unsigned>(mvMapBytes.size()));
+    }
+    if(!state.scriptPackageSent) {
+        const auto fragment=ScriptPackageFragment(mlMapEpoch,mvScriptPackage,state.scriptPackageOffset);
+        if(fragment.empty() || !Send(peer,fragment,true)) return;
+        state.scriptPackageOffset+=static_cast<uint32_t>(std::min(size_t(ScriptPackageChunkBytes),mvScriptPackage.size()-state.scriptPackageOffset));
+        state.scriptPackageSent=state.scriptPackageOffset==mvScriptPackage.size();
+        if(!state.scriptPackageSent) return;
     }
     // The client checks installed XML and its saved cache before requesting
     // bytes. A matching file needs only this manifest and the end marker.
@@ -674,10 +701,40 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
             if(!mpWorld->SendInitialState(peer)) {RejectPeer(peer,"World is too large for initial synchronization (32 MiB limit).");return;}
             if(!mpEnemies->SendInitialState(peer)) {RejectPeer(peer,"Could not initialize enemy state.");return;}
             if(!mpEffects->SendInitialState(peer)) {RejectPeer(peer,"Could not initialize active world effects.");return;}
+            // Entity, body and enemy baselines are queued in bounded bursts.
+            // The initialization marker is sent only after those queues drain.
             MultiplayerLog("host queued initial world state (peer %u, epoch %u, script_records=%u).",peer,mlMapEpoch,static_cast<unsigned>(mvScriptHistory.size()));
             msStatus="Hosting "+msMapName+". Connected clients: "+cString::ToString(static_cast<int>(mPeers.size()));return;
         }
+        if(type==ScriptInitialized) {
+            const uint32_t epoch=r.U32();const uint8_t stage=r.U8();
+            if(!r.Done() || stage!=1) {RejectPeer(peer,"Malformed script initialization acknowledgement.");return;}
+            if(epoch!=mlMapEpoch) return;
+            if(!state.ready || !state.scriptPackageSent || !state.scriptInitializationSent || state.scriptInitialized) {RejectPeer(peer,"Unexpected script initialization acknowledgement.");return;}
+            state.scriptInitialized=true;
+            // Publications may change after the marker was queued but before
+            // its acknowledgement; refresh that view before attributed events.
+            if(!SendPublishedScriptState(peer,true)) {RejectPeer(peer,"Could not refresh published script state.");return;}
+            mPendingScriptReadyPlayers.insert(peer);return;
+        }
+        if(type==PlayerScriptAck) {
+            const uint32_t epoch=r.U32(),revision=r.U32(),pose=r.U32();
+            if(!r.Done() || !revision) {RejectPeer(peer,"Malformed player script acknowledgement.");return;}
+            if(epoch!=mlMapEpoch || !state.ready) return;
+            mpWorld->AcknowledgeScriptPlayerValue(peer,revision,pose);return;
+        }
+        if(type==ScriptCompletion) {
+            const uint32_t epoch=r.U32(),token=r.U32(),sequence=r.U32();
+            const uint8_t booleanArgument=r.U8(),value=r.U8();
+            if(!r.Done() || !token || !sequence || booleanArgument>1 || value>1) {
+                RejectPeer(peer,"Malformed script completion.");return;
+            }
+            if(epoch==mlMapEpoch && state.scriptInitialized)
+                RunPlayerCompletion(peer,token,sequence,booleanArgument!=0,value!=0);
+            return;
+        }
         if(!state.ready) return;
+        if(!state.scriptInitialized) return;
         if(type==EnemyStimulus) {
             if(!mpWorld->HandleEnemyStimulus(peer,data)) RejectPeer(peer,"Invalid enemy hearing stimulus.");return;
         }
@@ -839,6 +896,16 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
                     if(!ApplyInventoryPacket(packet)) {RejectPeer(0,"Invalid inventory update before map change.");return;}
                     continue;
                 }
+                if(!packet.empty() && (packet.front()==PlayerScriptCommand || packet.front()==PublishedScriptState ||
+                   packet.front()==ClientScriptEvent)) {
+                    // Directed OnLeave cleanup and its typed presentation run
+                    // against the outgoing instance, in their reliable order.
+                    mbMapPreparing=false;mbReady=mbResumeReady;
+                    HandlePacket(0,packet);
+                    if(!IsClient()) return;
+                    mbMapPreparing=true;mbReady=false;
+                    continue;
+                }
                 if(packet.empty() || packet.front()!=ScriptEffect) continue;
                 Reader effect(packet);
                 if(effect.U32()!=mlMapEpoch) continue;
@@ -851,7 +918,8 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
             }
         }
         FlushDiagnosticSummary();
-        EnterClientLoading();mbReady=false;
+        tString leaveError;gpBase->mpScriptHandler->GetRuntime()->LeaveClient(leaveError);
+        EnterClientLoading();mbReady=false;mbScriptInitialized=false;mScriptPackageReceiver.Reset();
         SetLoadPhase(eLuxMultiplayerLoadPhase_Checking,"Checking installed and downloaded copies of "+name+"...",true);
         mbMapPreparing=false;mvPreparingPackets.clear();mlPreparingPacketBytes=0;
         mpEnemies->Reset();mpEffects->Reset();mpWorld->Reset();mpEntities->Reset();mlLocalPeer=id;mlMapEpoch=epoch;mlExpectedMapBytes=size;mlMapChecksum=crc;
@@ -870,6 +938,11 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
         const bool sent=Send(0,request.data,true);
         MultiplayerLog("client MapRequest send (epoch %u, reuse=%d, accepted=%d).",mlMapEpoch,mbReusingMap,sent);
         if(!sent) RejectPeer(0,"Could not request the host map.");
+        return;
+    }
+    if(type==ScriptPackage) {
+        tString error;
+        if(!mScriptPackageReceiver.Accept(data,mlMapEpoch,error)) {RejectPeer(0,error);return;}
         return;
     }
     if(mbMapPreparing) {
@@ -898,13 +971,70 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
         if(!r.Done() || !mbReceiving || mvMapBytes.size()!=mlExpectedMapBytes || Checksum(mvMapBytes)!=mlMapChecksum ||
             MapHash(mvMapBytes)!=msMapHash) {RejectPeer(0,"Host map failed its size or content hash check.");return;}
         mbReceiving=false;
+        if(!mScriptPackageReceiver.complete) {RejectPeer(0,"Host map is missing its client script package.");return;}
         if(!LoadReceivedMap()) {RejectPeer(0,msStatus);return;}
+        tString scriptError;
+        if(!gpBase->mpScriptHandler->GetRuntime()->InstallPackage(mScriptPackageReceiver.bytes,scriptError)) {RejectPeer(0,scriptError);return;}
         Writer w(Ready);w.U32(mlMapEpoch);
         const bool sent=Send(0,w.data,true);
         MultiplayerLog("client Ready send after map load (epoch %u, accepted=%d).",mlMapEpoch,sent);
         if(!sent) {RejectPeer(0,"Could not acknowledge the loaded host map.");return;}
         mbReady=true;
+        EnterClientLoading();
+        SetLoadPhase(eLuxMultiplayerLoadPhase_Loading,"Installing initial world and script state...",true);return;
+    }
+    if(type==ScriptInitialized) {
+        const uint32_t epoch=r.U32();const uint8_t stage=r.U8();
+        if(!r.Done() || stage!=0) {RejectPeer(0,"Malformed host script initialization marker.");return;}
+        if(epoch!=mlMapEpoch) return;
+        if(!mbReady || mbScriptInitialized) {RejectPeer(0,"Unexpected host script initialization marker.");return;}
+        tString error;
+        if(!gpBase->mpScriptHandler->GetRuntime()->InitializeClient(error)) {RejectPeer(0,error);return;}
+        Writer ack(ScriptInitialized);ack.U32(mlMapEpoch);ack.U8(1);
+        if(!Send(0,ack.data,true)) {RejectPeer(0,"Could not acknowledge client script initialization.");return;}
+        mbScriptInitialized=true;
+        gpBase->mpEngine->GetUpdater()->SetContainer("Default");
+        gpBase->mpInputHandler->ChangeState(eLuxInputState_Game);
         SetLoadPhase(eLuxMultiplayerLoadPhase_None,"Joined "+msMapName+". Session remains live while menus are open.");return;
+    }
+    if(type==PlayerScriptCommand && mbReady) {
+        const uint32_t epoch=r.U32(),revision=r.U32();if(!r.valid) {RejectPeer(0,"Malformed player script command.");return;}
+        if(epoch!=mlMapEpoch) return;
+        Reader command=r;
+        if(!IsPlayerScriptCommand(command.U32()) || !command.valid) {RejectPeer(0,"Invalid directed player script native.");return;}
+        tString error;auto context=LuxCurrentScriptContext();context.domain=LuxScriptDomain::Replication;
+        context.revised=true;context.hasPlayer=true;context.player=mlLocalPeer;context.session=mlSessionSerial;context.mapEpoch=epoch;
+        cLuxScriptExecutionScope scope(context);
+        mbApplyingScriptEffect=true;const bool ok=LuxApplyMultiplayerScriptEffect(r,error);mbApplyingScriptEffect=false;
+        if(!ok) RejectPeer(0,error.empty()?"Invalid directed player script command.":error);
+        else if(revision) {
+            Writer ack(PlayerScriptAck);ack.U32(epoch);ack.U32(revision);ack.U32(mpWorld->GetLocalPoseSequence());
+            if(!Send(0,ack.data,true)) RejectPeer(0,"Could not acknowledge directed player state.");
+        }
+        return;
+    }
+    if(type==PublishedScriptState) {
+        const uint32_t epoch=r.U32();std::vector<LuxScriptPublishedValue> values;
+        if(!luxscript::ReadPublishedScriptValues(r,values) || !r.Done()) {
+            RejectPeer(0,"Malformed published script state.");return;
+        }
+        if(epoch!=mlMapEpoch) return;
+        tString error;
+        if(!gpBase->mpScriptHandler->GetRuntime()->GetPlayerState().ApplyPublished(mlSessionSerial,mlLocalPeer,values,error))
+            RejectPeer(0,error);
+        return;
+    }
+    if(type==ClientScriptEvent) {
+        const uint32_t epoch=r.U32();const tString module=r.String(32),function=r.String(128);const uint32_t count=r.U32();
+        std::vector<tString> args;if(count<=4) for(uint32_t i=0;i<count;++i) args.push_back(r.String(4096));
+        if(count>4 || !r.Done() || !luxscript::ValidModule(module) || !cLuxScriptRuntime::IsIdentifier(function)) {
+            RejectPeer(0,"Malformed client script event.");return;
+        }
+        if(epoch!=mlMapEpoch) return;
+        if(!mbScriptInitialized) {RejectPeer(0,"Client script event arrived before initialization.");return;}
+        tString error;if(!gpBase->mpScriptHandler->GetRuntime()->RunClientEvent(module,function,args,error))
+            LogDiagnosticWarningLimited("client-script","%s",error.c_str());
+        return;
     }
     if(!mbReady && (type==EnemyState || type==EnemyRemoved || type==EnemyDamage || type==EnemyTerror)) {
         // Unreliable snapshots can overtake the reliable next-map manifest.
@@ -1220,6 +1350,18 @@ void cLuxMultiplayer::Update(float dt) {
     if(IsHost() && !msPendingHostMap.empty()) ProcessHostMapChange();
     if(!IsActive()) return;
     if(IsHost()) {
+        std::vector<uint32_t> scriptReady;
+        for(uint32_t peer:mPendingScriptReadyPlayers) {
+            const auto state=mPeers.find(peer);
+            const auto actor=mpWorld->GetRemotePlayers().find(peer);
+            if(state==mPeers.end()) {scriptReady.push_back(peer);continue;}
+            if(!mbMapPreparing && state->second.scriptInitialized && actor!=mpWorld->GetRemotePlayers().end() && actor->second.age<=2 &&
+               (actor->second.gameplay.flags & LuxWorldWire::PlayerAlive)) scriptReady.push_back(peer);
+        }
+        for(uint32_t peer:scriptReady) {
+            mPendingScriptReadyPlayers.erase(peer);
+            if(mPeers.count(peer)) NotifyScriptPlayerReady(peer);
+        }
         std::vector<uint32_t> expired;
         for(auto& p:mPeers) {
             p.second.age+=dt;p.second.requestCooldown=std::max(0.0f,p.second.requestCooldown-dt);
@@ -1228,11 +1370,19 @@ void cLuxMultiplayer::Update(float dt) {
             if(!p.second.ready && now-p.second.lastJoinLogTime>=10000UL) {
                 p.second.lastJoinLogTime=now;LogPeerJoinState(p.first,"still joining");
             }
-            if(p.second.reliableSendFailed || (!p.second.ready && p.second.age>120)) expired.push_back(p.first);
+            if(p.second.ready && !p.second.scriptInitializationSent && !mbMapPreparing &&
+               !mpEntities->HasPendingInitialState(p.first) && !mpWorld->HasPendingInitialState(p.first) &&
+               !mpEnemies->HasPendingInitialState(p.first)) {
+                Writer initialized(ScriptInitialized);initialized.U32(mlMapEpoch);initialized.U8(0);
+                if(!SendPublishedScriptState(p.first,true) || !Send(p.first,initialized.data,true))
+                    p.second.reliableSendFailed=true;
+                else p.second.scriptInitializationSent=true;
+            }
+            if(p.second.reliableSendFailed || (!p.second.scriptInitialized && p.second.age>120)) expired.push_back(p.first);
             else SendMap(p.first,p.second);
         }
         for(uint32_t peer:expired) RejectPeer(peer,"Connection could not keep up with reliable world state or timed out during map load.");
-    } else if(!mbReady) {
+    } else if(!IsReady()) {
         mfJoinAge+=dt;
         const unsigned long now=cPlatform::GetApplicationTime();
         if(now-mlLastJoinLogTime>=10000UL) {
@@ -1243,18 +1393,18 @@ void cLuxMultiplayer::Update(float dt) {
         }
         if(mfJoinAge>120) {RejectPeer(0,"Timed out waiting for the host map.");return;}
     }
-    if(mbReady) UpdateBackgroundWorld(eUpdateableMessage_Update,dt);
+    if(IsReady()) UpdateBackgroundWorld(eUpdateableMessage_Update,dt);
 }
 void cLuxMultiplayer::PreUpdate(float dt) {
-    if(IsActive() && mbReady) mpWorld->PrepareEnemyPlayers();
-    if(IsActive() && mbReady) UpdateBackgroundWorld(eUpdateableMessage_PreUpdate,dt);
+    if(IsActive() && IsReady()) mpWorld->PrepareEnemyPlayers();
+    if(IsActive() && IsReady()) UpdateBackgroundWorld(eUpdateableMessage_PreUpdate,dt);
 }
 void cLuxMultiplayer::PostUpdate(float dt) {
-    if(IsActive() && mbReady) UpdateBackgroundWorld(eUpdateableMessage_PostUpdate,dt);
-    if(IsActive() && mbReady) mpEntities->Update(dt);
-    if(IsActive() && mbReady) mpWorld->Update(dt);
-    if(IsActive() && mbReady) mpEnemies->Update(dt);
-    if(IsActive() && mbReady) mpEffects->PostUpdate(dt);
+    if(IsActive() && IsReady()) UpdateBackgroundWorld(eUpdateableMessage_PostUpdate,dt);
+    if(IsActive() && IsReady()) mpEntities->Update(dt);
+    if(IsActive() && IsReady()) mpWorld->Update(dt);
+    if(IsActive() && IsReady()) mpEnemies->Update(dt);
+    if(IsActive() && IsReady()) mpEffects->PostUpdate(dt);
 }
 void cLuxMultiplayer::UpdateBackgroundWorld(eUpdateableMessage phase,float dt) {
     if(gpBase->mpEngine->GetUpdater()->GetCurrentContainerName()=="Default" || !gpBase->mpMapHandler->GetCurrentMap()) return;
@@ -1338,6 +1488,82 @@ void cLuxMultiplayer::BroadcastScriptEffect(const std::vector<uint8_t>& effect) 
     }
     Broadcast(effect,true);
 }
+bool cLuxMultiplayer::SendScriptPlayerCommand(uint32_t peer,const std::vector<uint8_t>& effect,uint32_t revision) {
+    if(!IsHost() || effect.size()<9 || effect[0]!=ScriptEffect || effect.size()>hpl::cNetworkTransport::MaxMessageBytes-4) return false;
+    Reader command(effect);const uint32_t epoch=command.U32(),id=command.U32();
+    if(!command.valid || epoch!=mlMapEpoch || !IsPlayerScriptCommand(id)) return false;
+    Reader validate(effect);validate.U32();tString error;uint32_t unavailable=0;
+    if(!LuxValidateMultiplayerScriptEffect(validate,error,&unavailable)) return false;
+    std::vector<uint8_t> directed=effect;
+    if(unavailable) {
+        if(id & LuxScriptOptionalResources) {
+            // Retain prior fallback sites while adding newly unavailable ones.
+            Reader mask(effect);mask.U32();mask.U32();unavailable|=mask.U32();
+            for(unsigned i=0;i<4;++i) directed[9+i]=uint8_t(unavailable>>(i*8));
+        } else {
+            directed[8]|=0x80;
+            uint8_t mask[4];for(unsigned i=0;i<4;++i) mask[i]=uint8_t(unavailable>>(i*8));
+            directed.insert(directed.begin()+9,mask,mask+4);
+        }
+    }
+    if(directed.size()>hpl::cNetworkTransport::MaxMessageBytes-4) return false;
+    if(peer==GetLocalPeerId()) {
+        auto context=LuxCurrentScriptContext();context.domain=LuxScriptDomain::Replication;
+        cLuxScriptExecutionScope scope(context);Reader apply(directed);apply.U32();
+        const bool old=mbApplyingScriptEffect;mbApplyingScriptEffect=true;
+        const bool result=LuxApplyMultiplayerScriptEffect(apply,error);mbApplyingScriptEffect=old;
+        return result;
+    }
+    auto found=mPeers.find(peer);if(found==mPeers.end() || !found->second.ready) return false;
+    Writer w(PlayerScriptCommand);w.U32(epoch);w.U32(revision);w.Bytes(directed.data()+5,directed.size()-5);
+    const bool sent=Send(peer,w.data,true);
+    if(!sent) found->second.reliableSendFailed=true;
+    return sent;
+}
+bool cLuxMultiplayer::SendPublishedScriptState(uint32_t peer,bool initial) {
+    if(!IsHost() || peer==GetLocalPeerId()) return !IsClient();
+    auto found=mPeers.find(peer);if(found==mPeers.end()) return false;
+    // Before readiness, the current value is retained for the initial snapshot.
+    if(!found->second.ready || (!initial && !found->second.scriptInitialized)) return true;
+    Writer packet(PublishedScriptState);packet.U32(mlMapEpoch);
+    const auto values=gpBase->mpScriptHandler->GetRuntime()->GetPlayerState().Published(mlSessionSerial,peer);
+    if(!luxscript::WritePublishedScriptValues(packet,values)) return false;
+    const bool sent=Send(peer,packet.data,true);if(!sent) found->second.reliableSendFailed=true;
+    return sent;
+}
+
+bool cLuxMultiplayer::SendTransientScriptEffect(const std::vector<uint8_t>& effect) {
+    if(effect.size()<9 || effect.front()!=ScriptEffect || IsClient()) return false;
+    Reader validate(effect);validate.U32();tString error;
+    if(!LuxValidateMultiplayerScriptEffect(validate,error)) return false;
+    bool result=true;
+    if(IsHost()) {
+        for(const auto& peer:mPeers) if(peer.second.scriptInitialized)
+            result=SendScriptPlayerCommand(peer.first,effect) && result;
+        result=SendScriptPlayerCommand(GetLocalPeerId(),effect) && result;
+    } else {
+        auto context=LuxCurrentScriptContext();context.domain=LuxScriptDomain::Replication;
+        cLuxScriptExecutionScope scope(context);Reader apply(effect);apply.U32();
+        result=LuxApplyMultiplayerScriptEffect(apply,error);
+    }
+    return result;
+}
+
+bool cLuxMultiplayer::SendClientScriptEvent(uint32_t peer,const tString& module,const tString& function,const std::vector<tString>& args) {
+    if(!IsHost() || !gpBase->mpScriptHandler->GetRuntime()->IsRevised() || args.size()>4 ||
+       !cLuxScriptRuntime::IsIdentifier(function) || (module!="map" && module!="global" && module!="inventory")) return false;
+    for(const auto& arg:args) if(arg.size()>4096 || arg.find('\0')!=tString::npos) return false;
+    if(peer==GetLocalPeerId()) {
+        tString error;const bool ok=gpBase->mpScriptHandler->GetRuntime()->RunClientEvent(module,function,args,error);
+        if(!ok) LogDiagnosticWarningLimited("client-script","%s",error.c_str());
+        return ok;
+    }
+    auto found=mPeers.find(peer);if(found==mPeers.end() || !found->second.scriptInitialized) return false;
+    Writer w(ClientScriptEvent);w.U32(mlMapEpoch);w.String(module);w.String(function);w.U32(static_cast<uint32_t>(args.size()));
+    for(const auto& arg:args) w.String(arg);
+    const bool sent=Send(peer,w.data,true);if(!sent) found->second.reliableSendFailed=true;
+    return sent;
+}
 bool cLuxMultiplayer::AllowObjectBreak(const tString& name) {
     if(IsClient()) return mbApplyingScriptEffect;
     if(IsHost()) {Writer w(ObjectBreak);w.U32(mlMapEpoch);w.String(name);BroadcastScriptEffect(w.data);}
@@ -1416,6 +1642,141 @@ void cLuxMultiplayer::RecoverPendingItems() {
     if(mPendingRecoveredItems.size()!=before)
         LogDiagnostic("inventory-recovery","Recovered %u items to host; %u remain pending.",static_cast<unsigned>(before-mPendingRecoveredItems.size()),static_cast<unsigned>(mPendingRecoveredItems.size()));
 }
+void cLuxMultiplayer::ForgetScriptPlayer(uint32_t peer) {
+    gpBase->mpScriptHandler->GetRuntime()->ForgetPlayer(mlSessionSerial,peer);
+    mPendingScriptReadyPlayers.erase(peer);mNotifiedScriptReadyPlayers.erase(peer);
+    mSavedPendingScriptReadyPlayers.erase(peer);mSavedNotifiedScriptReadyPlayers.erase(peer);
+    for(auto it=mScriptCompletions.begin();it!=mScriptCompletions.end();) {
+        if(it->second.context.player==peer) it=mScriptCompletions.erase(it);else ++it;
+    }
+    for(auto it=mSavedScriptCompletions.begin();it!=mSavedScriptCompletions.end();) {
+        if(it->second.context.player==peer) it=mSavedScriptCompletions.erase(it);else ++it;
+    }
+}
+
+void cLuxMultiplayer::ClearScriptCompletions() {
+    mScriptCompletions.clear();mPendingScriptReadyPlayers.clear();mNotifiedScriptReadyPlayers.clear();
+}
+
+void cLuxMultiplayer::BeginScriptMapChange() {
+    CommitScriptMapChange();
+    mSavedScriptCompletions=mScriptCompletions;
+    mSavedPendingScriptReadyPlayers=mPendingScriptReadyPlayers;
+    mSavedNotifiedScriptReadyPlayers=mNotifiedScriptReadyPlayers;
+    mlSavedScriptSession=IsActive()?GetSessionSerial():0;
+    mlSavedScriptMapEpoch=IsActive()?GetMapEpoch():0;
+    mbScriptMapChangeSaved=true;
+}
+
+void cLuxMultiplayer::CommitScriptMapChange() {
+    mSavedScriptCompletions.clear();mSavedPendingScriptReadyPlayers.clear();mSavedNotifiedScriptReadyPlayers.clear();
+    mbScriptMapChangeSaved=false;
+}
+
+void cLuxMultiplayer::RollbackScriptMapChange() {
+    if(!mbScriptMapChangeSaved) return;
+    // A transport reset or committed world replacement must never revive old
+    // bindings. Token counters remain monotonic even when a load is cancelled.
+    if(mlSavedScriptSession==(IsActive()?GetSessionSerial():0) &&
+       mlSavedScriptMapEpoch==(IsActive()?GetMapEpoch():0)) {
+        mScriptCompletions.swap(mSavedScriptCompletions);
+        mPendingScriptReadyPlayers.swap(mSavedPendingScriptReadyPlayers);
+        mNotifiedScriptReadyPlayers.swap(mSavedNotifiedScriptReadyPlayers);
+    }
+    CommitScriptMapChange();
+}
+
+void cLuxMultiplayer::NotifyScriptPlayerReady(uint32_t peer) {
+    if(IsClient() || !gpBase->mpScriptHandler->GetRuntime()->IsRevised() ||
+       mNotifiedScriptReadyPlayers.count(peer) || !gpBase->mpMapHandler->GetCurrentMap()) return;
+    mNotifiedScriptReadyPlayers.insert(peer);
+    gpBase->mpGlobalDataHandler->OnScriptPlayerReady(peer);
+    gpBase->mpInventory->OnScriptPlayerReady(peer);
+    gpBase->mpMapHandler->GetCurrentMap()->OnScriptPlayerReady(peer);
+}
+
+bool cLuxMultiplayer::RegisterPlayerCompletion(const tString& kind,const tString& function,
+    bool booleanArgument,bool persistent,tString& token,tString& error) {
+    token.clear();error.clear();const auto context=LuxCurrentScriptContext();
+    if(!context.revised || context.domain!=LuxScriptDomain::Authority || !context.hasPlayer || IsClient() ||
+       (kind!="voice" && kind!="lookat" && kind!="lantern") ||
+       (!function.empty() && !cLuxScriptRuntime::IsIdentifier(function))) {
+        error="Invalid player completion registration.";return false;
+    }
+    const uint32_t local=IsActive()?GetLocalPeerId():0;
+    uint32_t life=1;
+    if(context.player!=local) {
+        const auto actor=mpWorld->GetRemotePlayers().find(context.player);
+        if(!IsHost() || actor==mpWorld->GetRemotePlayers().end()) {error="Completion player is unavailable.";return false;}
+        life=actor->second.gameplay.life;
+    } else if(IsActive()) life=mpWorld->GetLocalPlayerLife();
+    if(!life) {error="Completion player has no active character.";return false;}
+    for(auto it=mScriptCompletions.begin();it!=mScriptCompletions.end();) {
+        if(it->second.context.player==context.player && it->second.kind==kind) it=mScriptCompletions.erase(it);
+        else ++it;
+    }
+    if(function.empty()) return true;
+    if(mScriptCompletions.size()>=256) {error="Player completion limit exceeded.";return false;}
+    if(!++mlNextScriptCompletion) ++mlNextScriptCompletion;
+    ScriptCompletionBinding binding;binding.context=context;
+    binding.context.session=IsActive()?GetSessionSerial():0;
+    binding.context.mapEpoch=IsActive()?GetMapEpoch():0;
+    binding.kind=kind;binding.function=function;binding.life=life;
+    binding.booleanArgument=booleanArgument;binding.persistent=persistent;
+    mScriptCompletions[mlNextScriptCompletion]=binding;
+    token="__LuxPlayerCompletion_"+cString::ToString(mlNextScriptCompletion);
+    return true;
+}
+
+bool cLuxMultiplayer::RunPlayerCompletion(uint32_t peer,uint32_t token,uint32_t sequence,bool booleanArgument,bool value) {
+    auto found=mScriptCompletions.find(token);if(found==mScriptCompletions.end()) return false;
+    auto& binding=found->second;
+    const uint64_t session=IsActive()?GetSessionSerial():0;
+    const uint32_t epoch=IsActive()?GetMapEpoch():0,local=IsActive()?GetLocalPeerId():0;
+    uint32_t life=1;bool alive=gpBase->mpPlayer->GetHealth()>0;
+    if(peer!=local) {
+        const auto actor=mpWorld->GetRemotePlayers().find(peer);
+        if(actor==mpWorld->GetRemotePlayers().end()) return false;
+        life=actor->second.gameplay.life;alive=(actor->second.gameplay.flags & LuxWorldWire::PlayerAlive)!=0;
+    } else if(IsActive()) life=mpWorld->GetLocalPlayerLife();
+    if(binding.context.mapEpoch!=epoch || binding.booleanArgument!=booleanArgument ||
+       !LuxScriptActorMatches(binding.context,binding.life,session,peer,life,alive) ||
+       !sequence || (binding.lastSequence && static_cast<int32_t>(sequence-binding.lastSequence)<=0)) return false;
+    binding.lastSequence=sequence;const auto callback=binding;
+    if(!binding.persistent) mScriptCompletions.erase(found);
+    auto context=callback.context;context.event=LuxNextScriptEventId();
+    cLuxScriptExecutionScope scope(context);
+    const tString command=callback.function+(booleanArgument?(value?"(true)":"(false)"):"()");
+    if(context.module=="global") gpBase->mpGlobalDataHandler->RunScript(command);
+    else if(context.module=="inventory") gpBase->mpInventory->RunScript(command);
+    else if(context.module=="map" && gpBase->mpMapHandler->GetCurrentMap())
+        gpBase->mpMapHandler->GetCurrentMap()->RunScript(command);
+    else return false;
+    return true;
+}
+
+bool cLuxMultiplayer::HandlePlayerCompletionCommand(const tString& command) {
+    const tString prefix="__LuxPlayerCompletion_";
+    if(command.compare(0,prefix.size(),prefix)!=0) return false;
+    size_t end=prefix.size();uint64_t token=0;
+    while(end<command.size() && command[end]>='0' && command[end]<='9') {
+        token=token*10+command[end++]-'0';if(token>UINT32_MAX) return true;
+    }
+    if(!token || end==prefix.size()) return true;
+    const tString arguments=command.substr(end);
+    const bool booleanArgument=arguments=="(true)" || arguments=="(false)";
+    if(arguments!="()" && !booleanArgument) return true;
+    if(!++mlScriptCompletionSequence) ++mlScriptCompletionSequence;
+    if(IsClient()) {
+        if(!IsReady()) return true;
+        Writer packet(ScriptCompletion);packet.U32(GetMapEpoch());packet.U32(static_cast<uint32_t>(token));
+        packet.U32(mlScriptCompletionSequence);packet.U8(booleanArgument?1:0);packet.U8(arguments=="(true)"?1:0);
+        if(!Send(0,packet.data,true)) RejectPeer(0,"Could not send player script completion.");
+    } else RunPlayerCompletion(IsActive()?GetLocalPeerId():0,static_cast<uint32_t>(token),mlScriptCompletionSequence,
+        booleanArgument,arguments=="(true)");
+    return true;
+}
+
 bool cLuxMultiplayer::RouteInventoryGive(const InventoryItem& item) {
     if(!IsHost() || !mbCombiningInventory) return false;
     if(GiveInventoryItem(mlInventoryRecipient,item)) {
@@ -1425,7 +1786,11 @@ bool cLuxMultiplayer::RouteInventoryGive(const InventoryItem& item) {
     return true;
 }
 bool cLuxMultiplayer::RouteInventoryRemove(const tString& item) {
-    if(!IsHost() || !mbCombiningInventory) return false;
+    const auto& context=LuxCurrentScriptContext();
+    const bool selected=context.revised && context.domain==LuxScriptDomain::Authority && context.hasPlayer;
+    if(!IsHost() || (!mbCombiningInventory && !selected)) return false;
+    const uint32_t recipient=mbCombiningInventory?mlInventoryRecipient:context.player;
+    const bool group=mbCombiningInventory && mbGroupInventory;
     // Existing global GiveItem effects create shared copies on all peers.
     // Consuming one of those logical entries must retain its original shared
     // removal semantics, even when the recipe's output is privately owned.
@@ -1434,10 +1799,16 @@ bool cLuxMultiplayer::RouteInventoryRemove(const tString& item) {
         if(gpBase->mpInventory->GetItem(item)) gpBase->mpInventory->RemoveItem(item);
         ForgetRemoteItem(item);++mlInventoryMutation;return true;
     }
-    if((mbGroupInventory || mlInventoryRecipient==GetLocalPeerId()) && gpBase->mpInventory->GetItem(item)) {
+    if((group || recipient==GetLocalPeerId()) && gpBase->mpInventory->GetItem(item)) {
         gpBase->mpInventory->RemoveItem(item);++mlInventoryMutation;
     }
-    for(auto& owner:mRemoteItems) if((mbGroupInventory || owner.first==mlInventoryRecipient) && owner.second.count(item)) {
+    if(selected && !mbCombiningInventory && recipient!=GetLocalPeerId()) {
+        auto peer=mPeers.find(recipient);if(peer==mPeers.end()) return true;
+        Writer packet(InventoryRemove);packet.U32(mlMapEpoch);packet.String(item);
+        if(!Send(recipient,packet.data,true)) peer->second.reliableSendFailed=true;
+        mRemoteItems[recipient].erase(item);++mlInventoryMutation;return true;
+    }
+    for(auto& owner:mRemoteItems) if((group || owner.first==recipient) && owner.second.count(item)) {
         Writer w(InventoryRemove);w.U32(mlMapEpoch);w.String(item);
         if(!Send(owner.first,w.data,true)) mPeers[owner.first].reliableSendFailed=true;
         owner.second.erase(item);++mlInventoryMutation;
@@ -1508,6 +1879,12 @@ bool cLuxMultiplayer::HasRemoteItem(const tString& item) const {
     if(!IsHost()) return false;
     if(mbCombiningInventory && mbGroupInventory) return HasGroupItem(item);
     if(mSharedScriptItems.count(item)) return true;
+    const auto& context=LuxCurrentScriptContext();
+    if(context.revised && context.domain==LuxScriptDomain::Authority) {
+        if(!context.hasPlayer || context.player==GetLocalPeerId()) return false;
+        auto inventory=mRemoteItems.find(context.player);
+        return inventory!=mRemoteItems.end() && inventory->second.count(item)!=0;
+    }
     if(mbRemoteScriptTrigger) {
         auto inventory=mRemoteItems.find(mlScriptPlayerPeer);
         return inventory!=mRemoteItems.end() && inventory->second.count(item)!=0;

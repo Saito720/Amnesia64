@@ -4695,6 +4695,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
     bool render_selection = state && (state->HasSelection() || select_all) && (RENDER_SELECTION_WHEN_INACTIVE || render_cursor);
     bool value_changed = false;
     bool validated = false;
+    bool before_edit_handled = false;
 
     // Select the buffer to render.
     const bool buf_display_from_state = (render_cursor || render_selection || g.ActiveId == id) && !is_readonly && state;
@@ -4720,7 +4721,53 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         const float mouse_x = (io.MousePos.x - frame_bb.Min.x - style.FramePadding.x) + state->Scroll.x;
         const float mouse_y = (is_multiline ? (io.MousePos.y - draw_window->DC.CursorPos.y) : (g.FontSize * 0.5f));
 
-        if (select_all)
+        // HPL opt-in rich-text hit-testing. Resolve the cursor before queued
+        // text, cut/paste and keyboard shortcuts can mutate the buffer.
+        if (flags & ImGuiInputTextFlags_CallbackBeforeEdit)
+        {
+            IM_ASSERT(callback != NULL);
+            ImGuiInputTextCallbackData mouse_data;
+            mouse_data.Ctx = &g;
+            mouse_data.EventFlag = ImGuiInputTextFlags_CallbackBeforeEdit;
+            mouse_data.Flags = flags;
+            mouse_data.UserData = callback_user_data;
+            mouse_data.Buf = is_readonly ? buf : state->TextA.Data;
+            mouse_data.BufTextLen = state->TextLen;
+            mouse_data.BufSize = state->BufCapacity;
+            mouse_data.CursorPos = state->Stb->cursor;
+            mouse_data.SelectionStart = state->Stb->select_start;
+            mouse_data.SelectionEnd = state->Stb->select_end;
+            state->CallbackTextBackup.resize(state->TextLen + 1);
+            memcpy(state->CallbackTextBackup.Data, mouse_data.Buf, state->TextLen + 1);
+            before_edit_handled = callback(&mouse_data) != 0;
+            IM_ASSERT(mouse_data.Buf == (is_readonly ? buf : state->TextA.Data) && mouse_data.BufSize == state->BufCapacity);
+            if (mouse_data.BufDirty)
+            {
+                IM_ASSERT(mouse_data.BufTextLen == (int)ImStrlen(mouse_data.Buf));
+                InputTextReconcileUndoState(state, state->CallbackTextBackup.Data, state->CallbackTextBackup.Size - 1, mouse_data.Buf, mouse_data.BufTextLen);
+                state->TextLen = mouse_data.BufTextLen;
+                state->Edited = true;
+                state->CursorAnimReset();
+            }
+            if (mouse_data.CursorPos != state->Stb->cursor || mouse_data.BufDirty)
+                state->CursorFollow = true;
+            state->Stb->cursor = ImClamp(mouse_data.CursorPos, 0, state->TextLen);
+            state->Stb->select_start = ImClamp(mouse_data.SelectionStart, 0, state->TextLen);
+            state->Stb->select_end = ImClamp(mouse_data.SelectionEnd, 0, state->TextLen);
+            if (before_edit_handled)
+            {
+                state->Stb->has_preferred_x = 0;
+                state->SelectedAllMouseLock = false;
+                state->CursorFollow = true;
+                state->CursorAnimReset();
+            }
+        }
+
+        if (before_edit_handled)
+        {
+            // The custom callback supplied the selection for this mouse event.
+        }
+        else if (select_all)
         {
             state->SelectAll();
             state->SelectedAllMouseLock = true;
@@ -4803,7 +4850,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
         const bool ignore_char_inputs = (io.KeyCtrl && !io.KeyAlt) || (is_osx && io.KeyCtrl);
         if (io.InputQueueCharacters.Size > 0)
         {
-            if (!ignore_char_inputs && !is_readonly && !input_requested_by_nav)
+            if (!ignore_char_inputs && !is_readonly && (!input_requested_by_nav || before_edit_handled))
                 for (int n = 0; n < io.InputQueueCharacters.Size; n++)
                 {
                     // Insert character if they pass filtering
@@ -4821,7 +4868,7 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
 
     // Process other shortcuts/key-presses
     bool revert_edit = false;
-    if (g.ActiveId == id && !g.ActiveIdIsJustActivated && !clear_active_id)
+    if (g.ActiveId == id && (!g.ActiveIdIsJustActivated || before_edit_handled) && !clear_active_id)
     {
         IM_ASSERT(state != NULL);
 
@@ -4834,13 +4881,27 @@ bool ImGui::InputTextEx(const char* label, const char* hint, char* buf, int buf_
 
         // Using Shortcut() with ImGuiInputFlags_RouteFocused (default policy) to allow routing operations for other code (e.g. calling window trying to use CTRL+A and CTRL+B: former would be handled by InputText)
         // Otherwise we could simply assume that we own the keys as we are active.
+        const auto edit_shortcut = [&](ImGuiKeyChord chord, ImGuiInputFlags shortcut_flags)
+        {
+            if (before_edit_handled && g.ActiveIdIsJustActivated)
+            {
+                // Routing was resolved at NewFrame for the previous editor.
+                // This opted-in activation already restored its selection:
+                // honor queued clipboard/undo shortcuts here and submit the
+                // usual focused route for subsequent frames.
+                SetShortcutRouting(chord, shortcut_flags | ImGuiInputFlags_RouteFocused, id);
+                SetKeyOwnersForKeyChord(FixupKeyChord(chord), id);
+                shortcut_flags |= ImGuiInputFlags_RouteAlways;
+            }
+            return Shortcut(chord, shortcut_flags, id);
+        };
         const ImGuiInputFlags f_repeat = ImGuiInputFlags_Repeat;
-        const bool is_cut   = (Shortcut(ImGuiMod_Ctrl | ImGuiKey_X, f_repeat, id) || Shortcut(ImGuiMod_Shift | ImGuiKey_Delete, f_repeat, id)) && !is_readonly && !is_password && (!is_multiline || state->HasSelection());
-        const bool is_copy  = (Shortcut(ImGuiMod_Ctrl | ImGuiKey_C, 0,        id) || Shortcut(ImGuiMod_Ctrl  | ImGuiKey_Insert, 0,        id)) && !is_password && (!is_multiline || state->HasSelection());
-        const bool is_paste = (Shortcut(ImGuiMod_Ctrl | ImGuiKey_V, f_repeat, id) || Shortcut(ImGuiMod_Shift | ImGuiKey_Insert, f_repeat, id)) && !is_readonly;
-        const bool is_undo  = (Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z, f_repeat, id)) && !is_readonly && is_undoable;
-        const bool is_redo =  (Shortcut(ImGuiMod_Ctrl | ImGuiKey_Y, f_repeat, id) || Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z, f_repeat, id)) && !is_readonly && is_undoable;
-        const bool is_select_all = Shortcut(ImGuiMod_Ctrl | ImGuiKey_A, 0, id);
+        const bool is_cut   = (edit_shortcut(ImGuiMod_Ctrl | ImGuiKey_X, f_repeat) || edit_shortcut(ImGuiMod_Shift | ImGuiKey_Delete, f_repeat)) && !is_readonly && !is_password && (!is_multiline || state->HasSelection());
+        const bool is_copy  = (edit_shortcut(ImGuiMod_Ctrl | ImGuiKey_C, 0) || edit_shortcut(ImGuiMod_Ctrl | ImGuiKey_Insert, 0)) && !is_password && (!is_multiline || state->HasSelection());
+        const bool is_paste = (edit_shortcut(ImGuiMod_Ctrl | ImGuiKey_V, f_repeat) || edit_shortcut(ImGuiMod_Shift | ImGuiKey_Insert, f_repeat)) && !is_readonly;
+        const bool is_undo  = edit_shortcut(ImGuiMod_Ctrl | ImGuiKey_Z, f_repeat) && !is_readonly && is_undoable;
+        const bool is_redo =  (edit_shortcut(ImGuiMod_Ctrl | ImGuiKey_Y, f_repeat) || edit_shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z, f_repeat)) && !is_readonly && is_undoable;
+        const bool is_select_all = edit_shortcut(ImGuiMod_Ctrl | ImGuiKey_A, 0);
 
         // We allow validate/cancel with Nav source (gamepad) to makes it easier to undo an accidental NavInput press with no keyboard wired, but otherwise it isn't very useful.
         const bool nav_gamepad_active = (io.ConfigFlags & ImGuiConfigFlags_NavEnableGamepad) != 0 && (io.BackendFlags & ImGuiBackendFlags_HasGamepad) != 0;

@@ -2304,7 +2304,9 @@ ILboolean ILAPIENTRY ilSave(ILenum Type, ILconst_string FileName)
 	\return Boolean value of failure or success.  Returns IL_FALSE if saving failed.*/
 ILuint ILAPIENTRY ilSaveF(ILenum Type, ILHANDLE File)
 {
-	ILboolean Ret;
+	// Encoders return byte counts; an 8-bit boolean would turn valid files
+	// whose size is a multiple of 256 into a false failure.
+	ILuint Ret;
 
 	if (File == NULL) {
 		ilSetError(IL_INVALID_PARAM);

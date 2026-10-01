@@ -2,6 +2,7 @@
 #define LUX_MULTIPLAYER_H
 #include "LuxBase.h"
 #include "LuxMultiplayerInventoryProtocol.h"
+#include "LuxMultiplayerChatProtocol.h"
 #include "LuxScriptExecution.h"
 #include "LuxScriptPackageProtocol.h"
 #include "network/NetworkTransport.h"
@@ -81,6 +82,7 @@ public:
     bool IsHost() const { return mTransport.IsHost(); }
     bool IsClient() const { return IsActive() && !IsHost(); }
     bool IsReady() const { return mbReady && mbScriptInitialized; }
+    bool IsChangingMap() const { return mbLoading || mbMapPreparing || !msPendingHostMap.empty(); }
     bool IsInstallingInitialState() const {return IsClient() && mbReady && !mbScriptInitialized;}
     bool SendTransientScriptEffect(const std::vector<uint8_t>& effect);
     bool SendPublishedScriptState(uint32_t peer,bool initial=false);
@@ -116,6 +118,11 @@ public:
     void ShowWindow(bool campaign=false);
     void ToggleWindow();
     bool IsWindowVisible() const;
+    bool IsChatCapturingInput() const;
+    void CloseChat();
+    bool SendChatMessage(const tString& text);
+    uint32_t GetChatNameColor(uint32_t peer) const;
+    const std::deque<luxnet::ChatMessage>& GetChatMessages() const { return mChatMessages; }
     bool RequestMapChange(const tString& map,const tString& start,const tString& startSound,const tString& endSound);
     bool HostChangeMap(const tString& map,const tString& start="",bool preservePlayerPosition=false);
     void NotifyHostMapChange(const tString& map);
@@ -166,6 +173,8 @@ private:
         uint32_t offset=0;
         float age=0, requestCooldown=0;
         float interactionTokens=32;
+        luxnet::ChatRateLimit chatRateLimit;
+        uint32_t chatNameColor=luxchat::DefaultNameColor;
         bool reliableSendFailed=false;
         // Observability only: these do not drive connection or timeout decisions.
         unsigned long lastJoinLogTime=0;
@@ -183,6 +192,7 @@ private:
     void HandleEvent(const hpl::cNetworkEvent& event);
     void HandlePacket(uint32_t peer,const std::vector<uint8_t>& data);
     void BroadcastPlayerIdentities();
+    void RelayChatMessage(uint32_t peer,const tString& text);
     bool ApplyInventoryPacket(const std::vector<uint8_t>& data);
     bool SendSharedInventoryState(uint32_t peer);
     bool ApplySharedInventoryState(const std::vector<uint8_t>& data);
@@ -211,6 +221,8 @@ private:
     cLuxMultiplayerSettings mSettings;
     std::map<uint32_t,Peer> mPeers;
     std::map<uint32_t,uint64_t> mSteamPeerIdentities;
+    std::deque<luxnet::ChatMessage> mChatMessages;
+    luxnet::ChatRateLimit mLocalChatRateLimit;
     std::vector<uint8_t> mvMapBytes;
     std::vector<std::vector<uint8_t> > mvScriptHistory;
     std::vector<uint8_t> mvScriptPackage;

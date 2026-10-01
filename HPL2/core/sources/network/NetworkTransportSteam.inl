@@ -270,6 +270,15 @@ namespace hpl
             { error = "You are no longer a member of the Steam lobby."; return false; }
             return true;
         }
+        void PrefetchPlayerName(uint64_t player) const
+        {
+            // Persona information arrives asynchronously. Start the name-only
+            // request as soon as a session member is validated, before gameplay
+            // packets can arrive; never block a connection or chat on the result.
+            if(steam && lobby && IsPlayer(player) &&
+                player != SteamUser()->GetSteamID().ConvertToUint64() && LobbyContains(lobby, player))
+                SteamFriends()->RequestUserInformation(CSteamID(player), true);
+        }
         void CheckSession();
         static void StatusChanged(SteamNetConnectionStatusChangedCallback_t* info);
         static void Pump();
@@ -342,6 +351,7 @@ namespace hpl
             if(!IsPlayer(target->expectedHost) || target->expectedHost == SteamUser()->GetSteamID().ConvertToUint64())
             { target->Fail("The lobby no longer has a remote host. Hosting and joining require separate Steam accounts."); return; }
             if(!target->ValidateLobby(error)) { target->Fail(error); return; }
+            target->PrefetchPlayerName(target->expectedHost);
             SteamNetworkingIdentity identity; identity.Clear(); identity.SetSteamID64(target->expectedHost);
             SteamNetworkingConfigValue_t options[7];
             const HSteamNetConnection connection = SteamNetworkingSockets()->ConnectP2P(identity, 0, Options(options, true), options);
@@ -603,6 +613,16 @@ namespace hpl
         const auto found = mpImpl->identities.find(peer);
         return found == mpImpl->identities.end() ? 0 : found->second;
     }
+    std::string cNetworkTransport::GetSteamPlayerName(uint64_t steamID)
+    {
+        if(!IsSteamSession() || !SteamAvailable() || !IsPlayer(steamID) || !LobbyContains(mpImpl->lobby, steamID)) return "";
+        if(steamID == SteamUser()->GetSteamID().ConvertToUint64())
+            return steam_detail::DisplayText(SteamFriends()->GetPersonaName(), 256);
+        SteamFriends()->RequestUserInformation(CSteamID(steamID), true);
+        const char* name = SteamFriends()->GetFriendPersonaName(CSteamID(steamID));
+        if(!name || std::string(name) == "[unknown]") return "";
+        return steam_detail::DisplayText(name, 256);
+    }
     const cSteamAvatarImage* cNetworkTransport::GetSteamAvatar(uint64_t steamID)
     {
         if(!IsSteamSession() || !SteamAvailable() || !IsPlayer(steamID) || !LobbyContains(mpImpl->lobby, steamID)) return nullptr;
@@ -697,6 +717,7 @@ namespace hpl
             { owner->RejectIncoming(info->m_hConn, 1001, "The multiplayer session is full."); return; }
             if(api->AcceptConnection(info->m_hConn) != k_EResultOK)
             { owner->RejectIncoming(info->m_hConn, 1002, "Unable to accept the connection."); return; }
+            owner->PrefetchPlayerName(remote);
             const uint32_t peer = owner->nextPeer++;
             owner->peers[peer] = info->m_hConn; owner->identities[peer] = remote;
             connections[info->m_hConn] = owner;

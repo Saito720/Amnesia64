@@ -3,6 +3,38 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '../../../tests/multiplayer/TestSupport.ps1')
 $context = Get-MultiplayerTestContext -Kind game
 $workspace = $context.Workspace
+# A live two-account connection is optional. Keep the asynchronous persona
+# request's security and timing contract covered even on a single-account host:
+# request only validated session members, before exposing gameplay connections.
+$steamSource = [IO.File]::ReadAllText((Join-Path $workspace 'HPL2/core/sources/network/NetworkTransportSteam.inl'))
+function Assert-SourceOrder([string]$section, [string[]]$fragments, [string]$failure) {
+    $last = -1
+    foreach($fragment in $fragments) {
+        $next = $section.IndexOf($fragment, $last + 1, [StringComparison]::Ordinal)
+        if($next -lt 0) { throw $failure }
+        $last = $next
+    }
+}
+$prefetchStart = $steamSource.IndexOf('void PrefetchPlayerName(', [StringComparison]::Ordinal)
+$prefetchEnd = $steamSource.IndexOf('void CheckSession();', $prefetchStart, [StringComparison]::Ordinal)
+Assert-SourceOrder $steamSource.Substring($prefetchStart, $prefetchEnd-$prefetchStart) @(
+    'if(steam && lobby && IsPlayer(player)', 'LobbyContains(lobby, player)',
+    'SteamFriends()->RequestUserInformation(CSteamID(player), true)'
+) 'Steam persona prefetch must remain a name-only request restricted to valid lobby members.'
+$joinStart = $steamSource.IndexOf('void Joined(', [StringComparison]::Ordinal)
+$joinEnd = $steamSource.IndexOf('void Searched(', $joinStart, [StringComparison]::Ordinal)
+Assert-SourceOrder $steamSource.Substring($joinStart, $joinEnd-$joinStart) @(
+    'if(!target->ValidateLobby(error))', 'target->PrefetchPlayerName(target->expectedHost);',
+    'SteamNetworkingSockets()->ConnectP2P(', 'target->Queue(eNetworkEventType::SessionReady);'
+) 'Steam host persona must be prefetched after validated lobby entry and before relay connection.'
+$acceptStart = $steamSource.IndexOf('if(info->m_info.m_eState == k_ESteamNetworkingConnectionState_Connecting && owner->host)', [StringComparison]::Ordinal)
+$acceptEnd = $steamSource.IndexOf('else if(info->m_info.m_eState == k_ESteamNetworkingConnectionState_Connected)', $acceptStart, [StringComparison]::Ordinal)
+Assert-SourceOrder $steamSource.Substring($acceptStart, $acceptEnd-$acceptStart) @(
+    'if(!owner->ValidateLobby(error))', 'if(!LobbyContains(owner->lobby, remote))',
+    'if(api->AcceptConnection(info->m_hConn) != k_EResultOK)', 'owner->PrefetchPlayerName(remote);',
+    'owner->peers[peer] = info->m_hConn;'
+) 'Steam peer persona must be prefetched only after membership checks and successful acceptance.'
+Write-Output 'PASS: authenticated name-only Steam persona prefetch begins before gameplay connections.'
 $output = Join-Path $workspace 'bld/steam-transport-tests'
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $includeDirs = @((Join-Path $context.Toolset 'include'), (Join-Path $context.Sdk "Include/$($context.SdkVersion)/ucrt"), (Join-Path $context.Sdk "Include/$($context.SdkVersion)/shared"), (Join-Path $context.Sdk "Include/$($context.SdkVersion)/um"))

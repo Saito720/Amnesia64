@@ -79,6 +79,7 @@ static void printStatus(const char* message) {
 #include "QuitRegression.h"
 #include "DoorBreakRegression.h"
 #include "FontRegression.h"
+#include "ChatRegression.h"
 #include "ScriptRuntimeRegression.h"
 class cGameSmoke : public iUpdateable, public iRendererCallback {
     int state=0;
@@ -120,6 +121,8 @@ class cGameSmoke : public iUpdateable, public iRendererCallback {
     bool doorBreakOnly=std::getenv("CODEX_MP_DOOR_BREAK")!=NULL;
     cScriptRuntimeRegression scriptRuntimeRegression;
     bool scriptsOnly=std::getenv("CODEX_MP_SCRIPTS")!=NULL;
+    cChatRegression chatRegression;
+    bool chatOnly=std::getenv("CODEX_MP_CHAT")!=NULL,chatDone=false;
     cVector2l resizeValidated=0;
     bool genericEffectsDone=false;
     cMapCacheRegression mapCacheRegression;
@@ -288,6 +291,11 @@ public:
             if(backHallOnly) {state=71;return;}
             if(doorBreakOnly) {state=73;return;}
             if(scriptsOnly) {state=76;return;}
+            if(chatOnly) {
+                const int chat=chatRegression.Initial(loadingError);
+                if(chat<0) {fail(loadingError);return;}
+                if(!chat) return;
+            }
             if(role=="settings") {
                 const int borderless=borderlessSettingsRegression.Update(loadingError);
                 if(borderless<0) {fail(loadingError);return;}
@@ -343,12 +351,45 @@ public:
             printStatus("PASS: multiplayer script runtime and selected-player callbacks");
             result=0;state=99;gpBase->mpEngine->Exit();return;
         }
+        if(state==77) {
+            const int chat=chatRegression.Update(loadingError);
+            if(chat<0) {fail(loadingError);return;}
+            if(!chat) return;
+            chatDone=true;
+            if(!chatOnly) {state=2;return;}
+            chatRegression.OpenForDisconnect();readyAt=SDL_GetTicks();state=78;return;
+        }
+        if(state==78) {
+            if(SDL_GetTicks()-readyAt<200) return;
+            if(!mp->mpUI->IsChatOpen()) {fail("chat did not open before disconnect regression");return;}
+            mark(role+"-chat-disconnect-ready.txt","chat entry active");
+            state=781;return;
+        }
+        if(state==781) {
+            // Observe each open editor once before either endpoint disconnects.
+            // Otherwise the host's valid Stop can close the client between its
+            // ready marker and a repeated open-editor assertion.
+            if(role=="host") {
+                if(!exists("host-chat-disconnect-ready.txt") || !exists("client-chat-disconnect-ready.txt")) return;
+                mp->Stop("Chat regression complete.");
+            } else if(mp->IsActive()) return;
+            readyAt=SDL_GetTicks();state=79;return;
+        }
+        if(state==79) {
+            if(SDL_GetTicks()-readyAt<200) return;
+            if(mp->IsActive() || mp->mpUI->IsChatOpen() || mp->IsChatCapturingInput() || !mp->GetChatMessages().empty()) {
+                fail("disconnect retained chat draft, capture or session history");return;
+            }
+            mark(role+"-passed.txt","PASS: multiplayer chat input, delivery, Unicode, resize, fade, native GUI isolation and disconnect.");
+            printStatus("PASS: multiplayer chat, resizable windows and native GUI isolation");
+            result=0;state=99;gpBase->mpEngine->Exit();return;
+        }
         if(state==1) {
             if(role=="host") {
                 if(!screenshotDone) return;
                 if(mp->IsWindowVisible()) mp->ToggleWindow();
                 cLuxMultiplayerSettings settings;settings.useSteam=false;settings.port=port;settings.maxPlayers=2;
-                if(nativeOnly || quitTests) settings.map="maps/main/ch01/01_old_archives.map";
+                if(nativeOnly || quitTests || chatOnly) settings.map="maps/main/ch01/01_old_archives.map";
                 tString hostingError;
                 if(!StartCurrentMapHost(settings,hostingError)) {fail("Host current map failed: "+hostingError);return;}
                 mark("host-listening.txt",mp->GetStatus());
@@ -383,6 +424,7 @@ public:
             const int currentPickup=VerifyCurrentMapHostPickup(loadingError);
             if(currentPickup<0) {fail(loadingError);return;}
             if(currentPickup==0) return;
+            if(!chatDone && (chatOnly || (!nativeOnly && !quitTests && !playerModelsOnly))) {state=77;return;}
             if(resizeTests) {
                 const int resize=resizeRegression.Session(loadingError);
                 if(resize<0) {fail(loadingError);return;}
@@ -693,6 +735,11 @@ public:
                 fail("Steam lobby did not initialize the hosted world");return;
             }
             steamLobby=mp->GetSteamLobbyID();
+            const tString persona=mp->mTransport.GetSteamPlayerName(mp->mTransport.GetSteamPeerID(mp->GetLocalPeerId()));
+            if(persona.empty() || !mp->SendChatMessage("Steam chat persona regression") || mp->GetChatMessages().size()!=1 ||
+               mp->GetChatMessages().back().name!=persona || mp->GetChatMessages().back().name==luxnet::ChatFallbackName(mp->GetLocalPeerId())) {
+                fail("Steam-host chat did not use the authenticated local persona exactly once");return;
+            }
             if(!cachePathIsValid()) return;
             printStatus(mp->GetSteamStatus().c_str());
             printStatus("Steam campaign lobby created with dynamic world; checking menu updates");
@@ -743,6 +790,7 @@ public:
             result=0;state=99;gpBase->mpEngine->Exit();return;
         }
         tString loadingError;
+        if(!chatRegression.OnPostRender(loadingError)) {fail(loadingError);return;}
         if(playerModelsOnly && !playerModelScreenshot.OnPostRender(loadingError)) {fail(loadingError);return;}
         if(enemiesOnly && !enemyRegression.OnPostRender(loadingError)) {fail(loadingError);return;}
         if(uncappedTests && !cadenceRegression.Render(loadingError)) {fail(loadingError);return;}

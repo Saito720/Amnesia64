@@ -493,7 +493,8 @@ void cLuxInputHandler::Update(float afTimeStep)
 	if(mbQuitRequested && gpBase->mpMainMenu->RequestQuit()) mbQuitRequested = false;
 
 	const bool bCapture = gpBase->mpMultiplayer &&
-		(gpBase->mpMultiplayer->IsWindowVisible() || gpBase->mpMultiplayer->IsSteamOverlayActive() ||
+		(gpBase->mpMultiplayer->IsWindowVisible() || gpBase->mpMultiplayer->IsChatCapturingInput() ||
+		 gpBase->mpMultiplayer->IsSteamOverlayActive() ||
 		 (gpBase->mpMultiplayer->IsClient() && !gpBase->mpMultiplayer->IsReady()));
 	if(bCapture || mbMultiplayerCapturing)
 	{
@@ -579,7 +580,9 @@ tWString cLuxInputHandler::GetInputName(const tString& asActionName)
 
 void cLuxInputHandler::ChangeState(eLuxInputState aState)
 {
+	const bool bStateChanged = aState != mState;
 	mState = aState;
+	if(bStateChanged && gpBase->mpMultiplayer) gpBase->mpMultiplayer->CloseChat();
 	
 
 	//This rests all actions so changing states does not give unwanted clicks!

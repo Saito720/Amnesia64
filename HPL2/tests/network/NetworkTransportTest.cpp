@@ -22,6 +22,8 @@ int main()
     uint16_t port = 27640;
     while(port < 27660 && !host.Host(port, 1, error)) ++port;
     Require(host.IsHost(), error);
+    Require(host.GetSteamPlayerName(0).empty() && host.GetSteamPlayerName(UINT64_MAX).empty(),
+        "direct-IP sessions expose no Steam player names");
     Require(client.Join("127.0.0.1", port, error), error);
     bool hostConnected = false, clientConnected = false, reliableReceived = false;
     bool unreliableReceived = false, rejected = false, disconnected = false;

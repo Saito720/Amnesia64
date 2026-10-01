@@ -1,4 +1,4 @@
-param([string]$RetailDirectory,[int]$Port=27843,[ValidateSet('Standalone','Steamworks')][string]$Backend='Standalone',[switch]$SteamHostOnly,[switch]$SettingsOnly,[switch]$FontOnly,[string]$FontPath,[switch]$EnemiesOnly,[switch]$BackHallOnly,[switch]$QuitOnly,[switch]$QuitDirectly,[switch]$DoorBreakOnly,[switch]$ScriptsOnly,[ValidateSet('Auto','Bordered','Borderless')][string]$BorderMode='Auto',[switch]$SkipBuild,[switch]$KeepProfiles,[ValidateRange(320,8192)][int]$Width=800,[ValidateRange(240,8192)][int]$Height=600)
+param([string]$RetailDirectory,[int]$Port=27843,[ValidateSet('Standalone','Steamworks')][string]$Backend='Standalone',[switch]$SteamHostOnly,[switch]$SettingsOnly,[switch]$FontOnly,[string]$FontPath,[switch]$EnemiesOnly,[switch]$BackHallOnly,[switch]$QuitOnly,[switch]$QuitDirectly,[switch]$DoorBreakOnly,[switch]$ScriptsOnly,[switch]$ChatOnly,[ValidateSet('Auto','Bordered','Borderless')][string]$BorderMode='Auto',[switch]$SkipBuild,[switch]$KeepProfiles,[ValidateRange(320,8192)][int]$Width=800,[ValidateRange(240,8192)][int]$Height=600)
 $ErrorActionPreference='Stop'
 if(-not $PSBoundParameters.ContainsKey('BorderMode') -and -not $SettingsOnly) { $BorderMode='Bordered' }
 . (Join-Path $PSScriptRoot 'TestSupport.ps1')
@@ -6,6 +6,7 @@ $context=Get-MultiplayerTestContext 'game'
 $retail=Find-AmnesiaRetailDirectory $RetailDirectory
 if($SteamHostOnly -and $Backend -ne 'Steamworks') { throw '-SteamHostOnly requires -Backend Steamworks and a signed-in account with access to the configured AppID.' }
 if($SteamHostOnly -and $SettingsOnly) { throw '-SteamHostOnly and -SettingsOnly select different tests.' }
+if($ChatOnly -and ($SteamHostOnly -or $SettingsOnly -or $FontOnly -or $EnemiesOnly -or $BackHallOnly -or $QuitOnly -or $QuitDirectly -or $DoorBreakOnly -or $ScriptsOnly)) { throw '-ChatOnly cannot be combined with another focused test mode.' }
 if($ScriptsOnly -and ($SteamHostOnly -or $SettingsOnly -or $FontOnly -or $EnemiesOnly -or $BackHallOnly -or $QuitOnly -or $QuitDirectly -or $DoorBreakOnly)) { throw '-ScriptsOnly cannot be combined with another focused test mode.' }
 if($FontOnly -and ($SteamHostOnly -or $SettingsOnly -or $EnemiesOnly -or $BackHallOnly -or $QuitOnly -or $QuitDirectly -or $DoorBreakOnly)) { throw '-FontOnly cannot be combined with another focused test mode.' }
 if($FontOnly) {
@@ -268,7 +269,9 @@ $savedDoorBreakMode=$env:CODEX_MP_DOOR_BREAK
 $savedFontTestPath=$env:CODEX_FONT_TEST_PATH
 $savedScriptsMode=$env:CODEX_MP_SCRIPTS
 $savedScriptMap=$env:CODEX_MP_SCRIPT_MAP
+$savedChatMode=$env:CODEX_MP_CHAT
 try {
+    if($ChatOnly) { $env:CODEX_MP_CHAT='1' }
     if($ScriptsOnly) { $env:CODEX_MP_SCRIPTS='1'; $env:CODEX_MP_SCRIPT_MAP=$scriptMap }
     if($FontOnly) { $env:CODEX_FONT_TEST_PATH=$FontPath }
     if($EnemiesOnly) { $env:CODEX_MP_ENEMIES='1'; $env:CODEX_MP_ENEMY_MAP=$enemyMap }
@@ -307,6 +310,7 @@ try {
     $env:CODEX_FONT_TEST_PATH=$savedFontTestPath
     $env:CODEX_MP_SCRIPTS=$savedScriptsMode
     $env:CODEX_MP_SCRIPT_MAP=$savedScriptMap
+    $env:CODEX_MP_CHAT=$savedChatMode
     Stop-TestProcesses $processes
     if($scriptCache -and (Test-Path -LiteralPath $scriptCache)) {
         $item=Get-Item -LiteralPath $scriptCache

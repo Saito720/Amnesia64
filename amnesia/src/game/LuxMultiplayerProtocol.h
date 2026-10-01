@@ -8,7 +8,7 @@
 #include <vector>
 
 namespace luxnet {
-static const uint32_t ProtocolVersion = 16;
+static const uint32_t ProtocolVersion = 18;
 static const uint32_t MaxMapBytes = 16 * 1024 * 1024;
 static const uint32_t MapChunkBytes = 32 * 1024;
 enum Packet : uint8_t { Hello=1, MapBegin, MapChunk, MapEnd, Ready, Reject,
@@ -18,7 +18,7 @@ enum Packet : uint8_t { Hello=1, MapBegin, MapChunk, MapEnd, Ready, Reject,
     EnemyState, EnemyRemoved, EnemyDamage, EnemyTerror, EnemyStimulus, ItemUseRequest, RopeState, ItemCallbacks, ItemCombineRequest,
     InventoryGrant=31, InventoryRemove=32, EntityDefinition=40, SameMapTeleport=41, EntityRemoved=42, PlayerIdentities=43, SharedInventoryState=44,
     ScriptPackage=45, ScriptInitialized=46, ClientScriptEvent=47, PlayerScriptCommand=48, PlayerScriptAck=49, ScriptCompletion=50,
-    PublishedScriptState=51 };
+    PublishedScriptState=51, ChatSubmit=52, ChatDeliver=53 };
 
 // Directed delivery is limited to owning-player operations. Optional resource
 // framing never expands that capability to a shared-world native.

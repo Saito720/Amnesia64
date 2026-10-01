@@ -10,7 +10,8 @@ $process=$null
 try {
     $arguments=Join-TestProcessArguments @([string]$Width,[string]$Height,$run)
     $process=Start-Process -FilePath (Join-Path $context.Output 'smoke.exe') -ArgumentList $arguments -WorkingDirectory $retail -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $run 'stdout.txt') -RedirectStandardError (Join-Path $run 'stderr.txt')
-    if(-not $process.WaitForExit(20000)) { throw 'UI smoke exceeded its 20-second limit.' }
+    # Chat now rebuilds native-size/DPI font atlases and saves 4K resize frames.
+    if(-not $process.WaitForExit(60000)) { throw 'UI smoke exceeded its 60-second limit.' }
     Get-Content (Join-Path $run 'stdout.txt')
     Get-Content (Join-Path $run 'stderr.txt')
     if($process.ExitCode -ne 0) { throw "UI smoke failed with exit code $($process.ExitCode)." }

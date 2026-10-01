@@ -83,6 +83,24 @@ add_executable(AmnesiaDemo MACOSX_BUNDLE EXCLUDE_FROM_ALL
     ${all_sources}
 )
 target_link_libraries(AmnesiaDemo HPL2)
+foreach(game_target Amnesia AmnesiaDemo)
+    if(APPLE)
+        # SDL_GetBasePath resolves the bundle's Resources directory on macOS.
+        set(chat_font_dir "$<TARGET_FILE_DIR:${game_target}>/../Resources/fonts")
+    else()
+        set(chat_font_dir "$<TARGET_FILE_DIR:${game_target}>/fonts")
+    endif()
+    add_custom_command(TARGET ${game_target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${chat_font_dir}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../fonts/NotoSans-Regular.ttf"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../fonts/OFL.txt"
+            "${chat_font_dir}")
+    add_custom_command(TARGET ${game_target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../fonts/twemoji"
+            "${chat_font_dir}/twemoji")
+endforeach()
 target_include_directories(AmnesiaDemo PRIVATE ../../../HPL2/dependencies/sources/AngelScript/include)
 if(WIN32)
     set(BLACKBOX_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../HPL2/dependencies/sources/BlackBox)

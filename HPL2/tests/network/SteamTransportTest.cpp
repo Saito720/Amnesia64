@@ -66,6 +66,10 @@ int main()
     }
     Require(ready && transport.IsHost() && transport.GetSteamLobbyID() != 0, "Steam creates and publishes a friends-only lobby");
     const CSteamID lobby(transport.GetSteamLobbyID());
+    Require(transport.GetSteamPlayerName(SteamUser()->GetSteamID().ConvertToUint64()) ==
+        steam_detail::DisplayText(SteamFriends()->GetPersonaName(), 256), "current Steam player name comes from the authenticated account");
+    Require(transport.GetSteamPlayerName(0).empty() && transport.GetSteamPlayerName(UINT64_MAX).empty(),
+        "invalid and nonmember Steam identities have no player name");
     Require(SteamMatchmaking()->GetLobbyOwner(lobby) == SteamUser()->GetSteamID(), "actual lobby owner matches host");
     Require(SteamMatchmaking()->GetLobbyMemberLimit(lobby) == 4, "capacity includes host exactly once");
     Require(std::string(SteamMatchmaking()->GetLobbyData(lobby, "hpl_protocol")) == steam_detail::Protocol, "protocol metadata is published");
@@ -96,6 +100,7 @@ int main()
     transport.Stop();
     Pump(transport, 200);
     Require(!transport.IsActive() && transport.GetSteamLobbyID() == 0, "clean session shutdown");
+    Require(transport.GetSteamPlayerName(SteamUser()->GetSteamID().ConvertToUint64()).empty(), "stopped session exposes no stale persona");
     cNetworkTransport::ShutdownSteam();
     Require(!cNetworkTransport::SteamAvailable(), "runtime shuts down cleanly");
     std::cout << "PASS: correct App ID, invalid requests, late cancellation, friends-only lobby, metadata/map updates, Steam relay initialization, teardown" << std::endl;

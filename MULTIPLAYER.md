@@ -4,7 +4,7 @@ This is an experimental multiplayer foundation, not a campaign-complete co-op re
 It provides real host/client sessions, shared player and physics state, map delivery,
 exclusive object interaction, host-authoritative enemies, host script effects, and coordinated map changes.
 Windows Debug and Release x64 are the primary build targets for this checkout.
-The current wire protocol is version 15; all peers must use the same updated build.
+The current wire protocol is version 18; all peers must use the same updated build.
 
 FBX meshes and skeletal animations use the importer from `amfp` commit `be7694f`,
 including its AMFP asset compatibility fixes. The bundled ufbx dependency builds
@@ -66,6 +66,48 @@ running when the game opened. Failed initialization preserves the invitation for
 another attempt. Offline play remains available when initialization fails. The Steam
 overlay captures input without stopping the multiplayer world.
 
+## Text chat
+
+Press **T** during multiplayer gameplay to open the chat entry. **Enter** sends
+to everyone in the session; **Escape** cancels and returns to gameplay. Steam
+sessions use each sender's Steam display name. Direct-IP sessions use **Player 1**
+for the host and **Player 2**, **Player 3**, etc. for connected players.
+
+Chat appears in the lower-left corner. Recent messages fade after eight seconds,
+over two seconds. History uses text with a black outline and no background panel.
+Each connected player has a stable, host-assigned name color chosen to maximize
+perceptual distance from the other connected players' colors. Opening the entry
+reveals recent history. The overlay wraps messages and follows the current
+window dimensions, including portrait windows.
+While typing, scrolling over the history reveals earlier lines and messages.
+Chat retains the last 50 messages for the current session across map
+changes; ending or replacing the session clears them.
+
+Typing captures gameplay input. Chat cannot open over the pause menu, inventory,
+journal, multiplayer controls, scripted pause, or Steam overlay. Menu and map
+transitions, death, and application focus loss close the entry. The multiplayer
+world continues updating while typing.
+
+Messages are limited to 512 UTF-8 bytes, with a short cooldown between sends.
+The host assigns sender identities and display names before reliably relaying
+messages, including their canonical name colors. The chat font is rasterized at
+the displayed size and framebuffer density, without stretching a smaller bitmap.
+The bundled Noto Sans font and its license are copied to `fonts/`
+beside the executable; include that directory when distributing a build.
+
+Supported emoji use bundled Twemoji artwork in messages and the entry field,
+including flags, skin tones, and joined sequences. The editable field preserves
+the original Unicode text and shortcode draft. Attribution and the CC-BY 4.0
+artwork license are included in `fonts/twemoji/`; distribute those files with the
+atlas and mapping.
+Discord-style shortcodes such as `:smile:`, `:heart:` and `:thumbsup_tone3:`
+expand to Unicode when sent; unknown or incomplete names remain literal text.
+The emoji button remains grey, including on hover. It opens
+a searchable picker. Selecting an emoji inserts it at
+the current caret or replaces the selection without sending the draft. Escape
+closes the picker first. The packaged alias dictionary includes the DSharpPlus
+MIT license and source attribution. Fonts and emoji assets load locally.
+
 ## Steamworks build and hosting
 
 The default build uses the supplied Steamworks SDK **1.65**, including its
@@ -123,7 +165,7 @@ or cached maps skip the download phase. Every waiting frame clears the viewport;
 blocking verification and loading also present their screen before starting work.
 Cancelled or failed host map changes return clients to the previous map, preserving
 in-flight world events. Same-map start-position changes do not put clients into a
-map-loading state. The session uses protocol **15**; all players need
+map-loading state. The session uses protocol **18**; all players need
 the updated build.
 The client cannot open the game debug menu; F3/fast-forward is disabled for everyone
 in a session. Host debug map loads/reloads use a queued session-preserving path.
@@ -571,7 +613,7 @@ have exercised that path; each new build still needs a two-account playtest for
 latency, disconnects and campaign behavior beyond the controlled regression suite.
 Full-game smoke tests use isolated test configurations/profiles and a bounded run;
 they must not share a live player's configuration or overwrite retail assets.
-The current session/lobby protocol is version **16**; all testers must use matching builds.
+The current session/lobby protocol is version **18**; all testers must use matching builds.
 See `tests/multiplayer/README.md` for profile cleanup, output paths and runner options.
 
 ## Source layout

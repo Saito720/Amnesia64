@@ -61,6 +61,9 @@ namespace hpl
         // Authenticated direct connection identity only (peer 0 is the host).
         // Direct-IP and standalone sessions have no Steam player identity.
         uint64_t GetSteamPeerID(uint32_t peer) const;
+        // Nonblocking persona lookup for a current Steam lobby member.
+        // Empty means unavailable; gameplay validates and bounds display text.
+        std::string GetSteamPlayerName(uint64_t steamID);
         // Nonblocking optional avatar fetch for a current lobby member. Null
         // means pending, unavailable, or failed. Copy immediately: cached
         // images are invalidated by Stop/Shutdown or membership cleanup.

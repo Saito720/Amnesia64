@@ -22,7 +22,72 @@ running Steam client with access to the configured AppID. The UI harness stubs
 Steam services and never sends invitations. Build and run with the same backend.
 Switching a test to Standalone changes the normal Debug game build too; rebuild
 the game without `/p:HplUseSteamworks=false` to return to Steam afterward.
-The current session/lobby protocol is **16**; all instances must use matching builds.
+The current session/lobby protocol is **18**; all instances must use matching builds.
+
+For a focused chat regression with two real game instances:
+
+```powershell
+./tests/multiplayer/run-game.ps1 -ChatOnly -Backend Steamworks
+./tests/multiplayer/run-game.ps1 -ChatOnly -Backend Standalone
+```
+
+This exercises real SDL text input, reciprocal reliable delivery, trusted sender
+names, UTF-8 length bounds, Discord-style aliases, cancellation, movement/menu input isolation, fading,
+and resizing while typing and while wrapped history is visible. Screenshots are
+saved at 640x480, odd dimensions, portrait, and wide sizes. Native pause,
+inventory, journal, modal questions, focus loss, multiplayer controls, and
+disconnect transitions must preserve their input ownership. The focused run also
+opens chat and the picker before actual player death, a real retail map change,
+and the native window-close quit confirmation. History survives the map change;
+the entry and picker close without bypassing the quit confirmation.
+The UI harness checks the bundled font and all Twemoji sequences and shortcodes,
+native font rasterization at fractional and doubled framebuffer densities, and
+active selection/picker preservation through odd, portrait and 4K resizes. Actual
+history glyph geometry verifies colored names, neutral bodies, black outlines,
+and the absence of a background panel. It also covers the grey hover icon,
+history scrolling, composed shortcode/Unicode caret hit testing, selection,
+clipboard editing, picker search/insertion, and the Steam/loading/death gates.
+Both backends use local direct-IP peers in this test; live Steam persona
+lookup is checked separately by `HPL2/tests/network/RunSteamTransportTests.ps1 -Live`.
+`-SteamHostOnly` also verifies a real hosted chat message uses the signed-in
+account's Steam persona name.
+
+Final visual polish verified on 2026-09-30 with protocol 18: Debug and Release
+x64 game builds passed for both backends. UI runs `18b9f2d0bbf4` (Steamworks)
+and `cf1ab3d13639` (Standalone) passed native-size and fractional/doubled-density
+font rasterization, active caret/selection/picker preservation, transparent
+outlined history with name-only colors, grey hover, mixed shortcode/Unicode
+composition, invisible-only drafts, and history scrolling. Focused two-instance
+chat runs `4e9cc0ca5ebd` (Steamworks) and `0e615fb8b81c` (Standalone) passed,
+including 4K resizing, canonical colors through real map transitions, actual
+death and quit cancellation, and host-initiated remote disconnect cleanup. Full
+regressions with `CODEX_MP_RESIZE=1` passed as `3d8f61ffb23d` (Steamworks) and
+`985cd47ae1f8` (Standalone). All seven protocol suites and live Steam transport
+checks passed. Steam-host run `c3b560d387e1` verified the authenticated persona.
+Release packaging audits matched all nine font/emoji/license assets. Two-instance
+runs use local direct-IP peers; separate-account Steam relay playtesting remains
+unverified.
+
+Before the final visual polish, verified on 2026-09-30 with protocol 17:
+Debug and Release x64 game builds
+passed for both Standalone and Steamworks. Final UI run `7a41f774e00c` passed,
+including all 4,009 Twemoji sequences, 7,861 aliases, grey/color hover rendering,
+single-field editing, queued typing/paste, resize bounds, map-transition gates,
+and the deterministic 256-byte image-save regression. Focused two-instance chat
+runs `b7dafc8bb46d` (Steamworks) and `2926e982708b` (Standalone) passed actual
+death recovery, real map changes, window-close confirmation/cancellation, native
+GUI isolation, and disconnect cleanup. Full multiplayer regressions with
+`CODEX_MP_RESIZE=1` passed as `a665c3ce89f8` (Steamworks) and `42ca964077be`
+(Standalone). All seven protocol suites and Steam transport/ordering checks
+passed. Actual Steam-host run `40c116f2edab` verified the signed-in account's
+persona name on a hosted chat message. Two-instance runs use local UDP;
+separate-account Steam relay playtesting remains unverified.
+
+The resize captures exposed an existing DevIL save-result truncation: a valid
+PNG whose byte count was divisible by 256 was reported as a failed save.
+`ilSaveF` now preserves the encoder's full byte count. The UI harness saves a
+deterministic 256-byte RAW image and checks both its returned count and actual
+file size, independently of screenshot compression or graphics hardware.
 
 `-ScriptsOnly` creates an isolated Old Archives copy and script companions under
 `bld/`. It checks client API/class restrictions, lifecycle signatures, typed
@@ -61,7 +126,8 @@ Initialization markers must wait until native/body/enemy baseline queues drain.
 Production Newton tests cover authority overlays in forwarded poses, acknowledgement
 retirement, revival life changes and rejection of stale life snapshots.
 
-`./tests/RunMultiplayerProtocolTests.ps1` runs six independent protocol suites.
+`./tests/RunMultiplayerProtocolTests.ps1` runs seven independent protocol suites,
+including bounded UTF-8 chat messages, sender framing, names, history, and rate limits.
 The script package suite covers fragmented UTF-8 bytes, the empty legacy marker,
 size limits, truncated headers and data, corrupted hashes, ordering and stale map
 generations. It also checks private player-variable isolation and map/campaign

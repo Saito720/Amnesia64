@@ -37,6 +37,8 @@ int main()
     auto* api=SteamNetworkingSockets();
     cNetworkTransport host,client;std::string error;
     Require(host.Host(27015,2,error),"host starts");
+    Require(host.GetSteamPlayerName(0).empty() && host.GetSteamPlayerName(UINT64_MAX).empty(),
+        "standalone transport exposes no Steam persona");
     const auto incoming=api->Incoming(api->lastListener);
     std::vector<cNetworkEvent> events;host.Poll(events);
     RequireNoGameplayEvents(events);

@@ -380,6 +380,7 @@ void cLuxMultiplayer::AcceptSteamInvite() {
     if(JoinSteamLobby(std::to_string(lobby))) mlPendingSteamInvite=0;
 }
 void cLuxMultiplayer::Stop(const tString& reason) {
+    CloseChat();mChatMessages.clear();mLocalChatRateLimit.Reset();
     CommitScriptMapChange();
     if(IsClient()) {
         tString scriptError;gpBase->mpScriptHandler->GetRuntime()->LeaveClient(scriptError);
@@ -434,6 +435,8 @@ void cLuxMultiplayer::RemoveReceivedMapFiles() {
     msReceivedMapPath.clear();
 }
 void cLuxMultiplayer::Reset() {
+    // Debug map loads reset modules without the ordinary map-leave callback.
+    CloseChat();
     CommitScriptMapChange();
     ClearScriptCompletions();
     mPendingRecoveredItems.clear();mAutoCombineItems.clear();mbCombiningInventory=mbGroupInventory=mbAutoCombiningInventory=false;
@@ -447,12 +450,42 @@ bool cLuxMultiplayer::ShouldSuppressOfflineSaves() const {
     return IsActive() || (mbSessionWorld && gpBase->mpMapHandler->GetCurrentMap()!=NULL);
 }
 void cLuxMultiplayer::OnMapLeave(cLuxMap*) {
+    CloseChat();
     mpEnemies->Reset();mpEffects->Reset();mpWorld->Reset();mpEntities->Reset();
     FlushDiagnosticSummary();
 }
 void cLuxMultiplayer::ShowWindow(bool campaign) {mpUI->Show(campaign);}
 void cLuxMultiplayer::ToggleWindow() {mpUI->Toggle();}
 bool cLuxMultiplayer::IsWindowVisible() const {return mpUI->IsVisible();}
+bool cLuxMultiplayer::IsChatCapturingInput() const {return mpUI->IsChatCapturingInput();}
+void cLuxMultiplayer::CloseChat() {mpUI->CloseChat();}
+bool cLuxMultiplayer::SendChatMessage(const tString& text) {
+    tString normalized;
+    if(!IsActive() || !IsReady() || !mLocalChatRateLimit.CanSend() || !NormalizeChatText(text,normalized)) return false;
+    if(IsHost()) RelayChatMessage(GetLocalPeerId(),normalized);
+    else if(!Send(0,WriteChatSubmit(normalized),true)) return false;
+    mLocalChatRateLimit.Sent();return true;
+}
+uint32_t cLuxMultiplayer::GetChatNameColor(uint32_t peer) const {
+    if(IsHost() && peer==GetLocalPeerId()) return luxchat::DefaultNameColor;
+    const auto found=mPeers.find(peer);
+    if(IsHost() && found!=mPeers.end() && found->second.greeted) return found->second.chatNameColor;
+    for(auto message=mChatMessages.rbegin();message!=mChatMessages.rend();++message)
+        if(message->peer==peer) return message->nameColor;
+    return luxchat::DefaultNameColor;
+}
+void cLuxMultiplayer::RelayChatMessage(uint32_t peer,const tString& text) {
+    ChatMessage message;message.peer=peer;message.text=text;
+    message.nameColor=GetChatNameColor(peer);
+    const uint64_t identity=IsSteamSession()?mTransport.GetSteamPeerID(peer):0;
+    message.name=SanitizeChatName(identity?mTransport.GetSteamPlayerName(identity):"",peer);
+    AppendChatMessage(mChatMessages,message);
+    const auto packet=WriteChatDelivery(message);
+    // Send even during map loading. This session-level stream is independent
+    // of script initialization and never enters the map's replay history.
+    for(auto& recipient:mPeers) if(recipient.second.greeted && !Send(recipient.first,packet,true))
+        recipient.second.reliableSendFailed=true;
+}
 bool cLuxMultiplayer::IsSteamOverlayActive() const {return hpl::cNetworkTransport::SteamOverlayActive();}
 const hpl::cSteamAvatarImage* cLuxMultiplayer::GetPlayerSteamAvatar(uint32_t peer) {
     if(!IsSteamSession()) return NULL;
@@ -659,12 +692,25 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
             MultiplayerLog("host received Hello (peer %u, version=%u, already_greeted=%d, epoch %u).",peer,version,state.greeted,mlMapEpoch);
             if(!r.Done() || state.greeted || version!=ProtocolVersion) {RejectPeer(peer,"Multiplayer protocol mismatch. Use the same Amnesia build as the host.");return;}
             if(!mbHistoryComplete) {RejectPeer(peer,"This session has exceeded the late-join script history limit. Join after the next map change.");return;}
+            std::vector<uint32_t> colors={luxchat::DefaultNameColor};
+            for(const auto& connected:mPeers) if(connected.second.greeted) colors.push_back(connected.second.chatNameColor);
+            state.chatNameColor=luxchat::ChooseNameColor(colors);
             state.greeted=true;
             BroadcastPlayerIdentities();
             if(mbMapPreparing) SendMapPreparation(peer,state);
             return;
         }
         if(!state.greeted) {RejectPeer(peer,"Expected multiplayer handshake.");return;}
+        if(type==ChatSubmit) {
+            tString text;
+            if(!ReadChatSubmit(r,text)) {RejectPeer(peer,"Malformed chat message.");return;}
+            if(!state.chatRateLimit.CanSend()) {
+                LogDiagnosticLimited("chat-rate-limit","Ignored chat message from peer %u during cooldown.",peer);return;
+            }
+            state.chatRateLimit.Sent();RelayChatMessage(peer,text);return;
+        }
+        // A client cannot submit a sender, display name, or delivery packet.
+        if(type==ChatDeliver) {RejectPeer(peer,"Unexpected client chat delivery.");return;}
         if(type==MapRequest) {
             const uint32_t epoch=r.U32();const uint8_t reuse=r.U8();const tString hash=r.String(64);
             if(!r.Done() || reuse>1 || !ValidMapHash(hash)) {RejectPeer(peer,"Malformed map request.");return;}
@@ -839,6 +885,11 @@ void cLuxMultiplayer::HandlePacket(uint32_t peer,const std::vector<uint8_t>& dat
         RejectPeer(peer,"Unexpected client packet.");return;
     }
     if(!IsClient() || peer!=0) return;
+    if(type==ChatDeliver) {
+        ChatMessage message;
+        if(!ReadChatDelivery(r,message)) {RejectPeer(0,"Malformed chat message from host.");return;}
+        AppendChatMessage(mChatMessages,message);return;
+    }
     if(type==PlayerIdentities) {
         PeerSteamIdentities identities;
         if(!IsSteamSession() || !ReadPlayerIdentities(r,identities) || identities[0]!=mTransport.GetSteamPeerID(0)) {
@@ -1329,6 +1380,7 @@ bool cLuxMultiplayer::LoadReceivedMap() {
     return ok;
 }
 void cLuxMultiplayer::Update(float dt) {
+    mLocalChatRateLimit.Update(dt);AgeChatMessages(mChatMessages,dt);
     mpUI->Update(dt);
     if(mbReturnToMenu) {
         mbReturnToMenu=false;mbLoading=true;
@@ -1364,6 +1416,7 @@ void cLuxMultiplayer::Update(float dt) {
         }
         std::vector<uint32_t> expired;
         for(auto& p:mPeers) {
+            p.second.chatRateLimit.Update(dt);
             p.second.age+=dt;p.second.requestCooldown=std::max(0.0f,p.second.requestCooldown-dt);
             p.second.interactionTokens=std::min(32.0f,p.second.interactionTokens+32.0f*dt);
             const unsigned long now=cPlatform::GetApplicationTime();
@@ -1925,6 +1978,7 @@ void cLuxMultiplayer::NotifyHostMapChange(const tString& map) {
     if(!IsHost() || !mlMapEpoch) return;
     msPreparingMap=cString::GetFileName(cString::SetFileExt(map,"map"));
     if(!SafeRelativePath(msPreparingMap) || msPreparingMap.size()>256) return;
+    CloseChat();
     ++mlMapTransition;if(!mlMapTransition) ++mlMapTransition;
     mbMapPreparing=true;
     MultiplayerLog("host preparing map '%s' (current epoch %u, transition %u).",msPreparingMap.c_str(),mlMapEpoch,mlMapTransition);

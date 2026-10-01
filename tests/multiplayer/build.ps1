@@ -8,6 +8,12 @@ $ErrorActionPreference = 'Stop'
 $context = Get-MultiplayerTestContext $Kind
 $workspace = $context.Workspace
 $steamEnabled = if($Backend -eq 'Steamworks') { 'true' } else { 'false' }
+$fontOutput=Join-Path $context.Output 'fonts'
+New-Item -ItemType Directory -Force -Path $fontOutput | Out-Null
+foreach($fontAsset in @('NotoSans-Regular.ttf','OFL.txt')) {
+    Copy-Item -LiteralPath (Join-Path $workspace "amnesia/fonts/$fontAsset") -Destination $fontOutput -Force
+}
+Copy-Item -LiteralPath (Join-Path $workspace 'amnesia/fonts/twemoji') -Destination $fontOutput -Recurse -Force
 if(-not $SkipGameBuild) {
     & $context.MSBuild (Join-Path $workspace 'amnesia/src/game/Lux.vcxproj') '/p:Configuration=Debug' '/p:Platform=x64' "/p:HplUseSteamworks=$steamEnabled" ("/p:SolutionDir=$workspace\") ("/p:WindowsTargetPlatformVersion="+$context.SdkVersion) /m /v:minimal /nologo
     if($LASTEXITCODE -ne 0) { throw 'Build the Debug x64 game successfully before running these tests.' }
@@ -45,6 +51,7 @@ try {
         $additionalSources=@('imgui.cpp','imgui_draw.cpp','imgui_tables.cpp','imgui_widgets.cpp','backends/imgui_impl_sdl2.cpp','backends/imgui_impl_opengl3.cpp') | ForEach-Object {
             Join-Path $workspace "HPL2/dependencies/sources/imgui/$_"
         }
+        $additionalSources += Join-Path $workspace 'amnesia/src/game/LuxMultiplayerChatEmoji.cpp'
     }
     $libraries=$libraryNames | ForEach-Object { Join-Path $libDirectory "$_.lib" }
     $backendOptions=@()

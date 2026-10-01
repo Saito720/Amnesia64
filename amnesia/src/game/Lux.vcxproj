@@ -171,6 +171,7 @@
     <ClCompile Include="LuxMultiplayerScript.cpp" />
     <ClCompile Include="LuxScriptRuntime.cpp" />
     <ClCompile Include="LuxMultiplayerUI.cpp" />
+    <ClCompile Include="LuxMultiplayerChatEmoji.cpp" />
     <ClCompile Include="LuxMultiplayerWorld.cpp" />
     <ClCompile Include="..\..\..\HPL2\dependencies\sources\imgui\imgui.cpp" />
     <ClCompile Include="..\..\..\HPL2\dependencies\sources\imgui\imgui_draw.cpp" />
@@ -306,6 +307,10 @@
     <ClInclude Include="LuxMultiplayerProtocol.h" />
     <ClInclude Include="LuxMultiplayerIdentityProtocol.h" />
     <ClInclude Include="LuxMultiplayerUI.h" />
+    <ClInclude Include="LuxMultiplayerChatProtocol.h" />
+    <ClInclude Include="LuxMultiplayerChatLayout.h" />
+    <ClInclude Include="LuxMultiplayerChatColors.h" />
+    <ClInclude Include="LuxMultiplayerChatEmoji.h" />
     <ClInclude Include="LuxMultiplayerWorld.h" />
     <ClInclude Include="LuxMultiplayerWorldProtocol.h" />
     <ClInclude Include="LuxBase.h" />
@@ -419,6 +424,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Lux.ico" />
+    <ChatFontAsset Include="..\..\fonts\NotoSans-Regular.ttf" />
+    <ChatFontAsset Include="..\..\fonts\OFL.txt" />
+    <ChatEmojiAsset Include="..\..\fonts\twemoji\*" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="Lux.rc" />
@@ -436,6 +444,12 @@
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Import Project="..\..\..\HPL2\dependencies\steamworks\Deploy.targets" />
+  <Target Name="DeployChatFont" AfterTargets="Build">
+    <MakeDir Directories="$(TargetDir)fonts" />
+    <Copy SourceFiles="@(ChatFontAsset)" DestinationFolder="$(TargetDir)fonts" SkipUnchangedFiles="true" />
+    <MakeDir Directories="$(TargetDir)fonts\twemoji" />
+    <Copy SourceFiles="@(ChatEmojiAsset)" DestinationFolder="$(TargetDir)fonts\twemoji" SkipUnchangedFiles="true" />
+  </Target>
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>

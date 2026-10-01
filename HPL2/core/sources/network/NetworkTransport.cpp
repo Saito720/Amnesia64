@@ -402,6 +402,7 @@ namespace hpl
     bool cNetworkTransport::IsSteamSession() const { return false; }
     uint64_t cNetworkTransport::GetSteamLobbyID() const { return 0; }
     uint64_t cNetworkTransport::GetSteamPeerID(uint32_t) const { return 0; }
+    std::string cNetworkTransport::GetSteamPlayerName(uint64_t) { return ""; }
     const cSteamAvatarImage* cNetworkTransport::GetSteamAvatar(uint64_t) { return nullptr; }
     void cNetworkTransport::SetSteamMapName(const std::string&) {}
     bool cNetworkTransport::RequestSteamLobbies(std::string& error) { return InitializeSteam(error); }

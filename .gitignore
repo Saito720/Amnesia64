@@ -355,3 +355,6 @@ MigrationBackup/
 
 # Ionide (cross platform F# VS Code tools) working folder
 .ionide/
+
+# Vendored llama.cpp has source directories named x86, arm and debug.
+!HPL2/dependencies/sources/llama.cpp/**

@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 2.8.11)
+cmake_minimum_required (VERSION 3.14)
 project(HPL2)
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -39,6 +39,7 @@ ELSEIF(LINUX)
 ENDIF()
 
 OPTION(USE_SDL2 "Use SDL2 instead of SDL1.2" ON)
+OPTION(HPL2_WITH_LLAMA "Embed the llama.cpp CPU and multimodal backend (64-bit only)" OFF)
 
 add_subdirectory(../dependencies/OALWrapper OALWrapper)
 
@@ -254,6 +255,12 @@ add_library(HPL2 STATIC
     ${version_sources}
     ${impl_sources}
 )
+target_compile_features(HPL2 PRIVATE cxx_std_11)
+
+if(HPL2_WITH_LLAMA)
+    add_subdirectory(../dependencies/llama llama)
+    target_link_libraries(HPL2 hpl2_llama_backend)
+endif()
 
 target_include_directories(HPL2
     ${HPL2_INCLUDES}

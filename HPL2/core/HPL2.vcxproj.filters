@@ -861,6 +861,9 @@
     <ClInclude Include="include\resources\XmlDocument.h">
       <Filter>Resources</Filter>
     </ClInclude>
+    <ClInclude Include="include\ai\LlamaInference.h">
+      <Filter>AI</Filter>
+    </ClInclude>
     <ClInclude Include="include\ai\AI.h">
       <Filter>AI</Filter>
     </ClInclude>
@@ -1766,6 +1769,9 @@
     </ClCompile>
     <ClCompile Include="sources\resources\XmlDocument.cpp">
       <Filter>Resources</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\ai\LlamaInference.cpp">
+      <Filter>AI</Filter>
     </ClCompile>
     <ClCompile Include="sources\ai\AI.cpp">
       <Filter>AI</Filter>

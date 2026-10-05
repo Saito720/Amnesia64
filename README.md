@@ -24,3 +24,11 @@ Executables and libraries are written to `x64/Debug` or `x64/Release` for x64,
 and `Debug` or `Release` for x86.
 
 See [OpenAL Soft build and update details](HPL2/dependencies/sources/OPENAL_SOFT.md).
+
+## Embedded language and vision models
+
+HPL2 has an optional, statically linked llama.cpp service for asynchronous
+local GGUF inference, including RGB image input through `libmtmd`. Enable it
+in an x64 build with `/p:HPL2WithLlama=true`; models are loaded explicitly at
+runtime and supplied separately. See [the engine API and usage guide](HPL2/core/doc/LlamaInference.md)
+and [the dependency build details](HPL2/dependencies/llama/README.md).

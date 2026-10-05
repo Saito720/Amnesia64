@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/ggml-org/llama.cpp",
+  "commit": "50569eb87df530daff11afda229ceb9ab8e6cae8",
+  "vendor_path": "../sources/llama.cpp",
+  "paths": [
+    "CMakeLists.txt", "LICENSE", "AUTHORS",
+    "cmake", "include", "src", "licenses",
+    "ggml/CMakeLists.txt", "ggml/cmake", "ggml/include", "ggml/src",
+    "vendor/CMakeLists.txt", "vendor/hash", "vendor/miniaudio",
+    "vendor/nlohmann", "vendor/sheredom", "vendor/stb",
+    "tools/mtmd/* (root files only)", "tools/mtmd/models", "tools/mtmd/debug"
+  ]
+}

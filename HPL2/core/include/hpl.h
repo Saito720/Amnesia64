@@ -43,6 +43,7 @@
 #include "input/LowLevelInput.h"
 
 #include "engine/Engine.h"
+#include "ai/LlamaInference.h"
 #include "engine/Updater.h"
 #include "engine/LowLevelEngineSetup.h"
 #include "engine/Updateable.h"

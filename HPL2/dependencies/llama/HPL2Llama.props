@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <HPL2WithLlama Condition="'$(HPL2WithLlama)'==''">false</HPL2WithLlama>
+    <HPL2LlamaSourceDir>$(MSBuildThisFileDirectory)..\sources\llama.cpp\</HPL2LlamaSourceDir>
+    <HPL2LlamaBuildDir>$(MSBuildThisFileDirectory)..\..\..\bld\llama.cpp\$(PlatformToolset)\$(Platform)</HPL2LlamaBuildDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(HPL2WithLlama)'=='true'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(HPL2LlamaSourceDir)include;$(HPL2LlamaSourceDir)ggml\include;$(HPL2LlamaSourceDir)tools\mtmd;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>HPL2_WITH_LLAMA=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Lib>
+      <AdditionalDependencies>$(HPL2LlamaBuildDir)\lib\$(Configuration)\HPL2Llama.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Lib>
+  </ItemDefinitionGroup>
+  <Target Name="ValidateHPL2LlamaPlatform" BeforeTargets="PrepareForBuild" Condition="'$(HPL2WithLlama)'=='true'">
+    <Error Condition="'$(Platform)'!='x64'" Text="HPL2WithLlama requires Platform=x64. Use /p:Platform=x64 /p:HPL2WithLlama=true." />
+  </Target>
+</Project>

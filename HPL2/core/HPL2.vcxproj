@@ -154,7 +154,9 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
   </ItemDefinitionGroup>
+  <Import Project="..\dependencies\llama\HPL2Llama.props" />
   <ItemGroup>
+    <ClInclude Include="include\ai\LlamaInference.h" />
     <ClInclude Include="include\impl\GamepadSDL2.h" />
     <ClInclude Include="include\impl\MeshLoaderFBX.h" />
     <ClInclude Include="include\gui\GuiPopUpUIKeyboard.h" />
@@ -730,6 +732,7 @@
     <ClCompile Include="sources\resources\WorldLoaderHandler.cpp" />
     <ClCompile Include="sources\resources\WorldLoaderHplMap.cpp" />
     <ClCompile Include="sources\resources\XmlDocument.cpp" />
+    <ClCompile Include="sources\ai\LlamaInference.cpp" />
     <ClCompile Include="sources\ai\AI.cpp" />
     <ClCompile Include="sources\ai\AINodeContainer.cpp" />
     <ClCompile Include="sources\ai\AINodeGenerator.cpp" />
@@ -780,6 +783,10 @@
     <ClCompile Include="sources\generate\VoxelMap.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\dependencies\llama\LlamaCpp.vcxproj" Condition="'$(HPL2WithLlama)'=='true'">
+      <Project>{7d61e937-ad4a-49b2-86c8-8ae3bc9777eb}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
     <ProjectReference Include="..\dependencies\sources\openal-soft\OpenALSoft.vcxproj">
       <Project>{d902fb6c-e99b-4f06-970b-f30c0a021b1d}</Project>
     </ProjectReference>

@@ -23,6 +23,7 @@
 #include "sound/Sound.h"
 #include "physics/Physics.h"
 #include "ai/AI.h"
+#include "ai/LlamaInference.h"
 #include "resources/Resources.h"
 #include "graphics/Graphics.h"
 #include "gui/Gui.h"
@@ -247,6 +248,9 @@ namespace hpl {
 		Log(" Creating ai module\n");
 		mpAI = mpGameSetup->CreateAI();
 
+		// Model loading starts explicitly through GetLlamaInference()->LoadAsync.
+		mpLlamaInference = hplNew(cLlamaInference,());
+
 		Log(" Creating gui module\n");
 		mpGui = hplNew(cGui,());
 
@@ -365,6 +369,8 @@ namespace hpl {
 
 	cEngine::~cEngine()
 	{
+		// Join native inference before any game/engine modules disappear.
+		hplDelete(mpLlamaInference);
 		Log("--------------------------------------------------------\n\n");
 
 		hplDelete(mpLogicTimer);

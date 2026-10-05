@@ -38,6 +38,7 @@ namespace hpl {
 	class cSound;
 	class cPhysics;
 	class cAI;
+	class cLlamaInference;
 	class cHaptic;
 	class cGui;
 	class cGenerate;
@@ -124,6 +125,7 @@ namespace hpl {
 		cSound* GetSound(){ return mpSound;}
 		cPhysics* GetPhysics(){ return mpPhysics;}
 		cAI* GetAI(){ return mpAI;}
+		cLlamaInference* GetLlamaInference(){ return mpLlamaInference;}
 		cGui* GetGui(){ return mpGui;}
 		cHaptic* GetHaptic(){ return mpHaptic;}
 		cGenerate* GetGenerate(){ return mpGenerate;}
@@ -233,6 +235,7 @@ namespace hpl {
 		cSound *mpSound;
 		cPhysics *mpPhysics;
 		cAI *mpAI;
+		cLlamaInference *mpLlamaInference;
 		cHaptic *mpHaptic;
 		cGui *mpGui;
 		cGenerate* mpGenerate;

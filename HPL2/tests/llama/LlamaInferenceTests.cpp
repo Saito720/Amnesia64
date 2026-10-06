@@ -177,8 +177,20 @@ void TestBackendLifecycle()
     Require(hpl::cLlamaInference::IsSupported(), "Enabled build reports unsupported backend");
     hpl::cLlamaModelConfig gpuConfig = config;
     gpuConfig.mlGpuLayers = 1;
-    Require(!inference.LoadAsync(gpuConfig, error) && !error.empty(),
-            "CPU-only bridge accepted requested GPU layers");
+    if(hpl::cLlamaInference::IsGpuSupported())
+    {
+        Require(inference.LoadAsync(gpuConfig, error),
+                "Available GPU backend rejected requested GPU layers: " + error);
+        WaitForLoad(inference, std::chrono::seconds(15));
+        Require(inference.GetState() == hpl::eLlamaState_Failed && !inference.GetLastError().empty(),
+                "GPU missing-model load did not fail asynchronously");
+        inference.Unload();
+    }
+    else
+    {
+        Require(!inference.LoadAsync(gpuConfig, error) && !error.empty(),
+                "Unavailable GPU backend accepted requested GPU layers");
+    }
     for(int attempt = 0; attempt < 2; ++attempt)
     {
         if(attempt == 1)
@@ -203,6 +215,7 @@ void TestBackendLifecycle()
     Require(inference.GetState() == hpl::eLlamaState_Unloaded, "Unload during loading did not restore state");
 #else
     Require(!hpl::cLlamaInference::IsSupported(), "Disabled build reports supported backend");
+    Require(!hpl::cLlamaInference::IsGpuSupported(), "Disabled build reports available GPU support");
     Require(!inference.LoadAsync(config, error) && !error.empty(), "Disabled backend accepted model loading");
 #endif
 
@@ -318,6 +331,9 @@ void SmokeTest(int alArgc, char** apArgv)
     }
     Require(hpl::cLlamaInference::IsSupported(), "Smoke test requires a build with HPL2_WITH_LLAMA=ON");
     Require(!config.msModelPath.empty(), "Smoke test requires --model PATH");
+    if(config.mlGpuLayers > 0)
+        Require(hpl::cLlamaInference::IsGpuSupported(),
+                "GPU smoke test requires an available GPU device and an accelerated backend");
     if(!imagePath.empty())
     {
         Require(!config.msProjectorPath.empty(), "Image smoke test requires --projector PATH");
@@ -326,21 +342,29 @@ void SmokeTest(int alArgc, char** apArgv)
 
     hpl::cLlamaInference inference;
     std::string error;
+    std::cout << "Smoke execution: " << (config.mlGpuLayers > 0 ? "GPU" : "CPU")
+              << " (requested GPU layers: " << config.mlGpuLayers << ").\n";
+    const auto loadStart = std::chrono::steady_clock::now();
     Require(inference.LoadAsync(config, error), "Could not start model loading: " + error);
     WaitForLoad(inference, std::chrono::minutes(5));
     Require(inference.GetState() == hpl::eLlamaState_Ready, "Could not load model: " + inference.GetLastError());
+    std::cout << "Model ready after " << std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - loadStart).count() << " ms.\n";
 
     hpl::cLlamaRequest oversizedOutput = request;
     oversizedOutput.mlMaxTokens = config.mlContextSize;
     Require(inference.Submit(oversizedOutput, error) == 0 && !error.empty(),
             "Output limit that fills the context was accepted");
 
+    const auto generationStart = std::chrono::steady_clock::now();
     const uint64_t id = inference.Submit(request, error);
     Require(id != 0, "Could not submit smoke request: " + error);
     Require(inference.Submit(request, error) == 0 && !error.empty(), "Outstanding request limit was not enforced");
     const hpl::cLlamaResult result = WaitForResult(inference, id);
     Require(result.msError.empty() && !result.mbCancelled, "Generation failed: " + result.msError);
     Require(result.mlGeneratedTokens > 0, "Model did not generate any tokens");
+    std::cout << "Request completed after " << std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - generationStart).count() << " ms.\n";
     std::cout << "Generated " << result.mlGeneratedTokens << " tokens:\n" << result.msText << '\n';
     Require(!inference.Cancel(id), "Completed request accepted cancellation");
 
@@ -413,6 +437,29 @@ void SmokeTest(int alArgc, char** apArgv)
                 "Immediate Unload of valid model did not restore Unloaded state");
     }
     std::cout << "Active shutdown, native reload, projector failure, and concurrent service checks passed.\n";
+
+    if(config.mlGpuLayers > 0)
+    {
+        // A CUDA-enabled executable must still support explicitly selected CPU
+        // inference after a GPU context has been used and unloaded. Do not
+        // compare CPU/GPU output bytes: floating-point kernels may differ.
+        hpl::cLlamaModelConfig cpuConfig = config;
+        cpuConfig.mlGpuLayers = 0;
+        cpuConfig.msProjectorPath.clear();
+        Require(inference.LoadAsync(cpuConfig, error), "Could not start CPU load after GPU shutdown: " + error);
+        WaitForLoad(inference, std::chrono::minutes(5));
+        Require(inference.GetState() == hpl::eLlamaState_Ready,
+                "CPU mode failed after GPU shutdown: " + inference.GetLastError());
+        hpl::cLlamaRequest cpuRequest = MakeRequest();
+        cpuRequest.mlMaxTokens = 16;
+        const uint64_t cpuId = inference.Submit(cpuRequest, error);
+        Require(cpuId != 0, "CPU mode rejected work after GPU shutdown: " + error);
+        const hpl::cLlamaResult cpuResult = WaitForResult(inference, cpuId);
+        Require(cpuResult.msError.empty() && !cpuResult.mbCancelled && cpuResult.mlGeneratedTokens > 0,
+                "CPU generation failed after GPU shutdown: " + cpuResult.msError);
+        inference.Unload();
+        std::cout << "Explicit CPU generation after GPU shutdown passed.\n";
+    }
 }
 
 } // namespace

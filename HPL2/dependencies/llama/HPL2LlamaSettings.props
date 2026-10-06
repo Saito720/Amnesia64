@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <HPL2WithLlama Condition="'$(HPL2WithLlama)'==''">false</HPL2WithLlama>
+    <HPL2LlamaBackend Condition="'$(HPL2LlamaBackend)'==''">CPU</HPL2LlamaBackend>
+    <HPL2LlamaSourceDir>$(MSBuildThisFileDirectory)..\sources\llama.cpp\</HPL2LlamaSourceDir>
+    <HPL2LlamaBuildDir>$(MSBuildThisFileDirectory)..\..\..\bld\llama.cpp\$(PlatformToolset)\$(Platform)\$(HPL2LlamaBackend)</HPL2LlamaBuildDir>
+    <HPL2LlamaCudaEnabled>OFF</HPL2LlamaCudaEnabled>
+    <HPL2LlamaCudaEnabled Condition="'$(HPL2LlamaBackend)'=='CUDA'">ON</HPL2LlamaCudaEnabled>
+    <HPL2LlamaCudaDefine>0</HPL2LlamaCudaDefine>
+    <HPL2LlamaCudaDefine Condition="'$(HPL2LlamaBackend)'=='CUDA'">1</HPL2LlamaCudaDefine>
+    <HPL2CudaToolkitRoot Condition="'$(HPL2CudaToolkitRoot)'==''">$(CUDA_PATH)</HPL2CudaToolkitRoot>
+    <HPL2CudaToolkitDirectory Condition="'$(HPL2CudaToolkitRoot)'!=''">$([System.IO.Path]::GetFullPath('$(HPL2CudaToolkitRoot)\.'))</HPL2CudaToolkitDirectory>
+  </PropertyGroup>
+  <Target Name="ValidateHPL2LlamaSettings" BeforeTargets="PrepareForBuild" Condition="'$(HPL2WithLlama)'=='true'">
+    <Error Condition="'$(Platform)'!='x64'" Text="HPL2WithLlama requires Platform=x64." />
+    <Error Condition="'$(HPL2LlamaBackend)'!='CPU' and '$(HPL2LlamaBackend)'!='CUDA'" Text="HPL2LlamaBackend must be CPU or CUDA." />
+  </Target>
+</Project>

@@ -21,15 +21,21 @@
     <UseDebugLibraries Condition="'$(Configuration)'!='Debug'">false</UseDebugLibraries>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="HPL2LlamaSettings.props" />
   <PropertyGroup>
-    <HPL2WithLlama Condition="'$(HPL2WithLlama)'==''">false</HPL2WithLlama>
     <CMakeExecutable Condition="'$(CMakeExecutable)'=='' and Exists('$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe')">$(VSInstallDir)Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe</CMakeExecutable>
     <CMakeExecutable Condition="'$(CMakeExecutable)'==''">cmake.exe</CMakeExecutable>
+    <HPL2LlamaBuildJobs Condition="'$(HPL2LlamaBuildJobs)'==''">4</HPL2LlamaBuildJobs>
     <RepositoryRoot>$(ProjectDir)..\..\..\</RepositoryRoot>
-    <LlamaBuildDir>$(RepositoryRoot)bld\llama.cpp\$(PlatformToolset)\$(Platform)</LlamaBuildDir>
+    <LlamaBuildDir>$(HPL2LlamaBuildDir)</LlamaBuildDir>
     <LlamaVisualStudioInstance>$([System.IO.Path]::GetFullPath('$(VSInstallDir).'))</LlamaVisualStudioInstance>
-    <LlamaConfigureCommand>&quot;$(CMakeExecutable)&quot; -S &quot;$(ProjectDir).&quot; -B &quot;$(LlamaBuildDir)&quot; -G &quot;Visual Studio 18 2026&quot; -A &quot;$(Platform)&quot; -T &quot;$(PlatformToolset)&quot; &quot;-DCMAKE_GENERATOR_INSTANCE=$(LlamaVisualStudioInstance)&quot;</LlamaConfigureCommand>
-    <IntDir>$(RepositoryRoot)bld\llama.cpp-vs\$(Platform)\$(Configuration)\</IntDir>
+    <LlamaToolset>$(PlatformToolset)</LlamaToolset>
+    <LlamaToolset Condition="'$(HPL2LlamaBackend)'=='CUDA' and '$(HPL2CudaToolkitDirectory)'!=''">$(PlatformToolset),cuda=$(HPL2CudaToolkitDirectory)</LlamaToolset>
+    <LlamaCudaOptions>-DHPL2_LLAMA_CUDA=$(HPL2LlamaCudaEnabled)</LlamaCudaOptions>
+    <LlamaCudaOptions Condition="'$(HPL2LlamaBackend)'=='CUDA' and '$(HPL2CudaToolkitDirectory)'!=''">$(LlamaCudaOptions) &quot;-DCUDAToolkit_ROOT=$(HPL2CudaToolkitDirectory)&quot;</LlamaCudaOptions>
+    <LlamaCudaOptions Condition="'$(HPL2LlamaBackend)'=='CUDA' and '$(HPL2CudaArchitectures)'!=''">$(LlamaCudaOptions) &quot;-DCMAKE_CUDA_ARCHITECTURES=$(HPL2CudaArchitectures)&quot;</LlamaCudaOptions>
+    <LlamaConfigureCommand>&quot;$(CMakeExecutable)&quot; -S &quot;$(ProjectDir).&quot; -B &quot;$(LlamaBuildDir)&quot; -G &quot;Visual Studio 18 2026&quot; -A &quot;$(Platform)&quot; -T &quot;$(LlamaToolset)&quot; &quot;-DCMAKE_GENERATOR_INSTANCE=$(LlamaVisualStudioInstance)&quot; $(LlamaCudaOptions)</LlamaConfigureCommand>
+    <IntDir>$(RepositoryRoot)bld\llama.cpp-vs\$(Platform)\$(HPL2LlamaBackend)\$(Configuration)\</IntDir>
     <OutDir>$(LlamaBuildDir)\lib\$(Configuration)\</OutDir>
     <NMakeOutput>$(OutDir)HPL2Llama.lib</NMakeOutput>
     <NMakeBuildCommandLine>echo Embedded llama.cpp is disabled. Enable with /p:HPL2WithLlama=true /p:Platform=x64.</NMakeBuildCommandLine>
@@ -37,18 +43,16 @@
     <NMakeCleanCommandLine>echo Embedded llama.cpp is disabled.</NMakeCleanCommandLine>
   </PropertyGroup>
   <PropertyGroup Condition="'$(HPL2WithLlama)'=='true'">
-    <NMakeBuildCommandLine>$(LlamaConfigureCommand) &amp;&amp; &quot;$(CMakeExecutable)&quot; --build &quot;$(LlamaBuildDir)&quot; --config $(Configuration) --target HPL2LlamaArchive --parallel</NMakeBuildCommandLine>
-    <NMakeReBuildCommandLine>$(LlamaConfigureCommand) &amp;&amp; &quot;$(CMakeExecutable)&quot; --build &quot;$(LlamaBuildDir)&quot; --config $(Configuration) --target HPL2LlamaArchive --clean-first --parallel</NMakeReBuildCommandLine>
+    <NMakeBuildCommandLine>$(LlamaConfigureCommand) &amp;&amp; &quot;$(CMakeExecutable)&quot; --build &quot;$(LlamaBuildDir)&quot; --config $(Configuration) --target HPL2LlamaArchive --parallel $(HPL2LlamaBuildJobs)</NMakeBuildCommandLine>
+    <NMakeReBuildCommandLine>$(LlamaConfigureCommand) &amp;&amp; &quot;$(CMakeExecutable)&quot; --build &quot;$(LlamaBuildDir)&quot; --config $(Configuration) --target HPL2LlamaArchive --clean-first --parallel $(HPL2LlamaBuildJobs)</NMakeReBuildCommandLine>
     <NMakeCleanCommandLine>if exist &quot;$(LlamaBuildDir)\CMakeCache.txt&quot; &quot;$(CMakeExecutable)&quot; --build &quot;$(LlamaBuildDir)&quot; --config $(Configuration) --target clean</NMakeCleanCommandLine>
   </PropertyGroup>
   <ItemGroup>
     <None Include="CMakeLists.txt" />
     <None Include="HPL2Llama.props" />
+    <None Include="HPL2LlamaSettings.props" />
     <None Include="README.md" />
     <None Include="UPSTREAM.json" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <Target Name="ValidateLlamaPlatform" BeforeTargets="PrepareForBuild" Condition="'$(HPL2WithLlama)'=='true'">
-    <Error Condition="'$(Platform)'!='x64'" Text="HPL2WithLlama requires Platform=x64." />
-  </Target>
 </Project>

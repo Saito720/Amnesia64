@@ -1,5 +1,12 @@
 #include "ai/LlamaInference.h"
 
+#if defined(_MSC_VER) && defined(_DLL) && defined(HPL2_LLAMA_CUDA) && HPL2_LLAMA_CUDA
+// NVIDIA's Windows driver-loader library requests LIBCMT despite using only
+// Windows loader APIs and _fltused. Keep this service's DLL CRT (MD/MDd);
+// carry the correction inside HPL2.lib so its consumers inherit it too.
+#pragma comment(linker, "/NODEFAULTLIB:LIBCMT")
+#endif
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -303,6 +310,11 @@ struct cLlamaInference::cImpl
             cBackendLease lease;
             llama_model_params modelParams = llama_model_default_params();
             modelParams.n_gpu_layers = mConfig.mlGpuLayers;
+            // n_gpu_layers=0 alone still leaves GPU devices available to llama's
+            // scheduler. An explicit empty list preserves a true CPU-only mode
+            // in CUDA-enabled builds, including context and host operations.
+            ggml_backend_dev_t cpuDevices[] = {nullptr};
+            if(mConfig.mlGpuLayers == 0) modelParams.devices = cpuDevices;
             modelParams.progress_callback = LoadProgress;
             modelParams.progress_callback_user_data = this;
             tModel model(llama_model_load_from_file(mConfig.msModelPath.c_str(), modelParams), llama_model_free);
@@ -316,6 +328,8 @@ struct cLlamaInference::cImpl
             contextParams.n_ubatch = mConfig.mlBatchSize;
             contextParams.n_threads = mConfig.mlThreads;
             contextParams.n_threads_batch = mConfig.mlThreads;
+            contextParams.offload_kqv = mConfig.mlGpuLayers > 0;
+            contextParams.op_offload = mConfig.mlGpuLayers > 0;
             contextParams.abort_callback = AbortCallback;
             contextParams.abort_callback_data = this;
             tContext context(llama_init_from_model(model.get(), contextParams), llama_free);
@@ -392,6 +406,19 @@ bool cLlamaInference::IsSupported()
 #endif
 }
 
+bool cLlamaInference::IsGpuSupported()
+{
+#if defined(HPL2_WITH_LLAMA) && HPL2_WITH_LLAMA
+    // Serialize device discovery with process-wide backend initialization.
+    std::lock_guard<std::mutex> lock(gBackendMutex);
+    if(!ggml_backend_reg_count()) ggml_backend_load_all();
+    return ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU) != nullptr ||
+           ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_IGPU) != nullptr;
+#else
+    return false;
+#endif
+}
+
 bool cLlamaInference::ValidateRequest(const cLlamaRequest& aRequest, std::string& asError)
 {
     asError.clear();
@@ -419,8 +446,8 @@ bool cLlamaInference::LoadAsync(const cLlamaModelConfig& aConfig, std::string& a
     if(!ValidateConfig(aConfig, asError)) return false;
     if(!IsSupported()) return Reject(asError, "HPL2 was built without llama.cpp; enable HPL2WithLlama/HPL2_WITH_LLAMA.");
 #if defined(HPL2_WITH_LLAMA) && HPL2_WITH_LLAMA
-    if(aConfig.mlGpuLayers > 0 && !llama_supports_gpu_offload())
-        return Reject(asError, "This embedded backend has no GPU support; set mlGpuLayers to zero.");
+    if(aConfig.mlGpuLayers > 0 && !IsGpuSupported())
+        return Reject(asError, "No GPU device is available to the embedded backend; build with CUDA and a compatible driver, or set mlGpuLayers to zero.");
 #endif
     std::lock_guard<std::mutex> lock(mpImpl->mMutex);
     if(mpImpl->mState != eLlamaState_Unloaded)

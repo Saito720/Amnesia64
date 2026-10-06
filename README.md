@@ -4,7 +4,7 @@
 ## Key changes:
 - Can be compiled in both 32-bit and 64-bit modes using Visual Studio 2026 with the v145 build tools.
 - Single solution file for all projects (main game, HPL2, dependencies and editors). No need to compile the engine separately.
-- Produces self-contained .exe files without dependency on 3rd party dlls (this prevents cluttering user's game folder with 64-bit dlls).
+- Default and CPU builds produce self-contained .exe files without dependency on 3rd party dlls. Optional CUDA inference deploys NVIDIA runtime DLLs beside the executables.
 - Some libraries were changed, most notably:
 	- SDL2 was upgraded from 2.0.4 to 2.0.12
 	- alut was replaced with freealut
@@ -32,3 +32,8 @@ local GGUF inference, including RGB image input through `libmtmd`. Enable it
 in an x64 build with `/p:HPL2WithLlama=true`; models are loaded explicitly at
 runtime and supplied separately. See [the engine API and usage guide](HPL2/core/doc/LlamaInference.md)
 and [the dependency build details](HPL2/dependencies/llama/README.md).
+
+For NVIDIA GPU inference, also pass `/p:HPL2LlamaBackend=CUDA` and install CUDA
+Toolkit 13.2 or newer for the Visual Studio 2026 build. CPU remains the default.
+The build copies the required CUDA runtime and cuBLAS DLLs into the output
+directory; a compatible NVIDIA driver is required at runtime.

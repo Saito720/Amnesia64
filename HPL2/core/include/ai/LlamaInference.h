@@ -25,7 +25,7 @@ struct cLlamaModelConfig
     int mlContextSize;
     int mlBatchSize;
     int mlThreads;
-    int mlGpuLayers;            // CPU by default; requires a compiled GPU backend.
+    int mlGpuLayers;            // Zero forces CPU; positive values require an available GPU backend.
     int mlMaxImageTokens;       // Dynamic-resolution projectors only.
     unsigned mlMaxOutstandingRequests;
 };
@@ -69,6 +69,9 @@ public:
     ~cLlamaInference();
 
     static bool IsSupported();
+    // Checks for an available GPU device, not only whether GPU support was compiled.
+    // May initialize native device discovery; no model is loaded.
+    static bool IsGpuSupported();
     static bool ValidateRequest(const cLlamaRequest& aRequest, std::string& asError);
 
     // Starts loading without blocking the game loop. Requires Unloaded state;
@@ -84,7 +87,7 @@ public:
     bool PollResult(cLlamaResult& aResult);
 
     // Cancels work, joins the worker, releases models and discards all requests
-    // and results. Can block during native model/context loading or image encode;
+    // and results. Can block during native loading, image encode or a GPU decode batch;
     // use at loading transitions/shutdown. Repeated calls are safe.
     void Unload();
 

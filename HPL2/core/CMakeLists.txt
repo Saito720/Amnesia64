@@ -39,7 +39,7 @@ ELSEIF(LINUX)
 ENDIF()
 
 OPTION(USE_SDL2 "Use SDL2 instead of SDL1.2" ON)
-OPTION(HPL2_WITH_LLAMA "Embed the llama.cpp CPU and multimodal backend (64-bit only)" OFF)
+OPTION(HPL2_WITH_LLAMA "Embed llama.cpp and its multimodal backend (64-bit only)" OFF)
 
 add_subdirectory(../dependencies/OALWrapper OALWrapper)
 

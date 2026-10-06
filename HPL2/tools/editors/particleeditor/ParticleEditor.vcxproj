@@ -241,6 +241,7 @@
     <ClInclude Include="..\common\EditorThumbnailBuilder.h" />
     <ClInclude Include="..\common\EditorTypes.h" />
     <ClInclude Include="..\common\EditorUserClassDefinitionManager.h" />
+    <ClInclude Include="..\common\EditorEnemyLlamaDefinition.h" />
     <ClInclude Include="..\common\EditorVar.h" />
     <ClInclude Include="..\common\EditorViewport.h" />
     <ClInclude Include="..\common\EditorWindow.h" />

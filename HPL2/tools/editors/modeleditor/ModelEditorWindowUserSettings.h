@@ -47,6 +47,7 @@ class cModelEditorWindowUserSettings : public iEditorWindowPopUp
 public:
 	cModelEditorWindowUserSettings(cModelEditor* apEditor);
 	~cModelEditorWindowUserSettings();
+	void OnWorldModify();
 
 protected:
 	void OnSetActive(bool abX);
@@ -59,16 +60,16 @@ protected:
 	bool SubTypeList_OnChange(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(SubTypeList_OnChange);
 
-	bool Button_OnPressed(iWidget* apWidget, const cGuiMessageData& aData);
-	kGuiCallbackDeclarationEnd(Button_OnPressed);
+	bool ApplyRigPreset_OnPressed(iWidget* apWidget, const cGuiMessageData& aData);
+	kGuiCallbackDeclarationEnd(ApplyRigPreset_OnPressed);
+	bool VarInputCallback(iEditorVarInput* apInput);
+	static bool VarInputCallbackStaticHelper(void* apWindow, iEditorVarInput* apInput);
 
 	void PopulateTypeList();
 	void PopulateSubTypeList();
 	void PopulateVarList();
 
-	void OrganizeVarInputs();
-
-	void SetTypeSubTypeCombo(const tString& asType, const tString& asSubType);
+	void RefreshFromWorld();
 
 	///////////////////////////////////////////////////
 	// Data
@@ -83,7 +84,9 @@ protected:
 	cEditorVarInputPanel* mpInputPanel;
 	
 
-	cWidgetButton* mvButtons[2];
+	cWidgetButton* mpButtonApplyRigPreset;
+	bool mbUpdatingLists;
+	unsigned int mlDisplayedSettingsRevision;
 };
 
 //--------------------------------------------------------------------------------

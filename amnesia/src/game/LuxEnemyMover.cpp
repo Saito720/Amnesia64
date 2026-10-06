@@ -303,6 +303,8 @@ void cLuxEnemyMover::UpdateMoveAnimation(float afTimeStep)
 		{
 			//Log(" To Stop\n");
 			mpEnemy->PlayAnim(mpEnemy->GetIdleAnimationName(),true,0.7f,false,1.0f,false,false);
+			if(!mpEnemy->UsesLegacyAI() && mpEnemy->mpCurrentAnimation)
+				mpEnemy->mpCurrentAnimation->SetSpeed(1.0f);
 		}
 		//Walking
 		else if(mMoveState == eLuxEnemyMoveState_Walking)

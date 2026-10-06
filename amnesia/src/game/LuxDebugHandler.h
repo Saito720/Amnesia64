@@ -26,6 +26,8 @@
 
 //----------------------------------------------
 
+class cLuxEnemy_Llama;
+
 class cLuxDebugMessage
 {
 public:
@@ -53,6 +55,7 @@ public:
 
 	void OnMapEnter(cLuxMap *apMap);
 	void OnMapLeave(cLuxMap *apMap);
+	void OnLlamaEnemyDestroyed(int alID);
 
 
 	void SetDebugWindowActive(bool abActive);
@@ -79,6 +82,11 @@ private:
 	void CheckLineObjectIntersection(iRenderable *apObject, const cVector3f& avStart, const cVector3f& avEnd, cBoundingVolume *apBV);
 	void IterateRenderableNode(iRenderableContainerNode *apNode, const cVector3f& avStart, const cVector3f& avEnd, cBoundingVolume *apBV);
 	void UpdateInspectionMeshEntity(float afTimeStep);
+	void UpdateLlamaObservation();
+	void DrawLlamaObservation();
+	void ClearLlamaObservation();
+	void DestroyLlamaObservationGfx();
+	cLuxEnemy_Llama *GetSelectedLlamaEnemy();
 
 	void CreateGuiWindow();
 	void CreateScriptOutputWindow();
@@ -171,6 +179,11 @@ private:
 	bool mbScriptDebugOn;
 	bool mbInspectionMode;
 	bool mbDrawPhysics;
+	bool mbShowLlamaObservation;
+	int mlLlamaObservationEnemyID;
+	cGuiGfxElement *mpLlamaObservationGfx;
+	cGuiGfxElement *mpLlamaObservationBackground;
+	iTexture *mpLlamaObservationTexture;
 
 	bool mbAllowQuickSave;
     

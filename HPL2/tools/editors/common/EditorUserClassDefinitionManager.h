@@ -86,6 +86,9 @@ public:
 	virtual void DumpEditorSetupVars(tEditorVarVec&);
 
 protected:
+	bool AddGroupedVariables(cXmlElement* apElement, eEditorVarCategory aCat,
+							 cEditorVarGroup* apGroup = NULL);
+
 	int mlIndex;
 	cEditorUserClassDefinition* mpDefinition;
 	std::vector<tEditorVarVec> mvVariables;

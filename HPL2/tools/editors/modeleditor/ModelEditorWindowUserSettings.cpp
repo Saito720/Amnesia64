@@ -31,12 +31,16 @@ cModelEditorWindowUserSettings::cModelEditorWindowUserSettings(cModelEditor* apE
 {
 	mpEditor = apEditor;
 	mpInputPanel = NULL;
+	mpButtonApplyRigPreset = NULL;
+	mbUpdatingLists = false;
+	mlDisplayedSettingsRevision = 0;
 }
 
 //-------------------------------------------------------------------
 
 cModelEditorWindowUserSettings::~cModelEditorWindowUserSettings()
 {
+	if(mpInputPanel) hplDelete(mpInputPanel);
 }
 
 //-------------------------------------------------------------------
@@ -46,32 +50,8 @@ cModelEditorWindowUserSettings::~cModelEditorWindowUserSettings()
 
 void cModelEditorWindowUserSettings::OnSetActive(bool abX)
 {
-	///////////////////////////////////////////////////////////////////////////////////////////
-	// TODO: The var loading definitely can be done in a better way, check when there's enough time
 	iEditorWindowPopUp::OnSetActive(abX);
-
-
-	if(abX)
-	{
-		////////////////////////////////////////////////////////////////////
-		// Sets up custom variables according to the type and subtype
-		cModelEditorWorld* pEntity = (cModelEditorWorld*)mpEditor->GetEditorWorld();
-		cEditorClassInstance* pClass = pEntity->GetClass();
-		if(pClass)
-		{
-			cEditorUserClassSubType* pType = (cEditorUserClassSubType*)pClass->GetClass();
-            mpComboBoxType->SetSelectedItem(pType->GetParent()->GetIndex());
-			mpComboBoxSubType->SetSelectedItem(pType->GetIndex());
-		}
-		else
-		{
-			mpComboBoxType->SetSelectedItem(0);
-			mpEditor->ShowMessageBox(_W("Warning"), _W("Model has no type, falling back to defaults"), _W("OK"), _W(""), NULL, NULL);
-		}
-	}
-	else
-	{
-	}
+	if(abX) RefreshFromWorld();
 }
 
 //-------------------------------------------------------------------
@@ -102,6 +82,13 @@ void cModelEditorWindowUserSettings::OnInitLayout()
 
 	mpComboBoxSubType->AddCallback(eGuiMessage_SelectionChange, this, kGuiCallback(SubTypeList_OnChange));
 
+	vPos.x += 160;
+	mpButtonApplyRigPreset = mpSet->CreateWidgetButton(vPos, cVector2f(170,25), _W("Apply rig preset"), mpWindow);
+	mpButtonApplyRigPreset->SetToolTip(_W("Replace physical settings, animation names and the animation clip/event list with this rig's stock preset. Camera and hearing settings are preserved. Undo restores all previous settings and clips."));
+	mpButtonApplyRigPreset->AddCallback(eGuiMessage_ButtonPressed, this, kGuiCallback(ApplyRigPreset_OnPressed));
+	mpButtonApplyRigPreset->SetVisible(false);
+	mpButtonApplyRigPreset->SetEnabled(false);
+
 	vPos.x = 15;
 	vPos.y += 35; 
 
@@ -118,13 +105,24 @@ void cModelEditorWindowUserSettings::OnInitLayout()
 
 void cModelEditorWindowUserSettings::OnUpdate(float afTimeStep)
 {
+	if(IsActive() && mlDisplayedSettingsRevision!=((cModelEditorWorld*)mpEditor->GetEditorWorld())->GetUserSettingsRevision())
+		RefreshFromWorld();
+}
+
+//-------------------------------------------------------------------
+
+void cModelEditorWindowUserSettings::OnWorldModify()
+{
+	if(IsActive()) RefreshFromWorld();
 }
 
 //-------------------------------------------------------------------
 
 bool cModelEditorWindowUserSettings::TypeList_OnChange(iWidget* apWidget, const cGuiMessageData& aData)
 {
+	if(mbUpdatingLists) return true;
 	PopulateSubTypeList();
+	SubTypeList_OnChange(mpComboBoxSubType, aData);
 
 	return true;
 }
@@ -134,19 +132,20 @@ kGuiCallbackDeclaredFuncEnd(cModelEditorWindowUserSettings,TypeList_OnChange);
 
 bool cModelEditorWindowUserSettings::SubTypeList_OnChange(iWidget* apWidget, const cGuiMessageData& aData)
 {
+	if(mbUpdatingLists) return true;
 	int lTypeIdx = mpComboBoxType->GetSelectedItem();
 	int lSubTypeIdx = mpComboBoxSubType->GetSelectedItem();
 
 	cEditorUserClassDefinition* pDef = mpEditor->GetClassDefinitionManager()->GetDefinition(eUserClassDefinition_Entity);	
-	cEditorUserClassSubType* pClass = pDef->GetType(lTypeIdx)->GetSubType(lSubTypeIdx);
+	cEditorUserClassType* pType = pDef->GetType(lTypeIdx);
+	cEditorUserClassSubType* pClass = pType ? pType->GetSubType(lSubTypeIdx) : NULL;
 
 	if(pClass==NULL)
 		return true;
 
 	cModelEditorWorld* pEntity = (cModelEditorWorld*)mpEditor->GetEditorWorld();
-	pEntity->SetType(pClass);
-
-	PopulateVarList();
+	mpEditor->AddAction(pEntity->CreateActionSetType(pClass));
+	RefreshFromWorld();
 
 	return true;
 }
@@ -154,25 +153,38 @@ kGuiCallbackDeclaredFuncEnd(cModelEditorWindowUserSettings,SubTypeList_OnChange)
 
 //-------------------------------------------------------------------
 
-bool cModelEditorWindowUserSettings::Button_OnPressed(iWidget* apWidget, const cGuiMessageData& aData)
+bool cModelEditorWindowUserSettings::ApplyRigPreset_OnPressed(iWidget* apWidget, const cGuiMessageData& aData)
 {
-	if(apWidget==mvButtons[0])
-	{
-	}
-	else if(apWidget==mvButtons[1])
-	{
-	}
-
-	SetActive(false);
+	((cModelEditorWorld*)mpEditor->GetEditorWorld())->ApplyRigPreset();
+	RefreshFromWorld();
 
 	return true;
 }
-kGuiCallbackDeclaredFuncEnd(cModelEditorWindowUserSettings,Button_OnPressed);
+kGuiCallbackDeclaredFuncEnd(cModelEditorWindowUserSettings,ApplyRigPreset_OnPressed);
+
+//-------------------------------------------------------------------
+
+bool cModelEditorWindowUserSettings::VarInputCallback(iEditorVarInput* apInput)
+{
+	cModelEditorWorld* pWorld = (cModelEditorWorld*)mpEditor->GetEditorWorld();
+	// A type change can invalidate this panel before the next layout update.
+	// Reject its event without deleting the input while its callback is running.
+	if(mlDisplayedSettingsRevision!=pWorld->GetUserSettingsRevision()) return true;
+	mpEditor->AddAction(pWorld->CreateActionSetVariable(apInput->GetVar()->GetName(), apInput->GetInput()->GetValue()));
+	return true;
+}
+
+bool cModelEditorWindowUserSettings::VarInputCallbackStaticHelper(void* apWindow, iEditorVarInput* apInput)
+{
+	return ((cModelEditorWindowUserSettings*)apWindow)->VarInputCallback(apInput);
+}
 
 //-------------------------------------------------------------------
 
 void cModelEditorWindowUserSettings::PopulateTypeList()
 {
+	bool bWasUpdating = mbUpdatingLists;
+	mbUpdatingLists = true;
 	cEditorUserClassDefinition* pDef = mpEditor->GetClassDefinitionManager()->GetDefinition(eUserClassDefinition_Entity);
 
 	mpComboBoxType->ClearItems();
@@ -182,6 +194,7 @@ void cModelEditorWindowUserSettings::PopulateTypeList()
 		cEditorUserClassType* pType = pDef->GetType(i);
 		mpComboBoxType->AddItem(pType->GetName());
 	}
+	mbUpdatingLists = bWasUpdating;
 }
 
 
@@ -189,24 +202,24 @@ void cModelEditorWindowUserSettings::PopulateTypeList()
 
 void cModelEditorWindowUserSettings::PopulateSubTypeList()
 {
-	mpLabelSubType->SetEnabled(true);
-	mpComboBoxSubType->SetEnabled(true);
-
+	bool bWasUpdating = mbUpdatingLists;
+	mbUpdatingLists = true;
 	mpComboBoxSubType->ClearItems();
 
 	cEditorUserClassDefinition* pDef = mpEditor->GetClassDefinitionManager()->GetDefinition(eUserClassDefinition_Entity);
 	cEditorUserClassType* pType = pDef->GetType(mpComboBoxType->GetSelectedItem());
-	for(int i=0;i<pType->GetSubTypeNum();++i)
+	for(int i=0;pType && i<pType->GetSubTypeNum();++i)
 	{
 		cEditorUserClassSubType* pSubType = pType->GetSubType(i);
 		mpComboBoxSubType->AddItem(pSubType->GetName());
 	}
 	bool bEnabled = (mpComboBoxSubType->GetItemNum()>1);
 
-	mpComboBoxSubType->SetSelectedItem(pType->GetDefaultSubTypeIndex());
+	mpComboBoxSubType->SetSelectedItem(pType ? pType->GetDefaultSubTypeIndex() : -1, false, false);
 	
 	mpLabelSubType->SetEnabled(bEnabled);
 	mpComboBoxSubType->SetEnabled(bEnabled);
+	mbUpdatingLists = bWasUpdating;
 }
 
 //-------------------------------------------------------------------
@@ -218,26 +231,41 @@ void cModelEditorWindowUserSettings::PopulateVarList()
 
 	if(mpInputPanel)
 		hplDelete(mpInputPanel);
+	mpInputPanel = NULL;
 
 	if(pClass)
 	{
 		mpInputPanel = pClass->CreateInputPanel(this, mpFrameVars, false);
+		mpInputPanel->SetCallback(this, VarInputCallbackStaticHelper);
 		mpInputPanel->Update();
 	}
+	mlDisplayedSettingsRevision = pEntity->GetUserSettingsRevision();
 }
 
 //-------------------------------------------------------------------
 
 //-------------------------------------------------------------------
 
-void cModelEditorWindowUserSettings::OrganizeVarInputs()
+void cModelEditorWindowUserSettings::RefreshFromWorld()
 {
-}
+	cModelEditorWorld* pWorld = (cModelEditorWorld*)mpEditor->GetEditorWorld();
+	cEditorClassInstance* pClass = pWorld->GetClass();
+	cEditorUserClassSubType* pType = pClass ? (cEditorUserClassSubType*)pClass->GetClass() : NULL;
 
-//-------------------------------------------------------------------
+	// Opening the window or undoing a change must never trigger a type change.
+	mbUpdatingLists = true;
+	mpComboBoxType->SetSelectedItem(pType ? pType->GetParent()->GetIndex() : -1, false, false);
+	PopulateSubTypeList();
+	mpComboBoxSubType->SetSelectedItem(pType ? pType->GetIndex() : -1, false, false);
+	mbUpdatingLists = false;
 
-void cModelEditorWindowUserSettings::SetTypeSubTypeCombo(const tString& asType, const tString& asSubType)
-{
+	bool bHasRigPreset = pWorld->CanApplyRigPreset();
+	mpButtonApplyRigPreset->SetVisible(bHasRigPreset);
+	mpButtonApplyRigPreset->SetEnabled(bHasRigPreset);
+	if(mpInputPanel==NULL || mlDisplayedSettingsRevision!=pWorld->GetUserSettingsRevision())
+		PopulateVarList();
+	else
+		mpInputPanel->Update();
 }
 
 //-------------------------------------------------------------------

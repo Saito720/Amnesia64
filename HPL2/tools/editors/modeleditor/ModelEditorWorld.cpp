@@ -40,6 +40,9 @@
 #include "../common/EditorHelper.h"
 
 #include "../common/EditorUserClassDefinitionManager.h"
+#include "ModelEditorActions.h"
+#include "../../../../amnesia/src/game/LuxEnemy_LlamaProfiles.h"
+#include "../../../../amnesia/src/game/LuxEnemy_LlamaAnimations.h"
 
 #include <algorithm>
 
@@ -49,6 +52,7 @@ int cAnimationEventWrapper::mlIndices = 0;
 cAnimationEventWrapper::cAnimationEventWrapper()
 {
 	mlIndex = mlIndices++;
+	mfTime = 0;
 }
 
 void cAnimationEventWrapper::Load(cXmlElement* apElement)
@@ -78,6 +82,7 @@ bool cAnimationEventWrapper::IsValid()
 cAnimationWrapper::cAnimationWrapper()
 {
 	mfSpeed = 1;
+	mfSpecialEventTime = 0;
 }
 
 //--------------------------------------------------------------------
@@ -180,6 +185,8 @@ cModelEditorWorld::cModelEditorWorld(iEditorBase* apEditor) : iEditorWorld(apEdi
 	AddEntityType(mpTypeBone);
 
 	mpClass = NULL;
+	mlUserSettingsRevision = 0;
+	mlAnimationRevision = 0;
 }
 
 //------------------------------------------------------------------
@@ -195,6 +202,7 @@ void cModelEditorWorld::Reset()
 	mpTypeSubMesh->ClearMesh();
 
 	mvAnimations.clear();
+	++mlAnimationRevision;
 	
 	/////////////////////////////////////////
 	// Reset user defined variable values
@@ -263,14 +271,17 @@ void cModelEditorWorld::SetAnimations(const tAnimWrapperVec& avAnims)
 {
 	IncModifications();
 	mvAnimations = avAnims;
+	++mlAnimationRevision;
 }
 
 //------------------------------------------------------------------
 
 void cModelEditorWorld::SetType(cEditorUserClassSubType* apType, bool abKeepValues)
 {
-	if(mpClass && mpClass->GetClass()==apType)
+	if(abKeepValues && mpClass && mpClass->GetClass()==apType)
 		return;
+
+	++mlUserSettingsRevision;
 
 	if(mpClass)
 	{
@@ -287,6 +298,118 @@ void cModelEditorWorld::SetType(cEditorUserClassSubType* apType, bool abKeepValu
 		if(abKeepValues)
 			mpClass->LoadValuesFromMap(mmapTempValues);
 	}
+}
+
+//------------------------------------------------------------------
+
+void cModelEditorWorld::SetUserSettings(cEditorUserClassSubType* apType, const tVarValueMap& amapValues, const tVarValueMap& amapTempValues,
+									  const tAnimWrapperVec* apAnimations)
+{
+	if(mpClass==NULL || mpClass->GetClass()!=apType)
+		SetType(apType, false);
+	mmapTempValues = amapTempValues;
+	if(mpClass) mpClass->LoadValuesFromMap(amapValues);
+	// The enclosing settings action owns the single undo/dirty transition.
+	if(apAnimations)
+	{
+		mvAnimations = *apAnimations;
+		++mlAnimationRevision;
+	}
+}
+
+//------------------------------------------------------------------
+
+iEditorAction* cModelEditorWorld::CreateActionSetType(cEditorUserClassSubType* apType)
+{
+	return hplNew(cModelEditorActionSetUserSettings, (this, apType));
+}
+
+//------------------------------------------------------------------
+
+iEditorAction* cModelEditorWorld::CreateActionSetVariable(const tWString& asName, const tWString& asValue)
+{
+	return hplNew(cModelEditorActionSetUserSettings, (this, asName, asValue));
+}
+
+//------------------------------------------------------------------
+
+bool cModelEditorWorld::CanApplyRigPreset()
+{
+	if(mpClass==NULL) return false;
+	cEditorUserClassSubType* pType = (cEditorUserClassSubType*)mpClass->GetClass();
+	if(pType->GetParent()->GetName()!="Enemy_Llama") return false;
+	bool bHasPhysicalPreset = false;
+	for(std::size_t i=0; i<kLuxLlamaProfileCount; ++i)
+		if(pType->GetName()==kLuxLlamaProfiles[i].msName) bHasPhysicalPreset = true;
+	for(std::size_t i=0; bHasPhysicalPreset && i<kLuxLlamaAnimationProfileCount; ++i)
+		if(pType->GetName()==kLuxLlamaAnimationProfiles[i].msName) return true;
+	return false;
+}
+
+//------------------------------------------------------------------
+
+iEditorAction* cModelEditorWorld::CreateActionSetAnimations(const tAnimWrapperVec& avAnimations)
+{
+	return hplNew(cModelEditorActionSetUserSettings, (this, avAnimations));
+}
+
+//------------------------------------------------------------------
+
+iEditorAction* cModelEditorWorld::CreateActionApplyRigPreset()
+{
+	if(CanApplyRigPreset()==false) return NULL;
+	cEditorUserClassSubType* pType = (cEditorUserClassSubType*)mpClass->GetClass();
+	for(std::size_t i=0; i<kLuxLlamaProfileCount; ++i)
+	{
+		const cLuxLlamaProfile& profile = kLuxLlamaProfiles[i];
+		if(pType->GetName()!=profile.msName) continue;
+		tVarValueMap preset;
+		for(std::size_t j=0; j<profile.mlVariableCount; ++j)
+			preset[cString::To16Char(profile.mpVariables[j].msName)] = cString::To16Char(profile.mpVariables[j].msValue);
+		tAnimWrapperVec animations;
+		for(std::size_t j=0; j<kLuxLlamaAnimationProfileCount; ++j)
+		{
+			const cLuxLlamaAnimationProfile& animationProfile = kLuxLlamaAnimationProfiles[j];
+			if(pType->GetName()!=animationProfile.msName) continue;
+			for(std::size_t k=0; k<animationProfile.mlAnimationCount; ++k)
+			{
+				const cLuxLlamaAnimation& clip = animationProfile.mpAnimations[k];
+				cAnimationWrapper animation;
+				animation.SetName(clip.msName);
+				animation.SetFile(clip.msFile);
+				animation.SetSpeed(clip.mfSpeed);
+				animation.SetSpecialEventTime(clip.mfSpecialEventTime);
+				for(std::size_t eventIndex=0; eventIndex<clip.mlEventCount; ++eventIndex)
+				{
+					const cLuxLlamaAnimationEvent& eventData = clip.mpEvents[eventIndex];
+					cAnimationEventWrapper event;
+					event.SetTime(eventData.mfTime);
+					event.SetType(eventData.msType);
+					event.SetValue(eventData.msValue);
+					animation.GetEvents().push_back(event);
+				}
+				animations.push_back(animation);
+			}
+			break;
+		}
+		return hplNew(cModelEditorActionSetUserSettings, (this, preset, animations));
+	}
+	return NULL;
+}
+
+//------------------------------------------------------------------
+
+bool cModelEditorWorld::ApplyRigPreset()
+{
+	iEditorAction* pAction = CreateActionApplyRigPreset();
+	if(pAction==NULL) return false;
+	if(pAction->Create()==false)
+	{
+		hplDelete(pAction);
+		return false;
+	}
+	mpEditor->AddAction(pAction);
+	return true;
 }
 
 //------------------------------------------------------------------
@@ -309,7 +432,8 @@ void cModelEditorWorld::LoadWorldData(cXmlElement* apWorldDataElement)
 		{
 			bValid = true;
 			cEditorUserClassSubType* pType = pBaseType->GetSubType(sSubType);
-			SetType(pType);
+			mmapTempValues.clear();
+			SetType(pType, false);
 
 			if(mpClass) mpClass->Load(pXmlVariables);
 			else		bValid = false;
@@ -386,6 +510,7 @@ bool cModelEditorWorld::CustomCategoryLoader(cXmlElement* apWorldObjectsElement,
 			animation.Load(pElement);
 			mvAnimations.push_back(animation);
 		}
+		++mlAnimationRevision;
 
 		return true;
 	}

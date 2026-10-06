@@ -186,6 +186,7 @@
     <ClCompile Include="LuxCritter_Spider.cpp" />
     <ClCompile Include="LuxEnemy.cpp" />
     <ClCompile Include="LuxEnemy_Grunt.cpp" />
+    <ClCompile Include="LuxEnemy_Llama.cpp" />
     <ClCompile Include="LuxEnemy_WaterLurker.cpp" />
     <ClCompile Include="LuxEnemyMover.cpp" />
     <ClCompile Include="LuxEnemyPathfinder.cpp" />
@@ -296,6 +297,8 @@
     <ClInclude Include="LuxCritter_Spider.h" />
     <ClInclude Include="LuxEnemy.h" />
     <ClInclude Include="LuxEnemy_Grunt.h" />
+    <ClInclude Include="LuxEnemy_Llama.h" />
+    <ClInclude Include="LuxEnemy_LlamaProfiles.h" />
     <ClInclude Include="LuxEnemy_WaterLurker.h" />
     <ClInclude Include="LuxEnemyMover.h" />
     <ClInclude Include="LuxEnemyPathfinder.h" />

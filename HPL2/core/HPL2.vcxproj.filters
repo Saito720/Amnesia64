@@ -273,6 +273,9 @@
     <ClInclude Include="include\graphics\RenderFunctions.h">
       <Filter>Graphics</Filter>
     </ClInclude>
+    <ClInclude Include="include\graphics\SceneObservation.h">
+      <Filter>Graphics</Filter>
+    </ClInclude>
     <ClInclude Include="include\graphics\RenderList.h">
       <Filter>Graphics</Filter>
     </ClInclude>
@@ -1225,6 +1228,9 @@
       <Filter>Graphics</Filter>
     </ClCompile>
     <ClCompile Include="sources\graphics\RenderFunctions.cpp">
+      <Filter>Graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\graphics\SceneObservation.cpp">
       <Filter>Graphics</Filter>
     </ClCompile>
     <ClCompile Include="sources\graphics\RenderList.cpp">

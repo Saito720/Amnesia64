@@ -233,6 +233,7 @@
     <ClInclude Include="include\graphics\RendererWireFrame.h" />
     <ClInclude Include="include\graphics\RenderFunctions.h" />
     <ClInclude Include="include\graphics\RenderList.h" />
+    <ClInclude Include="include\graphics\SceneObservation.h" />
     <ClInclude Include="include\graphics\Skeleton.h" />
     <ClInclude Include="include\graphics\SubMesh.h" />
     <ClInclude Include="include\graphics\Texture.h" />
@@ -552,6 +553,7 @@
     <ClCompile Include="sources\graphics\RendererWireFrame.cpp" />
     <ClCompile Include="sources\graphics\RenderFunctions.cpp" />
     <ClCompile Include="sources\graphics\RenderList.cpp" />
+    <ClCompile Include="sources\graphics\SceneObservation.cpp" />
     <ClCompile Include="sources\graphics\Skeleton.cpp" />
     <ClCompile Include="sources\graphics\SubMesh.cpp" />
     <ClCompile Include="sources\graphics\TextureCreator.cpp" />

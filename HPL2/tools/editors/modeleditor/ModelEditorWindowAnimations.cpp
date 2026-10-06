@@ -28,6 +28,8 @@
 cModelEditorWindowAnimations::cModelEditorWindowAnimations(cModelEditor* apEditor) : iEditorWindowPopUp(apEditor, "Animation edition window", true, true, false, cVector2f(650,450))
 {
 	mpEditor = apEditor;
+	mlDisplayedAnimationRevision = 0;
+	mbRefreshing = false;
 }
 
 //------------------------------------------------------------------------------------
@@ -39,7 +41,7 @@ void cModelEditorWindowAnimations::OnSetActive(bool abX)
 	{
 		mpEditor->SetFlags(eModelEditorFlag_TestWindowActive, false);
 
-		mvTempAnimations = ((cModelEditorWorld*)mpEditor->GetEditorWorld())->GetAnimations();
+		RefreshFromWorld();
 		mpEditor->SetLayoutNeedsUpdate(true);
 	}
 }
@@ -129,18 +131,64 @@ void cModelEditorWindowAnimations::OnInitLayout()
 
 void cModelEditorWindowAnimations::OnUpdate(float afTimeStep)
 {
+	if(IsActive() && HasStaleDraft()) RefreshFromWorld();
+	else UpdateAnimationList();
+}
+
+//------------------------------------------------------------------------------------
+
+void cModelEditorWindowAnimations::OnWorldModify()
+{
+	// Body/health edits do not replace a pending animation draft.
+	if(IsActive() && HasStaleDraft()) RefreshFromWorld();
+}
+
+//------------------------------------------------------------------------------------
+
+bool cModelEditorWindowAnimations::HasStaleDraft()
+{
+	return mlDisplayedAnimationRevision != ((cModelEditorWorld*)mpEditor->GetEditorWorld())->GetAnimationRevision();
+}
+
+//------------------------------------------------------------------------------------
+
+void cModelEditorWindowAnimations::RefreshFromWorld()
+{
+	cModelEditorWorld* pWorld = (cModelEditorWorld*)mpEditor->GetEditorWorld();
+	mvTempAnimations = pWorld->GetAnimations();
+	mlDisplayedAnimationRevision = pWorld->GetAnimationRevision();
+	UpdateAnimationList();
+}
+
+//------------------------------------------------------------------------------------
+
+void cModelEditorWindowAnimations::UpdateAnimationList()
+{
+	const bool bWasRefreshing = mbRefreshing;
+	mbRefreshing = true;
 	int lSelectedItem = mpListAnimations->GetSelectedItem();
 	mpListAnimations->ClearItems();
 	for(int i=0;i<(int)mvTempAnimations.size();++i)
 		mpListAnimations->AddItem(mvTempAnimations[i].GetName());
 
-	mpListAnimations->SetSelectedItem(lSelectedItem);
+	if(lSelectedItem >= (int)mvTempAnimations.size()) lSelectedItem = (int)mvTempAnimations.size() - 1;
+	mpListAnimations->SetSelectedItem(lSelectedItem, false, false);
+	UpdateAnimInputs();
+	mbRefreshing = bWasRefreshing;
 }
 
 //------------------------------------------------------------------------------------
 
 bool cModelEditorWindowAnimations::InputCallback(iWidget* apWidget, const cGuiMessageData& aData)
 {
+	if(mbRefreshing) return true;
+	if(HasStaleDraft())
+	{
+		// Global undo/redo may precede the next editor frame. Confirm only the
+		// current world list; stale selection/edit events cannot modify it.
+		RefreshFromWorld();
+		if(apWidget!=mpBOK && apWidget!=mpBCancel) return true;
+	}
 	if(apWidget==mpBAddAnimation)
 	{
 		mvTempAnimations.push_back(cAnimationWrapper());
@@ -161,7 +209,7 @@ bool cModelEditorWindowAnimations::InputCallback(iWidget* apWidget, const cGuiMe
 	else if(apWidget==mpBRemAnimation)
 	{
 		int lSelectedItem = mpListAnimations->GetSelectedItem();
-		if(lSelectedItem!=-1)
+		if(lSelectedItem>=0 && lSelectedItem<(int)mvTempAnimations.size())
 		{
 			cAnimationWrapper* anim = &mvTempAnimations[lSelectedItem];
 			std::vector<cAnimationWrapper> vTemp;
@@ -176,6 +224,7 @@ bool cModelEditorWindowAnimations::InputCallback(iWidget* apWidget, const cGuiMe
 	else if(apWidget==mpBAddEvent)
 	{
 		int lSelectedAnim = mpListAnimations->GetSelectedItem();
+		if(lSelectedAnim<0 || lSelectedAnim>=(int)mvTempAnimations.size()) return true;
 
 		cAnimationWrapper* pAnim = &mvTempAnimations[lSelectedAnim];
 
@@ -185,10 +234,12 @@ bool cModelEditorWindowAnimations::InputCallback(iWidget* apWidget, const cGuiMe
 	else if(apWidget==mpBRemEvent)
 	{
 		int lSelectedAnim = mpListAnimations->GetSelectedItem();
+		if(lSelectedAnim<0 || lSelectedAnim>=(int)mvTempAnimations.size()) return true;
 
 		cAnimationWrapper* pAnim = &mvTempAnimations[lSelectedAnim];
-
-		pAnim->RemoveEvent(this->mpListEvents->GetSelectedItem());
+		int lSelectedEvent = mpListEvents->GetSelectedItem();
+		if(lSelectedEvent<0 || lSelectedEvent>=(int)pAnim->GetEvents().size()) return true;
+		pAnim->RemoveEvent(lSelectedEvent);
 		mpEditor->SetLayoutNeedsUpdate(true);
 	}
 	else if(apWidget==mpBOK)
@@ -209,7 +260,7 @@ bool cModelEditorWindowAnimations::InputCallback(iWidget* apWidget, const cGuiMe
 
 		if(bAnimationsValid)
 		{
-			((cModelEditorWorld*)mpEditor->GetEditorWorld())->SetAnimations(vTemp);
+			mpEditor->AddAction(((cModelEditorWorld*)mpEditor->GetEditorWorld())->CreateActionSetAnimations(vTemp));
 			SetActive(false);
 		}
 		else
@@ -236,15 +287,24 @@ kGuiCallbackDeclaredFuncEnd(cModelEditorWindowAnimations,InputCallback);
 
 bool cModelEditorWindowAnimations::WindowSpecificInputCallback(iEditorInput* apInput)
 {
+	if(mbRefreshing) return true;
+	if(HasStaleDraft())
+	{
+		RefreshFromWorld();
+		return true;
+	}
 	int lSelectedItem = mpListAnimations->GetSelectedItem();
 	cAnimationWrapper* pAnim = NULL;
 	cAnimationEventWrapper* pEvent = NULL;
-	if(lSelectedItem!=-1)
+	if(lSelectedItem>=0 && lSelectedItem<(int)mvTempAnimations.size())
 	{
 		pAnim = &mvTempAnimations[lSelectedItem];
 		int lSelectedEvent = mpListEvents->GetSelectedItem();
-		pEvent = pAnim->GetEvent(lSelectedEvent);
+		if(lSelectedEvent>=0 && lSelectedEvent<(int)pAnim->GetEvents().size())
+			pEvent = pAnim->GetEvent(lSelectedEvent);
 	}
+	if(pAnim==NULL) return true;
+	if((apInput==mpInpEventTime || apInput==mpInpEventType || apInput==mpInpEventValue) && pEvent==NULL) return true;
 
 	if(apInput==mpInpAnimName)
 	{
@@ -302,7 +362,7 @@ void cModelEditorWindowAnimations::UpdateAnimInputs()
 	tString sFile = "";
 	float fSpeed = 0;
 	float fSpecialEventTime = 0;
-	bool bValidAnimation = (lSelectedItem!=-1);
+	bool bValidAnimation = (lSelectedItem>=0 && lSelectedItem<(int)mvTempAnimations.size());
 	std::vector<cAnimationEventWrapper> vTempEvents;
 
 	if(bValidAnimation)
@@ -345,14 +405,14 @@ void cModelEditorWindowAnimations::UpdateEventInputs()
 {
 	int lSelectedAnim = mpListAnimations->GetSelectedItem();
 	cAnimationWrapper* pAnim =NULL;
-	if(lSelectedAnim!=-1)
+	if(lSelectedAnim>=0 && lSelectedAnim<(int)mvTempAnimations.size())
 	pAnim = &mvTempAnimations[mpListAnimations->GetSelectedItem()];
 	
 	int lSelectedItem = mpListEvents->GetSelectedItem();
 	float fEventTime = 0;
 	tString sType = "";
 	tString sValue = "";
-	bool bValidEvent = (pAnim!=NULL && lSelectedItem!=-1);
+	bool bValidEvent = (pAnim!=NULL && lSelectedItem>=0 && lSelectedItem<(int)pAnim->GetEvents().size());
 
 	if(bValidEvent)
 	{

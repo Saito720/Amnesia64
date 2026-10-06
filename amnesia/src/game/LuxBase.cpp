@@ -89,6 +89,7 @@
 #include "LuxArea_SlimeDamage.h"
 
 #include "LuxEnemy_Grunt.h"
+#include "LuxEnemy_Llama.h"
 #include "LuxEnemy_WaterLurker.h"
 #include "LuxEnemy_ManPig.h"
 
@@ -1342,6 +1343,7 @@ bool cLuxBase::InitGame()
 	mpEngine->GetResources()->AddEntityLoader(hplNew(cLuxPropLoader_Critter_Spider, ("CritterSpider")));
 
 	mpEngine->GetResources()->AddEntityLoader(hplNew(cLuxEnemyLoader_Grunt, ("Enemy_Grunt")));
+	mpEngine->GetResources()->AddEntityLoader(hplNew(cLuxEnemyLoader_Llama, ("Enemy_Llama")));
 	mpEngine->GetResources()->AddEntityLoader(hplNew(cLuxEnemyLoader_WaterLurker, ("Enemy_WaterLurker")));
 	mpEngine->GetResources()->AddEntityLoader(hplNew(cLuxEnemyLoader_ManPig, ("Enemy_ManPig")));
 

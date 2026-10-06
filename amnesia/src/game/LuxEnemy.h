@@ -515,6 +515,12 @@ public:
 	virtual void SetupSaveData(iLuxEntity_SaveData *apSaveData);
 
 protected:
+    // Alternate controllers retain the shared physical enemy without legacy perception/FSM.
+    virtual bool UsesLegacyAI() const { return true; }
+    virtual void OnControllerMessage(eLuxEnemyMessage aType, const cVector3f& avValue, float afValue) {}
+    virtual void OnControllerDeath() {}
+    virtual void OnControllerDisabled() {}
+
     //////////////////////////////
 	// Update and related
 

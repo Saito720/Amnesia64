@@ -136,12 +136,22 @@ public:
 	// Animations
 	void SetAnimations(const tAnimWrapperVec& avAnims);
 	tAnimWrapperVec& GetAnimations() { return mvAnimations; }
+	unsigned int GetAnimationRevision() const { return mlAnimationRevision; }
 
 	///////////////////////////////////////////
 	// User defined variables
-	void SetTempValues(tVarValueMap& amapX);
 	void SetType(cEditorUserClassSubType* apType, bool abKeepValues=true);
 	cEditorClassInstance* GetClass() { return mpClass; }
+	const tVarValueMap& GetTempValues() const { return mmapTempValues; }
+	unsigned int GetUserSettingsRevision() const { return mlUserSettingsRevision; }
+	void SetUserSettings(cEditorUserClassSubType* apType, const tVarValueMap& amapValues, const tVarValueMap& amapTempValues,
+						 const tAnimWrapperVec* apAnimations=NULL);
+	iEditorAction* CreateActionSetType(cEditorUserClassSubType* apType);
+	iEditorAction* CreateActionSetVariable(const tWString& asName, const tWString& asValue);
+	iEditorAction* CreateActionSetAnimations(const tAnimWrapperVec& avAnimations);
+	iEditorAction* CreateActionApplyRigPreset();
+	bool CanApplyRigPreset();
+	bool ApplyRigPreset();
 
 	cXmlElement* GetWorldDataElement(iXmlDocument* apXmlDoc);
 	void LoadWorldData(cXmlElement* apWorldDataElement);
@@ -163,11 +173,13 @@ protected:
 	///////////////////////
 	// Model Animations
 	tAnimWrapperVec mvAnimations;
+	unsigned int mlAnimationRevision;
 
 	///////////////////////
 	// User defined variables
 	cEditorClassInstance* mpClass;
 	tVarValueMap mmapTempValues;
+	unsigned int mlUserSettingsRevision;
 };
 
 

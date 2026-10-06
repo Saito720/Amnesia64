@@ -21,10 +21,13 @@
 #define MODEL_EDITOR_ACTIONS_H
 
 #include "../common/EditorAction.h"
+#include "../common/EditorVar.h"
+#include "ModelEditorWorld.h"
 
 //--------------------------------------------------------------
 
 class cModelEditorWorld;
+class cEditorUserClassSubType;
 
 //--------------------------------------------------------------
 
@@ -47,6 +50,35 @@ protected:
 	tIntList mlstOldBoneIDs;
 
 	tIntList mlstOldSelectedIDs;
+};
+
+//--------------------------------------------------------------
+
+// Stores both visible settings and values retained when changing subtype.
+class cModelEditorActionSetUserSettings : public iEditorActionWorldModifier
+{
+public:
+	cModelEditorActionSetUserSettings(cModelEditorWorld* apWorld, cEditorUserClassSubType* apType);
+	cModelEditorActionSetUserSettings(cModelEditorWorld* apWorld, const tWString& asName, const tWString& asValue);
+	cModelEditorActionSetUserSettings(cModelEditorWorld* apWorld, const tAnimWrapperVec& avAnimations);
+	cModelEditorActionSetUserSettings(cModelEditorWorld* apWorld, const tVarValueMap& amapPresetValues, const tAnimWrapperVec& avAnimations);
+
+	bool Create();
+	void DoModify();
+	void UndoModify();
+
+protected:
+	void StoreOldSettings(cModelEditorWorld* apWorld);
+
+	cEditorUserClassSubType* mpOldType;
+	cEditorUserClassSubType* mpNewType;
+	tVarValueMap mmapOldValues;
+	tVarValueMap mmapNewValues;
+	tVarValueMap mmapOldTempValues;
+	tVarValueMap mmapNewTempValues;
+	bool mbReplaceAnimations;
+	tAnimWrapperVec mvOldAnimations;
+	tAnimWrapperVec mvNewAnimations;
 };
 
 //--------------------------------------------------------------

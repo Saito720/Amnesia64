@@ -19,6 +19,7 @@
 
 #include "EditorUserClassDefinitionManager.h"
 #include "EditorWindow.h"
+#include "EditorEnemyLlamaDefinition.h"
 
 //------------------------------------------------------------------------------
 
@@ -84,7 +85,8 @@ bool cEditorUserClass::Create(void* apData)
 				if(pVarCategory==NULL)
 					continue;
 
-				AddVariablesFromElement(this, mvVariables[i], pVarCategory);
+				if(AddGroupedVariables(pVarCategory, cat)==false)
+					return false;
 			}
 		}
 
@@ -95,7 +97,8 @@ bool cEditorUserClass::Create(void* apData)
 			if(pVarCategory==NULL)
 				return true;
 
-			AddVariablesFromElement(this, mvVariables[cMath::Log2ToInt(eEditorVarCategory_Instance)], pVarCategory);
+			if(AddGroupedVariables(pVarCategory, eEditorVarCategory_Instance)==false)
+				return false;
 		}
 	}
 
@@ -104,32 +107,33 @@ bool cEditorUserClass::Create(void* apData)
 
 //------------------------------------------------------------------------------
 
+bool cEditorUserClass::AddGroupedVariables(cXmlElement* apElement, eEditorVarCategory aCat,
+										 cEditorVarGroup* apGroup)
+{
+	cXmlNodeListIterator it = apElement->GetChildIterator();
+	while(it.HasNext())
+	{
+		cXmlElement* pElement = it.Next()->ToElement();
+		if(pElement==NULL) continue;
+		if(pElement->GetValue()=="Group")
+		{
+			cEditorVarGroup* pGroup = mpDefinition->GetGroup(pElement->GetAttributeString("Name"));
+			if(AddGroupedVariables(pElement, aCat, pGroup)==false) return false;
+			continue;
+		}
+
+		iEditorVar* pVar = CreateClassSpecificVariableFromElement(pElement);
+		if(pVar==NULL) return false;
+		pVar->SetExtData(apGroup);
+		mvVariables[CatToIdx(aCat)].push_back(pVar);
+	}
+	return true;
+}
+
+//------------------------------------------------------------------------------
+
 iEditorVar* cEditorUserClass::CreateClassSpecificVariableFromElement(cXmlElement* apElement)
 {
-	if(apElement==NULL)
-		return NULL;
-
-	tString sGroupName = "Uncategorized";
-
-	if(apElement->GetValue()=="Group")
-	{
-		sGroupName = apElement->GetAttributeString("Name");
-
-		tEditorVarVec vTempVars;
-		AddVariablesFromElement(this, vTempVars, apElement);
-		if(vTempVars.empty()==false)
-		{
-			cEditorVarGroup* pGroup = mpDefinition->GetGroup(sGroupName);
-			for(int i=0;i<(int)vTempVars.size();++i)
-			{
-				iEditorVar* pVar = vTempVars[i];
-				pVar->SetExtData(pGroup);
-			}
-			int lIdx = CatToIdx(eEditorVarCategory_Type);
-			mvVariables[lIdx].insert(mvVariables[lIdx].end(), vTempVars.begin(), vTempVars.end());
-		}
-	}
-	
 	return CreateVariableFromElement(apElement);
 }
 
@@ -315,6 +319,17 @@ cEditorUserClassSubType* cEditorUserClassType::GetSubType(int alX)
 
 cEditorUserClassSubType* cEditorUserClassType::GetSubType(const tString& asName)
 {
+	// Match the runtime's permissive rig selection for copied/older Llama assets.
+	if(msName=="Enemy_Llama")
+	{
+		const tString sName = cString::ToLowerCase(asName);
+		for(size_t i=0;i<mvSubTypes.size();++i)
+			if(cString::ToLowerCase(mvSubTypes[i]->GetName())==sName)
+				return (cEditorUserClassSubType*)mvSubTypes[i];
+		cEditorUserClassSubType* pGrunt = (cEditorUserClassSubType*)GetClassByName(mvSubTypes, "Grunt");
+		return pGrunt ? pGrunt : GetSubType(mlDefaultSubType);
+	}
+
 	cEditorUserClassSubType* pSubType = (cEditorUserClassSubType*)mvSubTypes.front();
 	if(mvSubTypes.size()>1)
 		pSubType = (cEditorUserClassSubType*)GetClassByName(mvSubTypes, asName);
@@ -503,11 +518,13 @@ bool cEditorUserClassDefinition::Create(const tString& asFilename, int alLoadFla
 	if(pDoc==NULL ||
 		pDoc->GetFirstElement("Types")==NULL)
 	{
-		int lRow = pDoc->GetErrorRow();
-		int lCol = pDoc->GetErrorCol();
-		pRes->DestroyXmlDocument(pDoc);
-
-		tString sError = (pDoc==NULL)?"file not found":("error found in line " + cString::ToString(lRow) + ", column " + cString::ToString(lCol));
+		tString sError = "file not found";
+		if(pDoc)
+		{
+			sError = "error found in line " + cString::ToString(pDoc->GetErrorRow()) +
+					 ", column " + cString::ToString(pDoc->GetErrorCol());
+			pRes->DestroyXmlDocument(pDoc);
+		}
 		FatalError("Failed compilation of Custom Variable definition %s: %s\n", 
 					cString::GetFileName(asFilename).c_str(), 
 					sError.c_str());
@@ -546,6 +563,10 @@ bool cEditorUserClassDefinition::Create(const tString& asFilename, int alLoadFla
 	cXmlElement* pTypes = pDoc->GetFirstElement("Types");
 	if(pTypes)
 	{
+		// Extend the installed schema in memory; custom definitions remain authoritative.
+		if(cString::ToLowerCase(cString::GetFileName(asFilename))=="entitytypes.cfg")
+			AddEnemyLlamaEditorDefinition(pTypes);
+
 		cXmlNodeListIterator it = pTypes->GetChildIterator();
 		int i=0;
 		while(it.HasNext())

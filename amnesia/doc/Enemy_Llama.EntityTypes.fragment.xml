@@ -1,0 +1,287 @@
+<!-- Optional flat schema for other editor builds. Merge this Type beneath the existing Types element in EntityTypes.cfg. The rebuilt editors register a grouped version automatically. Defaults come from the user-provided entity files; see Enemy_Llama.md. This is an additional type, not a replacement configuration. -->
+<Type Name="Enemy_Llama" Default="Grunt">
+  <TypeVars>
+      <Var Name="FOV" Type="Float" DefaultValue="120" Description="Horizontal observation field of view in degrees. Runtime clamps to 1-179 degrees; non-finite values use 120." />
+      <Var Name="LlamaObservationWidth" Type="Int" DefaultValue="384" Description="Observation image width in pixels." />
+      <Var Name="LlamaObservationHeight" Type="Int" DefaultValue="256" Description="Observation image height in pixels." />
+      <Var Name="LlamaObservationInterval" Type="Float" DefaultValue="0.25" Description="Seconds between observation captures." />
+      <Var Name="LlamaCameraOffset" Type="Vector3" DefaultValue="0 -0.1 0" Description="Camera offset relative to the top of the character cylinder." />
+      <Var Name="LlamaHearingRange" Type="Float" DefaultValue="12" Description="Maximum perceived sound distance in game units." />
+      <Var Name="LlamaSoundThreshold" Type="Float" DefaultValue="0.2" Description="Minimum perceived sound loudness." />
+      <Var Name="LlamaIdleAnimation" Type="String" DefaultValue="" Description="Optional idle animation name; empty selects an available conventional name." />
+      <Var Name="LlamaWalkAnimation" Type="String" DefaultValue="" Description="Optional walking animation name." />
+      <Var Name="LlamaRunAnimation" Type="String" DefaultValue="" Description="Optional running animation name." />
+      <Var Name="LlamaBackwardAnimation" Type="String" DefaultValue="" Description="Optional backward animation name." />
+      <Var Name="LlamaDeathAnimation" Type="String" DefaultValue="" Description="Optional death animation name." />
+  </TypeVars>
+  <InstanceVars>
+    <Var Name="CallbackFunc" Type="String" DefaultValue="" Description="Standard enemy callback function." />
+    <Var Name="DisableTriggers" Type="Bool" DefaultValue="false" Description="Disable perceived sound events." />
+  </InstanceVars>
+  <SubTypes>
+    <SubType Name="Grunt">
+      <TypeVars>
+          <Var Name="Health" Type="Float" DefaultValue="100" />
+          <Var Name="Toughness" Type="Int" DefaultValue="0" />
+          <Var Name="MaxRegenHealth" Type="Float" DefaultValue="100" />
+          <Var Name="RegenHealthSpeed" Type="Float" DefaultValue="5" />
+          <Var Name="HitPS_Sword" Type="String" DefaultValue="hit/blood.ps" />
+          <Var Name="HitSound_Sword" Type="String" DefaultValue="grunt/hit_generic" />
+          <Var Name="HitPS_Club" Type="String" DefaultValue="hit/blood.ps" />
+          <Var Name="HitSound_Club" Type="String" DefaultValue="grunt/hit_generic" />
+          <Var Name="HitPS_Bullet" Type="String" DefaultValue="hit/blood.ps" />
+          <Var Name="HitSound_Bullet" Type="String" DefaultValue="grunt/hit_generic" />
+          <Var Name="HitPS_Dud" Type="String" DefaultValue="" />
+          <Var Name="HitSound_Dud" Type="String" DefaultValue="" />
+          <Var Name="NormalAttackDistance" Type="Float" DefaultValue="1.9" />
+          <Var Name="NormalDamageSize" Type="Vector3" DefaultValue="1 1.6 1.75" />
+          <Var Name="NormalDamageOffset" Type="Vector3" DefaultValue="0 0 1.2" />
+          <Var Name="NormalAttackHitSound" Type="String" DefaultValue="grunt/attack_claw_hit" />
+          <Var Name="NormalAttackDamage" Type="Vector2" DefaultValue="30 60" />
+          <Var Name="NormalAttackForce" Type="Vector2" DefaultValue="30 5" />
+          <Var Name="NormalAttackStrength" Type="Int" DefaultValue="1" />
+          <Var Name="NormalDamageType" Type="String" DefaultValue="Claws" />
+          <Var Name="BreakDoorAttackDamage" Type="Vector2" DefaultValue="26 26" />
+          <Var Name="BreakDoorAttackForce" Type="Vector2" DefaultValue="30 5" />
+          <Var Name="BreakDoorAttackStrength" Type="Int" DefaultValue="6" />
+          <Var Name="BreakDoorAttackHitSound" Type="String" DefaultValue="grunt/attack_claw_hit" />
+          <Var Name="BreakDoorDamageType" Type="String" DefaultValue="BloodSplat" />
+          <Var Name="Body_Size" Type="Vector3" DefaultValue="1.2 1.85 1.2" />
+          <Var Name="Body_Mass" Type="Float" DefaultValue="50" />
+          <Var Name="Body_AccurateClimbing" Type="Bool" DefaultValue="true" />
+          <Var Name="Body_MaxNoSlideSlopeAngle" Type="Float" DefaultValue="45" />
+          <Var Name="Body_MaxPushMass" Type="Float" DefaultValue="40" />
+          <Var Name="Body_PushForce" Type="Float" DefaultValue="200" />
+          <Var Name="Body_CharacterMaxPushMass" Type="Float" DefaultValue="20" />
+          <Var Name="Body_CharacterPushForce" Type="Float" DefaultValue="100" />
+          <Var Name="Body_MaxStepSize" Type="Float" DefaultValue="0.5" />
+          <Var Name="Body_StepClimbSpeed" Type="Float" DefaultValue="6.0" />
+          <Var Name="Body_OffsetRot" Type="Vector3" DefaultValue="0 180 0" />
+          <Var Name="Body_OffsetTrans" Type="Vector3" DefaultValue="0 -0.02 0" />
+          <Var Name="Walk_ForwardSpeed" Type="Float" DefaultValue="1.3" />
+          <Var Name="Walk_BackwardSpeed" Type="Float" DefaultValue="0.4" />
+          <Var Name="Walk_ForwardAcc" Type="Float" DefaultValue="2.0" />
+          <Var Name="Walk_ForwardDeacc" Type="Float" DefaultValue="18.0" />
+          <Var Name="Run_ForwardSpeed" Type="Float" DefaultValue="5.1" />
+          <Var Name="Run_BackwardSpeed" Type="Float" DefaultValue="2.0" />
+          <Var Name="Run_ForwardAcc" Type="Float" DefaultValue="4.0" />
+          <Var Name="Run_ForwardDeacc" Type="Float" DefaultValue="8.0" />
+          <Var Name="TurnSpeedMul" Type="Float" DefaultValue="6" />
+          <Var Name="TurnMaxSpeed" Type="Float" DefaultValue="12" />
+          <Var Name="TurnMinBreakAngle" Type="Float" DefaultValue="10" />
+          <Var Name="TurnBreakMul" Type="Float" DefaultValue="2" />
+          <Var Name="MoveSpeedAnimMul" Type="Float" DefaultValue="1.2" />
+          <Var Name="StoppedToWalkSpeed" Type="Float" DefaultValue="0.15" />
+          <Var Name="WalkToStoppedSpeed" Type="Float" DefaultValue="0.1" />
+          <Var Name="WalkToRunSpeed" Type="Float" DefaultValue="3.2" />
+          <Var Name="RunToWalkSpeed" Type="Float" DefaultValue="2.8" />
+          <Var Name="WaterStepSpeedWalk" Type="Float" DefaultValue="3.0" />
+          <Var Name="WaterStepSpeedRun" Type="Float" DefaultValue="5.0" />
+          <Var Name="WaterStepSpeedMisc" Type="Float" DefaultValue="3.0" />
+          <Var Name="LlamaIdleAnimation" Type="String" DefaultValue="Idle" />
+          <Var Name="LlamaWalkAnimation" Type="String" DefaultValue="Walk" />
+          <Var Name="LlamaRunAnimation" Type="String" DefaultValue="Run" />
+          <Var Name="LlamaBackwardAnimation" Type="String" DefaultValue="" />
+          <Var Name="LlamaDeathAnimation" Type="String" DefaultValue="" />
+      </TypeVars>
+    </SubType>
+    <SubType Name="Brute">
+      <TypeVars>
+          <Var Name="Health" Type="Float" DefaultValue="100" />
+          <Var Name="Toughness" Type="Int" DefaultValue="0" />
+          <Var Name="MaxRegenHealth" Type="Float" DefaultValue="100" />
+          <Var Name="RegenHealthSpeed" Type="Float" DefaultValue="5" />
+          <Var Name="HitPS_Sword" Type="String" DefaultValue="hit/blood.ps" />
+          <Var Name="HitSound_Sword" Type="String" DefaultValue="brute/hit_generic" />
+          <Var Name="HitPS_Club" Type="String" DefaultValue="hit/blood.ps" />
+          <Var Name="HitSound_Club" Type="String" DefaultValue="brute/hit_generic" />
+          <Var Name="HitPS_Bullet" Type="String" DefaultValue="hit/blood.ps" />
+          <Var Name="HitSound_Bullet" Type="String" DefaultValue="brute/hit_generic" />
+          <Var Name="HitPS_Dud" Type="String" DefaultValue="" />
+          <Var Name="HitSound_Dud" Type="String" DefaultValue="" />
+          <Var Name="NormalAttackDistance" Type="Float" DefaultValue="1.9" />
+          <Var Name="NormalDamageSize" Type="Vector3" DefaultValue="1 1.7 1.8" />
+          <Var Name="NormalDamageOffset" Type="Vector3" DefaultValue="0 0 1.3" />
+          <Var Name="NormalAttackHitSound" Type="String" DefaultValue="brute/attack_claw_hit" />
+          <Var Name="NormalAttackDamage" Type="Vector2" DefaultValue="50 120" />
+          <Var Name="NormalAttackForce" Type="Vector2" DefaultValue="30 5" />
+          <Var Name="NormalAttackStrength" Type="Int" DefaultValue="1" />
+          <Var Name="NormalDamageType" Type="String" DefaultValue="Slash" />
+          <Var Name="BreakDoorAttackDamage" Type="Vector2" DefaultValue="50 56" />
+          <Var Name="BreakDoorAttackForce" Type="Vector2" DefaultValue="30 5" />
+          <Var Name="BreakDoorAttackStrength" Type="Int" DefaultValue="3" />
+          <Var Name="BreakDoorAttackHitSound" Type="String" DefaultValue="brute/attack_claw_hit" />
+          <Var Name="BreakDoorDamageType" Type="String" DefaultValue="BloodSplat" />
+          <Var Name="Body_Size" Type="Vector3" DefaultValue="1.5 1.85 1.5" />
+          <Var Name="Body_Mass" Type="Float" DefaultValue="50" />
+          <Var Name="Body_AccurateClimbing" Type="Bool" DefaultValue="true" />
+          <Var Name="Body_MaxNoSlideSlopeAngle" Type="Float" DefaultValue="45" />
+          <Var Name="Body_MaxPushMass" Type="Float" DefaultValue="40" />
+          <Var Name="Body_PushForce" Type="Float" DefaultValue="200" />
+          <Var Name="Body_CharacterMaxPushMass" Type="Float" DefaultValue="20" />
+          <Var Name="Body_CharacterPushForce" Type="Float" DefaultValue="100" />
+          <Var Name="Body_MaxStepSize" Type="Float" DefaultValue="0.5" />
+          <Var Name="Body_StepClimbSpeed" Type="Float" DefaultValue="6.0" />
+          <Var Name="Body_OffsetRot" Type="Vector3" DefaultValue="0 180 0" />
+          <Var Name="Body_OffsetTrans" Type="Vector3" DefaultValue="0 0 0" />
+          <Var Name="Walk_ForwardSpeed" Type="Float" DefaultValue="1.3" />
+          <Var Name="Walk_BackwardSpeed" Type="Float" DefaultValue="0.4" />
+          <Var Name="Walk_ForwardAcc" Type="Float" DefaultValue="2.0" />
+          <Var Name="Walk_ForwardDeacc" Type="Float" DefaultValue="18.0" />
+          <Var Name="Run_ForwardSpeed" Type="Float" DefaultValue="5.1" />
+          <Var Name="Run_BackwardSpeed" Type="Float" DefaultValue="2.0" />
+          <Var Name="Run_ForwardAcc" Type="Float" DefaultValue="4.0" />
+          <Var Name="Run_ForwardDeacc" Type="Float" DefaultValue="8.0" />
+          <Var Name="TurnSpeedMul" Type="Float" DefaultValue="6" />
+          <Var Name="TurnMaxSpeed" Type="Float" DefaultValue="10" />
+          <Var Name="TurnMinBreakAngle" Type="Float" DefaultValue="10" />
+          <Var Name="TurnBreakMul" Type="Float" DefaultValue="2" />
+          <Var Name="MoveSpeedAnimMul" Type="Float" DefaultValue="1.2" />
+          <Var Name="StoppedToWalkSpeed" Type="Float" DefaultValue="0.15" />
+          <Var Name="WalkToStoppedSpeed" Type="Float" DefaultValue="0.1" />
+          <Var Name="WalkToRunSpeed" Type="Float" DefaultValue="2.3" />
+          <Var Name="RunToWalkSpeed" Type="Float" DefaultValue="2.1" />
+          <Var Name="WaterStepSpeedWalk" Type="Float" DefaultValue="3.0" />
+          <Var Name="WaterStepSpeedRun" Type="Float" DefaultValue="5.0" />
+          <Var Name="WaterStepSpeedMisc" Type="Float" DefaultValue="3.0" />
+          <Var Name="LlamaIdleAnimation" Type="String" DefaultValue="Idle" />
+          <Var Name="LlamaWalkAnimation" Type="String" DefaultValue="Walk" />
+          <Var Name="LlamaRunAnimation" Type="String" DefaultValue="Run" />
+          <Var Name="LlamaBackwardAnimation" Type="String" DefaultValue="" />
+          <Var Name="LlamaDeathAnimation" Type="String" DefaultValue="" />
+      </TypeVars>
+    </SubType>
+    <SubType Name="Suitor">
+      <TypeVars>
+          <Var Name="Health" Type="Float" DefaultValue="100" />
+          <Var Name="Toughness" Type="Int" DefaultValue="0" />
+          <Var Name="MaxRegenHealth" Type="Float" DefaultValue="100" />
+          <Var Name="RegenHealthSpeed" Type="Float" DefaultValue="5" />
+          <Var Name="HitPS_Sword" Type="String" DefaultValue="hit/blood.ps" />
+          <Var Name="HitSound_Sword" Type="String" DefaultValue="suitor/hit_generic" />
+          <Var Name="HitPS_Club" Type="String" DefaultValue="hit/blood.ps" />
+          <Var Name="HitSound_Club" Type="String" DefaultValue="suitor/hit_generic" />
+          <Var Name="HitPS_Bullet" Type="String" DefaultValue="hit/blood.ps" />
+          <Var Name="HitSound_Bullet" Type="String" DefaultValue="suitor/hit_generic" />
+          <Var Name="HitPS_Dud" Type="String" DefaultValue="" />
+          <Var Name="HitSound_Dud" Type="String" DefaultValue="" />
+          <Var Name="NormalAttackDistance" Type="Float" DefaultValue="1.9" />
+          <Var Name="NormalDamageSize" Type="Vector3" DefaultValue="1 1.7 1.8" />
+          <Var Name="NormalDamageOffset" Type="Vector3" DefaultValue="0 0 1.3" />
+          <Var Name="NormalAttackHitSound" Type="String" DefaultValue="suitor/attack_claw_hit" />
+          <Var Name="NormalAttackDamage" Type="Vector2" DefaultValue="50 120" />
+          <Var Name="NormalAttackForce" Type="Vector2" DefaultValue="30 5" />
+          <Var Name="NormalAttackStrength" Type="Int" DefaultValue="1" />
+          <Var Name="NormalDamageType" Type="String" DefaultValue="Slash" />
+          <Var Name="BreakDoorAttackDamage" Type="Vector2" DefaultValue="50 56" />
+          <Var Name="BreakDoorAttackForce" Type="Vector2" DefaultValue="30 5" />
+          <Var Name="BreakDoorAttackStrength" Type="Int" DefaultValue="3" />
+          <Var Name="BreakDoorAttackHitSound" Type="String" DefaultValue="suitor/attack_claw_hit" />
+          <Var Name="BreakDoorDamageType" Type="String" DefaultValue="BloodSplat" />
+          <Var Name="Body_Size" Type="Vector3" DefaultValue="1.5 1.85 1.5" />
+          <Var Name="Body_Mass" Type="Float" DefaultValue="50" />
+          <Var Name="Body_AccurateClimbing" Type="Bool" DefaultValue="true" />
+          <Var Name="Body_MaxNoSlideSlopeAngle" Type="Float" DefaultValue="45" />
+          <Var Name="Body_MaxPushMass" Type="Float" DefaultValue="40" />
+          <Var Name="Body_PushForce" Type="Float" DefaultValue="200" />
+          <Var Name="Body_CharacterMaxPushMass" Type="Float" DefaultValue="20" />
+          <Var Name="Body_CharacterPushForce" Type="Float" DefaultValue="100" />
+          <Var Name="Body_MaxStepSize" Type="Float" DefaultValue="0.5" />
+          <Var Name="Body_StepClimbSpeed" Type="Float" DefaultValue="6.0" />
+          <Var Name="Body_OffsetRot" Type="Vector3" DefaultValue="0 180 0" />
+          <Var Name="Body_OffsetTrans" Type="Vector3" DefaultValue="0 0 0" />
+          <Var Name="Walk_ForwardSpeed" Type="Float" DefaultValue="1.3" />
+          <Var Name="Walk_BackwardSpeed" Type="Float" DefaultValue="0.4" />
+          <Var Name="Walk_ForwardAcc" Type="Float" DefaultValue="2.0" />
+          <Var Name="Walk_ForwardDeacc" Type="Float" DefaultValue="18.0" />
+          <Var Name="Run_ForwardSpeed" Type="Float" DefaultValue="5.1" />
+          <Var Name="Run_BackwardSpeed" Type="Float" DefaultValue="2.0" />
+          <Var Name="Run_ForwardAcc" Type="Float" DefaultValue="4.0" />
+          <Var Name="Run_ForwardDeacc" Type="Float" DefaultValue="8.0" />
+          <Var Name="TurnSpeedMul" Type="Float" DefaultValue="6" />
+          <Var Name="TurnMaxSpeed" Type="Float" DefaultValue="10" />
+          <Var Name="TurnMinBreakAngle" Type="Float" DefaultValue="10" />
+          <Var Name="TurnBreakMul" Type="Float" DefaultValue="2" />
+          <Var Name="MoveSpeedAnimMul" Type="Float" DefaultValue="1.2" />
+          <Var Name="StoppedToWalkSpeed" Type="Float" DefaultValue="0.15" />
+          <Var Name="WalkToStoppedSpeed" Type="Float" DefaultValue="0.1" />
+          <Var Name="WalkToRunSpeed" Type="Float" DefaultValue="2.3" />
+          <Var Name="RunToWalkSpeed" Type="Float" DefaultValue="2.1" />
+          <Var Name="WaterStepSpeedWalk" Type="Float" DefaultValue="3.0" />
+          <Var Name="WaterStepSpeedRun" Type="Float" DefaultValue="5.0" />
+          <Var Name="WaterStepSpeedMisc" Type="Float" DefaultValue="3.0" />
+          <Var Name="LlamaIdleAnimation" Type="String" DefaultValue="Idle" />
+          <Var Name="LlamaWalkAnimation" Type="String" DefaultValue="Walk" />
+          <Var Name="LlamaRunAnimation" Type="String" DefaultValue="Run" />
+          <Var Name="LlamaBackwardAnimation" Type="String" DefaultValue="" />
+          <Var Name="LlamaDeathAnimation" Type="String" DefaultValue="" />
+      </TypeVars>
+    </SubType>
+    <SubType Name="ManPig">
+      <TypeVars>
+          <Var Name="Health" Type="Float" DefaultValue="100" />
+          <Var Name="Toughness" Type="Int" DefaultValue="0" />
+          <Var Name="MaxRegenHealth" Type="Float" DefaultValue="100" />
+          <Var Name="RegenHealthSpeed" Type="Float" DefaultValue="5" />
+          <Var Name="HitPS_Sword" Type="String" DefaultValue="hit/blood.ps" />
+          <Var Name="HitSound_Sword" Type="String" DefaultValue="grunt/hit_generic" />
+          <Var Name="HitPS_Club" Type="String" DefaultValue="hit/blood.ps" />
+          <Var Name="HitSound_Club" Type="String" DefaultValue="grunt/hit_generic" />
+          <Var Name="HitPS_Bullet" Type="String" DefaultValue="hit/blood.ps" />
+          <Var Name="HitSound_Bullet" Type="String" DefaultValue="grunt/hit_generic" />
+          <Var Name="HitPS_Dud" Type="String" DefaultValue="" />
+          <Var Name="HitSound_Dud" Type="String" DefaultValue="" />
+          <Var Name="NormalDamageSize" Type="Vector3" DefaultValue="1 1.6 1.75" />
+          <Var Name="NormalDamageOffset" Type="Vector3" DefaultValue="0 0 1.2" />
+          <Var Name="NormalAttackDistance" Type="Float" DefaultValue="1.9" />
+          <Var Name="NormalAttackHitSound" Type="String" DefaultValue="grunt/attack_claw_hit" />
+          <Var Name="NormalAttackDamage" Type="Vector2" DefaultValue="30 60" />
+          <Var Name="NormalAttackForce" Type="Vector2" DefaultValue="30 5" />
+          <Var Name="NormalAttackStrength" Type="Int" DefaultValue="1" />
+          <Var Name="NormalDamageType" Type="String" DefaultValue="Claws" />
+          <Var Name="BreakDoorAttackDamage" Type="Vector2" DefaultValue="26 26" />
+          <Var Name="BreakDoorAttackForce" Type="Vector2" DefaultValue="30 5" />
+          <Var Name="BreakDoorAttackStrength" Type="Int" DefaultValue="6" />
+          <Var Name="BreakDoorAttackHitSound" Type="String" DefaultValue="grunt/attack_claw_hit" />
+          <Var Name="BreakDoorDamageType" Type="String" DefaultValue="BloodSplat" />
+          <Var Name="Body_Size" Type="Vector3" DefaultValue="1.2 1.85 1.2" />
+          <Var Name="Body_Mass" Type="Float" DefaultValue="50" />
+          <Var Name="Body_AccurateClimbing" Type="Bool" DefaultValue="true" />
+          <Var Name="Body_MaxNoSlideSlopeAngle" Type="Float" DefaultValue="45" />
+          <Var Name="Body_MaxPushMass" Type="Float" DefaultValue="40" />
+          <Var Name="Body_PushForce" Type="Float" DefaultValue="200" />
+          <Var Name="Body_CharacterMaxPushMass" Type="Float" DefaultValue="20" />
+          <Var Name="Body_CharacterPushForce" Type="Float" DefaultValue="100" />
+          <Var Name="Body_MaxStepSize" Type="Float" DefaultValue="0.5" />
+          <Var Name="Body_StepClimbSpeed" Type="Float" DefaultValue="6.0" />
+          <Var Name="Body_OffsetRot" Type="Vector3" DefaultValue="0 180 0" />
+          <Var Name="Body_OffsetTrans" Type="Vector3" DefaultValue="0 -0.02 0" />
+          <Var Name="Walk_ForwardSpeed" Type="Float" DefaultValue="1.3" />
+          <Var Name="Walk_BackwardSpeed" Type="Float" DefaultValue="0.4" />
+          <Var Name="Walk_ForwardAcc" Type="Float" DefaultValue="2.0" />
+          <Var Name="Walk_ForwardDeacc" Type="Float" DefaultValue="18.0" />
+          <Var Name="Run_ForwardSpeed" Type="Float" DefaultValue="5.1" />
+          <Var Name="Run_BackwardSpeed" Type="Float" DefaultValue="2.0" />
+          <Var Name="Run_ForwardAcc" Type="Float" DefaultValue="4.0" />
+          <Var Name="Run_ForwardDeacc" Type="Float" DefaultValue="8.0" />
+          <Var Name="TurnSpeedMul" Type="Float" DefaultValue="6" />
+          <Var Name="TurnMaxSpeed" Type="Float" DefaultValue="12" />
+          <Var Name="TurnMinBreakAngle" Type="Float" DefaultValue="10" />
+          <Var Name="TurnBreakMul" Type="Float" DefaultValue="2" />
+          <Var Name="MoveSpeedAnimMul" Type="Float" DefaultValue="1.2" />
+          <Var Name="StoppedToWalkSpeed" Type="Float" DefaultValue="0.15" />
+          <Var Name="WalkToStoppedSpeed" Type="Float" DefaultValue="0.1" />
+          <Var Name="WalkToRunSpeed" Type="Float" DefaultValue="3.2" />
+          <Var Name="RunToWalkSpeed" Type="Float" DefaultValue="2.8" />
+          <Var Name="WaterStepSpeedWalk" Type="Float" DefaultValue="3.0" />
+          <Var Name="WaterStepSpeedRun" Type="Float" DefaultValue="5.0" />
+          <Var Name="WaterStepSpeedMisc" Type="Float" DefaultValue="3.0" />
+          <Var Name="LlamaIdleAnimation" Type="String" DefaultValue="IdleExtra1" />
+          <Var Name="LlamaWalkAnimation" Type="String" DefaultValue="" />
+          <Var Name="LlamaRunAnimation" Type="String" DefaultValue="" />
+          <Var Name="LlamaBackwardAnimation" Type="String" DefaultValue="" />
+          <Var Name="LlamaDeathAnimation" Type="String" DefaultValue="" />
+      </TypeVars>
+    </SubType>
+  </SubTypes>
+</Type>

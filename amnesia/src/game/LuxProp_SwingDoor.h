@@ -112,6 +112,7 @@ public:
 	cMeshEntity* GetEffectMeshEntity();
 
 	bool IsBroken(){ return mbBroken;}
+	bool CanBeBroken(){ return mbBreakable && !mbDisableBreakable && !mbBroken && mfHealth>0; }
 
 	//////////////////////
 	//Connection callbacks

@@ -32,6 +32,7 @@ class cModelEditorWindowAnimations : public iEditorWindowPopUp
 {
 public:
 	cModelEditorWindowAnimations(cModelEditor* apEditor);
+	void OnWorldModify();
 
 protected:
 	void OnSetActive(bool abX);
@@ -48,6 +49,9 @@ protected:
 
 	void UpdateAnimInputs();
 	void UpdateEventInputs();
+	void UpdateAnimationList();
+	void RefreshFromWorld();
+	bool HasStaleDraft();
 
 	/////////////
 	// Layout
@@ -76,6 +80,8 @@ protected:
 	cEditorInputText* mpInpEventValue;
 
 	std::vector<cAnimationWrapper> mvTempAnimations;
+	unsigned int mlDisplayedAnimationRevision;
+	bool mbRefreshing;
 };
 
 //-------------------------------------------------------------------------

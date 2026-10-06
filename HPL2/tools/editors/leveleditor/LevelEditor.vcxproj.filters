@@ -398,6 +398,9 @@
     <ClInclude Include="..\common\EditorUserClassDefinitionManager.h">
       <Filter>Common</Filter>
     </ClInclude>
+    <ClInclude Include="..\common\EditorEnemyLlamaDefinition.h">
+      <Filter>Common</Filter>
+    </ClInclude>
     <ClInclude Include="..\common\EditorVar.h">
       <Filter>Common</Filter>
     </ClInclude>

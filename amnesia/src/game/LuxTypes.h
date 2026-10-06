@@ -164,6 +164,7 @@ enum eLuxEnemyType
 	eLuxEnemyType_Grunt,
 	eLuxEnemyType_WaterLurker,
 	eLuxEnemyType_ManPig,
+	eLuxEnemyType_Llama,
 
 	eLuxEnemyType_LastEnum
 };

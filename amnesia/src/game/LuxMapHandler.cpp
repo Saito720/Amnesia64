@@ -92,7 +92,7 @@ void cMapHandlerSoundCallback::OnStart(cSoundEntity *apSoundEntity)
 	///////////////////////////
 	//Iterate enemies and send sound message to those close enough
 	float fMaxDist = apSoundEntity->GetMaxDistance();
-	float fMinDist = apSoundEntity->GetMaxDistance();
+	float fMinDist = apSoundEntity->GetMinDistance();
 	float fVolume = apSoundEntity->GetVolume();
 	cVector3f vPos = apSoundEntity->GetWorldPosition();
 	

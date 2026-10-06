@@ -39,6 +39,7 @@
 #include "LuxGlobalDataHandler.h"
 #include "LuxInventory.h"
 #include "LuxLoadScreenHandler.h"
+#include "LuxEnemy_Llama.h"
 
 #include "scene/RenderableContainer_DynBoxTree.h"
 
@@ -87,12 +88,18 @@ cLuxDebugHandler::cLuxDebugHandler() : iLuxUpdateable("LuxDebugHandler")
 	
 	mbFastForward = false;
 	mpCBFastForward = NULL;
+	mbShowLlamaObservation = false;
+	mlLlamaObservationEnemyID = -1;
+	mpLlamaObservationGfx = NULL;
+	mpLlamaObservationBackground = NULL;
+	mpLlamaObservationTexture = NULL;
 }
 
 //-----------------------------------------------------------------------
 
 cLuxDebugHandler::~cLuxDebugHandler()
 {
+	DestroyLlamaObservationGfx();
 	SetLogMessageCallback(NULL);
 }
 
@@ -122,6 +129,8 @@ void cLuxDebugHandler::LoadUserConfig()
 	mbInspectionMode = gpBase->mpUserConfig->GetBool("Debug", "InspectionMode", false);
 	mbDisableFlashBacks = gpBase->mpUserConfig->GetBool("Debug", "DisableFlashBacks", false);
 	mbDrawPhysics = gpBase->mpUserConfig->GetBool("Debug", "DrawPhysics", false);
+	mbShowLlamaObservation = gpBase->mpConfigHandler->mbLoadDebugMenu &&
+		gpBase->mpUserConfig->GetBool("Debug", "ShowLlamaObservation", false);
 
 	mbReloadFromCurrentPosition = gpBase->mpUserConfig->GetBool("Debug", "ReloadFromCurrentPosition", true);
 
@@ -140,6 +149,7 @@ void cLuxDebugHandler::LoadUserConfig()
 			mbScriptDebugOn = false;
 			mbInspectionMode = false;
 			mbDisableFlashBacks = false;
+			mbShowLlamaObservation = false;
 		#endif
 	}
 
@@ -164,6 +174,7 @@ void cLuxDebugHandler::SaveUserConfig()
 	 gpBase->mpUserConfig->SetBool("Debug", "InspectionMode", mbInspectionMode);
 	 gpBase->mpUserConfig->SetBool("Debug", "DisableFlashBacks", mbDisableFlashBacks);
 	 gpBase->mpUserConfig->SetBool("Debug", "DrawPhysics", mbDrawPhysics);
+	 gpBase->mpUserConfig->SetBool("Debug", "ShowLlamaObservation", mbShowLlamaObservation);
 
 	 gpBase->mpUserConfig->SetBool("Debug", "ReloadFromCurrentPosition", mbReloadFromCurrentPosition);
 
@@ -185,8 +196,21 @@ void cLuxDebugHandler::OnStart()
 
 void cLuxDebugHandler::Reset()
 {
+	ClearLlamaObservation();
 	mbFirstUpdateOnMap = false;
 	mpInspectMeshEntity = NULL;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxDebugHandler::OnLlamaEnemyDestroyed(int alID)
+{
+	if(alID != mlLlamaObservationEnemyID) return;
+	// The capture texture is about to be released. Discard queued image draws
+	// before that happens; do not resolve or call the enemy being destroyed.
+	if(gpBase->mpGameDebugSet) gpBase->mpGameDebugSet->ClearRenderObjects();
+	mlLlamaObservationEnemyID = -1;
+	DestroyLlamaObservationGfx();
 }
 
 //-----------------------------------------------------------------------
@@ -270,12 +294,202 @@ void cLuxDebugHandler::Update(float afTimeStep)
 	
 	UpdateInspectionMeshEntity(afTimeStep);
 	UpdateMessages(afTimeStep);
+	UpdateLlamaObservation();
+}
+
+//-----------------------------------------------------------------------
+
+cLuxEnemy_Llama *cLuxDebugHandler::GetSelectedLlamaEnemy()
+{
+	cLuxMap *pMap = gpBase->mpMapHandler->GetCurrentMap();
+	cLuxEnemy_Llama *pOwner = pMap ? cLuxEnemy_Llama::GetControllerOwner(pMap) : NULL;
+	const int lOwnerID = pOwner ? pOwner->GetID() : -1;
+	if(lOwnerID == mlLlamaObservationEnemyID) return pOwner;
+
+	// Follow the single lowest-ID eligible controller owner. A previous
+	// observer must lose both commands and capture before the new one starts.
+	if(pMap && mlLlamaObservationEnemyID >= 0)
+	{
+		iLuxEntity *pPrevious = pMap->GetEntityByID(mlLlamaObservationEnemyID,
+			eLuxEntityType_Enemy, eLuxEnemyType_Llama);
+		if(pPrevious)
+		{
+			cLuxEnemy_Llama *pLlama = static_cast<cLuxEnemy_Llama*>(pPrevious);
+			pLlama->SetDebugInput(0, 0);
+			pLlama->SetObservationEnabled(false);
+		}
+	}
+	if(mpLlamaObservationBackground && gpBase->mpGameDebugSet)
+		gpBase->mpGameDebugSet->ClearRenderObjects();
+	DestroyLlamaObservationGfx();
+	mlLlamaObservationEnemyID = lOwnerID;
+	if(pOwner) pOwner->SetDebugInput(0, 0);
+	return pOwner;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxDebugHandler::DestroyLlamaObservationGfx()
+{
+	if(mpLlamaObservationGfx) mpGui->DestroyGfx(mpLlamaObservationGfx);
+	if(mpLlamaObservationBackground) mpGui->DestroyGfx(mpLlamaObservationBackground);
+	mpLlamaObservationGfx = NULL;
+	mpLlamaObservationBackground = NULL;
+	mpLlamaObservationTexture = NULL;
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxDebugHandler::ClearLlamaObservation()
+{
+	// A map transition may happen after OnDraw queued an image. Its borrowed
+	// texture belongs to the departing enemy, so discard pending debug draws.
+	if(mpLlamaObservationGfx && gpBase->mpGameDebugSet)
+		gpBase->mpGameDebugSet->ClearRenderObjects();
+	cLuxEnemy_Llama *pEnemy = GetSelectedLlamaEnemy();
+	if(pEnemy)
+	{
+		pEnemy->SetDebugInput(0, 0);
+		pEnemy->SetObservationEnabled(false);
+	}
+	mlLlamaObservationEnemyID = -1;
+	DestroyLlamaObservationGfx();
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxDebugHandler::UpdateLlamaObservation()
+{
+	if(!mbShowLlamaObservation || !gpBase->mpConfigHandler->mbLoadDebugMenu) return;
+	cLuxEnemy_Llama *pEnemy = GetSelectedLlamaEnemy();
+	if(!pEnemy) return;
+	pEnemy->SetObservationEnabled(true);
+
+	float fForward = 0;
+	float fTurn = 0;
+	// Debug input already prevents the player from moving. Closing F1 or
+	// changing the controller owner immediately clears the enemy command.
+	if(gpBase->mpInputHandler->GetState() == eLuxInputState_Debug)
+	{
+		iKeyboard *pKeyboard = gpBase->mpEngine->GetInput()->GetKeyboard();
+		fForward = (pKeyboard->KeyIsDown(eKey_Up) ? 1.0f : 0.0f) -
+			(pKeyboard->KeyIsDown(eKey_Down) ? 1.0f : 0.0f);
+		fTurn = (pKeyboard->KeyIsDown(eKey_Right) ? 1.0f : 0.0f) -
+			(pKeyboard->KeyIsDown(eKey_Left) ? 1.0f : 0.0f);
+	}
+	pEnemy->SetDebugInput(fForward, fTurn);
+}
+
+//-----------------------------------------------------------------------
+
+void cLuxDebugHandler::DrawLlamaObservation()
+{
+	if(!mbShowLlamaObservation || !gpBase->mpConfigHandler->mbLoadDebugMenu) return;
+	cLuxEnemy_Llama *pEnemy = GetSelectedLlamaEnemy();
+	if(pEnemy)
+	{
+		pEnemy->SetObservationEnabled(true);
+		pEnemy->CaptureObservation();
+	}
+
+	cGuiSet *pSet = gpBase->mpGameDebugSet;
+	const cVector2f vScreen = pSet->GetVirtualSize();
+	cVector2l vSize = pEnemy ? pEnemy->GetObservationSize() : cVector2l(384, 256);
+	if(vSize.x <= 0 || vSize.y <= 0) vSize = cVector2l(384, 256);
+	const float fHeightLimitedWidth = cMath::Max(1.0f, vScreen.y - 238.0f) * (float)vSize.x / (float)vSize.y;
+	const float fImageWidth = cMath::Max(1.0f, cMath::Min(fHeightLimitedWidth,
+		cMath::Min((float)vSize.x, cMath::Min(384.0f, vScreen.x - 32.0f))));
+	const float fImageHeight = fImageWidth * (float)vSize.y / (float)vSize.x;
+	const float fPanelWidth = cMath::Max(fImageWidth + 16.0f, cMath::Min(400.0f, vScreen.x - 16.0f));
+	const float fPanelHeight = fImageHeight + 222.0f;
+	const cVector3f vOrigin(8, cMath::Max(8.0f, vScreen.y - fPanelHeight - 8.0f), 40);
+	if(!mpLlamaObservationBackground)
+		mpLlamaObservationBackground = mpGui->CreateGfxFilledRect(cColor(0, 0, 0, 0.92f), eGuiMaterial_Alpha);
+	pSet->DrawGfx(mpLlamaObservationBackground, vOrigin, cVector2f(fPanelWidth, fPanelHeight));
+
+	const cVector3f vText(vOrigin.x + 8, vOrigin.y + 8, 42);
+	pSet->DrawFont(gpBase->mpDefaultFont, vText, 12, cColor(1,1),
+		_W("Enemy_Llama single owner / inference disabled"));
+	if(!pEnemy)
+	{
+		if(mpLlamaObservationGfx) mpGui->DestroyGfx(mpLlamaObservationGfx);
+		mpLlamaObservationGfx = NULL;
+		mpLlamaObservationTexture = NULL;
+		pSet->DrawFont(gpBase->mpDefaultFont, vText + cVector3f(0,20,0), 12, cColor(1,1),
+			_W("No eligible Enemy_Llama controller owner."));
+		return;
+	}
+
+	tWString sName = cString::To16Char(pEnemy->GetName());
+	if(sName.size() > 28) sName = sName.substr(0, 25) + _W("...");
+	tWString sRig = cString::To16Char(pEnemy->GetRigProfile());
+	if(sRig.size() > 12) sRig = sRig.substr(0, 9) + _W("...");
+	pSet->DrawFont(gpBase->mpDefaultFont, vText + cVector3f(0,16,0), 12, cColor(1,1),
+		_W("Owner: %ls (ID %d, %ls)"), sName.c_str(), pEnemy->GetID(), sRig.c_str());
+	pSet->DrawFont(gpBase->mpDefaultFont, vText + cVector3f(0,32,0), 12, cColor(1,1),
+		_W("Frame %u | %.2fs | %dx%d RGB | %.1f deg H FOV"),
+		pEnemy->GetObservationFrameId(), pEnemy->GetObservationTime(), vSize.x, vSize.y,
+		cMath::ToDeg(pEnemy->GetObservationFOV()));
+	tWString sStatus = cString::To16Char(pEnemy->GetObservationStatus());
+	if(sStatus.size() > 58) sStatus = sStatus.substr(0, 55) + _W("...");
+	pSet->DrawFont(sStatus, gpBase->mpDefaultFont,
+		vText + cVector3f(0,48,0), 12, cColor(1,1));
+
+	iTexture *pTexture = pEnemy->GetObservationTexture();
+	if(pTexture != mpLlamaObservationTexture)
+	{
+		if(mpLlamaObservationGfx) mpGui->DestroyGfx(mpLlamaObservationGfx);
+		mpLlamaObservationGfx = NULL;
+		mpLlamaObservationTexture = pTexture;
+		if(pTexture)
+		{
+			// Borrow the final composited texture. Flipping its FBO coordinates
+			// matches the top-down RGB pixels without adding labels to the image.
+			mpLlamaObservationGfx = mpGui->CreateGfxTexture(pTexture, false, eGuiMaterial_Diffuse);
+			mpLlamaObservationGfx->SetFlipUvYAxis(true);
+		}
+	}
+	if(mpLlamaObservationGfx)
+		pSet->DrawGfx(mpLlamaObservationGfx, cVector3f(vText.x, vOrigin.y + 72, 41),
+			cVector2f(fImageWidth, fImageHeight));
+
+	float fY = vOrigin.y + 80 + fImageHeight;
+	pSet->DrawFont(gpBase->mpDefaultFont, cVector3f(vText.x,fY,42), 12, cColor(1,0.35f,1,1),
+		_W("Magenta: player cylinder"));
+	pSet->DrawFont(gpBase->mpDefaultFont, cVector3f(vText.x+192,fY,42), 12, cColor(0,1,1,1),
+		_W("Cyan: breakable doors"));
+	fY += 16;
+	const cVector3f vEye = pEnemy->GetObservationPosition();
+	pSet->DrawFont(gpBase->mpDefaultFont, cVector3f(vText.x,fY,42), 12, cColor(1,1),
+		_W("Eye %.2f, %.2f, %.2f | yaw %.1f deg"), vEye.x, vEye.y, vEye.z,
+		cMath::ToDeg(pEnemy->GetObservationYaw()));
+	fY += 16;
+	pSet->DrawFont(gpBase->mpDefaultFont, cVector3f(vText.x,fY,42), 12, cColor(1,1),
+		_W("F1 open: Up/Down move; Left/Right turn."));
+	fY += 16;
+	pSet->DrawFont(gpBase->mpDefaultFont, cVector3f(vText.x,fY,42), 12, cColor(1,1),
+		_W("Lowest eligible ID owns control; extras stay idle."));
+	fY += 16;
+	const std::vector<cLuxLlamaSound>& vSounds = pEnemy->GetPerceivedSounds();
+	const size_t lFirstSound = vSounds.size() > 4 ? vSounds.size() - 4 : 0;
+	pSet->DrawFont(gpBase->mpDefaultFont, cVector3f(vText.x,fY,42), 12, cColor(1,1),
+		_W("Heard events: %u (showing latest %u)"), (unsigned)vSounds.size(),
+		(unsigned)(vSounds.size() - lFirstSound));
+	for(size_t i=lFirstSound; i<vSounds.size(); ++i)
+	{
+		const cLuxLlamaSound& sound = vSounds[i];
+		fY += 16;
+		pSet->DrawFont(gpBase->mpDefaultFont, cVector3f(vText.x,fY,42), 12, cColor(1,1),
+			_W("age %.1fs | bearing %+.0f deg | %.1fm | volume %.2f"),
+			sound.mfAge, cMath::ToDeg(sound.mfBearing), sound.mfDistance, sound.mfVolume);
+	}
 }
 
 //-----------------------------------------------------------------------
 
 void cLuxDebugHandler::OnMapEnter(cLuxMap *apMap)
 {
+	ClearLlamaObservation();
 	mbFirstUpdateOnMap = true;
 	mlTempCount =0;
 	mpInspectMeshEntity = NULL;
@@ -299,6 +513,7 @@ void cLuxDebugHandler::OnMapEnter(cLuxMap *apMap)
 
 void cLuxDebugHandler::OnMapLeave(cLuxMap *apMap)
 {
+	ClearLlamaObservation();
 	mpInspectMeshEntity = NULL;
 
 	if(mpCBPlayerStarts)
@@ -313,6 +528,12 @@ void cLuxDebugHandler::OnMapLeave(cLuxMap *apMap)
 void cLuxDebugHandler::SetDebugWindowActive(bool abActive)
 {
 	if(gpBase->mpConfigHandler->mbLoadDebugMenu==false) return;
+	mbWindowActive = abActive;
+	if(!abActive)
+	{
+		cLuxEnemy_Llama *pEnemy = GetSelectedLlamaEnemy();
+		if(pEnemy) pEnemy->SetDebugInput(0, 0);
+	}
 
 	//////////////////
 	// Active
@@ -382,6 +603,9 @@ static tString PixelFormatToString(ePixelFormat aFormat)
 
 void cLuxDebugHandler::OnDraw(float afFrameTime)
 {
+	// Capture before the player viewport is rendered, so its renderer state and
+	// GUI cannot become part of the enemy's observation.
+	DrawLlamaObservation();
 	float fY = 5.0f;
 	
 	////////////////////
@@ -961,7 +1185,7 @@ void cLuxDebugHandler::CreateGuiWindow()
 
 	///////////////////////////
 	//Window
-	cVector2f vSize = cVector2f(250, 780);
+	cVector2f vSize = cVector2f(250, 802);
 	vGroupSize.x = vSize.x - 20;
 	cVector3f vPos = cVector3f(mpGuiSet->GetVirtualSize().x - vSize.x - 10, 10, 0);
 	mpDebugWindow = mpGuiSet->CreateWidgetWindow(0,vPos,vSize,_W("Debug Toolbar") );
@@ -981,6 +1205,12 @@ void cLuxDebugHandler::CreateGuiWindow()
 		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos,vSize,_W("Show FPS"),pGroup);
 		pCheckBox->SetChecked(mbShowFPS);
 		pCheckBox->SetUserValue(0);
+		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
+		vGroupPos.y += 22;
+
+		pCheckBox = mpGuiSet->CreateWidgetCheckBox(vGroupPos,vSize,_W("Enemy_Llama observation"),pGroup);
+		pCheckBox->SetChecked(mbShowLlamaObservation);
+		pCheckBox->SetUserValue(18);
 		pCheckBox->AddCallback(eGuiMessage_CheckChange,this, kGuiCallback(ChangeDebugText));
 		vGroupPos.y += 22;
 
@@ -1579,6 +1809,11 @@ bool cLuxDebugHandler::ChangeDebugText(iWidget* apWidget, const cGuiMessageData&
 	else if(lNum == 14)  gpBase->mpPlayer->SetFreeCamSpeed( cMath::Max((float)aData.mlVal/ 100.0f, 0.001f) );
 
 	else if(lNum == 17)  SetFastForward(bActive);
+	else if(lNum == 18)
+	{
+		mbShowLlamaObservation = bActive;
+		if(!bActive) ClearLlamaObservation();
+	}
 	
 
 	return true;

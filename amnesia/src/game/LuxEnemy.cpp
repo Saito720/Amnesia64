@@ -630,6 +630,17 @@ void iLuxEnemy::OnUpdate(float afTimeStep)
 		return;
 	}
 
+	if(UsesLegacyAI()==false)
+	{
+		UpdateEnemySpecific(afTimeStep);
+		mpMover->OnUpdate(afTimeStep);
+		UpdateCharBody(afTimeStep);
+		UpdateAnimation(afTimeStep);
+		UpdateRegenHealth(afTimeStep);
+		UpdateAlignEntityWithGroundRay(afTimeStep);
+		return;
+	}
+
 	//////////////////////
 	// Helpers
 	mpPathfinder->OnUpdate(afTimeStep);
@@ -712,6 +723,11 @@ void iLuxEnemy::OnUpdate(float afTimeStep)
 
 void iLuxEnemy::OnRenderSolid(cRendererCallbackFunctions* apFunctions)
 {
+	if(UsesLegacyAI()==false)
+	{
+		OnRenderSolidImplemented(apFunctions);
+		return;
+	}
 	//return;
 	iPhysicsWorld *pPhysicsWorld = mpMap->GetPhysicsWorld();
 
@@ -792,6 +808,7 @@ iEntity3D* iLuxEnemy::GetAttachEntity()
 
 void iLuxEnemy::GiveDamage(float afAmount, int alStrength)
 {
+	if(UsesLegacyAI()==false && mfHealth<=0) return;
 	if(mfHealth > 0)
 
 	if(alStrength < mlToughness-1)			afAmount =0;
@@ -807,6 +824,7 @@ void iLuxEnemy::GiveDamage(float afAmount, int alStrength)
 	{
 		ChangeSoundState(eLuxEnemySoundState_Silent);
 		ChangeState(eLuxEnemyState_Dead);
+		if(UsesLegacyAI()==false) OnControllerDeath();
 
 		RunCallbackFunc("OnDeath");
 	}
@@ -821,11 +839,13 @@ void iLuxEnemy::GiveDamage(float afAmount, int alStrength)
 
 void iLuxEnemy::ShowPlayerPosition()
 {
+	if(UsesLegacyAI()==false) return;
 	mvLastKnownPlayerPos = gpBase->mpPlayer->GetCharacterBody()->GetFeetPosition();
 }
 
 void iLuxEnemy::AlertOfPlayerPresence()
 {
+	if(UsesLegacyAI()==false) return;
 	if(TriggersDisabled()) return;
 
 	ShowPlayerPosition();
@@ -839,6 +859,7 @@ void iLuxEnemy::AlertOfPlayerPresence()
 
 void iLuxEnemy::ChangeState(eLuxEnemyState aState)
 {
+	if(UsesLegacyAI()==false) return;
 	if(aState == eLuxEnemyState_LastEnum) return;
 	if(mCurrentState == aState) return;
 
@@ -853,6 +874,11 @@ void iLuxEnemy::ChangeState(eLuxEnemyState aState)
 void iLuxEnemy::SendMessage(eLuxEnemyMessage aType, float afTime, bool abLocalScope, const cVector3f& avX,float afX, int alX)
 {
 	if(mbDisabled) return;
+	if(UsesLegacyAI()==false)
+	{
+		if(TriggersDisabled()==false) OnControllerMessage(aType, avX, afX);
+		return;
+	}
 	if(	TriggersDisabled() && 
 		aType > eLuxEnemyMessage_EndOfPath && 
 		aType != eLuxEnemyMessage_PlayerInRange && 
@@ -1140,6 +1166,10 @@ void iLuxEnemy::SetDisabled(bool abX)
 	if(mbDisabled)
 	{
 		mpPathfinder->Stop();
+		if(UsesLegacyAI()==false)
+		{
+			OnControllerDisabled();
+		}
 	}
 }
 

@@ -114,6 +114,8 @@ public:
 	void OnPostRender(float afFrameTime);
 
 	cGuiSet* GetSet() { return mpGuiSet; }
+	cViewport* GetViewport() { return mpViewport; }
+	float GetChatBackdropBlurAmount() const { return 1.0f-mfMenuFadeAlpha; }
 
 	void SetWindowActive(eLuxMainMenuWindow aWindow);
 	void SetTopMenuAlpha(float afX) { mfTopMenuAlpha = afX; }

@@ -160,6 +160,8 @@ public:
 	void OnDraw(float afFrameTime);
 
 	cGuiSet* GetSet() { return mpGuiSet; }
+	cViewport* GetViewport() { return mpViewport; }
+	float GetChatBackdropBlurAmount() const { return mfAlpha; }
 
 	void ExitPressed(bool abInstantExit);
 

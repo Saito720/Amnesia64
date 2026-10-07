@@ -7,6 +7,10 @@
 #include "LuxMultiplayerChatLayout.h"
 #include "LuxMultiplayerChatEmoji.h"
 #include "LuxPlayer.h"
+#include "LuxMapHandler.h"
+#include "LuxMainMenu.h"
+#include "LuxInventory.h"
+#include "LuxJournal.h"
 #include "LuxMessageHandler.h"
 #include "LuxEffectHandler.h"
 #include "LuxDebugHandler.h"
@@ -42,6 +46,10 @@ cLuxMultiplayerUI::cLuxMultiplayerUI(cLuxMultiplayer* apMultiplayer)
         ->SetEventCallback(EventCallback, this);
     static_cast<cLowLevelGraphicsSDL*>(gpBase->mpEngine->GetGraphics()->GetLowLevel())
         ->SetOverlayCallback(DrawCallback, this);
+    if(gpBase->mpMainMenu && gpBase->mpMainMenu->GetViewport()) mvChatMenuViewports.push_back(gpBase->mpMainMenu->GetViewport());
+    if(gpBase->mpInventory && gpBase->mpInventory->GetViewport()) mvChatMenuViewports.push_back(gpBase->mpInventory->GetViewport());
+    if(gpBase->mpJournal && gpBase->mpJournal->GetViewport()) mvChatMenuViewports.push_back(gpBase->mpJournal->GetViewport());
+    for(cViewport* viewport:mvChatMenuViewports) viewport->AddViewportCallback(this);
     Initialize();
 #endif
 }
@@ -51,6 +59,12 @@ cLuxMultiplayerUI::~cLuxMultiplayerUI()
 #if USE_SDL2
     CloseChat();
     SetVisible(false);
+    for(cViewport* viewport:mvChatMenuViewports) viewport->RemoveViewportCallback(this);
+    DestroyMenuBackdrop();
+    for(iGpuProgram*& program:mpChatMenuBlurProgram) {
+        if(program) gpBase->mpEngine->GetGraphics()->DestroyGpuProgram(program);
+        program=NULL;
+    }
     if(mpChatEmoji) {hplDelete(mpChatEmoji);mpChatEmoji=NULL;}
     static_cast<cLowLevelInputSDL*>(gpBase->mpEngine->GetInput()->GetLowLevel())
         ->SetEventCallback(NULL, NULL);
@@ -113,6 +127,20 @@ bool cLuxMultiplayerUI::Initialize()
         ImGui::DestroyContext(mpContext);
         mpContext = NULL;
         return false;
+    }
+    // Capture handles once while setting up the overlay. Rendering later uses
+    // raw GL bindings, leaving HPL's cached shader state unchanged.
+    for(int axis=0;axis<2;++axis) {
+        cParserVarContainer variables;
+        if(axis==0) variables.Add("BlurHorisontal");
+        mpChatMenuBlurProgram[axis]=gpBase->mpEngine->GetGraphics()->CreateGpuProgramFromShaders(
+            "ChatMenuBlur"+std::to_string(axis),"mainmenu_screen_blur_vtx.glsl","mainmenu_screen_blur_frag.glsl",&variables);
+        if(mpChatMenuBlurProgram[axis]) {
+            mpChatMenuBlurProgram[axis]->Bind();
+            GLint handle=0;glGetIntegerv(GL_CURRENT_PROGRAM,&handle);
+            mlChatMenuBlurProgramHandle[axis]=static_cast<unsigned>(handle);
+            mpChatMenuBlurProgram[axis]->UnBind();
+        }
     }
     return true;
 #else
@@ -214,10 +242,20 @@ void cLuxMultiplayerUI::Toggle()
     else Show(false);
 }
 
+bool cLuxMultiplayerUI::CanShowChatHistory() const
+{
+    if(!mpMultiplayer->IsActive() || !mpMultiplayer->IsReady() || mpMultiplayer->IsChangingMap() ||
+       mpMultiplayer->IsSteamOverlayActive() || mpMultiplayer->GetLoadPhase()!=eLuxMultiplayerLoadPhase_None ||
+       !gpBase->mpMapHandler || !gpBase->mpMapHandler->GetCurrentMap()) return false;
+    // Passive history belongs to the live session, including its pause screens.
+    // Startup, loading and end-of-game containers have no chat overlay.
+    const tString& container=gpBase->mpEngine->GetUpdater()->GetCurrentContainerName();
+    return container=="Default" || container=="MainMenu" || container=="Inventory" || container=="Journal";
+}
+
 bool cLuxMultiplayerUI::CanOpenChat() const
 {
-    if(mbVisible || !mpMultiplayer->IsActive() || !mpMultiplayer->IsReady() || mpMultiplayer->IsChangingMap() ||
-       mpMultiplayer->IsSteamOverlayActive() || mpMultiplayer->GetLoadPhase()!=eLuxMultiplayerLoadPhase_None ||
+    if(!CanShowChatHistory() || mbVisible ||
        gpBase->mpInputHandler->GetState()!=eLuxInputState_Game ||
        gpBase->mpEngine->GetUpdater()->GetCurrentContainerName()!="Default" || gpBase->mpEngine->GetPaused() ||
        !gpBase->mpPlayer || !gpBase->mpPlayer->IsActive() || gpBase->mpPlayer->IsDead()) return false;
@@ -245,6 +283,8 @@ void cLuxMultiplayerUI::OpenChat()
     mlChatCursor=mlChatSelectionStart=mlChatSelectionEnd=0;
     mbChatMouseSelecting=false;mfChatEntryScroll=0;mfChatHistoryScroll=0;mChatEntryRich=luxchat::RichTextLayout();
     msChatPendingInsert.clear();mbChatRestoreSelection=true;
+    CloseChatCompletion();msChatCompletionDismissText.clear();mlChatCompletionDismissCursor=-1;
+    mbChatCompletionEnterHeld=mbChatCompletionTabHeld=false;
     mbChatOpen=true;mbChatFocusInput=true;mbChatEventCaptured=true;
     mbSuppressChatOpeningText=true;mbChatSubmit=false;
     CaptureGuiMouse();
@@ -259,10 +299,17 @@ void cLuxMultiplayerUI::CloseChat()
 {
 #if USE_SDL2
     if(!mbChatOpen) return;
+    CloseChatCompletion();msChatCompletionDismissText.clear();mlChatCompletionDismissCursor=-1;
+    mbChatCompletionEnterHeld=mbChatCompletionTabHeld=false;
+    CloseChatPickerToneMenu();
     mbChatOpen=false;mbChatFocusInput=false;mbChatSubmit=false;
     mbChatEmojiPickerOpen=false;mbChatEmojiPickerFocus=false;mbChatRestoreSelection=false;
     mbChatMouseSelecting=false;mbChatMouseInput=false;mfChatEntryScroll=0;mfChatHistoryScroll=0;
     msChatPendingInsert.clear();msChatEmojiSearch[0]='\0';
+    mvChatPickerMatches.clear();mvChatPickerEntryIndices.clear();mvChatPickerDisplayGlyphs.clear();
+    mlChatPickerBuiltCategory=mlChatPickerBuiltTone=-1;
+    mlChatPickerHoveredEntry=mlChatPickerSelectedEntry=mlChatPickerFirstEntry=-1;
+    mbChatPickerSearchResults=false;msChatPickerHeader.clear();mfChatPickerGridScroll=0;
     // The game still sees SDL key/button releases. Consume this event batch
     // as well so Escape cannot open the pause menu after cancelling chat.
     mbChatEventCaptured=true;mbSuppressChatOpeningText=false;
@@ -412,7 +459,9 @@ void cLuxMultiplayerUI::EventCallback(void* apUserData, const SDL_Event& aEvent)
     if(pUI->mbChatOpen && aEvent.type==SDL_KEYDOWN && aEvent.key.keysym.sym==SDLK_ESCAPE) {
         pUI->mbChatEventCaptured=true;
         if(!aEvent.key.repeat) {
-            if(pUI->mbChatEmojiPickerOpen) pUI->CloseChatEmojiPicker();
+            if(pUI->mbChatPickerToneOpen) pUI->CloseChatPickerToneMenu();
+            else if(pUI->mbChatEmojiPickerOpen) pUI->CloseChatEmojiPicker();
+            else if(pUI->mbChatCompletionOpen) pUI->CloseChatCompletion(true);
             else pUI->CloseChat();
         }
         return;
@@ -457,10 +506,12 @@ void cLuxMultiplayerUI::DrawCallback(void* apUserData)
     static_cast<cLuxMultiplayerUI*>(apUserData)->Draw();
 }
 
-void cLuxMultiplayerUI::Draw()
+bool cLuxMultiplayerUI::BeginDrawFrame()
 {
 #if USE_SDL2
-    if(!Initialize()) return;
+    if(mbDrawFrameStarted) return true;
+    if(!Initialize()) return false;
+    mbChatHistoryInMenuBackdrop=false;mlChatMenuBlurPasses=0;mfChatMenuBlurAmount=0;mlChatFinalHistoryCount=0;
     ImGui::SetCurrentContext(mpContext);
     ImGui_ImplSDL2_NewFrame();
     const ImGuiIO& frameIO=ImGui::GetIO();
@@ -479,10 +530,175 @@ void cLuxMultiplayerUI::Draw()
     const cVector2f displaySize(display.x,display.y);
     mbDisplaySizeChanged=displaySize!=mvLastDisplaySize;
     mvLastDisplaySize=displaySize;
+    mbDrawFrameStarted=true;
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool cLuxMultiplayerUI::IsNativeChatMenu() const
+{
+    const tString container=gpBase->mpEngine->GetUpdater()->GetCurrentContainerName();
+    return container=="MainMenu" || container=="Inventory" || container=="Journal";
+}
+
+float cLuxMultiplayerUI::GetNativeChatMenuBlurAmount() const
+{
+    const tString container=gpBase->mpEngine->GetUpdater()->GetCurrentContainerName();
+    float amount=1;
+    if(container=="MainMenu" && gpBase->mpMainMenu) amount=gpBase->mpMainMenu->GetChatBackdropBlurAmount();
+    else if(container=="Inventory" && gpBase->mpInventory) amount=gpBase->mpInventory->GetChatBackdropBlurAmount();
+    else if(container=="Journal" && gpBase->mpJournal) amount=gpBase->mpJournal->GetChatBackdropBlurAmount();
+    return (std::max)(0.0f,(std::min)(1.0f,amount));
+}
+
+void cLuxMultiplayerUI::DestroyMenuBackdrop()
+{
+#if USE_SDL2
+    cGraphics* graphics=gpBase->mpEngine->GetGraphics();
+    for(iFrameBuffer*& buffer:mpChatMenuBlurBuffer) {
+        if(buffer) graphics->DestroyFrameBuffer(buffer);
+        buffer=NULL;
+    }
+    for(iTexture*& texture:mpChatMenuBlurTexture) {
+        if(texture) graphics->DestroyTexture(texture);
+        texture=NULL;
+    }
+    if(mpChatMenuSource) graphics->DestroyTexture(mpChatMenuSource);
+    mpChatMenuSource=NULL;mvChatMenuBackdropSize=0;mvChatMenuBlurSize=0;
+#endif
+}
+
+bool cLuxMultiplayerUI::EnsureMenuBackdrop()
+{
+#if USE_SDL2
+    if(!mlChatMenuBlurProgramHandle[0] || !mlChatMenuBlurProgramHandle[1]) return false;
+    cGraphics* graphics=gpBase->mpEngine->GetGraphics();
+    const cVector2l size=graphics->GetLowLevel()->GetScreenSizeInt();
+    if(size.x<=0 || size.y<=0) return false;
+    if(size==mvChatMenuBackdropSize && mpChatMenuSource) return true;
+    DestroyMenuBackdrop();
+    const cVector2l blurSize((std::max)(1,(size.x+1)/2),(std::max)(1,(size.y+1)/2));
+    mpChatMenuSource=graphics->CreateTexture("ChatMenuSource",eTextureType_Rect,eTextureUsage_RenderTarget);
+    if(!mpChatMenuSource || !mpChatMenuSource->CreateFromRawData(cVector3l(size.x,size.y,0),ePixelFormat_RGBA,NULL)) {
+        DestroyMenuBackdrop();return false;
+    }
+    mpChatMenuSource->SetWrapSTR(eTextureWrap_ClampToEdge);mpChatMenuSource->SetFilter(eTextureFilter_Bilinear);
+    for(int target=0;target<2;++target) {
+        mpChatMenuBlurTexture[target]=graphics->CreateTexture("ChatMenuBlur"+std::to_string(target),eTextureType_Rect,eTextureUsage_RenderTarget);
+        if(!mpChatMenuBlurTexture[target] || !mpChatMenuBlurTexture[target]->CreateFromRawData(
+            cVector3l(blurSize.x,blurSize.y,0),ePixelFormat_RGBA,NULL)) {DestroyMenuBackdrop();return false;}
+        mpChatMenuBlurTexture[target]->SetWrapSTR(eTextureWrap_ClampToEdge);
+        mpChatMenuBlurTexture[target]->SetFilter(eTextureFilter_Bilinear);
+        mpChatMenuBlurBuffer[target]=graphics->CreateFrameBuffer("ChatMenuBlurBuffer"+std::to_string(target));
+        if(!mpChatMenuBlurBuffer[target]) {DestroyMenuBackdrop();return false;}
+        mpChatMenuBlurBuffer[target]->SetTexture2D(0,mpChatMenuBlurTexture[target]);
+        if(!mpChatMenuBlurBuffer[target]->CompileAndValidate()) {DestroyMenuBackdrop();return false;}
+    }
+    mvChatMenuBackdropSize=size;mvChatMenuBlurSize=blurSize;
+    return true;
+#else
+    return false;
+#endif
+}
+
+void cLuxMultiplayerUI::BlurMenuBackdrop(float amount)
+{
+#if USE_SDL2
+    iLowLevelGraphics* low=gpBase->mpEngine->GetGraphics()->GetLowLevel();
+    iFrameBuffer* previous=low->GetCurrentFrameBuffer();
+    GLint previousProgram=0;glGetIntegerv(GL_CURRENT_PROGRAM,&previousProgram);
+    glPushAttrib(GL_ENABLE_BIT|GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT|GL_VIEWPORT_BIT|
+        GL_TEXTURE_BIT|GL_SCISSOR_BIT|GL_TRANSFORM_BIT|GL_CURRENT_BIT);
+    if(!EnsureMenuBackdrop()) {low->SetCurrentFrameBuffer(previous);glPopAttrib();return;}
+    // Texture/FBO allocation binds temporary objects while validating them.
+    low->SetCurrentFrameBuffer(previous);
+    glActiveTexture(GL_TEXTURE0);glMatrixMode(GL_PROJECTION);glPushMatrix();
+    glMatrixMode(GL_MODELVIEW);glPushMatrix();glLoadIdentity();
+    glDisable(GL_BLEND);glDisable(GL_DEPTH_TEST);glDepthMask(GL_FALSE);glDisable(GL_CULL_FACE);
+    glDisable(GL_ALPHA_TEST);glDisable(GL_STENCIL_TEST);glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_LIGHTING);glDisable(GL_FOG);glDisable(GL_TEXTURE_CUBE_MAP);glDisable(GL_TEXTURE_3D);
+    glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
+    // HPL's copy helper changes its cached texture target. Keep this pass
+    // independent so restoring raw GL state cannot leave that cache stale.
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB,static_cast<GLuint>(mpChatMenuSource->GetCurrentLowlevelHandle()));
+    glCopyTexSubImage2D(GL_TEXTURE_RECTANGLE_ARB,0,0,0,0,0,mvChatMenuBackdropSize.x,mvChatMenuBackdropSize.y);
+    const auto drawTexture=[&](iTexture* texture,const cVector2l& output) {
+        glMatrixMode(GL_PROJECTION);glLoadIdentity();glOrtho(0,output.x,output.y,0,-1000,1000);
+        glMatrixMode(GL_MODELVIEW);
+        glBindTexture(GL_TEXTURE_RECTANGLE_ARB,static_cast<GLuint>(texture->GetCurrentLowlevelHandle()));
+        glEnable(GL_TEXTURE_RECTANGLE_ARB);glDisable(GL_TEXTURE_2D);
+        low->DrawQuad(0,cVector2f(static_cast<float>(output.x),static_cast<float>(output.y)),
+            cVector2f(0,static_cast<float>(texture->GetHeight())),
+            cVector2f(static_cast<float>(texture->GetWidth()),0),cColor(1,1));
+    };
+    // Two pairs at half resolution approximate the native menu's seven pairs
+    // without running fourteen full-screen shader passes in a live 4K session.
+    for(int pass=0;pass<4;++pass) {
+        const int axis=pass%2;
+        low->SetCurrentFrameBuffer(mpChatMenuBlurBuffer[axis]);
+        glUseProgram(mlChatMenuBlurProgramHandle[axis]);
+        drawTexture(pass==0?mpChatMenuSource:mpChatMenuBlurTexture[1-axis],mvChatMenuBlurSize);
+        ++mlChatMenuBlurPasses;
+    }
+    low->SetCurrentFrameBuffer(previous);
+    glUseProgram(0);
+    // Retain the native transition: sharp at the opening frame, then blur in
+    // step with the menu's own fade. Its dimming and widgets render afterward.
+    glEnable(GL_BLEND);glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+    glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
+    glColor4f(1,1,1,amount);
+    glMatrixMode(GL_PROJECTION);glLoadIdentity();
+    glOrtho(0,mvChatMenuBackdropSize.x,mvChatMenuBackdropSize.y,0,-1000,1000);
+    glMatrixMode(GL_MODELVIEW);
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB,static_cast<GLuint>(mpChatMenuBlurTexture[1]->GetCurrentLowlevelHandle()));
+    low->DrawQuad(0,cVector2f(static_cast<float>(mvChatMenuBackdropSize.x),static_cast<float>(mvChatMenuBackdropSize.y)),
+        cVector2f(0,static_cast<float>(mvChatMenuBlurSize.y)),cVector2f(static_cast<float>(mvChatMenuBlurSize.x),0),cColor(1,1,1,amount));
+    glMatrixMode(GL_MODELVIEW);glPopMatrix();glMatrixMode(GL_PROJECTION);glPopMatrix();
+    glPopAttrib();glUseProgram(static_cast<GLuint>(previousProgram));
+    mfChatMenuBlurAmount=amount;
+#endif
+}
+
+void cLuxMultiplayerUI::DrawMenuBackdrop()
+{
+#if USE_SDL2
+    if(!IsNativeChatMenu() || !CanShowChatHistory() || !BeginDrawFrame()) return;
+    const int renderFrame=iRenderer::GetRenderFrameCount();
+    if(mbChatHistoryInMenuBackdrop && mlChatMenuBackdropRenderFrame==renderFrame) return;
+    // A synchronous native background redraw can render the scene again before
+    // the final swap. Rebuild only the passive pass, retaining the input frame.
+    mlChatMenuBlurPasses=0;
     DrawChat();
+    ImDrawList* history=ImGui::GetBackgroundDrawList();
+    history->_PopUnusedDrawCmd();
+    ImDrawData data;data.Valid=true;data.DisplaySize=ImGui::GetIO().DisplaySize;
+    data.FramebufferScale=ImGui::GetIO().DisplayFramebufferScale;data.OwnerViewport=ImGui::GetMainViewport();
+    data.AddDrawList(history);
+    if(data.CmdListsCount) {
+        const GLboolean alphaTest=glIsEnabled(GL_ALPHA_TEST);
+        glDisable(GL_ALPHA_TEST);ImGui_ImplOpenGL3_RenderDrawData(&data);
+        if(alphaTest) glEnable(GL_ALPHA_TEST);
+    }
+    history->_ResetForNewFrame();history->PushTextureID(ImGui::GetIO().Fonts->TexID);
+    history->PushClipRectFullScreen();
+    BlurMenuBackdrop(GetNativeChatMenuBlurAmount());
+    mlChatMenuBackdropRenderFrame=renderFrame;
+    mbChatHistoryInMenuBackdrop=true;
+#endif
+}
+
+void cLuxMultiplayerUI::Draw()
+{
+#if USE_SDL2
+    if(!BeginDrawFrame()) return;
+    if(!IsNativeChatMenu()) {DrawChat();mlChatFinalHistoryCount=mlChatVisibleMessages;}
+    else if(!mbChatHistoryInMenuBackdrop) DrawChat(false);
     if(mbVisible) DrawControls();
     if(mbVisible || mbCloseMapBrowser) DrawMapBrowser();
     ImGui::Render();
+    mbDrawFrameStarted=false;
     if(ImGui::GetDrawData()->CmdListsCount)
     {
         // HPL also uses fixed-function alpha testing, outside the GL3 backend's state.
@@ -494,17 +710,36 @@ void cLuxMultiplayerUI::Draw()
 #endif
 }
 
-void cLuxMultiplayerUI::DrawChat()
+void cLuxMultiplayerUI::DrawChat(bool drawHistory)
 {
 #if USE_SDL2
+    if(mbChatOpen && !CanOpenChat()) CloseChat();
+    // Suggestion rows do not acquire an ImGui active ID. Apply a click in the
+    // editor's early callback, before queued text can edit the old token.
+    mlChatCompletionMouse=-1;
+    if(mbChatCompletionOpen && ImGui::IsMouseClicked(0)) {
+        const ImVec2 mouse=ImGui::GetIO().MousePos;
+        for(int row=0;row<mlChatCompletionVisibleRows;++row) {
+            const cVector2f& a=mvChatCompletionRowPos[row];const cVector2f& size=mvChatCompletionRowSize[row];
+            if(size.x>0 && mouse.x>=a.x && mouse.y>=a.y && mouse.x<a.x+size.x && mouse.y<a.y+size.y) {
+                mlChatCompletionMouse=mlChatCompletionFirstRow+row;
+                mbChatFocusInput=true;mbChatRestoreSelection=true;break;
+            }
+        }
+    }
     mvChatHistoryPos=0;mvChatHistorySize=0;mvChatEntryPos=0;mvChatEntrySize=0;
     mvChatTextInputPos=0;mvChatTextInputSize=0;
     mvChatEntryTextPos=0;mlChatEntryEmoji=0;
     mvChatEmojiButtonPos=0;mvChatEmojiButtonSize=0;mvChatPickerPos=0;mvChatPickerSize=0;
+    mvChatPickerSearchPos=0;mvChatPickerSearchSize=0;mvChatPickerToneButtonPos=0;mvChatPickerToneButtonSize=0;
+    mvChatPickerTonePopupPos=0;mvChatPickerTonePopupSize=0;
+    for(int i=0;i<8;++i) {mvChatPickerCategoryPos[i]=0;mvChatPickerCategorySize[i]=0;}
+    for(int i=0;i<6;++i) {mvChatPickerToneOptionPos[i]=0;mvChatPickerToneOptionSize[i]=0;}
+    mlChatPickerHoveredEntry=mlChatPickerFirstEntry=-1;
     mvChatPickerFirstEmojiPos=0;mvChatPickerFirstEmojiSize=0;msChatPickerFirstUnicode.clear();
     mfChatHistoryAlpha=0;mfChatHistoryContentHeight=mfChatHistoryViewportHeight=0;
     mlChatVisibleMessages=0;mlChatVisibleEmoji=0;mvChatHistoryStyles.clear();
-    if(!CanOpenChat()) {if(mbChatOpen) CloseChat();return;}
+    if(!drawHistory || !CanShowChatHistory()) return;
     const ImVec2 screen=ImGui::GetIO().DisplaySize;
     if(screen.x<=0 || screen.y<=0) return;
     luxchat::Layout layout=luxchat::CalculateLayout(screen.x,screen.y,mbChatOpen,0,mfChatFontSize);
@@ -535,7 +770,7 @@ void cLuxMultiplayerUI::DrawChat()
         const ImVec2 start(mvChatHistoryPos.x,mvChatHistoryPos.y);
         const ImVec2 end(start.x+layout.width,layout.bottom);
         const float maximumScroll=(std::max)(0.0f,contentHeight-historyHeight);
-        if(mbChatOpen && !mbChatEmojiPickerOpen && ImGui::IsMouseHoveringRect(start,end,false))
+        if(mbChatOpen && !mbChatEmojiPickerOpen && !mbChatCompletionOpen && ImGui::IsMouseHoveringRect(start,end,false))
             mfChatHistoryScroll+=ImGui::GetIO().MouseWheel*(layout.fontSize+3.0f)*3.0f;
         mfChatHistoryScroll=mbChatOpen?(std::max)(0.0f,(std::min)(mfChatHistoryScroll,maximumScroll)):0;
         // Full row heights keep the end of an oversized newest message on
@@ -590,6 +825,7 @@ void cLuxMultiplayerUI::DrawChat()
             // SetKeyboardFocusHere resolves on the following frame. Activate
             // this known field now so its first queued typing/paste is kept.
             ImGuiContext* context=ImGui::GetCurrentContext();
+            if(mlChatCompletionMouse>=0 && context->ActiveId==inputId) ImGui::ClearActiveID();
             context->NavActivateId=inputId;
             context->NavActivateFlags=ImGuiActivateFlags_PreferInput|ImGuiActivateFlags_TryToPreserveState;
             mbChatFocusInput=false;
@@ -607,7 +843,8 @@ void cLuxMultiplayerUI::DrawChat()
         ImGui::PushStyleColor(ImGuiCol_Text,ImVec4(0,0,0,0));
         ImGui::PushStyleColor(ImGuiCol_TextSelectedBg,ImVec4(0,0,0,0));
         if(ImGui::InputText("##Message",msChatInput,sizeof(msChatInput),
-            ImGuiInputTextFlags_EnterReturnsTrue|ImGuiInputTextFlags_CallbackAlways|ImGuiInputTextFlags_CallbackBeforeEdit,
+            ImGuiInputTextFlags_EnterReturnsTrue|ImGuiInputTextFlags_CallbackAlways|ImGuiInputTextFlags_CallbackBeforeEdit|
+                ImGuiInputTextFlags_CallbackCompletion|ImGuiInputTextFlags_CallbackHistory,
             ChatInputCallback,this)) mbChatSubmit=true;
         ImGui::PopStyleColor(2);
         const ImVec2 inputMin=ImGui::GetItemRectMin(),inputMax=ImGui::GetItemRectMax();
@@ -680,6 +917,7 @@ void cLuxMultiplayerUI::DrawChat()
             mbChatFocusInput=true;mbChatRestoreSelection=true;
         }
         if(!msChatError.empty()) ImGui::TextDisabled("%s",msChatError.c_str());
+        DrawChatCompletion(layout.fontSize);
         DrawChatEmojiPicker(layout.fontSize);
     }
     ImGui::End();
@@ -766,7 +1004,73 @@ int cLuxMultiplayerUI::ChatInputCallback(ImGuiInputTextCallbackData* data)
         }
         ui->mlChatCursor=data->CursorPos;
         ui->mlChatSelectionStart=data->SelectionStart;ui->mlChatSelectionEnd=data->SelectionEnd;
-        return 1;
+        restored=true;
+    }
+    ui->mlChatCursor=data->CursorPos;
+    ui->mlChatSelectionStart=data->SelectionStart;ui->mlChatSelectionEnd=data->SelectionEnd;
+    if(data->EventFlag==ImGuiInputTextFlags_CallbackBeforeEdit && !ui->mbChatEmojiPickerOpen) {
+        // Reserve validation keys before native editing. Include queued
+        // characters in this decision: a fresh ":gr" and Enter in one frame
+        // must complete the alias rather than send the unfinished draft.
+        const auto held=[](ImGuiKey key) {return ImGui::GetKeyData(key)->Down;};
+        if(!held(ImGuiKey_Enter) && !held(ImGuiKey_KeypadEnter)) ui->mbChatCompletionEnterHeld=false;
+        if(!held(ImGuiKey_Tab)) ui->mbChatCompletionTabHeld=false;
+        if(ui->mbChatCompletionEnterHeld) {
+            ImGui::SetKeyOwner(ImGuiKey_Enter,ImGuiKeyOwner_Any,ImGuiInputFlags_LockThisFrame);
+            ImGui::SetKeyOwner(ImGuiKey_KeypadEnter,ImGuiKeyOwner_Any,ImGuiInputFlags_LockThisFrame);
+        }
+        if(ui->mbChatCompletionTabHeld) ImGui::SetKeyOwner(ImGuiKey_Tab,ImGuiKeyOwner_Any,ImGuiInputFlags_LockThisFrame);
+        tString projected(data->Buf,static_cast<size_t>(data->BufTextLen));
+        int projectedCursor=data->CursorPos,projectedStart=data->SelectionStart,projectedEnd=data->SelectionEnd;
+        ui->ClearChatCompletionDismissalIfChanged(projected,projectedCursor,projectedStart,projectedEnd);
+        const bool ignoreCharacters=(io.KeyCtrl && !io.KeyAlt) || (io.ConfigMacOSXBehaviors && io.KeyCtrl);
+        if(!ignoreCharacters) for(ImWchar point:io.InputQueueCharacters) {
+            if(point<32 || point==127) continue;
+            char utf8[5];const tString character=ImTextCharToUtf8(utf8,point);
+            const int first=(std::min)(projectedStart,projectedEnd),last=(std::max)(projectedStart,projectedEnd);
+            if(projected.size()-static_cast<size_t>(last-first)+character.size()<static_cast<size_t>(data->BufSize)) {
+                projected.replace(static_cast<size_t>(first),static_cast<size_t>(last-first),character);
+                projectedCursor=first+static_cast<int>(character.size());projectedStart=projectedEnd=projectedCursor;
+            }
+        }
+        ui->ClearChatCompletionDismissalIfChanged(projected,projectedCursor,projectedStart,projectedEnd);
+        const auto token=luxchat::FindEmojiCompletionToken(projected,projectedCursor,projectedStart,projectedEnd,ui->mpChatEmoji);
+        const bool dismissed=projected==ui->msChatCompletionDismissText && projectedCursor==ui->mlChatCompletionDismissCursor &&
+            projectedStart==ui->mlChatCompletionDismissStart && projectedEnd==ui->mlChatCompletionDismissEnd;
+        const bool available=token.active && !dismissed && ui->mpChatEmoji &&
+            !ui->GetChatCompletionMatches(token.query).empty();
+        if(available) {
+            if(!ui->mbChatCompletionEnterHeld && (ImGui::IsKeyPressed(ImGuiKey_Enter,false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter,false))) {
+                ui->mbChatCompletionAcceptKey=true;ui->mbChatCompletionEnterHeld=true;
+                ImGui::SetKeyOwner(ImGuiKey_Enter,ImGuiKeyOwner_Any,ImGuiInputFlags_LockThisFrame);
+                ImGui::SetKeyOwner(ImGuiKey_KeypadEnter,ImGuiKeyOwner_Any,ImGuiInputFlags_LockThisFrame);
+            } else if(!ui->mbChatCompletionTabHeld && ImGui::IsKeyPressed(ImGuiKey_Tab,false)) {
+                ui->mbChatCompletionAcceptKey=true;ui->mbChatCompletionTabHeld=true;
+                ImGui::SetKeyOwner(ImGuiKey_Tab,ImGuiKeyOwner_Any,ImGuiInputFlags_LockThisFrame);
+            }
+            if(ImGui::IsKeyPressed(ImGuiKey_DownArrow,true)) {
+                ++ui->mlChatCompletionMove;ImGui::SetKeyOwner(ImGuiKey_DownArrow,ImGuiKeyOwner_Any,ImGuiInputFlags_LockThisFrame);
+            }
+            if(ImGui::IsKeyPressed(ImGuiKey_UpArrow,true)) {
+                --ui->mlChatCompletionMove;ImGui::SetKeyOwner(ImGuiKey_UpArrow,ImGuiKeyOwner_Any,ImGuiInputFlags_LockThisFrame);
+            }
+        }
+        if(ui->mlChatCompletionMouse>=0) {
+            ui->UpdateChatCompletion(tString(data->Buf,static_cast<size_t>(data->BufTextLen)),data->CursorPos,data->SelectionStart,data->SelectionEnd);
+            ui->AcceptChatCompletion(data,ui->mlChatCompletionMouse);ui->mlChatCompletionMouse=-1;
+            restored=true;
+        }
+    } else if(data->EventFlag==ImGuiInputTextFlags_CallbackAlways || data->EventFlag==ImGuiInputTextFlags_CallbackCompletion ||
+              data->EventFlag==ImGuiInputTextFlags_CallbackHistory) {
+        ui->UpdateChatCompletion(tString(data->Buf,static_cast<size_t>(data->BufTextLen)),data->CursorPos,data->SelectionStart,data->SelectionEnd);
+        if(ui->mbChatCompletionOpen && ui->mlChatCompletionMove) {
+            const int count=static_cast<int>(ui->mvChatCompletionMatches.size());
+            ui->mlChatCompletionSelected=(ui->mlChatCompletionSelected+ui->mlChatCompletionMove%count+count)%count;
+            ui->mbChatCompletionFollowSelection=true;
+        }
+        ui->mlChatCompletionMove=0;
+        if(ui->mbChatCompletionAcceptKey) ui->AcceptChatCompletion(data,ui->mlChatCompletionSelected);
+        ui->mbChatCompletionAcceptKey=false;
     }
     ui->mlChatCursor=data->CursorPos;
     ui->mlChatSelectionStart=data->SelectionStart;ui->mlChatSelectionEnd=data->SelectionEnd;
@@ -775,12 +1079,146 @@ int cLuxMultiplayerUI::ChatInputCallback(ImGuiInputTextCallbackData* data)
     return 0;
 }
 
+void cLuxMultiplayerUI::CloseChatCompletion(bool dismiss)
+{
+    if(dismiss) {
+        msChatCompletionDismissText=msChatCompletionText;
+        mlChatCompletionDismissCursor=mlChatCursor;mlChatCompletionDismissStart=mlChatSelectionStart;mlChatCompletionDismissEnd=mlChatSelectionEnd;
+    }
+    mbChatCompletionOpen=false;mbChatCompletionAcceptKey=false;mlChatCompletionMove=0;
+    mvChatCompletionMatches.clear();mChatCompletionToken=luxchat::EmojiCompletionToken();
+    mlChatCompletionSelected=0;mfChatCompletionScroll=0;mbChatCompletionFollowSelection=false;
+    mvChatCompletionPos=0;mvChatCompletionSize=0;mlChatCompletionFirstRow=mlChatCompletionVisibleRows=mlChatCompletionLastVisibleRows=0;
+    for(int row=0;row<8;++row) {mvChatCompletionRowPos[row]=0;mvChatCompletionRowSize[row]=0;}
+}
+
+void cLuxMultiplayerUI::UpdateChatCompletion(const tString& text,int cursor,int selectionStart,int selectionEnd)
+{
+    if(!mbChatOpen || mbChatEmojiPickerOpen || !mpChatEmoji || !mpChatEmoji->IsReady()) {CloseChatCompletion();return;}
+    ClearChatCompletionDismissalIfChanged(text,cursor,selectionStart,selectionEnd);
+    const bool dismissed=text==msChatCompletionDismissText && cursor==mlChatCompletionDismissCursor &&
+        selectionStart==mlChatCompletionDismissStart && selectionEnd==mlChatCompletionDismissEnd;
+    const auto token=luxchat::FindEmojiCompletionToken(text,cursor,selectionStart,selectionEnd,mpChatEmoji);
+    if(!token.active || dismissed) {CloseChatCompletion();return;}
+    const auto& suggestions=GetChatCompletionMatches(token.query);
+    if(suggestions.empty()) {CloseChatCompletion();return;}
+    if(!mbChatCompletionOpen || token.start!=mChatCompletionToken.start || token.query!=mChatCompletionToken.query) {
+        mlChatCompletionSelected=0;mfChatCompletionScroll=0;mbChatCompletionFollowSelection=true;
+    }
+    msChatCompletionText=text;mChatCompletionToken=token;mvChatCompletionMatches=suggestions;
+    mlChatCompletionSelected=(std::max)(0,(std::min)(mlChatCompletionSelected,static_cast<int>(mvChatCompletionMatches.size())-1));
+    mbChatCompletionOpen=true;
+}
+
+void cLuxMultiplayerUI::ClearChatCompletionDismissalIfChanged(const tString& text,int cursor,int selectionStart,int selectionEnd)
+{
+    if(mlChatCompletionDismissCursor>=0 && (text!=msChatCompletionDismissText || cursor!=mlChatCompletionDismissCursor ||
+        selectionStart!=mlChatCompletionDismissStart || selectionEnd!=mlChatCompletionDismissEnd)) {
+        msChatCompletionDismissText.clear();mlChatCompletionDismissCursor=mlChatCompletionDismissStart=mlChatCompletionDismissEnd=-1;
+    }
+}
+
+const std::vector<cLuxMultiplayerChatEmoji::CompletionSuggestion>& cLuxMultiplayerUI::GetChatCompletionMatches(const tString& query)
+{
+    if(msChatCompletionMatchQuery!=query || mlChatCompletionMatchTone!=mlChatPickerTone) {
+        msChatCompletionMatchQuery=query;mlChatCompletionMatchTone=mlChatPickerTone;
+        mvChatCompletionCachedMatches=mpChatEmoji?mpChatEmoji->FindCompletionSuggestions(query,mlChatPickerTone,32):
+            std::vector<cLuxMultiplayerChatEmoji::CompletionSuggestion>();
+    }
+    return mvChatCompletionCachedMatches;
+}
+
+bool cLuxMultiplayerUI::AcceptChatCompletion(ImGuiInputTextCallbackData* data,int index)
+{
+#if USE_SDL2
+    if(!mbChatCompletionOpen || index<0 || static_cast<size_t>(index)>=mvChatCompletionMatches.size()) return false;
+    const auto token=mChatCompletionToken;const tString replacement=mvChatCompletionMatches[index].replacement;
+    if(token.end>static_cast<size_t>(data->BufTextLen) || token.start>token.end) return false;
+    if(static_cast<size_t>(data->BufTextLen)-(token.end-token.start)+replacement.size()>=static_cast<size_t>(data->BufSize)) {
+        msChatError="Message is full.";mfChatErrorTime=3.0f;return false;
+    }
+    data->DeleteChars(static_cast<int>(token.start),static_cast<int>(token.end-token.start));
+    data->InsertChars(static_cast<int>(token.start),replacement.c_str());
+    data->CursorPos=static_cast<int>(token.start+replacement.size());data->SelectionStart=data->SelectionEnd=data->CursorPos;
+    mlChatCursor=mlChatSelectionStart=mlChatSelectionEnd=data->CursorPos;
+    mbChatSubmit=false;mbChatEventCaptured=true;CloseChatCompletion();
+    return true;
+#else
+    return false;
+#endif
+}
+
+void cLuxMultiplayerUI::DrawChatCompletion(float fontSize)
+{
+#if USE_SDL2
+    for(int row=0;row<8;++row) {mvChatCompletionRowPos[row]=0;mvChatCompletionRowSize[row]=0;}
+    if(!mbChatCompletionOpen || mbChatEmojiPickerOpen || mvChatCompletionMatches.empty()) {
+        mvChatCompletionPos=0;mvChatCompletionSize=0;mlChatCompletionVisibleRows=0;return;
+    }
+    const ImVec2 screen=ImGui::GetIO().DisplaySize;
+    const float margin=4,padding=7,rowHeight=fontSize+12;
+    const float available=(std::max)(rowHeight+padding*2,mvChatEntryPos.y-margin-5);
+    const int visible=(std::max)(1,(std::min)(8,static_cast<int>((available-padding*2)/rowHeight)));
+    const int rows=(std::min)(visible,static_cast<int>(mvChatCompletionMatches.size()));
+    if(rows!=mlChatCompletionLastVisibleRows) mbChatCompletionFollowSelection=true;
+    mlChatCompletionLastVisibleRows=rows;
+    const float width=(std::min)(420.0f,(std::min)(screen.x-margin*2,(std::max)(280.0f,mvChatTextInputSize.x)));
+    const ImVec2 size(width,rows*rowHeight+padding*2);
+    const float x=(std::max)(margin,(std::min)(mvChatTextInputPos.x,screen.x-size.x-margin));
+    const float y=(std::max)(margin,(std::min)(mvChatEntryPos.y-size.y-5,screen.y-size.y-margin));
+    const ImVec2 position(x,y);
+    const int maximum=(std::max)(0,static_cast<int>(mvChatCompletionMatches.size())-rows);
+    if(ImGui::IsMouseHoveringRect(position,ImVec2(x+size.x,y+size.y),false))
+        mfChatCompletionScroll-=ImGui::GetIO().MouseWheel*3.0f;
+    int first=(std::max)(0,(std::min)(maximum,static_cast<int>(mfChatCompletionScroll)));
+    if(mbChatCompletionFollowSelection) {
+        if(mlChatCompletionSelected<first) first=mlChatCompletionSelected;
+        if(mlChatCompletionSelected>=first+rows) first=mlChatCompletionSelected-rows+1;
+        mbChatCompletionFollowSelection=false;
+    }
+    mfChatCompletionScroll=static_cast<float>(first);mlChatCompletionFirstRow=first;mlChatCompletionVisibleRows=rows;
+    ImGui::SetNextWindowPos(position,ImGuiCond_Always);ImGui::SetNextWindowSize(size,ImGuiCond_Always);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,ImVec2(padding,padding));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg,ImVec4(16.0f/255,20.0f/255,26.0f/255,1.0f));
+    const ImGuiWindowFlags flags=ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoResize|
+        ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse|
+        ImGuiWindowFlags_NoCollapse|ImGuiWindowFlags_NoInputs|ImGuiWindowFlags_NoFocusOnAppearing;
+    if(ImGui::Begin("Emoji suggestions##MultiplayerChatCompletion",NULL,flags)) {
+        ImGui::SetWindowFontScale(1.0f);mvChatCompletionPos=cVector2f(x,y);mvChatCompletionSize=cVector2f(size.x,size.y);
+        ImDrawList* draw=ImGui::GetWindowDrawList();const ImVec2 mouse=ImGui::GetIO().MousePos;
+        for(int row=0;row<rows;++row) {
+            const int index=first+row;const auto& suggestion=mvChatCompletionMatches[index];
+            const ImVec2 a(x+padding,y+padding+row*rowHeight),b(x+size.x-padding-(maximum>0?5:0),a.y+rowHeight);
+            mvChatCompletionRowPos[row]=cVector2f(a.x,a.y);mvChatCompletionRowSize[row]=cVector2f(b.x-a.x,b.y-a.y);
+            const bool hover=mouse.x>=a.x && mouse.y>=a.y && mouse.x<b.x && mouse.y<b.y;
+            if(index==mlChatCompletionSelected || hover) draw->AddRectFilled(a,b,IM_COL32(89,112,146,hover?115:80),4);
+            const float emojiSize=fontSize+3;
+            mpChatEmoji->DrawGlyph(draw,suggestion.glyph,a.x+4,a.y+(rowHeight-emojiSize)*0.5f,emojiSize,255);
+            const tString label=":"+suggestion.alias+":";
+            draw->PushClipRect(a,b,true);
+            draw->AddText(mpChatFont,fontSize,ImVec2(a.x+emojiSize+13,a.y+(rowHeight-fontSize)*0.5f),IM_COL32(229,235,242,255),label.c_str());
+            draw->PopClipRect();
+        }
+        if(maximum>0) {
+            const float top=y+padding,bottom=y+size.y-padding,track=bottom-top;
+            const float thumb=(std::max)(12.0f,track*rows/static_cast<float>(mvChatCompletionMatches.size()));
+            const float offset=(track-thumb)*first/static_cast<float>(maximum);
+            draw->AddRectFilled(ImVec2(x+size.x-padding-2,top),ImVec2(x+size.x-padding,bottom),IM_COL32(120,133,151,35),1);
+            draw->AddRectFilled(ImVec2(x+size.x-padding-2,top+offset),ImVec2(x+size.x-padding,top+offset+thumb),IM_COL32(164,177,195,140),1);
+        }
+    }
+    ImGui::End();ImGui::PopStyleColor();ImGui::PopStyleVar();
+#endif
+}
+
 void cLuxMultiplayerUI::OpenChatEmojiPicker()
 {
 #if USE_SDL2
     if(!mbChatOpen || !CanOpenChat()) return;
+    CloseChatCompletion();
     mbChatEmojiPickerOpen=true;mbChatEmojiPickerFocus=true;mbChatFocusInput=false;
-    msChatEmojiSearch[0]='\0';msChatPickerLastSearch="\xff";
+    msChatEmojiSearch[0]='\0';msChatPickerLastSearch.clear();mlChatPickerBuiltCategory=-1;
+    mlChatPickerSelectedEntry=-1;mbChatPickerResetScroll=true;
 #endif
 }
 
@@ -788,11 +1226,138 @@ void cLuxMultiplayerUI::CloseChatEmojiPicker()
 {
 #if USE_SDL2
     if(!mbChatEmojiPickerOpen) return;
+    CloseChatPickerToneMenu();
     mbChatEmojiPickerOpen=false;mbChatEmojiPickerFocus=false;
+    mlChatPickerHoveredEntry=mlChatPickerFirstEntry=-1;
+    mvChatPickerFirstEmojiPos=0;mvChatPickerFirstEmojiSize=0;msChatPickerFirstUnicode.clear();
     mbChatFocusInput=true;mbChatRestoreSelection=true;mbChatEventCaptured=true;
     ImGui::SetWindowFocus("##MultiplayerChat");
 #endif
 }
+
+void cLuxMultiplayerUI::UpdateChatPickerMatches()
+{
+    if(msChatPickerLastSearch==msChatEmojiSearch && mlChatPickerBuiltCategory==mlChatPickerCategory &&
+        mlChatPickerBuiltTone==mlChatPickerTone) return;
+    mbChatPickerResetScroll=msChatPickerLastSearch!=msChatEmojiSearch || mlChatPickerBuiltCategory!=mlChatPickerCategory;
+    msChatPickerLastSearch=msChatEmojiSearch;mlChatPickerBuiltCategory=mlChatPickerCategory;mlChatPickerBuiltTone=mlChatPickerTone;
+    mvChatPickerMatches.clear();mvChatPickerEntryIndices.clear();mvChatPickerDisplayGlyphs.clear();
+    const tString search=cLuxMultiplayerChatEmoji::NormalizePickerSearch(msChatEmojiSearch);
+    mbChatPickerSearchResults=!search.empty();
+    msChatPickerHeader=mbChatPickerSearchResults?"Search results":cLuxMultiplayerChatEmoji::GetCategoryName(mlChatPickerCategory);
+    if(!mpChatEmoji || !mpChatEmoji->IsReady()) return;
+    bool explicitTone=search.find("tone")!=tString::npos || search.find("skin")!=tString::npos ||
+        search.find("light")!=tString::npos || search.find("dark")!=tString::npos || search.find("medium")!=tString::npos;
+    size_t position=0;uint32_t point=0;
+    while(luxnet::ReadChatCodePoint(search,position,point)) if(point>=0x1f3fb && point<=0x1f3ff) explicitTone=true;
+    std::set<int> seen;
+    const auto& catalog=mpChatEmoji->GetPickerEntries();
+    for(size_t index:mpChatEmoji->FindPickerEntries(mlChatPickerCategory,msChatEmojiSearch)) {
+        const auto& source=catalog[index];
+        const int glyph=explicitTone?source.glyph:mpChatEmoji->ResolvePickerTone(source.glyph,mlChatPickerTone);
+        if(!seen.insert(glyph).second) continue;
+        const auto* display=mpChatEmoji->GetPickerEntryForGlyph(glyph);
+        mvChatPickerEntryIndices.push_back(index);mvChatPickerDisplayGlyphs.push_back(glyph);
+        mvChatPickerMatches.emplace_back(display?display->name:source.name,mpChatEmoji->GetGlyphUnicode(glyph));
+    }
+}
+
+void cLuxMultiplayerUI::CloseChatPickerToneMenu()
+{
+#if USE_SDL2
+    mbChatPickerToneOpen=false;
+    mvChatPickerTonePopupPos=0;mvChatPickerTonePopupSize=0;
+    for(int i=0;i<6;++i) {mvChatPickerToneOptionPos[i]=0;mvChatPickerToneOptionSize[i]=0;}
+    if(!mpContext || !mlChatPickerTonePopupID) return;
+    ImGui::SetCurrentContext(mpContext);
+    ImGuiContext* context=ImGui::GetCurrentContext();
+    for(int i=0;i<context->OpenPopupStack.Size;++i) if(context->OpenPopupStack[i].PopupId==mlChatPickerTonePopupID) {
+        ImGui::ClosePopupToLevel(i,true);break;
+    }
+#endif
+}
+
+void cLuxMultiplayerUI::DrawChatPickerToneMenu(float fontSize)
+{
+#if USE_SDL2
+    mbChatPickerToneOpen=ImGui::IsPopupOpen("##ChatEmojiTone");
+    if(!mbChatPickerToneOpen) return;
+    const ImVec2 screen=ImGui::GetIO().DisplaySize;
+    const float artwork=(std::max)(24.0f,(std::min)(27.0f,fontSize+6)),cell=artwork+8;
+    const ImVec2 size(cell*6+20+16,cell+16);
+    const float margin=4;
+    const float x=(std::max)(margin,(std::min)(mvChatPickerToneButtonPos.x+mvChatPickerToneButtonSize.x-size.x,screen.x-size.x-margin));
+    const float below=mvChatPickerToneButtonPos.y+mvChatPickerToneButtonSize.y+4;
+    const float y=(std::max)(margin,(std::min)(below+size.y<=screen.y-margin?below:mvChatPickerToneButtonPos.y-size.y-4,
+        screen.y-size.y-margin));
+    ImGui::SetNextWindowPos(ImVec2(x,y),ImGuiCond_Always);ImGui::SetNextWindowSize(size,ImGuiCond_Always);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,ImVec2(8,8));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,ImVec2(4,0));
+    const ImGuiWindowFlags flags=ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoMove|
+        ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse;
+    if(ImGui::BeginPopup("##ChatEmojiTone",flags)) {
+        const ImVec2 position=ImGui::GetWindowPos(),bounds=ImGui::GetWindowSize();
+        mvChatPickerTonePopupPos=cVector2f(position.x,position.y);mvChatPickerTonePopupSize=cVector2f(bounds.x,bounds.y);
+        static const char* labels[]={"Default","Light","Medium-light","Medium","Medium-dark","Dark"};
+        int wave=-1;if(mpChatEmoji) mpChatEmoji->Match("\xf0\x9f\x91\x8b",0,wave);
+        for(int tone=0;tone<6;++tone) {
+            if(tone) ImGui::SameLine();
+            ImGui::PushID(tone);
+            const bool selected=ImGui::InvisibleButton("##Tone",ImVec2(cell,cell),ImGuiButtonFlags_EnableNav);
+            const ImVec2 a=ImGui::GetItemRectMin(),b=ImGui::GetItemRectMax();
+            mvChatPickerToneOptionPos[tone]=cVector2f(a.x,a.y);mvChatPickerToneOptionSize[tone]=cVector2f(b.x-a.x,b.y-a.y);
+            if(tone==mlChatPickerTone || ImGui::IsItemHovered())
+                ImGui::GetWindowDrawList()->AddRectFilled(a,b,IM_COL32(105,127,163,tone==mlChatPickerTone?110:65),4);
+            if(mpChatEmoji && wave>=0) mpChatEmoji->DrawGlyph(ImGui::GetWindowDrawList(),mpChatEmoji->ResolvePickerTone(wave,tone),
+                a.x+4,a.y+4,artwork,255);
+            ImGui::SetItemTooltip("%s",labels[tone]);
+            if(selected) {mlChatPickerTone=tone;ImGui::CloseCurrentPopup();}
+            ImGui::PopID();
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleVar(2);
+    mbChatPickerToneOpen=ImGui::IsPopupOpen("##ChatEmojiTone");
+#endif
+}
+
+#if USE_SDL2
+static void DrawChatCategoryIcon(ImDrawList* draw,int category,const ImVec2& a,const ImVec2& b,ImU32 color)
+{
+    const ImVec2 c((a.x+b.x)*0.5f,(a.y+b.y)*0.5f);
+    const float r=(std::min)(b.x-a.x,b.y-a.y)*0.28f,stroke=1.4f;
+    const auto p=[&](float x,float y){return ImVec2(c.x+x*r,c.y+y*r);};
+    switch(category) {
+    case 0:
+        draw->AddCircle(c,r,color,24,stroke);
+        draw->AddCircleFilled(p(-0.35f,-0.25f),1.1f,color);draw->AddCircleFilled(p(0.35f,-0.25f),1.1f,color);
+        draw->AddBezierCubic(p(-0.5f,0.15f),p(-0.25f,0.75f),p(0.25f,0.75f),p(0.5f,0.15f),color,stroke);break;
+    case 1:
+        draw->AddCircleFilled(p(-0.7f,-0.1f),r*0.23f,color);draw->AddCircleFilled(p(-0.28f,-0.7f),r*0.23f,color);
+        draw->AddCircleFilled(p(0.28f,-0.7f),r*0.23f,color);draw->AddCircleFilled(p(0.7f,-0.1f),r*0.23f,color);
+        draw->AddTriangleFilled(p(-0.65f,0.75f),p(0.65f,0.75f),p(0,0),color);break;
+    case 2:
+        draw->AddCircle(c,r*0.75f,color,24,stroke);draw->AddCircle(c,r*0.38f,color,20,stroke);
+        draw->AddLine(p(-1,-0.8f),p(-1,0.9f),color,stroke);draw->AddLine(p(1,-0.8f),p(1,0.9f),color,stroke);break;
+    case 3:
+        draw->AddCircle(c,r,color,24,stroke);draw->AddLine(p(-1,0),p(1,0),color,stroke);
+        draw->AddLine(p(0,-1),p(0,1),color,stroke);draw->AddBezierCubic(p(-0.6f,-0.8f),p(0.4f,-0.3f),p(0.4f,0.3f),p(-0.6f,0.8f),color,stroke);break;
+    case 4:
+        draw->AddLine(p(-1,-0.3f),p(1,-0.3f),color,stroke);draw->AddLine(p(1,-0.3f),p(-0.6f,0.9f),color,stroke);
+        draw->AddLine(p(-1,-0.3f),p(-0.6f,0.9f),color,stroke);draw->AddLine(p(-0.25f,-0.3f),p(-0.6f,0.9f),color,stroke);
+        draw->AddLine(p(-0.25f,-0.3f),p(0,-1),color,stroke);break;
+    case 5:
+        draw->AddCircle(p(0,-0.2f),r*0.65f,color,24,stroke);draw->AddLine(p(-0.32f,0.35f),p(-0.32f,0.8f),color,stroke);
+        draw->AddLine(p(0.32f,0.35f),p(0.32f,0.8f),color,stroke);draw->AddLine(p(-0.32f,0.8f),p(0.32f,0.8f),color,stroke);break;
+    case 6:
+        draw->AddBezierCubic(p(0,-0.25f),p(-0.8f,-1.3f),p(-1.4f,0),p(0,1),color,stroke);
+        draw->AddBezierCubic(p(0,-0.25f),p(0.8f,-1.3f),p(1.4f,0),p(0,1),color,stroke);break;
+    case 7:
+        draw->AddLine(p(-0.7f,-1),p(-0.7f,1),color,stroke);draw->AddLine(p(-0.7f,-0.9f),p(0.9f,-0.7f),color,stroke);
+        draw->AddLine(p(0.9f,-0.7f),p(0.9f,0.2f),color,stroke);draw->AddLine(p(0.9f,0.2f),p(-0.7f,0),color,stroke);break;
+    }
+}
+#endif
 
 void cLuxMultiplayerUI::DrawChatEmojiPicker(float fontSize)
 {
@@ -815,36 +1380,57 @@ void cLuxMultiplayerUI::DrawChatEmojiPicker(float fontSize)
     ImGui::PushStyleColor(ImGuiCol_WindowBg,ImVec4(0.035f,0.045f,0.06f,0.98f));
     ImGui::PushStyleColor(ImGuiCol_TitleBg,ImVec4(0.045f,0.06f,0.075f,1));
     ImGui::PushStyleColor(ImGuiCol_TitleBgActive,ImVec4(0.075f,0.095f,0.12f,1));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,ImVec2(4,4));
     if(ImGui::Begin("Emoji##MultiplayerChatPicker",&open,flags)) {
         ImGui::SetWindowFontScale(1.0f);
         const ImVec2 position=ImGui::GetWindowPos(),size=ImGui::GetWindowSize();
         mvChatPickerPos=cVector2f(position.x,position.y);mvChatPickerSize=cVector2f(size.x,size.y);
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+        const float toneButtonSize=fontSize+10.0f;
+        ImGui::SetNextItemWidth((std::max)(1.0f,ImGui::GetContentRegionAvail().x-toneButtonSize-4));
         if(focus) ImGui::SetKeyboardFocusHere();
         ImGui::InputTextWithHint("##ChatEmojiSearch","Search emoji",msChatEmojiSearch,sizeof(msChatEmojiSearch));
-        if(msChatPickerLastSearch!=msChatEmojiSearch) {
-            msChatPickerLastSearch=msChatEmojiSearch;mvChatPickerMatches.clear();
-            tString search=msChatEmojiSearch;
-            for(char& character:search) if(character>='A' && character<='Z') character=character-'A'+'a';
-            if(search.size()>1 && search.front()==':' && search.back()==':') search=search.substr(1,search.size()-2);
-            std::set<int> seen;
-            if(mpChatEmoji && mpChatEmoji->IsReady()) {
-                for(const auto& alias:mpChatEmoji->GetShortcodes()) {
-                    if(!search.empty() && alias.first.find(search)==tString::npos) continue;
-                    int glyph=-1;
-                    if(mpChatEmoji->Match(alias.second,0,glyph) && seen.insert(glyph).second)
-                        mvChatPickerMatches.emplace_back(alias.first,alias.second);
-                }
-                // New Twemoji sequences may precede the shortcode dictionary.
-                // Every packaged emoji remains available in the unfiltered grid.
-                if(search.empty()) for(size_t glyph=0;glyph<mpChatEmoji->GetGlyphCount();++glyph)
-                    if(seen.insert(static_cast<int>(glyph)).second)
-                        mvChatPickerMatches.emplace_back("",mpChatEmoji->GetGlyphUnicode(static_cast<int>(glyph)));
+        const ImVec2 searchMin=ImGui::GetItemRectMin(),searchMax=ImGui::GetItemRectMax();
+        mvChatPickerSearchPos=cVector2f(searchMin.x,searchMin.y);mvChatPickerSearchSize=cVector2f(searchMax.x-searchMin.x,searchMax.y-searchMin.y);
+        ImGui::SameLine();
+        mlChatPickerTonePopupID=ImGui::GetID("##ChatEmojiTone");
+        if(ImGui::Button("##ChatEmojiToneButton",ImVec2(toneButtonSize,ImGui::GetFrameHeight()))) ImGui::OpenPopup("##ChatEmojiTone");
+        const ImVec2 toneMin=ImGui::GetItemRectMin(),toneMax=ImGui::GetItemRectMax();
+        mvChatPickerToneButtonPos=cVector2f(toneMin.x,toneMin.y);mvChatPickerToneButtonSize=cVector2f(toneMax.x-toneMin.x,toneMax.y-toneMin.y);
+        int wave=-1;
+        if(mpChatEmoji && mpChatEmoji->Match("\xf0\x9f\x91\x8b",0,wave))
+            mpChatEmoji->DrawGlyph(ImGui::GetWindowDrawList(),mpChatEmoji->ResolvePickerTone(wave,mlChatPickerTone),
+                toneMin.x+(toneButtonSize-fontSize)*0.5f,toneMin.y+4,fontSize,255);
+        ImGui::SetItemTooltip("Skin tone");
+        DrawChatPickerToneMenu(fontSize);
+        const float categoryHeight=fontSize+10.0f;
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,ImVec2(2,4));
+        const float categoryWidth=(std::max)(1.0f,(ImGui::GetContentRegionAvail().x-14)/8);
+        const bool searchActive=!cLuxMultiplayerChatEmoji::NormalizePickerSearch(msChatEmojiSearch).empty();
+        for(int category=0;category<8;++category) {
+            if(category) ImGui::SameLine();
+            ImGui::PushID(category);
+            const bool active=!searchActive && mlChatPickerCategory==category;
+            ImGui::PushStyleColor(ImGuiCol_Button,active?ImVec4(0.23f,0.3f,0.4f,0.8f):ImVec4(0,0,0,0));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,ImVec4(0.25f,0.3f,0.38f,0.8f));
+            if(ImGui::Button("##Category",ImVec2(categoryWidth,categoryHeight))) {
+                mlChatPickerCategory=category;msChatEmojiSearch[0]='\0';mbChatEmojiPickerFocus=true;
             }
+            ImGui::PopStyleColor(2);
+            const ImVec2 a=ImGui::GetItemRectMin(),b=ImGui::GetItemRectMax();
+            mvChatPickerCategoryPos[category]=cVector2f(a.x,a.y);mvChatPickerCategorySize[category]=cVector2f(b.x-a.x,b.y-a.y);
+            DrawChatCategoryIcon(ImGui::GetWindowDrawList(),category,a,b,active?IM_COL32(224,231,242,255):IM_COL32(155,166,182,255));
+            ImGui::SetItemTooltip("%s",cLuxMultiplayerChatEmoji::GetCategoryName(category));
+            ImGui::PopID();
         }
+        ImGui::PopStyleVar();
+        UpdateChatPickerMatches();
+        ImGui::TextUnformatted(msChatPickerHeader.c_str());
+        if(mbChatPickerSearchResults) {ImGui::SameLine();ImGui::TextDisabled("(%u)",static_cast<unsigned>(mvChatPickerMatches.size()));}
+        if(mbChatPickerResetScroll) {ImGui::SetNextWindowScroll(ImVec2(0,0));mbChatPickerResetScroll=false;}
         ImGui::BeginChild("##ChatEmojiGrid",ImVec2(0,0),false);
+        mfChatPickerGridScroll=ImGui::GetScrollY();
         if(mvChatPickerMatches.empty()) ImGui::TextDisabled("No emoji found.");
-        const float emojiSize=fontSize+10.0f,cellSize=emojiSize+12.0f;
+        const float emojiSize=(std::max)(24.0f,(std::min)(27.0f,fontSize+6.0f)),cellSize=emojiSize+8.0f;
         const float spacing=ImGui::GetStyle().ItemSpacing.x;
         const int columns=(std::max)(1,static_cast<int>((ImGui::GetContentRegionAvail().x+spacing)/(cellSize+spacing)));
         ImGuiListClipper clipper;
@@ -855,30 +1441,36 @@ void cLuxMultiplayerUI::DrawChatEmojiPicker(float fontSize)
                 const size_t index=static_cast<size_t>(row)*columns+column;
                 if(index>=mvChatPickerMatches.size()) break;
                 if(column) ImGui::SameLine();
-                ImGui::PushID(static_cast<int>(index));
-                const bool selected=ImGui::InvisibleButton("##Emoji",ImVec2(cellSize,cellSize));
+                const size_t sourceIndex=mvChatPickerEntryIndices[index];
+                ImGui::PushID(mvChatPickerDisplayGlyphs[index]);
+                const bool selected=ImGui::InvisibleButton("##Emoji",ImVec2(cellSize,cellSize),ImGuiButtonFlags_EnableNav);
                 const ImVec2 itemMin=ImGui::GetItemRectMin(),itemMax=ImGui::GetItemRectMax();
                 const auto& entry=mvChatPickerMatches[index];
                 if(first) {
                     mvChatPickerFirstEmojiPos=cVector2f(itemMin.x,itemMin.y);
                     mvChatPickerFirstEmojiSize=cVector2f(itemMax.x-itemMin.x,itemMax.y-itemMin.y);
-                    msChatPickerFirstUnicode=entry.second;first=false;
+                    msChatPickerFirstUnicode=entry.second;mlChatPickerFirstEntry=static_cast<int>(sourceIndex);first=false;
                 }
                 if(ImGui::IsItemHovered()) {
+                    mlChatPickerHoveredEntry=static_cast<int>(sourceIndex);
                     ImGui::GetWindowDrawList()->AddRectFilled(itemMin,itemMax,IM_COL32(110,128,158,65),5.0f);
-                    if(!entry.first.empty()) ImGui::SetTooltip(":%s:",entry.first.c_str());
+                    if(!entry.first.empty()) {
+                        const auto alias=mpChatEmoji->GetShortcodes().find(entry.first);int target=-1;
+                        if(alias!=mpChatEmoji->GetShortcodes().end() && mpChatEmoji->Match(alias->second,0,target) &&
+                            target==mvChatPickerDisplayGlyphs[index]) ImGui::SetTooltip(":%s:",entry.first.c_str());
+                        else {tString label=entry.first;std::replace(label.begin(),label.end(),'_',' ');ImGui::SetTooltip("%s",label.c_str());}
+                    }
                 }
-                int glyph=-1;
-                if(mpChatEmoji->Match(entry.second,0,glyph)) mpChatEmoji->DrawGlyph(ImGui::GetWindowDrawList(),glyph,
-                    itemMin.x+6,itemMin.y+6,emojiSize,255);
-                if(selected) {msChatPendingInsert=entry.second;CloseChatEmojiPicker();}
+                mpChatEmoji->DrawGlyph(ImGui::GetWindowDrawList(),mvChatPickerDisplayGlyphs[index],
+                    itemMin.x+4,itemMin.y+4,emojiSize,255);
+                if(selected) {mlChatPickerSelectedEntry=static_cast<int>(sourceIndex);msChatPendingInsert=entry.second;CloseChatEmojiPicker();}
                 ImGui::PopID();
             }
         }
         ImGui::EndChild();
     }
     ImGui::End();
-    ImGui::PopStyleColor(3);
+    ImGui::PopStyleVar();ImGui::PopStyleColor(3);
     if(!open) CloseChatEmojiPicker();
 #endif
 }

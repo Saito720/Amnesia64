@@ -36,10 +36,17 @@ names, UTF-8 length bounds, Discord-style aliases, cancellation, movement/menu i
 and resizing while typing and while wrapped history is visible. Screenshots are
 saved at 640x480, odd dimensions, portrait, and wide sizes. Native pause,
 inventory, journal, modal questions, focus loss, multiplayer controls, and
-disconnect transitions must preserve their input ownership. The focused run also
-opens chat and the picker before actual player death, a real retail map change,
+disconnect transitions must preserve their input ownership. The focused run
+checks history in the final overlay callback above a fully opaque native fade
+at each resize size. Native pause, inventory, and journal checks verify history
+joins the live blurred backdrop beneath their controls without a sharp duplicate
+in the final overlay. These screens and effect pauses retain recent history
+without displaying the entry or capturing their input; history still expires
+through its own timer.
+The focused run also opens chat and emoji autocomplete before actual player
+death, a real retail map change,
 and the native window-close quit confirmation. History survives the map change;
-the entry and picker close without bypassing the quit confirmation.
+the entry and suggestions close without bypassing the quit confirmation.
 The UI harness checks the bundled font and all Twemoji sequences and shortcodes,
 native font rasterization at fractional and doubled framebuffer densities, and
 active selection/picker preservation through odd, portrait and 4K resizes. Actual
@@ -47,10 +54,66 @@ history glyph geometry verifies colored names, neutral bodies, black outlines,
 and the absence of a background panel. It also covers the grey hover icon,
 history scrolling, composed shortcode/Unicode caret hit testing, selection,
 clipboard editing, picker search/insertion, and the Steam/loading/death gates.
+Category-picker checks cover all 4,009 atlas glyphs exactly once, the eight
+category groups and representative Discord ordering, one choice per emoji family,
+global alias/name/Unicode searches including tone variants, real category clicks,
+scroll resets, and insertion at the saved caret. The selected category and
+search query must survive narrow, short, portrait, odd-size, and 4K windows and
+font-density changes without clipping category controls or losing the draft.
+Skin-tone checks exercise all six dropdown options through SDL, uniform tones
+for multi-person emoji, explicit variant searches, selected-tone insertion,
+preference persistence, popup bounds, and teardown during native transitions.
+Autocomplete checks cover the two-character threshold, active UTF-8 token
+ranges, prefix/substring ranking, aliases and tones, completed tokens and URLs,
+mouse and keyboard acceptance, queued input, native undo/redo, and byte limits.
+Open suggestions must retain the draft, caret, and visible selection while
+resizing from 320x240 to 4K and changing font density. Picker and suggestions
+must remain mutually exclusive, and Escape must dismiss the current list
+without reopening it until the token or caret changes.
 Both backends use local direct-IP peers in this test; live Steam persona
 lookup is checked separately by `HPL2/tests/network/RunSteamTransportTests.ps1 -Live`.
 `-SteamHostOnly` also verifies a real hosted chat message uses the signed-in
 account's Steam persona name.
+
+Chat layering verified on 2026-10-07 with protocol 18: UI runs `084b96263bd7`
+(Steamworks) and `3ec8cd7a440e` (Standalone), and focused two-instance runs
+`a2ef1d9010e3` (Steamworks) and `f0dc506e558a` (Standalone), passed. Final-frame
+pixel checks keep gameplay chat above an opaque native fade from 320x240 to 4K.
+Native pause, inventory, and journal frames include live history in a blurred
+backdrop; opaque GUI probes remain sharp above it, and the final ImGui draw
+leaves those frames unchanged. Tests cover native blur transitions, half-size
+targets at odd/portrait/4K dimensions, new messages, independent fading, and
+queued Unicode/shortcut input in multiplayer controls with one ImGui frame.
+Leaving menus restores sharp gameplay history. Existing emoji, death, map
+transition, and window-close checks also passed. Debug and Release x64 builds
+passed for both backends without game compiler warnings. All 13 packaged assets
+matched in both configurations and harnesses; Steamworks outputs were restored.
+
+Emoji autocomplete verified on 2026-10-01 with protocol 18: final UI runs
+`855f9a1fd468` (Steamworks) and `f1585d2e6760` (Standalone) passed the
+two-character threshold, ranked substring matching, adjacent and compound
+aliases, tone previews, keyboard/mouse acceptance, held keys, queued typing
+and paste, atomic undo/redo, Escape dismissal/reopening, byte limits, and
+open-list resizing from 320x240 to 4K with fractional/doubled font density.
+Focused two-instance chat runs `5fab38450c3e` (Steamworks) and `d2c17e56164d`
+(Standalone) passed with suggestions open before actual death, retail map
+transition, and native window-close confirmation/cancellation. Test clipboard
+setup/readback/cleanup tolerate brief Windows clipboard locks while native
+copy/paste still must produce the exact expected bytes. Debug and Release x64
+builds passed for both backends; Steamworks outputs were restored afterward.
+
+Category and skin-tone picker verified on 2026-10-01 with protocol 18: UI runs
+`f7160ed4d5dc` (Steamworks) and `b370733d0b43` (Standalone) passed complete
+4,009-glyph category coverage, all six tone selections, mixed-family resolution,
+global alias/Unicode search, selected-tone caret insertion and undo, open-popup
+resizing from 320x240 to 4K, and native GUI/input isolation. Focused two-instance
+chat runs `ffb906e5890f` (Steamworks) and `c2a0cd3195d7` (Standalone) passed with
+the tone dropdown open before actual death, retail map transition, and native
+window-close confirmation/cancellation. The pinned metadata generator's
+`--offline --check` passed all 335 complete tone families and 2,055 variant links.
+Debug and Release x64 builds passed for both backends. Packaging audits matched
+all 13 font, emoji, metadata, and license assets in both game configurations and
+both test harnesses. Debug, Release, and the harnesses were restored to Steamworks.
 
 Final visual polish verified on 2026-09-30 with protocol 18: Debug and Release
 x64 game builds passed for both backends. UI runs `18b9f2d0bbf4` (Steamworks)

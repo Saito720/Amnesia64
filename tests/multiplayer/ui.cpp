@@ -33,6 +33,10 @@ cLuxMultiplayerMapCacheStats LuxGetMultiplayerMapCacheStats(const hpl::tWString&
 #define LUX_MESSAGE_HANDLER_H
 #define LUX_EFFECT_HANDLER_H
 #define LUX_DEBUG_HANDLER_H
+#define LUX_MAP_HANDLER_H
+#define LUX_MAIN_MENU_H
+#define LUX_INVENTORY_H
+#define LUX_JOURNAL_H
 class cLuxMultiplayerUI;
 enum eLuxMultiplayerLoadPhase {
     eLuxMultiplayerLoadPhase_None,eLuxMultiplayerLoadPhase_Connecting,
@@ -154,7 +158,7 @@ struct cLuxInputHandler {
     bool mbQuitRequested = false;
     cInput* mpInput = NULL;
     TestPlayer* mpPlayer = NULL;
-    int globalUpdates = 0, gameUpdates = 0, menuUpdates = 0;
+    int globalUpdates = 0, gameUpdates = 0, menuUpdates = 0, inventoryUpdates = 0, journalUpdates = 0;
     int resets = 0;
     eLuxInputState GetState() { return state; }
     void ResetSmoothMousePos() { ++resets; }
@@ -164,15 +168,18 @@ struct cLuxInputHandler {
     void UpdateGameInput() { ++gameUpdates; }
     void UpdateMainMenuInput() { ++menuUpdates; }
     void UpdatePreMenuInput() {}
-    void UpdateInventoryInput() {}
-    void UpdateJournalInput() {}
+    void UpdateInventoryInput() { ++inventoryUpdates; }
+    void UpdateJournalInput() { ++journalUpdates; }
     void UpdateDebugInput() {}
     void UpdateCreditsInput() {}
     void UpdateDemoEndInput() {}
     void UpdateLoadScreenInput() {}
 };
 struct TestMainMenu {
+    float backdropBlurAmount=1;
     bool RequestQuit() { return true; }
+    cViewport* GetViewport() { return NULL; }
+    float GetChatBackdropBlurAmount() const { return backdropBlurAmount; }
 };
 struct cLuxBase {
     cEngine* mpEngine;
@@ -180,6 +187,8 @@ struct cLuxBase {
     TestMapHandler* mpMapHandler;
     cLuxMultiplayer* mpMultiplayer;
     TestMainMenu* mpMainMenu;
+    TestMainMenu* mpInventory=NULL;
+    TestMainMenu* mpJournal=NULL;
     TestPlayer* mpPlayer;
     TestMessageHandler* mpMessageHandler;
     TestEffectHandler* mpEffectHandler;
@@ -190,10 +199,49 @@ static cLuxBase base;
 static tString outputDirectory;
 static tString savedDesktopClipboard;
 static bool desktopClipboardSaved=false;
+static bool setFixtureClipboard(const char* text) {
+    // Other desktop applications can briefly hold the Windows clipboard lock.
+    // Retry only test setup/cleanup; production copy/paste remains unchanged.
+    const Uint32 started=SDL_GetTicks();tString error;
+    for(;;) {
+        if(SDL_SetClipboardText(text)==0) return true;
+        error=SDL_GetError();
+        const Uint32 elapsed=SDL_GetTicks()-started;
+        if(elapsed>=300) {
+            std::fprintf(stderr,"Clipboard fixture write failed after %u ms; SDL error: %s\n",
+                unsigned(elapsed),error.empty()?"(no SDL error reported)":error.c_str());
+            return false;
+        }
+        SDL_Delay(elapsed>290?300-elapsed:10);
+    }
+}
+static char* readFixtureClipboard(const char* expected=NULL) {
+    const Uint32 started=SDL_GetTicks();
+    for(;;) {
+        char* text=SDL_GetClipboardText();const tString error=SDL_GetError();
+        const bool hasText=SDL_HasClipboardText()==SDL_TRUE;
+        // Windows can return an allocated empty string while another app owns
+        // the clipboard lock. Fixture captures must not save that as user data.
+        const bool ready=text && (expected?std::strcmp(text,expected)==0:(text[0] || !hasText));
+        if(ready) return text;
+        const Uint32 elapsed=SDL_GetTicks()-started;
+        if(elapsed>=300) {
+            std::fprintf(stderr,"Clipboard fixture read failed after %u ms; actualBytes=%llu expectedBytes=%lld hasText=%d returnedText=%d SDL error: %s\n",
+                unsigned(elapsed),static_cast<unsigned long long>(text?std::strlen(text):0),
+                expected?static_cast<long long>(std::strlen(expected)):-1LL,int(hasText),int(text!=NULL),
+                error.empty()?"(no SDL error reported)":error.c_str());
+            // Expected-byte callers keep their strict comparison against the
+            // final read. Ambiguous fixture captures fail before any writes.
+            if(expected) return text;
+            SDL_free(text);return NULL;
+        }
+        SDL_free(text);SDL_Delay(elapsed>290?300-elapsed:10);
+    }
+}
 static bool restoreDesktopClipboard() {
     if(!desktopClipboardSaved) return true;
     if(!SDL_WasInit(SDL_INIT_VIDEO)) return false;
-    if(SDL_SetClipboardText(savedDesktopClipboard.c_str())!=0) return false;
+    if(!setFixtureClipboard(savedDesktopClipboard.c_str())) return false;
     desktopClipboardSaved=false;return true;
 }
 cLuxBase* gpBase = &base;
@@ -240,6 +288,8 @@ static void draw(cLuxMultiplayerUI& ui) {
     low->SetCurrentFrameBuffer(NULL);
     low->SetClearColor(cColor(0.055f,0.063f,0.08f,1));
     low->ClearFrameBuffer(eClearFrameBufferFlag_Color|eClearFrameBufferFlag_Depth);
+    const tString container=base.mpEngine->GetUpdater()->GetCurrentContainerName();
+    if(container=="MainMenu" || container=="Inventory" || container=="Journal") ui.DrawMenuBackdrop();
     ui.Draw();
     low->WaitAndFinishRendering();
 }
@@ -468,6 +518,135 @@ static void checkChatHistoryStyle(cLuxMultiplayerUI& ui,cLuxMultiplayer& session
     }
     session.chat=saved;draw(ui);
 }
+static void chatKey(cLuxMultiplayerUI& ui,SDL_Scancode scan,SDL_Keycode key);
+static void checkPassiveChatMenus(cLuxMultiplayerUI& ui,cGuiSet* nativeSet) {
+    auto& session=*base.mpMultiplayer;auto& input=*base.mpInputHandler;
+    auto* updater=base.mpEngine->GetUpdater();
+    const auto savedHistory=session.chat;
+    const eLuxInputState savedState=input.state;
+    const tString savedContainer=updater->GetCurrentContainerName();
+    session.chat.clear();
+    luxnet::ChatMessage message;message.name="Player 1";message.nameColor=luxchat::DefaultNameColor;
+    message.text="History stays here \xF0\x9F\x98\x80";session.chat.push_back(message);
+    message.peer=1;message.name="Player 2";message.text="Readable and unobtrusive.";
+    message.nameColor=luxchat::ChooseNameColor({message.nameColor});session.chat.push_back(message);
+    static const char* containers[]={"MainMenu","Inventory","Journal"};
+    static const eLuxInputState states[]={eLuxInputState_MainMenu,eLuxInputState_Inventory,eLuxInputState_Journal};
+    for(int menu=0;menu<3;++menu) {
+        updater->AddContainer(containers[menu]);input.state=eLuxInputState_Game;updater->SetContainer("Default");
+        iWidget* attention=nativeSet->GetAttentionWidget();iWidget* focus=nativeSet->GetFocusedWidget();
+        chatKey(ui,SDL_SCANCODE_T,SDLK_t);textEvent(":gr");for(int i=0;i<3;++i) draw(ui);
+        require(ui.IsChatOpen() && ui.mbChatCompletionOpen,"menu transition starts with the live editor and emoji suggestions");
+        input.state=states[menu];require(updater->SetContainer(containers[menu]),"enter passive-history menu container");
+        draw(ui);
+        require(!ui.IsChatOpen() && !ui.mbChatCompletionOpen && !ui.mbChatEmojiPickerOpen && !ui.mbChatPickerToneOpen &&
+            nativeSet->GetAttentionWidget()==attention && nativeSet->GetFocusedWidget()==focus,
+            "menu transition closes chat editing and suggestions without taking native attention or focus");
+        // Closing intentionally consumes the current batch and one native
+        // release frame. Follow the normal input/update cadence before asserting
+        // that a passive history frame has relinquished capture completely.
+        input.Update(1.0f/60);draw(ui);input.Update(1.0f/60);draw(ui);
+        require(!ui.IsChatCapturingInput() && !input.mbMultiplayerCapturing &&
+            nativeSet->GetAttentionWidget()==attention && nativeSet->GetFocusedWidget()==focus,
+            "passive menu history relinquishes input capture after the closing/release frames without changing native ownership");
+        for(const cVector2l& size:{cVector2l(320,240),cVector2l(338,1000),cVector2l(3840,2160)}) {
+            for(auto& entry:session.chat) entry.age=0;
+            resizeOverlay(ui,size.x,size.y);requireChatFont(ui);
+            require(ui.mlChatVisibleMessages==2 && ui.mlChatVisibleEmoji==1 && ui.mfChatHistoryAlpha==1 &&
+                ui.mvChatHistoryPos.x>=0 && ui.mvChatHistoryPos.y>=0 && ui.mvChatHistorySize.x>0 && ui.mvChatHistorySize.y>0 &&
+                ui.mvChatHistoryPos.x+ui.mvChatHistorySize.x<=size.x+1 && ui.mvChatHistoryPos.y+ui.mvChatHistorySize.y<=size.y+1 &&
+                ui.mvChatEntrySize==cVector2f(0) && ui.mvChatPickerSize==cVector2f(0),
+                "recent passive text and emoji history remain readable and bounded in small, portrait and 4K native menus");
+            require(ui.IsChatHistoryInMenuBackdrop() && ui.GetChatMenuBlurPasses()>0 &&
+                ui.GetChatFinalHistoryCount()==0 && ImGui::GetBackgroundDrawList()->VtxBuffer.empty(),
+                "native menus blur history with the backdrop and leave no duplicate sharp text in the final overlay");
+            require(ui.GetChatMenuBackdropSize()==base.mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeInt(),
+                "menu backdrop render targets follow the resized native framebuffer dimensions");
+            require(ui.GetChatMenuBlurSize()==cVector2l((size.x+1)/2,(size.y+1)/2),
+                "bounded blur targets are recreated at half resolution including odd and portrait windows");
+            const tString filename="chat-passive-"+tString(containers[menu])+"-"+cString::ToString(size.x)+"x"+cString::ToString(size.y)+".png";
+            screenshot(filename.c_str());
+        }
+        int* updates=menu==0?&input.menuUpdates:menu==1?&input.inventoryUpdates:&input.journalUpdates;
+        const int before=*updates;chatKey(ui,SDL_SCANCODE_T,SDLK_t);input.Update(1.0f/60);
+        require(!ui.IsChatOpen() && !ui.IsChatCapturingInput() && *updates==before+1 &&
+            nativeSet->GetAttentionWidget()==attention && nativeSet->GetFocusedWidget()==focus,
+            "passive history leaves menu input updates, focus and attention with the native GUI and rejects T");
+        luxnet::ChatMessage incoming;incoming.peer=2;incoming.name="Player 3";
+        incoming.text="Incoming \xF0\x9F\x9F\xA6";incoming.nameColor=luxchat::ChooseNameColor({session.chat[0].nameColor,session.chat[1].nameColor});
+        luxnet::AppendChatMessage(session.chat,incoming);draw(ui);
+        require(ui.mlChatVisibleMessages==3 && ui.mlChatVisibleEmoji==2 && ui.mvChatHistoryStyles.size()==3 &&
+            ui.GetChatFinalHistoryCount()==0 && ui.GetChatMenuBlurPasses()>0,
+            "incoming messages refresh the blurred menu backdrop without leaving stale history or a sharp duplicate");
+        session.chat.pop_back();
+        if(menu==0) {
+            base.mpMainMenu->backdropBlurAmount=0.35f;draw(ui);
+            require(std::fabs(ui.GetChatMenuBlurAmount()-0.35f)<0.0001f && ui.GetChatFinalHistoryCount()==0,
+                "chat follows the native menu's partial blur transition while staying beneath its controls");
+            base.mpMainMenu->backdropBlurAmount=1;
+            // Input remains in the final ImGui pass; rendering the backdrop
+            // earlier must not consume queued Unicode or shortcut events.
+            resizeOverlay(ui,800,600);ui.Show(false);
+            const tWString savedDirectory=ui.msMapBrowserDirectory;
+            ui.msMapBrowserDirectory=cString::UTF8ToWChar(outputDirectory);ui.OpenMapBrowser();draw(ui);
+            ImGuiWindow* browser=ImGui::FindWindowByName("Select a map");
+            require(browser && browser->Active,"map browser controls can open over a native menu backdrop");
+            ImGuiContext* context=ImGui::GetCurrentContext();
+            const ImGuiID directoryId=browser->GetID("##MapDirectory");
+            // Queue activation for the next NewFrame. NavActivateId belongs
+            // to the current frame and is replaced during NewFrame/NavUpdate.
+            context->NavNextActivateId=directoryId;
+            context->NavNextActivateFlags=ImGuiActivateFlags_PreferInput|ImGuiActivateFlags_TryToPreserveState;
+            draw(ui);
+            if(context->ActiveId!=directoryId) std::fprintf(stderr,
+                "Backdrop input activation expected=%u actual=%u navWindow=%s browserActive=%d browserHidden=%d frame=%d\n",
+                directoryId,context->ActiveId,context->NavWindow?context->NavWindow->Name:"none",
+                int(browser->Active),int(browser->Hidden),ImGui::GetFrameCount());
+            require(context->ActiveId==directoryId,"map-browser directory input activates before backdrop typing regression");
+            shortcut(ui,SDL_SCANCODE_A,SDLK_a);
+            const tString typed="Backdrop caf\xC3\xA9 \xF0\x9F\x98\x80";textEvent(typed);for(int i=0;i<3;++i) draw(ui);
+            if(tString(ui.msMapBrowserPath)!=typed || !ui.IsVisible() || !ui.mbMapBrowserOpen ||
+               !ui.IsChatHistoryInMenuBackdrop() || ui.GetChatFinalHistoryCount()!=0) std::fprintf(stderr,
+                "Backdrop controls input expected=[%s] actual=[%s] activeID=%u expectedID=%u navWindow=%s visible=%d browser=%d backdrop=%d finalHistory=%llu frame=%d\n",
+                typed.c_str(),ui.msMapBrowserPath,context->ActiveId,directoryId,
+                context->NavWindow?context->NavWindow->Name:"none",int(ui.IsVisible()),int(ui.mbMapBrowserOpen),
+                int(ui.IsChatHistoryInMenuBackdrop()),static_cast<unsigned long long>(ui.GetChatFinalHistoryCount()),ImGui::GetFrameCount());
+            require(tString(ui.msMapBrowserPath)==typed && ui.IsVisible() && ui.mbMapBrowserOpen &&
+                ui.IsChatHistoryInMenuBackdrop() && ui.GetChatFinalHistoryCount()==0,
+                "the early history blur pass preserves native controls focus, shortcuts and queued Unicode text exactly once");
+            ui.mbCloseMapBrowser=true;draw(ui);ui.Toggle();draw(ui);
+            ui.msMapBrowserDirectory=savedDirectory;
+            input.Update(1.0f/60);draw(ui);input.Update(1.0f/60);draw(ui);
+        }
+        for(auto& entry:session.chat) entry.age=9;draw(ui);
+        require(ui.mlChatVisibleMessages==2 && ui.mfChatHistoryAlpha>0 && ui.mfChatHistoryAlpha<1,
+            "history keeps its own timed fade while a native menu is open");
+        for(auto& entry:session.chat) entry.age=11;draw(ui);
+        require(!ui.mlChatVisibleMessages && !ui.mfChatHistoryAlpha && session.chat.size()==2,
+            "expired history disappears from menus without deleting retained messages");
+    }
+    input.state=eLuxInputState_Game;updater->SetContainer("Default");
+    for(auto& entry:session.chat) entry.age=0;
+    const auto passiveVisible=[&]() {
+        draw(ui);require(ui.mlChatVisibleMessages==2 && ui.mfChatHistoryAlpha==1 && !ui.IsChatCapturingInput(),
+            "scripted/player pause gates editing independently from passive history rendering");
+        chatKey(ui,SDL_SCANCODE_T,SDLK_t);require(!ui.IsChatOpen(),"T remains blocked while scripted or native pause owns input");
+    };
+    base.mpPlayer->active=false;passiveVisible();base.mpPlayer->active=true;
+    base.mpPlayer->dead=true;passiveVisible();base.mpPlayer->dead=false;
+    base.mpMessageHandler->paused=true;passiveVisible();base.mpMessageHandler->paused=false;
+    base.mpEffectHandler->paused=true;passiveVisible();base.mpEffectHandler->paused=false;
+    base.mpDebugHandler->active=true;passiveVisible();base.mpDebugHandler->active=false;
+    base.mpEngine->SetPaused(true);passiveVisible();base.mpEngine->SetPaused(false);
+    const auto hidden=[&]() {draw(ui);require(!ui.mlChatVisibleMessages && !ui.mfChatHistoryAlpha,
+        "passive history still hides without a live map/session or during loading and the Steam overlay");};
+    session.ready=false;hidden();session.ready=true;
+    session.active=false;hidden();session.active=true;
+    base.mpMapHandler->loaded=false;hidden();base.mpMapHandler->loaded=true;
+    session.loading=true;hidden();session.loading=false;
+    session.steamOverlayActive=true;hidden();session.steamOverlayActive=false;
+    session.chat=savedHistory;input.state=savedState;updater->SetContainer(savedContainer);resizeOverlay(ui,800,600);
+}
 static void requireHistoryTail(cLuxMultiplayerUI& ui) {
     const ImFontGlyph* tail=ui.mpChatFont->FindGlyphNoFallback('L');
     require(tail!=NULL,"history tail marker has a visible font glyph");
@@ -520,6 +699,605 @@ static void checkEmojiMapping(cLuxMultiplayerChatEmoji* emoji) {
     std::fclose(file);
     require(covered==emoji->GetGlyphCount() && covered>=3000,"all packaged emoji glyphs were exercised");
 }
+static void checkEmojiCategories(cLuxMultiplayerChatEmoji* emoji) {
+    static const char* keys[]={"people","nature","food","activity","travel","objects","symbols","flags"};
+    // These expectations were checked against the pinned upstream snapshot,
+    // independently of the generated metadata and the C++ loader.
+    static const char* firstNames[]={"grinning","dog","green_apple","soccer","red_car","watch","pink_heart","flag_white"};
+    static const unsigned expectedCounts[]={2261,215,130,434,133,238,328,270};
+    static const char* flagPrefix[]={"flag_white","flag_black","pirate_flag","checkered_flag",
+        "triangular_flag_on_post","rainbow_flag","transgender_flag","united_nations","flag_af","flag_ax","flag_al","flag_dz"};
+    require(cLuxMultiplayerChatEmoji::CategoryCount==8,"picker has the eight Discord Unicode categories");
+    const auto& entries=emoji->GetPickerEntries();
+    require(entries.size()==4009 && entries.size()==emoji->GetGlyphCount(),
+        "category metadata covers the complete pinned Twemoji atlas");
+    std::vector<int> owners(emoji->GetGlyphCount(),-1);
+    unsigned counts[8]={},baseCounts[8]={};int previousCategory=0;
+    size_t first[8]={};
+    for(size_t index=0;index<entries.size();++index) {
+        const auto& entry=entries[index];int glyph=-1;
+        require(entry.category>=0 && entry.category<8 && entry.category>=previousCategory,
+            "metadata retains the source category block order rather than alphabetizing aliases");
+        require(!entry.name.empty() && !entry.unicode.empty() &&
+            emoji->Match(entry.unicode,0,glyph)==entry.unicode.size() && glyph==entry.glyph,
+            "each categorized emoji resolves to the complete original atlas artwork");
+        require(entry.glyph>=0 && size_t(entry.glyph)<owners.size() && owners[entry.glyph]==-1,
+            "a canonical emoji appears once across categories even when it has many aliases");
+        if(!counts[entry.category]) first[entry.category]=index;
+        owners[entry.glyph]=static_cast<int>(index);++counts[entry.category];
+        if(!entry.skinTone) ++baseCounts[entry.category];previousCategory=entry.category;
+    }
+    for(int category=0;category<8;++category) {
+        require(tString(emoji->GetCategoryKey(category))==keys[category] && counts[category] && baseCounts[category],
+            "all eight categories have their expected source key and usable default choices");
+        require(counts[category]==expectedCounts[category] && entries[first[category]].name==firstNames[category],
+            "category population and leading choices agree with the independently verified source snapshot");
+        const auto alias=emoji->GetShortcodes().find(firstNames[category]);int expectedGlyph=-1;
+        require(alias!=emoji->GetShortcodes().end() &&
+            emoji->Match(alias->second,0,expectedGlyph)==alias->second.size() &&
+            entries[first[category]].glyph==expectedGlyph,
+            "leading source choices select the expected Unicode artwork from the independent shortcode dictionary");
+    }
+    for(size_t index=0;index<sizeof(flagPrefix)/sizeof(flagPrefix[0]);++index) {
+        require(entries[first[7]+index].name==flagPrefix[index],
+            "Flags retains Discord's white/black/pirate/special flags and Afghanistan/Åland/Albania/Algeria order");
+        const auto alias=emoji->GetShortcodes().find(flagPrefix[index]);int expectedGlyph=-1;
+        require(alias!=emoji->GetShortcodes().end() &&
+            emoji->Match(alias->second,0,expectedGlyph)==alias->second.size() &&
+            entries[first[7]+index].glyph==expectedGlyph,
+            "ordered Flags choices resolve to the verified regional and special-flag Unicode artwork");
+    }
+    for(const auto& alias:emoji->GetShortcodes()) {
+        int glyph=-1;
+        require(emoji->Match(alias.second,0,glyph)==alias.second.size() && glyph>=0 && owners[glyph]>=0,
+            "every existing Discord shortcode has a categorized canonical glyph");
+        const auto& aliases=entries[owners[glyph]].aliases;
+        require(std::find(aliases.begin(),aliases.end(),alias.first)!=aliases.end(),
+            "category metadata preserves all existing aliases for global search, including generated tone names");
+    }
+    const tString firstTone="\xF0\x9F\x8F\xBB",mediumTone="\xF0\x9F\x8F\xBD",lastTone="\xF0\x9F\x8F\xBF";
+    const tString mixedHeart=tString("\xF0\x9F\xA7\x91")+firstTone+
+        "\xE2\x80\x8D\xE2\x9D\xA4\xEF\xB8\x8F\xE2\x80\x8D\xF0\x9F\xA7\x91"+lastTone;
+    const tString mixedHandshake=tString("\xF0\x9F\xAB\xB1")+firstTone+"\xE2\x80\x8D\xF0\x9F\xAB\xB2"+lastTone;
+    for(const auto& family:std::vector<std::pair<tString,tString>>{
+        {mixedHeart,"\xF0\x9F\x92\x91"},{mixedHandshake,"\xF0\x9F\xA4\x9D"}}) {
+        int mixedGlyph=-1,baseGlyph=-1,mediumGlyph=-1;
+        const tString uniform=family.second+mediumTone;
+        require(emoji->Match(family.first,0,mixedGlyph)==family.first.size() &&
+            emoji->Match(family.second,0,baseGlyph)==family.second.size() &&
+            emoji->Match(uniform,0,mediumGlyph)==uniform.size(),
+            "mixed and uniform legacy-family regression artwork exists in the real atlas");
+        require(emoji->ResolvePickerTone(mixedGlyph,0)==baseGlyph && emoji->ResolvePickerTone(mixedGlyph,3)==mediumGlyph,
+            "runtime reverse family metadata maps mixed couple/handshake artwork to default and selected uniform legacy glyphs");
+    }
+}
+static tString toneSuffix(int tone);
+static void checkEmojiCompletionModel(cLuxMultiplayerChatEmoji* emoji) {
+    const auto token=[&](const tString& text,size_t cursor) {
+        return luxchat::FindEmojiCompletionToken(text,cursor,cursor,cursor,emoji);
+    };
+    require(!token(":g",2).active,"one alias codepoint after a colon does not open completion");
+    require(!token(":\xC3\xB1",3).active && token(":\xC3\xB1" "g",4).active,
+        "completion threshold counts Unicode codepoints rather than UTF-8 bytes");
+    const tString middle="before \xF0\x9F\x98\x80 :green after";
+    const size_t colon=middle.find(':');const auto current=token(middle,colon+3);
+    require(current.active && current.start==colon && current.end==colon+6 && current.query=="gr",
+        "a Unicode draft exposes only the alias prefix before the caret while replacing the complete word");
+    require(!luxchat::FindEmojiCompletionToken(middle,colon+3,colon+1,colon+3,emoji).active,
+        "a selected range cannot be overwritten by unsolicited emoji completion");
+    const auto adjacentKnown=token(":smile::gr",10),adjacentUnknown=token(":missing::gr",12);
+    require(adjacentKnown.active && adjacentKnown.start==7 && adjacentKnown.end==10 && adjacentKnown.query=="gr" &&
+        adjacentUnknown.active && adjacentUnknown.start==9 && adjacentUnknown.end==12 && adjacentUnknown.query=="gr",
+        "an adjacent opening colon completes only the new alias after a known or unknown closed token");
+    require(!token(":smile:gr",9).active && !token(":missing:gr",11).active && !token(":grinning:",3).active,
+        "completed tokens own their closing colon even when the caret moves within their raw alias");
+    const auto compound=token(":adult::sk",10);
+    require(!token(":adult::s",9).active && compound.active && compound.start==0 && compound.end==10 && compound.query=="adult::sk",
+        "registered compound aliases require two new suffix characters and replace the whole compound");
+    const auto compoundMatches=emoji->FindCompletionSuggestions(compound.query,3,32);
+    require(compoundMatches.size()>=5,"an explicit compound tone prefix retains every registered adult variant");
+    for(int tone=1;tone<6;++tone) {
+        const tString expected=tString("\xF0\x9F\xA7\x91")+toneSuffix(tone);int glyph=-1;
+        require(emoji->Match(expected,0,glyph)==expected.size() && compoundMatches[tone-1].glyph==glyph &&
+            emoji->ExpandShortcodes(compoundMatches[tone-1].replacement)==expected,
+            "all five adult prefix variants precede older-adult substring matches and insert their displayed tone");
+    }
+    const auto knownCompound=token(":smile::adult::sk",17),unknownCompound=token(":missing::adult::sk",19);
+    require(knownCompound.active && knownCompound.start==7 && knownCompound.end==17 && knownCompound.query=="adult::sk" &&
+        unknownCompound.active && unknownCompound.start==9 && unknownCompound.end==19 && unknownCompound.query=="adult::sk",
+        "compound completion preserves a preceding known or unknown adjacent alias and its owned closing colon");
+    for(const tString& text:std::vector<tString>{"https://example.test", "https:gr", "12:30", "user:gr@example.test",
+        "plain text", ":grinning:", ":grinning:gr"})
+        require(!token(text,text.size()).active,"URLs, times, email-like text and completed aliases do not reuse a colon as an opener");
+    const auto matches=emoji->FindCompletionSuggestions("gr",0,64);
+    bool grapes=false,greenApple=false;
+    for(const auto& match:matches) {
+        const tString expanded=emoji->ExpandShortcodes(match.replacement);int glyph=-1;
+        require(emoji->Match(expanded,0,glyph)==expanded.size() && glyph==match.glyph,
+            "every completion replacement renders exactly the Unicode artwork presented to the user");
+        if(expanded=="\xF0\x9F\x8D\x87") grapes=true;
+        if(expanded=="\xF0\x9F\x8D\x8F") greenApple=true;
+    }
+    require(grapes && greenApple,"short prefixes include food aliases beyond the first smiley choices");
+    const auto apples=emoji->FindCompletionSuggestions("apple",0,64);
+    require(!apples.empty() && apples.front().alias=="apple","an exact registered alias ranks before substring matches");
+    bool pineapple=false,green=false;
+    for(const auto& match:apples) {
+        const tString expanded=emoji->ExpandShortcodes(match.replacement);
+        pineapple=pineapple || expanded=="\xF0\x9F\x8D\x8D";
+        green=green || expanded=="\xF0\x9F\x8D\x8F";
+    }
+    require(pineapple && green,"completion also includes aliases containing the query within their name");
+    require(!emoji->FindCompletionSuggestions("pi\xC3\xB1" "ata",0).empty() &&
+        !emoji->FindCompletionSuggestions("+1",0).empty(),"Unicode and signed registered aliases are valid completion queries");
+    require(emoji->FindCompletionSuggestions("codex_missing_emoji_completion",0).empty(),"unmatched aliases have no completion candidates");
+}
+static ImGuiWindow* pickerGrid() {
+    ImGuiWindow* picker=ImGui::FindWindowByName("Emoji##MultiplayerChatPicker");
+    require(picker && picker->Active,"category controls belong to the active picker");
+    for(ImGuiWindow* child:picker->DC.ChildWindows)
+        if(std::strstr(child->Name,"ChatEmojiGrid")) return child;
+    require(false,"categorized emoji use an independently scrollable grid");return NULL;
+}
+static void requireCategoryControls(cLuxMultiplayerUI& ui) {
+    const ImVec2 display=ImGui::GetIO().DisplaySize;
+    const cVector2f panelEnd=ui.mvChatPickerPos+ui.mvChatPickerSize;
+    for(int category=0;category<8;++category) {
+        const cVector2f position=ui.mvChatPickerCategoryPos[category],size=ui.mvChatPickerCategorySize[category];
+        require(size.x>0 && size.y>0 && position.x>=ui.mvChatPickerPos.x && position.y>=ui.mvChatPickerPos.y &&
+            position.x+size.x<=panelEnd.x+1 && position.y+size.y<=panelEnd.y+1 &&
+            position.x>=0 && position.y>=0 && position.x+size.x<=display.x+1 && position.y+size.y<=display.y+1,
+            "every category button remains visible and clickable inside the resized picker");
+        for(int earlier=0;earlier<category;++earlier) {
+            const cVector2f other=ui.mvChatPickerCategoryPos[earlier],otherSize=ui.mvChatPickerCategorySize[earlier];
+            require(position.x>=other.x+otherSize.x-0.1f || other.x>=position.x+size.x-0.1f ||
+                position.y>=other.y+otherSize.y-0.1f || other.y>=position.y+size.y-0.1f,
+                "resizing does not overlap category mouse targets");
+        }
+    }
+}
+static void searchPicker(cLuxMultiplayerUI& ui,const tString& query) {
+    click(ui,ui.mvChatPickerSearchPos,ui.mvChatPickerSearchSize);
+    shortcut(ui,SDL_SCANCODE_A,SDLK_a);
+    event(SDL_KEYDOWN,SDL_SCANCODE_BACKSPACE,SDLK_BACKSPACE);draw(ui);
+    event(SDL_KEYUP,SDL_SCANCODE_BACKSPACE,SDLK_BACKSPACE);for(int i=0;i<3;++i) draw(ui);
+    if(!query.empty()) {textEvent(query);for(int i=0;i<3;++i) draw(ui);}
+    require(tString(ui.msChatEmojiSearch)==query,"SDL editing changes only the picker query");
+}
+static void checkPickerCategories(cLuxMultiplayerUI& ui) {
+    const tString draft=ui.msChatInput;const int cursor=ui.mlChatCursor;
+    const int selectionStart=ui.mlChatSelectionStart,selectionEnd=ui.mlChatSelectionEnd;
+    const auto& entries=ui.mpChatEmoji->GetPickerEntries();
+    const auto select=[&](int category) {
+        click(ui,ui.mvChatPickerCategoryPos[category],ui.mvChatPickerCategorySize[category]);
+        require(ui.mlChatPickerCategory==category && !ui.mbChatPickerSearchResults && !ui.msChatEmojiSearch[0] &&
+            ui.msChatPickerHeader==ui.mpChatEmoji->GetCategoryName(category) && !ui.mvChatPickerEntryIndices.empty(),
+            "SDL clicking a category displays its named choices and clears global search");
+        for(size_t index:ui.mvChatPickerEntryIndices)
+            require(index<entries.size() && entries[index].category==category && !entries[index].skinTone,
+                "default category browsing contains only that category without repeated tone variants");
+        require(ui.mfChatPickerGridScroll<=0.1f,"switching categories returns to the beginning of their grid");
+        require(tString(ui.msChatInput)==draft && ui.mlChatCursor==cursor &&
+            ui.mlChatSelectionStart==selectionStart && ui.mlChatSelectionEnd==selectionEnd,
+            "category navigation preserves the raw draft, caret and selection");
+    };
+    select(0);requireCategoryControls(ui);
+    require(ui.msChatPickerFirstUnicode=="\xF0\x9F\x98\x80","People starts with grinning in Discord source order");
+    screenshot("chat-categories-people.png");
+    ImGuiWindow* grid=pickerGrid();
+    moveMouse(ui,static_cast<int>(grid->Pos.x+grid->Size.x*0.5f),static_cast<int>(grid->Pos.y+grid->Size.y*0.5f));
+    wheelHistory(ui,-8);
+    require(ui.mfChatPickerGridScroll>0,"SDL wheel scrolls the actual category grid independently of history");
+    for(int category=1;category<8;++category) select(category);
+    screenshot("chat-categories-flags.png");
+    resizeOverlay(ui,320,240);requireCategoryControls(ui);requireChatFont(ui);
+    require(ui.mlChatPickerCategory==7 && ui.msChatPickerHeader=="Flags" && tString(ui.msChatInput)==draft,
+        "a compact resize preserves selected category and editable draft");
+    screenshot("chat-categories-flags-320x240.png");
+    resizeOverlay(ui,800,600);select(6);
+    searchPicker(ui,":FLAG_US:");
+    require(ui.mbChatPickerSearchResults && ui.mlChatPickerCategory==6 && ui.mvChatPickerEntryIndices.size()==1 &&
+        entries[ui.mvChatPickerEntryIndices[0]].category==7 &&
+        ui.msChatPickerFirstUnicode=="\xF0\x9F\x87\xBA\xF0\x9F\x87\xB8",
+        "colon-wrapped uppercase aliases search globally outside the selected category");
+    searchPicker(ui,"thumbsup_tone3");
+    require(ui.mbChatPickerSearchResults && ui.mvChatPickerEntryIndices.size()==1 &&
+        entries[ui.mvChatPickerEntryIndices[0]].skinTone &&
+        ui.msChatPickerFirstUnicode=="\xF0\x9F\x91\x8D\xF0\x9F\x8F\xBD",
+        "global search exposes a specific skin-tone variant without flooding normal browsing");
+    searchPicker(ui,"ice cream");
+    bool iceCream=false;
+    for(size_t index:ui.mvChatPickerEntryIndices) if(entries[index].unicode=="\xF0\x9F\x8D\xA8") iceCream=true;
+    require(ui.mbChatPickerSearchResults && iceCream,
+        "readable search words find underscore-separated aliases without requiring shortcode syntax");
+    searchPicker(ui,"\xF0\x9F\x98\x80");
+    require(ui.mbChatPickerSearchResults && ui.mvChatPickerEntryIndices.size()==1 &&
+        ui.msChatPickerFirstUnicode=="\xF0\x9F\x98\x80",
+        "pasting a Unicode emoji searches its canonical artwork across categories");
+    searchPicker(ui,"orca");
+    require(ui.mbChatPickerSearchResults && ui.mvChatPickerEntryIndices.size()==1 &&
+        entries[ui.mvChatPickerEntryIndices[0]].category==1 &&
+        ui.msChatPickerFirstUnicode=="\xF0\x9F\xAB\x8D" &&
+        ui.mpChatEmoji->GetShortcodes().find("orca")==ui.mpChatEmoji->GetShortcodes().end(),
+        "Unicode 17 fallback labels remain searchable without inventing unregistered chat shortcodes");
+    searchPicker(ui,"\xF0\x9F\xAB\x8D");
+    require(ui.mbChatPickerSearchResults && ui.mvChatPickerEntryIndices.size()==1 &&
+        ui.msChatPickerFirstUnicode=="\xF0\x9F\xAB\x8D",
+        "Unicode search also finds recent artwork absent from the Discord alias snapshot");
+    const int sends=base.mpMultiplayer->chatSends;
+    event(SDL_KEYDOWN,SDL_SCANCODE_RETURN,SDLK_RETURN);draw(ui);
+    event(SDL_KEYUP,SDL_SCANCODE_RETURN,SDLK_RETURN);for(int i=0;i<3;++i) draw(ui);
+    require(ui.mbChatEmojiPickerOpen && ui.IsChatOpen() && tString(ui.msChatInput)==draft &&
+        base.mpMultiplayer->chatSends==sends,
+        "Enter in picker search does not submit the saved chat draft or close the picker");
+    searchPicker(ui,"codex_emoji_missing_category");
+    require(ui.mbChatPickerSearchResults && ui.mvChatPickerEntryIndices.empty() &&
+        ui.msChatPickerFirstUnicode.empty() && ui.mvChatPickerFirstEmojiSize.x==0,
+        "an empty search result cannot retain a stale clickable emoji target");
+    searchPicker(ui,"");
+    require(!ui.mbChatPickerSearchResults && ui.mlChatPickerCategory==6 && ui.msChatPickerHeader=="Symbols" &&
+        !ui.mvChatPickerEntryIndices.empty() && ui.mfChatPickerGridScroll<=0.1f,
+        "clearing a global query restores the selected category at its beginning");
+    searchPicker(ui,"grinning");select(7);searchPicker(ui,"grinning");
+    require(ui.mbChatPickerSearchResults && ui.mlChatPickerCategory==7 && tString(ui.msChatInput)==draft &&
+        ui.mlChatCursor==cursor && ui.mlChatSelectionStart==selectionStart && ui.mlChatSelectionEnd==selectionEnd,
+        "category/search round trips retain the saved Unicode insertion point");
+}
+static tString toneSuffix(int tone) {
+    static const char* values[]={"","\xF0\x9F\x8F\xBB","\xF0\x9F\x8F\xBC","\xF0\x9F\x8F\xBD","\xF0\x9F\x8F\xBE","\xF0\x9F\x8F\xBF"};
+    require(tone>=0 && tone<6,"tone fixture has a valid preference");return values[tone];
+}
+static void requireToneOptions(cLuxMultiplayerUI& ui) {
+    require(ui.mbChatPickerToneOpen,"tone choices are open after their rendered button was clicked");
+    const ImVec2 display=ImGui::GetIO().DisplaySize;
+    for(int tone=0;tone<6;++tone) {
+        const cVector2f position=ui.mvChatPickerToneOptionPos[tone],size=ui.mvChatPickerToneOptionSize[tone];
+        require(size.x>0 && size.y>0 && position.x>=0 && position.y>=0 &&
+            position.x+size.x<=display.x+1 && position.y+size.y<=display.y+1,
+            "all six tone options remain clickable within the resized viewport");
+        for(int earlier=0;earlier<tone;++earlier) {
+            const cVector2f other=ui.mvChatPickerToneOptionPos[earlier],otherSize=ui.mvChatPickerToneOptionSize[earlier];
+            require(position.x>=other.x+otherSize.x-0.1f || other.x>=position.x+size.x-0.1f ||
+                position.y>=other.y+otherSize.y-0.1f || other.y>=position.y+size.y-0.1f,
+                "tone option mouse targets remain distinct after a resize");
+        }
+    }
+}
+static void openToneOptions(cLuxMultiplayerUI& ui) {
+    click(ui,ui.mvChatPickerToneButtonPos,ui.mvChatPickerToneButtonSize);requireToneOptions(ui);
+}
+static void selectPickerTone(cLuxMultiplayerUI& ui,int tone) {
+    const int category=ui.mlChatPickerCategory,cursor=ui.mlChatCursor;
+    const int selectionStart=ui.mlChatSelectionStart,selectionEnd=ui.mlChatSelectionEnd;
+    const tString query=ui.msChatEmojiSearch,draft=ui.msChatInput;
+    const float scroll=ui.mfChatPickerGridScroll;
+    openToneOptions(ui);click(ui,ui.mvChatPickerToneOptionPos[tone],ui.mvChatPickerToneOptionSize[tone]);
+    require(!ui.mbChatPickerToneOpen && ui.mlChatPickerTone==tone && ui.mbChatEmojiPickerOpen && ui.IsChatOpen(),
+        "SDL selecting a tone updates the full picker preference and closes only the dropdown");
+    require(ui.mlChatPickerCategory==category && tString(ui.msChatEmojiSearch)==query &&
+        tString(ui.msChatInput)==draft && ui.mlChatCursor==cursor &&
+        ui.mlChatSelectionStart==selectionStart && ui.mlChatSelectionEnd==selectionEnd &&
+        std::fabs(ui.mfChatPickerGridScroll-scroll)<=0.1f,
+        "tone selection preserves the category, query, draft, Unicode selection and scroll position");
+}
+static void checkPickerTones(cLuxMultiplayerUI& ui) {
+    const auto& entries=ui.mpChatEmoji->GetPickerEntries();
+    const tString draft=ui.msChatInput;const int cursor=ui.mlChatCursor,sends=base.mpMultiplayer->chatSends;
+    click(ui,ui.mvChatPickerCategoryPos[0],ui.mvChatPickerCategorySize[0]);
+    ImGuiWindow* grid=pickerGrid();
+    moveMouse(ui,static_cast<int>(grid->Pos.x+grid->Size.x*0.5f),static_cast<int>(grid->Pos.y+grid->Size.y*0.5f));
+    wheelHistory(ui,-8);require(ui.mfChatPickerGridScroll>0,"tone preference fixture starts inside a scrolled category");
+    int thumbBase=-1;
+    require(ui.mpChatEmoji->Match("\xF0\x9F\x91\x8D",0,thumbBase)==4,"thumbs-up fixture resolves its unmodified artwork");
+    for(int tone=0;tone<6;++tone) {
+        selectPickerTone(ui,tone);
+        const tString expected=tString("\xF0\x9F\x91\x8D")+toneSuffix(tone);int expectedGlyph=-1;
+        require(ui.mpChatEmoji->Match(expected,0,expectedGlyph)==expected.size(),"preferred tone artwork really exists in the atlas");
+        bool thumb=false,face=false;
+        require(ui.mvChatPickerDisplayGlyphs.size()==ui.mvChatPickerEntryIndices.size(),"each category choice has an actual resolved display glyph");
+        for(size_t index=0;index<ui.mvChatPickerEntryIndices.size();++index) {
+            const auto& entry=entries[ui.mvChatPickerEntryIndices[index]];
+            const int displayGlyph=ui.mvChatPickerDisplayGlyphs[index];
+            require(displayGlyph>=0 && size_t(displayGlyph)<ui.mpChatEmoji->GetGlyphCount(),
+                "global tone selection uses supported artwork without synthesizing nonexistent combinations");
+            if(entry.glyph==thumbBase) {thumb=true;require(displayGlyph==expectedGlyph,"the selected tone changes thumbs-up in the whole category list");}
+            if(entry.unicode=="\xF0\x9F\x98\x80") {face=true;require(displayGlyph==entry.glyph,"a tone preference leaves unsupported smiling faces unchanged");}
+        }
+        require(thumb && face,"the full category retains both supported hands and unchanged faces");
+    }
+    selectPickerTone(ui,0);
+    searchPicker(ui,"thumbsup");
+    for(int tone=0;tone<6;++tone) {
+        selectPickerTone(ui,tone);
+        require(ui.mvChatPickerMatches.size()==1 && ui.msChatPickerFirstUnicode==tString("\xF0\x9F\x91\x8D")+toneSuffix(tone),
+            "generic aliases show one preferred-tone result instead of every variant or duplicate synonym");
+    }
+    selectPickerTone(ui,5);searchPicker(ui,"thumbsup_tone3");
+    require(ui.mvChatPickerMatches.size()==1 && ui.msChatPickerFirstUnicode==tString("\xF0\x9F\x91\x8D")+toneSuffix(3),
+        "an explicitly requested alias tone overrides the global preference");
+    searchPicker(ui,"snowboarder");
+    require(ui.mvChatPickerMatches.size()==1 && ui.msChatPickerFirstUnicode==tString("\xF0\x9F\x8F\x82")+toneSuffix(5),
+        "the global tone also changes supported activity emoji found by generic search");
+    searchPicker(ui,"couple_with_heart");
+    int coupleBase=-1;ui.mpChatEmoji->Match("\xF0\x9F\x92\x91",0,coupleBase);
+    for(int tone=1;tone<6;++tone) {
+        selectPickerTone(ui,tone);bool couple=false;
+        const tString expected=tString("\xF0\x9F\x92\x91")+toneSuffix(tone);int expectedGlyph=-1;
+        require(ui.mpChatEmoji->Match(expected,0,expectedGlyph)==expected.size(),"uniform legacy couple artwork exists in the atlas");
+        for(size_t index=0;index<ui.mvChatPickerEntryIndices.size();++index)
+            if(entries[ui.mvChatPickerEntryIndices[index]].glyph==coupleBase) {
+                couple=true;require(ui.mvChatPickerDisplayGlyphs[index]==expectedGlyph,
+                    "multi-person couples use the selected uniform tone's real legacy glyph");
+            }
+        require(couple,"generic couple search retains its canonical legacy family");
+    }
+    const tString mixed=tString("\xF0\x9F\xA7\x91")+toneSuffix(1)+"\xE2\x80\x8D\xE2\x9D\xA4\xEF\xB8\x8F\xE2\x80\x8D\xF0\x9F\xA7\x91"+toneSuffix(5);
+    searchPicker(ui,mixed);selectPickerTone(ui,3);
+    require(ui.mvChatPickerMatches.size()==1 && ui.msChatPickerFirstUnicode==mixed,
+        "pasting an explicit mixed-tone couple preserves both requested tones");
+    searchPicker(ui,"flag_us");
+    require(ui.mvChatPickerMatches.size()==1 && ui.msChatPickerFirstUnicode=="\xF0\x9F\x87\xBA\xF0\x9F\x87\xB8",
+        "global tone selection leaves flags unchanged");
+    searchPicker(ui,"thumbsup");
+    const tString inserted=draft.substr(0,size_t(cursor))+tString("\xF0\x9F\x91\x8D")+toneSuffix(3)+draft.substr(size_t(cursor));
+    click(ui,ui.mvChatPickerFirstEmojiPos,ui.mvChatPickerFirstEmojiSize);
+    require(!ui.mbChatEmojiPickerOpen && ui.IsChatOpen() && tString(ui.msChatInput)==inserted &&
+        base.mpMultiplayer->chatSends==sends,
+        "clicking a preferred-tone result inserts the displayed Unicode variant at the saved caret without sending");
+    shortcut(ui,SDL_SCANCODE_Z,SDLK_z);
+    require(tString(ui.msChatInput)==draft && ui.mlChatCursor==cursor,"native Undo removes the complete chosen tone and restores the draft caret");
+    openPicker(ui);
+    require(ui.mlChatPickerTone==3 && !ui.msChatEmojiSearch[0],"reopening retains the chosen global tone while clearing the previous query");
+    click(ui,ui.mvChatPickerCategoryPos[7],ui.mvChatPickerCategorySize[7]);searchPicker(ui,"grinning");
+    openToneOptions(ui);
+    for(const cVector2l& size:{cVector2l(320,240),cVector2l(997,613),cVector2l(338,1000),cVector2l(1920,540),cVector2l(3840,2160)}) {
+        resizeOverlay(ui,size.x,size.y);requireToneOptions(ui);requireCategoryControls(ui);requireChatFont(ui);
+        require(ui.mlChatPickerTone==3 && ui.mlChatPickerCategory==7 && tString(ui.msChatEmojiSearch)=="grinning" &&
+            tString(ui.msChatInput)==draft && ui.mlChatCursor==cursor,
+            "resizing an active tone dropdown preserves preference, category, global query and raw draft caret");
+        const tString filename="chat-tone-dropdown-"+cString::ToString(size.x)+"x"+cString::ToString(size.y)+".png";
+        screenshot(filename.c_str());
+    }
+    event(SDL_KEYDOWN,SDL_SCANCODE_ESCAPE,SDLK_ESCAPE);draw(ui);
+    event(SDL_KEYUP,SDL_SCANCODE_ESCAPE,SDLK_ESCAPE);for(int i=0;i<3;++i) draw(ui);
+    require(!ui.mbChatPickerToneOpen && ui.mbChatEmojiPickerOpen && ui.IsChatOpen() && ui.mlChatPickerTone==3 &&
+        tString(ui.msChatInput)==draft && base.mpMultiplayer->chatSends==sends,
+        "first Escape closes only the tone dropdown while retaining picker, preference and unsent draft");
+    resizeOverlay(ui,800,600);
+}
+static void chatKey(cLuxMultiplayerUI& ui,SDL_Scancode scan,SDL_Keycode key) {
+    event(SDL_KEYDOWN,scan,key);draw(ui);
+    event(SDL_KEYUP,scan,key);for(int i=0;i<3;++i) draw(ui);
+}
+static void holdChatKeyThroughRepeat(cLuxMultiplayerUI& ui) {
+    const ImGuiIO& io=ImGui::GetIO();
+    const Uint32 duration=static_cast<Uint32>((io.KeyRepeatDelay+io.KeyRepeatRate*2)*1000)+20;
+    const Uint32 started=SDL_GetTicks();
+    // The SDL backend measures real time between frames; fast offscreen redraws
+    // alone do not advance key DownDuration far enough to exercise repetition.
+    while(SDL_GetTicks()-started<duration) {SDL_Delay(10);draw(ui);}
+}
+static void replaceChatDraft(cLuxMultiplayerUI& ui,const tString& value) {
+    if(ui.mbChatCompletionOpen) chatKey(ui,SDL_SCANCODE_ESCAPE,SDLK_ESCAPE);
+    shortcut(ui,SDL_SCANCODE_A,SDLK_a);
+    chatKey(ui,SDL_SCANCODE_BACKSPACE,SDLK_BACKSPACE);
+    if(!value.empty()) {textEvent(value);for(int i=0;i<3;++i) draw(ui);}
+    require(ui.IsChatOpen() && tString(ui.msChatInput)==value,"native selection and SDL typing prepare the intended completion draft");
+}
+static void requireChatCompletion(cLuxMultiplayerUI& ui,bool selectedVisible=true) {
+    require(ui.mbChatCompletionOpen && !ui.mvChatCompletionMatches.empty() &&
+        ui.mlChatCompletionSelected>=0 && size_t(ui.mlChatCompletionSelected)<ui.mvChatCompletionMatches.size(),
+        "autocomplete has a valid selected registered alias");
+    const ImVec2 screen=ImGui::GetIO().DisplaySize;
+    const cVector2f position=ui.mvChatCompletionPos,size=ui.mvChatCompletionSize;
+    require(position.x>=0 && position.y>=0 && size.x>0 && size.y>0 &&
+        position.x+size.x<=screen.x+1 && position.y+size.y<=screen.y+1 &&
+        position.y+size.y<=ui.mvChatEntryPos.y+1,
+        "autocomplete fits the viewport above the entry without obscuring the editable draft");
+    require(ui.mlChatCompletionVisibleRows>0 && ui.mlChatCompletionVisibleRows<=8 &&
+        ui.mlChatCompletionFirstRow>=0 &&
+        size_t(ui.mlChatCompletionFirstRow+ui.mlChatCompletionVisibleRows)<=ui.mvChatCompletionMatches.size(),
+        "every visible autocomplete row identifies an existing suggestion");
+    if(selectedVisible) require(ui.mlChatCompletionSelected>=ui.mlChatCompletionFirstRow &&
+        ui.mlChatCompletionSelected<ui.mlChatCompletionFirstRow+ui.mlChatCompletionVisibleRows,
+        "the keyboard-selected suggestion remains visible when the popup changes height");
+    for(int row=0;row<ui.mlChatCompletionVisibleRows;++row) {
+        const cVector2f a=ui.mvChatCompletionRowPos[row],extent=ui.mvChatCompletionRowSize[row];
+        require(extent.x>0 && extent.y>0 && a.x>=position.x && a.y>=position.y &&
+            a.x+extent.x<=position.x+size.x+1 && a.y+extent.y<=position.y+size.y+1,
+            "autocomplete row artwork, text and mouse targets stay within its clipped panel");
+        if(row) require(a.y>=ui.mvChatCompletionRowPos[row-1].y+ui.mvChatCompletionRowSize[row-1].y-0.1f,
+            "autocomplete row mouse targets do not overlap");
+    }
+    ImGuiWindow* entry=ImGui::FindWindowByName("##MultiplayerChat");
+    ImGuiWindow* completion=ImGui::FindWindowByName("Emoji suggestions##MultiplayerChatCompletion");
+    require(entry && completion && completion->Active && completion->FontWindowScale==1.0f &&
+        ImGui::GetCurrentContext()->ActiveId==entry->GetID("##Message"),
+        "showing suggestions retains native text-editor focus and rasterized font pixels");
+}
+static tString completionResult(cLuxMultiplayerUI& ui,int index=-1) {
+    if(index<0) index=ui.mlChatCompletionSelected;
+    require(index>=0 && size_t(index)<ui.mvChatCompletionMatches.size(),"completion acceptance targets a real candidate");
+    const tString draft=ui.msChatInput;const auto token=ui.mChatCompletionToken;
+    return draft.substr(0,token.start)+ui.mvChatCompletionMatches[index].replacement+draft.substr(token.end);
+}
+static void checkChatAutocomplete(cLuxMultiplayerUI& ui) {
+    const int sends=base.mpMultiplayer->chatSends;
+    resizeOverlay(ui,800,600);chatKey(ui,SDL_SCANCODE_T,SDLK_t);
+    require(ui.IsChatOpen() && !ui.msChatInput[0],"autocomplete fixtures begin in an empty native editor");
+    replaceChatDraft(ui,":g");
+    require(!ui.mbChatCompletionOpen,"typing one alias character leaves the entry unobstructed");
+    textEvent("r");for(int i=0;i<3;++i) draw(ui);requireChatCompletion(ui);
+    require(ui.mChatCompletionToken.query=="gr" && ui.mvChatCompletionMatches.size()>8,
+        "the second typed character opens a useful prefix list with additional scrollable choices");
+    const tString arrowDraft=ui.msChatInput;
+    chatKey(ui,SDL_SCANCODE_DOWN,SDLK_DOWN);
+    require(ui.mlChatCompletionSelected==1 && tString(ui.msChatInput)==arrowDraft,
+        "Down selects the next suggestion instead of changing the raw draft");
+    chatKey(ui,SDL_SCANCODE_UP,SDLK_UP);
+    require(ui.mlChatCompletionSelected==0,"Up returns to the previous suggestion");
+    chatKey(ui,SDL_SCANCODE_UP,SDLK_UP);
+    require(ui.mlChatCompletionSelected==int(ui.mvChatCompletionMatches.size())-1,"Up wraps to the last registered suggestion");
+    chatKey(ui,SDL_SCANCODE_DOWN,SDLK_DOWN);
+    require(ui.mlChatCompletionSelected==0,"Down wraps back to the beginning");
+    event(SDL_KEYDOWN,SDL_SCANCODE_DOWN,SDLK_DOWN);draw(ui);
+    const int initialRepeat=ui.mlChatCompletionSelected;
+    holdChatKeyThroughRepeat(ui);
+    if(ui.mlChatCompletionSelected==initialRepeat)
+        std::fprintf(stderr,"Held Down duration=%.3f repeatDelay=%.3f repeatRate=%.3f selected=%d initial=%d matches=%llu\n",
+            ImGui::GetKeyData(ImGuiKey_DownArrow)->DownDuration,ImGui::GetIO().KeyRepeatDelay,ImGui::GetIO().KeyRepeatRate,
+            ui.mlChatCompletionSelected,initialRepeat,static_cast<unsigned long long>(ui.mvChatCompletionMatches.size()));
+    require(ui.mlChatCompletionSelected!=initialRepeat,"holding an arrow repeats suggestion navigation");
+    event(SDL_KEYUP,SDL_SCANCODE_DOWN,SDLK_DOWN);for(int i=0;i<3;++i) draw(ui);requireChatCompletion(ui);
+    const tString tabResult=completionResult(ui);
+    chatKey(ui,SDL_SCANCODE_TAB,SDLK_TAB);
+    require(!ui.mbChatCompletionOpen && ui.IsChatOpen() && tString(ui.msChatInput)==tabResult &&
+        base.mpMultiplayer->chatSends==sends,"Tab accepts the highlighted alias without sending or moving focus away");
+    shortcut(ui,SDL_SCANCODE_Z,SDLK_z);
+    require(tString(ui.msChatInput)==arrowDraft,"one native Undo reverses the entire autocomplete replacement");
+    shortcut(ui,SDL_SCANCODE_Y,SDLK_y);
+    require(tString(ui.msChatInput)==tabResult,"one native Redo restores the entire autocomplete replacement");
+    replaceChatDraft(ui,"Enter :gr");requireChatCompletion(ui);
+    const tString enterResult=completionResult(ui);
+    event(SDL_KEYDOWN,SDL_SCANCODE_RETURN,SDLK_RETURN);draw(ui);
+    holdChatKeyThroughRepeat(ui);
+    event(SDL_KEYDOWN,SDL_SCANCODE_RETURN,SDLK_RETURN,1);draw(ui);
+    if(!ui.IsChatOpen() || tString(ui.msChatInput)!=enterResult || base.mpMultiplayer->chatSends!=sends)
+        std::fprintf(stderr,"Held Enter duration=%.3f repeatDelay=%.3f repeatRate=%.3f chat=%d sends=%d expectedSends=%d\n",
+            ImGui::GetKeyData(ImGuiKey_Enter)->DownDuration,ImGui::GetIO().KeyRepeatDelay,ImGui::GetIO().KeyRepeatRate,
+            int(ui.IsChatOpen()),base.mpMultiplayer->chatSends,sends);
+    require(ui.IsChatOpen() && tString(ui.msChatInput)==enterResult && base.mpMultiplayer->chatSends==sends,
+        "Enter accepts completion and its held/repeated key cannot submit the resulting message");
+    event(SDL_KEYUP,SDL_SCANCODE_RETURN,SDLK_RETURN);for(int i=0;i<3;++i) draw(ui);
+    replaceChatDraft(ui,"same :g");
+    const auto sameCandidates=ui.mpChatEmoji->FindCompletionSuggestions("gr",ui.mlChatPickerTone,32);
+    require(!sameCandidates.empty(),"same-frame acceptance has a registered candidate");
+    textEvent("r");event(SDL_KEYDOWN,SDL_SCANCODE_RETURN,SDLK_RETURN);draw(ui);
+    event(SDL_KEYUP,SDL_SCANCODE_RETURN,SDLK_RETURN);for(int i=0;i<3;++i) draw(ui);
+    require(ui.IsChatOpen() && tString(ui.msChatInput)=="same "+sameCandidates[0].replacement &&
+        base.mpMultiplayer->chatSends==sends,"queued typing and Enter in one frame complete the alias before any send");
+    replaceChatDraft(ui,":gr");requireChatCompletion(ui);
+    chatKey(ui,SDL_SCANCODE_ESCAPE,SDLK_ESCAPE);
+    for(int i=0;i<10;++i) draw(ui);
+    require(ui.IsChatOpen() && !ui.mbChatCompletionOpen && tString(ui.msChatInput)==":gr",
+        "Escape dismisses suggestions while retaining the draft and suppressing unchanged-token reopening");
+    chatKey(ui,SDL_SCANCODE_LEFT,SDLK_LEFT);
+    require(!ui.mbChatCompletionOpen && ui.mlChatCursor==2 && tString(ui.msChatInput)==":gr",
+        "moving away from a dismissed token preserves the draft without opening a one-character query");
+    chatKey(ui,SDL_SCANCODE_RIGHT,SDLK_RIGHT);requireChatCompletion(ui);
+    require(ui.mlChatCursor==3 && ui.mChatCompletionToken.query=="gr" && tString(ui.msChatInput)==":gr",
+        "returning the caret to a previously dismissed token reopens its suggestions");
+    chatKey(ui,SDL_SCANCODE_ESCAPE,SDLK_ESCAPE);
+    require(!ui.mbChatCompletionOpen,"the caret round-trip list can be dismissed again before editing");
+    textEvent("e");for(int i=0;i<3;++i) draw(ui);requireChatCompletion(ui);
+    for(const tString& draft:std::vector<tString>{"https://example.test", "https:gr", "12:30", "user:gr@example.test",
+        ":codex_missing_emoji_completion", ":grinning:", ":grinning:gr", ":\xC3\xB1"}) {
+        replaceChatDraft(ui,draft);
+        require(!ui.mbChatCompletionOpen && tString(ui.msChatInput)==draft,
+            "literal URLs, times, email-like text, unknown/completed aliases and one Unicode character stay unobstructed");
+    }
+    replaceChatDraft(ui,":pi\xC3\xB1" "ata");requireChatCompletion(ui);
+    const tString pinataResult=completionResult(ui);
+    const auto pinata=ui.mvChatCompletionMatches[ui.mlChatCompletionSelected];
+    require(ui.mpChatEmoji->ExpandShortcodes(pinata.replacement)=="\xF0\x9F\xAA\x85",
+        "a Unicode shortcode displays its correct pinata artwork");
+    chatKey(ui,SDL_SCANCODE_TAB,SDLK_TAB);
+    require(tString(ui.msChatInput)==pinataResult && luxnet::ValidChatText(ui.msChatInput),
+        "accepting a Unicode alias preserves complete UTF-8 editing bytes");
+    replaceChatDraft(ui,":+1");requireChatCompletion(ui);
+    require(ui.mvChatCompletionMatches.size()==1,"a signed two-character alias satisfies the completion threshold");
+    chatKey(ui,SDL_SCANCODE_TAB,SDLK_TAB);
+    replaceChatDraft(ui,":adult::sk");requireChatCompletion(ui);
+    const tString compoundResult=completionResult(ui);
+    require(ui.mChatCompletionToken.start==0 && ui.mvChatCompletionMatches.size()>=5,
+        "the editable field exposes registered compound tone aliases as complete replacements");
+    for(int tone=1;tone<6;++tone)
+        require(ui.mpChatEmoji->ExpandShortcodes(ui.mvChatCompletionMatches[tone-1].replacement)==
+            tString("\xF0\x9F\xA7\x91")+toneSuffix(tone),
+            "the field ranks all adult prefix variants before related substring matches without collapsing requested tones");
+    chatKey(ui,SDL_SCANCODE_TAB,SDLK_TAB);
+    require(tString(ui.msChatInput)==compoundResult && ui.mlChatEntryEmoji==1,
+        "accepting a compound alias replaces its full raw prefix and renders one composed person glyph");
+    const tString middle="pr\xC3\xA9 \xF0\x9F\x98\x80 :green suffix";
+    replaceChatDraft(ui,middle);clickChatCaret(ui,middle.find(':')+3);requireChatCompletion(ui);
+    const tString middleResult=completionResult(ui);
+    chatKey(ui,SDL_SCANCODE_TAB,SDLK_TAB);
+    require(tString(ui.msChatInput)==middleResult && middleResult.find("pr\xC3\xA9 \xF0\x9F\x98\x80 ")==0 &&
+        middleResult.substr(middleResult.size()-7)==" suffix",
+        "accepting at a Unicode caret replaces the whole alias word and preserves surrounding text");
+    shortcut(ui,SDL_SCANCODE_Z,SDLK_z);
+    require(tString(ui.msChatInput)==middle,"Undo restores the complete alias word and surrounding Unicode draft");
+    const tString mouseDraft="mouse :gr suffix";
+    replaceChatDraft(ui,mouseDraft);clickChatCaret(ui,9);requireChatCompletion(ui);
+    const int mouseIndex=ui.mlChatCompletionFirstRow;
+    const tString mouseResult=completionResult(ui,mouseIndex);
+    const size_t mouseCaret=ui.mChatCompletionToken.start+ui.mvChatCompletionMatches[mouseIndex].replacement.size();
+    const int mouseX=static_cast<int>(ui.mvChatCompletionRowPos[0].x+ui.mvChatCompletionRowSize[0].x*0.5f);
+    const int mouseY=static_cast<int>(ui.mvChatCompletionRowPos[0].y+ui.mvChatCompletionRowSize[0].y*0.5f);
+    queueMouse(true,mouseX,mouseY);textEvent("X");draw(ui);
+    queueMouse(false,mouseX,mouseY);base.mpEngine->GetInput()->Update(1.0f/60);for(int i=0;i<3;++i) draw(ui);
+    const tString mouseTyped=mouseResult.substr(0,mouseCaret)+"X"+mouseResult.substr(mouseCaret);
+    require(ui.IsChatOpen() && !ui.mbChatCompletionOpen && tString(ui.msChatInput)==mouseTyped &&
+        base.mpMultiplayer->chatSends==sends,"clicking a suggestion and queued typing retain native focus and insert text after the accepted alias");
+    shortcut(ui,SDL_SCANCODE_Z,SDLK_z);require(tString(ui.msChatInput)==mouseResult,"Undo first removes queued typing without disturbing the accepted alias");
+    shortcut(ui,SDL_SCANCODE_Z,SDLK_z);require(tString(ui.msChatInput)==mouseDraft,"the next Undo reverses the complete mouse acceptance atomically");
+    shortcut(ui,SDL_SCANCODE_Y,SDLK_y);require(tString(ui.msChatInput)==mouseResult,"Redo restores the complete mouse acceptance atomically");
+    replaceChatDraft(ui,mouseDraft);clickChatCaret(ui,9);requireChatCompletion(ui);
+    const tString pasteResult=completionResult(ui,ui.mlChatCompletionFirstRow);
+    const size_t pasteCaret=ui.mChatCompletionToken.start+ui.mvChatCompletionMatches[ui.mlChatCompletionFirstRow].replacement.size();
+    char* previousClipboard=readFixtureClipboard();require(previousClipboard!=NULL,"save clipboard before same-frame completion paste");
+    const tString previous=previousClipboard;SDL_free(previousClipboard);require(setFixtureClipboard("P"),"prepare native completion paste");
+    const int pasteX=static_cast<int>(ui.mvChatCompletionRowPos[0].x+ui.mvChatCompletionRowSize[0].x*0.5f);
+    const int pasteY=static_cast<int>(ui.mvChatCompletionRowPos[0].y+ui.mvChatCompletionRowSize[0].y*0.5f);
+    queueMouse(true,pasteX,pasteY);event(SDL_KEYDOWN,SDL_SCANCODE_LCTRL,SDLK_LCTRL,0,KMOD_CTRL);
+    event(SDL_KEYDOWN,SDL_SCANCODE_V,SDLK_v,0,KMOD_CTRL);draw(ui);
+    event(SDL_KEYUP,SDL_SCANCODE_V,SDLK_v,0,KMOD_CTRL);event(SDL_KEYUP,SDL_SCANCODE_LCTRL,SDLK_LCTRL);
+    queueMouse(false,pasteX,pasteY);base.mpEngine->GetInput()->Update(1.0f/60);for(int i=0;i<3;++i) draw(ui);
+    require(setFixtureClipboard(previous.c_str()),"restore clipboard after native completion paste");
+    require(tString(ui.msChatInput)==pasteResult.substr(0,pasteCaret)+"P"+pasteResult.substr(pasteCaret) &&
+        base.mpMultiplayer->chatSends==sends,"mouse acceptance precedes queued native paste at the preserved raw draft caret");
+    replaceChatDraft(ui,":thumbsup");requireChatCompletion(ui);
+    require(ui.mpChatEmoji->ExpandShortcodes(ui.mvChatCompletionMatches[0].replacement)==tString("\xF0\x9F\x91\x8D")+toneSuffix(3),
+        "generic autocomplete respects the selected global skin tone");
+    openPicker(ui);
+    require(!ui.mbChatCompletionOpen && ui.mbChatEmojiPickerOpen,"opening the emoji picker suspends autocomplete instead of stacking two choice windows");
+    selectPickerTone(ui,5);chatKey(ui,SDL_SCANCODE_ESCAPE,SDLK_ESCAPE);
+    replaceChatDraft(ui,":thumbsup_tone3");requireChatCompletion(ui);
+    require(ui.mpChatEmoji->ExpandShortcodes(ui.mvChatCompletionMatches[0].replacement)==tString("\xF0\x9F\x91\x8D")+toneSuffix(3),
+        "an explicit completion tone remains authoritative over a different global preference");
+    openPicker(ui);selectPickerTone(ui,3);chatKey(ui,SDL_SCANCODE_ESCAPE,SDLK_ESCAPE);
+    replaceChatDraft(ui,":gr");requireChatCompletion(ui);
+    for(int i=0;i<7;++i) chatKey(ui,SDL_SCANCODE_DOWN,SDLK_DOWN);
+    const int selected=ui.mlChatCompletionSelected,cursor=ui.mlChatCursor;
+    const tString resizeDraft=ui.msChatInput,selectedAlias=ui.mvChatCompletionMatches[selected].alias;
+    for(const cVector2l& screen:{cVector2l(320,240),cVector2l(997,613),cVector2l(338,1000),cVector2l(1920,540),cVector2l(3840,2160)}) {
+        resizeOverlay(ui,screen.x,screen.y);requireChatCompletion(ui);requireChatFont(ui);
+        require(tString(ui.msChatInput)==resizeDraft && ui.mlChatCursor==cursor && ui.mlChatCompletionSelected==selected &&
+            ui.mvChatCompletionMatches[selected].alias==selectedAlias,
+            "short, portrait, odd and 4K resizes preserve the draft, caret and visible keyboard-selected suggestion");
+        const tString filename="chat-completion-"+cString::ToString(screen.x)+"x"+cString::ToString(screen.y)+".png";
+        screenshot(filename.c_str());
+    }
+    checkChatFontDensities(ui);requireChatCompletion(ui);
+    require(tString(ui.msChatInput)==resizeDraft && ui.mlChatCursor==cursor && ui.mlChatCompletionSelected==selected,
+        "fractional and retina font rebuilds retain active autocomplete state and the raw editor caret");
+    resizeOverlay(ui,800,600);
+    replaceChatDraft(ui,tString(508,'X')+" :gr");requireChatCompletion(ui);
+    const tString bounded=ui.msChatInput;chatKey(ui,SDL_SCANCODE_TAB,SDLK_TAB);
+    require(ui.IsChatOpen() && tString(ui.msChatInput)==bounded && bounded.size()==512 &&
+        luxnet::ValidChatText(ui.msChatInput) && base.mpMultiplayer->chatSends==sends,
+        "completion at the byte limit retains the valid draft without truncating or sending it");
+    replaceChatDraft(ui,tString(508,'X')+" :g");
+    require(std::strlen(ui.msChatInput)==511 && !ui.mbChatCompletionOpen,"partial-capacity fixture starts one character short of completion");
+    textEvent("rX");event(SDL_KEYDOWN,SDL_SCANCODE_RETURN,SDLK_RETURN);draw(ui);
+    event(SDL_KEYUP,SDL_SCANCODE_RETURN,SDLK_RETURN);for(int i=0;i<3;++i) draw(ui);
+    require(ui.IsChatOpen() && tString(ui.msChatInput)==tString(508,'X')+" :gr" &&
+        std::strlen(ui.msChatInput)==512 && base.mpMultiplayer->chatSends==sends,
+        "same-frame partial-capacity typing reserves Enter after native editing forms a completion token");
+    if(ui.mbChatCompletionOpen) chatKey(ui,SDL_SCANCODE_ESCAPE,SDLK_ESCAPE);
+    chatKey(ui,SDL_SCANCODE_ESCAPE,SDLK_ESCAPE);
+    require(!ui.IsChatOpen() && base.mpMultiplayer->chatSends==sends,"autocomplete regressions leave no open draft or accidental message");
+}
 static void checkDevILSaveByteCount() {
     const ILuint previousImage=static_cast<ILuint>(ilGetInteger(IL_CUR_IMAGE));
     ILuint image=0;ilGenImages(1,&image);ilBindImage(image);
@@ -555,8 +1333,9 @@ int main(int argc,char** argv) {
     vars.mSound.mbUseHRTF=false; vars.mSound.mbUseThreading=false;
     base.mpEngine=CreateHPLEngine(eHplAPI_OpenGL,eHplSetup_Screen,&vars);
     require(base.mpEngine!=NULL,"engine creation");
+    base.mpEngine->GetResources()->AddResourceDir(_W("shaders"),false);
     checkDevILSaveByteCount();
-    char* desktopClipboard=SDL_GetClipboardText();require(desktopClipboard!=NULL,"capture desktop clipboard before chat regressions");
+    char* desktopClipboard=readFixtureClipboard();require(desktopClipboard!=NULL,"capture desktop clipboard before chat regressions");
     savedDesktopClipboard=desktopClipboard;SDL_free(desktopClipboard);desktopClipboardSaved=true;
     std::atexit([](){restoreDesktopClipboard();});
     SDL_HideWindow(SDL_GL_GetCurrentWindow());
@@ -661,12 +1440,12 @@ int main(int argc,char** argv) {
         require(session.steamInvites==0,"render does not open the Steam overlay");
         ui.Update(1.0f/60);
         require(session.steamInvites==1,"explicit Invite friends action is deferred");
-        char* previousClipboard=SDL_GetClipboardText();
+        char* previousClipboard=readFixtureClipboard();require(previousClipboard!=NULL,"save clipboard before lobby-code copy regression");
         ui.mlPendingAction=9; ui.Update(1.0f/60);
-        char* clipboard=SDL_GetClipboardText();
+        char* clipboard=readFixtureClipboard("109775244398475112");
         require(clipboard && std::strcmp(clipboard,"109775244398475112")==0,"copy preserves full 64-bit lobby code");
         SDL_free(clipboard);
-        SDL_SetClipboardText(previousClipboard ? previousClipboard : "");
+        require(setFixtureClipboard(previousClipboard ? previousClipboard : ""),"restore clipboard after lobby-code copy regression");
         SDL_free(previousClipboard);
         session.pendingInvite=109775244398475113ull;
         for(int i=0;i<3;++i) draw(ui);
@@ -871,6 +1650,8 @@ int main(int argc,char** argv) {
         require(ui.mpChatEmoji && ui.mpChatEmoji->IsReady() && ui.mpChatEmoji->GetGlyphCount()>=3000,
             "chat loads the bundled color emoji atlas and sequence mapping");
         checkEmojiMapping(ui.mpChatEmoji);
+        checkEmojiCategories(ui.mpChatEmoji);
+        checkEmojiCompletionModel(ui.mpChatEmoji);
         require(ui.mpChatEmoji->GetShortcodeCount()>=7500,"Discord alias mapping is packaged with the emoji atlas");
         for(const auto& shortcode:ui.mpChatEmoji->GetShortcodes())
             require(ui.mpChatEmoji->ExpandShortcodes(":"+shortcode.first+":")==shortcode.second,
@@ -1122,15 +1903,17 @@ int main(int argc,char** argv) {
             require(tString(ui.msChatInput)=="ZB" && session.chatSends==3,
                 "native selection replacement edits one rich field without leftover composed sequence bytes");
             shortcut(ui,SDL_SCANCODE_A,SDLK_a);
-            char* originalClipboard=SDL_GetClipboardText();require(originalClipboard!=NULL,"read clipboard before reversible paste regression");
+            char* originalClipboard=readFixtureClipboard();require(originalClipboard!=NULL,"read clipboard before reversible paste regression");
             const tString savedClipboard=originalClipboard;SDL_free(originalClipboard);
-            require(SDL_SetClipboardText(raw.c_str())==0,"set Unicode/alias clipboard fixture");
+            require(setFixtureClipboard(raw.c_str()),"set Unicode/alias clipboard fixture");
             shortcut(ui,SDL_SCANCODE_V,SDLK_v);
             require(tString(ui.msChatInput)==raw,"native clipboard paste preserves composed Unicode and literal shortcode bytes");
-            shortcut(ui,SDL_SCANCODE_A,SDLK_a);shortcut(ui,SDL_SCANCODE_C,SDLK_c);
-            char* copied=SDL_GetClipboardText();require(copied!=NULL,"read copied rich draft");
+            shortcut(ui,SDL_SCANCODE_A,SDLK_a);
+            require(setFixtureClipboard("codex-rich-copy-sentinel"),"set a distinct sentinel before production native Copy");
+            shortcut(ui,SDL_SCANCODE_C,SDLK_c);
+            char* copied=readFixtureClipboard(raw.c_str());require(copied!=NULL,"read copied rich draft");
             const tString copiedDraft=copied;SDL_free(copied);
-            require(SDL_SetClipboardText(savedClipboard.c_str())==0,"restore original clipboard after rich input regression");
+            require(setFixtureClipboard(savedClipboard.c_str()),"restore original clipboard after rich input regression");
             require(copiedDraft==raw && session.chatSends==3,"copying a selected rich draft returns the exact editable raw text without sending");
             shortcut(ui,SDL_SCANCODE_A,SDLK_a);textEvent("Punctuation: ");for(int i=0;i<3;++i) draw(ui);
             event(SDL_KEYDOWN,SDL_SCANCODE_GRAVE,SDLK_BACKQUOTE);textEvent("`~");
@@ -1168,7 +1951,7 @@ int main(int argc,char** argv) {
         textEvent(caretDraft);for(int i=0;i<3;++i) draw(ui);
         event(SDL_KEYDOWN,SDL_SCANCODE_LEFT,SDLK_LEFT);draw(ui);
         event(SDL_KEYUP,SDL_SCANCODE_LEFT,SDLK_LEFT);for(int i=0;i<3;++i) draw(ui);
-        openPicker(ui);textEvent("grinning");for(int i=0;i<3;++i) draw(ui);
+        openPicker(ui);checkPickerCategories(ui);checkPickerTones(ui);
         require(tString(ui.msChatEmojiSearch)=="grinning" && !ui.mvChatPickerMatches.empty() &&
             !ui.msChatPickerFirstUnicode.empty(),"picker search finds Discord aliases through real SDL text input");
         const tString chosen=ui.msChatPickerFirstUnicode;
@@ -1179,17 +1962,20 @@ int main(int argc,char** argv) {
             requireChatFont(ui);
             const cVector2f position=ui.mvChatPickerPos,extent=ui.mvChatPickerSize;
             require(ui.mbChatEmojiPickerOpen && ui.IsChatOpen() && tString(ui.msChatInput)==caretDraft &&
-                tString(ui.msChatEmojiSearch)=="grinning" && ui.mlChatCursor==pickerCursor &&
+                tString(ui.msChatEmojiSearch)=="grinning" && ui.mlChatPickerCategory==7 &&
+                ui.mlChatPickerTone==3 && ui.mbChatPickerSearchResults && ui.mlChatCursor==pickerCursor &&
                 ui.mlChatSelectionStart==pickerSelectionStart && ui.mlChatSelectionEnd==pickerSelectionEnd &&
                 position.x>=0 && position.y>=0 && extent.x>0 && extent.y>0 &&
                 position.x+extent.x<=size.x+1 && position.y+extent.y<=size.y+1,
                 "resizing an open searchable picker preserves the draft/query and keeps all controls in the viewport");
+            requireCategoryControls(ui);
             const tString filename="chat-picker-"+cString::ToString(size.x)+"x"+cString::ToString(size.y)+".png";
             screenshot(filename.c_str());
             if(size==cVector2l(640,480)) screenshot("chat-picker.png");
         }
         checkChatFontDensities(ui);
         require(ui.mbChatEmojiPickerOpen && tString(ui.msChatEmojiSearch)=="grinning" &&
+            ui.mlChatPickerCategory==7 && ui.mlChatPickerTone==3 && ui.mbChatPickerSearchResults &&
             tString(ui.msChatInput)==caretDraft && ui.mlChatCursor==pickerCursor &&
             ui.mlChatSelectionStart==pickerSelectionStart && ui.mlChatSelectionEnd==pickerSelectionEnd,
             "DPI font rebuilds preserve an open picker, search query and saved draft insertion point");
@@ -1214,15 +2000,15 @@ int main(int argc,char** argv) {
         require(tString(ui.msChatInput)==inserted && ui.IsChatOpen() && session.chatSends==3,
             "native Redo restores the complete picker insertion without sending or changing surrounding text");
         openPicker(ui);
-        char* originalFastClipboard=SDL_GetClipboardText();require(originalFastClipboard!=NULL,"save clipboard before activation-frame paste");
+        char* originalFastClipboard=readFixtureClipboard();require(originalFastClipboard!=NULL,"save clipboard before activation-frame paste");
         const tString fastClipboard=originalFastClipboard;SDL_free(originalFastClipboard);
-        require(SDL_SetClipboardText("X")==0,"set queued paste fixture");
+        require(setFixtureClipboard("X"),"set queued paste fixture");
         event(SDL_KEYDOWN,SDL_SCANCODE_ESCAPE,SDLK_ESCAPE);event(SDL_KEYUP,SDL_SCANCODE_ESCAPE,SDLK_ESCAPE);
         event(SDL_KEYDOWN,SDL_SCANCODE_LCTRL,SDLK_LCTRL,0,KMOD_CTRL);
         event(SDL_KEYDOWN,SDL_SCANCODE_V,SDLK_v,0,KMOD_CTRL);draw(ui);
         event(SDL_KEYUP,SDL_SCANCODE_V,SDLK_v,0,KMOD_CTRL);event(SDL_KEYUP,SDL_SCANCODE_LCTRL,SDLK_LCTRL);
         for(int i=0;i<3;++i) draw(ui);
-        require(SDL_SetClipboardText(fastClipboard.c_str())==0,"restore clipboard after activation-frame paste");
+        require(setFixtureClipboard(fastClipboard.c_str()),"restore clipboard after activation-frame paste");
         const tString pastedAtCaret="A\xF0\x9F\x98\x80"+chosen+"XB";
         if(tString(ui.msChatInput)!=pastedAtCaret)
             std::fprintf(stderr,"Picker Escape/refocus/paste actual=%s expected=%s cursor=%d selection=%d,%d\n",
@@ -1253,6 +2039,7 @@ int main(int argc,char** argv) {
             event(SDL_KEYDOWN,SDL_SCANCODE_ESCAPE,SDLK_ESCAPE);event(SDL_KEYUP,SDL_SCANCODE_ESCAPE,SDLK_ESCAPE);
             for(int i=0;i<3;++i) draw(ui);
         }
+        checkChatAutocomplete(ui);
         event(SDL_KEYDOWN,SDL_SCANCODE_T,SDLK_t);event(SDL_KEYUP,SDL_SCANCODE_T,SDLK_t);
         for(int i=0;i<3;++i) draw(ui);openPicker(ui);
         SDL_Event lost={};lost.type=SDL_WINDOWEVENT;lost.window.windowID=SDL_GetWindowID(SDL_GL_GetCurrentWindow());
@@ -1267,6 +2054,7 @@ int main(int argc,char** argv) {
         require(!ui.IsChatOpen() && !ui.mbChatEmojiPickerOpen && menuSet->GetFocusedWidget()==preservedNativeFocus,
             "native inventory transition removes picker/editor without disturbing HPL GUI focus");
         input.state=eLuxInputState_Game;
+        checkPassiveChatMenus(ui,menuSet);
         const auto blocked=[&](const char* description) {
             event(SDL_KEYDOWN,SDL_SCANCODE_T,SDLK_t);event(SDL_KEYUP,SDL_SCANCODE_T,SDLK_t);
             for(int i=0;i<2;++i) draw(ui);
@@ -1299,8 +2087,10 @@ int main(int argc,char** argv) {
         event(SDL_KEYDOWN,SDL_SCANCODE_T,SDLK_t);event(SDL_KEYUP,SDL_SCANCODE_T,SDLK_t);
         for(int i=0;i<3;++i) draw(ui);
         openPicker(ui);
+        openToneOptions(ui);
         session.loadPhase=eLuxMultiplayerLoadPhase_Loading;draw(ui);
-        require(!ui.IsChatOpen() && !ui.mbChatEmojiPickerOpen,"a map-loading transition closes active picker/editor");session.loadPhase=eLuxMultiplayerLoadPhase_None;
+        require(!ui.IsChatOpen() && !ui.mbChatEmojiPickerOpen && !ui.mbChatPickerToneOpen,
+            "a map-loading transition closes active picker/editor and tone dropdown");session.loadPhase=eLuxMultiplayerLoadPhase_None;
         for(int stage=0;stage<3;++stage) {
             event(SDL_KEYDOWN,SDL_SCANCODE_T,SDLK_t);event(SDL_KEYUP,SDL_SCANCODE_T,SDLK_t);
             for(int i=0;i<3;++i) draw(ui);openPicker(ui);
@@ -1318,11 +2108,14 @@ int main(int argc,char** argv) {
         event(SDL_KEYDOWN,SDL_SCANCODE_T,SDLK_t);event(SDL_KEYUP,SDL_SCANCODE_T,SDLK_t);
         for(int i=0;i<3;++i) draw(ui);
         openPicker(ui);
+        openToneOptions(ui);
         player.dead=true;draw(ui);
-        require(!ui.IsChatOpen() && !ui.mbChatEmojiPickerOpen,"player death closes active picker/editor");player.dead=false;
+        require(!ui.IsChatOpen() && !ui.mbChatEmojiPickerOpen && !ui.mbChatPickerToneOpen,
+            "player death closes active picker/editor and tone dropdown");player.dead=false;
         event(SDL_KEYDOWN,SDL_SCANCODE_T,SDLK_t);event(SDL_KEYUP,SDL_SCANCODE_T,SDLK_t);
         for(int i=0;i<3;++i) draw(ui);
         openPicker(ui);
+        openToneOptions(ui);
         SDL_Event closeEvent={};closeEvent.type=SDL_WINDOWEVENT;
         closeEvent.window.windowID=SDL_GetWindowID(SDL_GL_GetCurrentWindow());closeEvent.window.event=SDL_WINDOWEVENT_CLOSE;
         require(SDL_PushEvent(&closeEvent)==1,"inject actual SDL window-close event");
@@ -1331,8 +2124,8 @@ int main(int argc,char** argv) {
         auto* lowInput=static_cast<cLowLevelInputSDL*>(base.mpEngine->GetInput()->GetLowLevel());
         for(const auto& forwarded:lowInput->mlstEvents)
             if(forwarded.type==SDL_WINDOWEVENT && forwarded.window.event==SDL_WINDOWEVENT_CLOSE) closeForwarded=true;
-        require(!ui.IsChatOpen() && !ui.mbChatEmojiPickerOpen && closeForwarded && !base.mpEngine->GetGameIsDone(),
-            "window close removes picker/editor while forwarding the native event to the engine");
+        require(!ui.IsChatOpen() && !ui.mbChatEmojiPickerOpen && !ui.mbChatPickerToneOpen && closeForwarded && !base.mpEngine->GetGameIsDone(),
+            "window close removes picker/editor and tone dropdown while forwarding the native event to the engine");
         event(SDL_KEYDOWN,SDL_SCANCODE_T,SDLK_t);event(SDL_KEYUP,SDL_SCANCODE_T,SDLK_t);
         for(int i=0;i<3;++i) draw(ui);openPicker(ui);
         SDL_Event quitEvent={};quitEvent.type=SDL_QUIT;require(SDL_PushEvent(&quitEvent)==1,"inject SDL application quit event");
@@ -1351,7 +2144,7 @@ int main(int argc,char** argv) {
     base.mpEngine->GetGui()->DestroySet(menuSet);
     require(restoreDesktopClipboard(),"restore original desktop clipboard before SDL teardown");
     DestroyHPLEngine(base.mpEngine);
-    std::printf("PASS: real ImGui rendering; tilde/escape; global pre-swap/event hooks; key releases; Steam unavailable/hosting/searching/join/invitation; Steam overlay input capture; campaign defaults; current-map background guard; deferred map browser and start-position dropdown; stale/missing/invalid map handling; cache deletion while connected/disconnected; direct IP; chat SDL text/send/cancel, Unicode byte bounds, fade, resize and native/Steam/loading availability; teardown.\n");
+    std::printf("PASS: real ImGui rendering; tilde/escape; global pre-swap/event hooks; key releases; Steam unavailable/hosting/searching/join/invitation; Steam overlay input capture; campaign defaults; current-map background guard; deferred map browser and start-position dropdown; stale/missing/invalid map handling; cache deletion while connected/disconnected; direct IP; chat SDL text/send/cancel, Unicode byte bounds, fade, category/source coverage, global alias/Unicode search, six skin-tone choices and insertion, autocomplete keyboard/mouse acceptance, queued typing/paste and atomic undo, picker/dropdown/completion resize, native/Steam/loading/death/window-close availability; teardown.\n");
     return 0;
 }
 int hplMain(const tString&) { return main(0,NULL); }

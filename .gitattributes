@@ -1,0 +1,8 @@
+# Generated emoji metadata and pinned licenses have byte hashes in metadata.json.
+# Preserve their LF bytes across Windows and Unix checkouts.
+amnesia/fonts/twemoji/picker.txt text eol=lf
+amnesia/fonts/twemoji/picker-tones.txt text eol=lf
+amnesia/fonts/twemoji/LICENSE-UNICODE text eol=lf
+amnesia/fonts/twemoji/LICENSE-EMOJI-DATA text eol=lf
+tools/emoji-picker-discord-order.json text eol=lf
+tools/generate-emoji-picker.py text eol=lf

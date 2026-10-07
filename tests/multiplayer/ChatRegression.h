@@ -4,9 +4,11 @@
 #include <cstring>
 #include "imgui_internal.h"
 #include "gui/GuiPopUpMessageBox.h"
+#include "gui/WidgetImage.h"
 #include "LuxMultiplayerChatEmoji.h"
 #include "LuxMultiplayerChatLayout.h"
 #include "LuxMessageHandler.h"
+#include "impl/LowLevelGraphicsSDL.h"
 
 // Every key and text edit enters through SDL's queue and the normal engine
 // input/render loop. Both retail processes remain connected until all checks
@@ -14,7 +16,7 @@
 class cChatRegression {
     unsigned phase=0,initialPhase=0,resizeIndex=0,menuIndex=0;
     Uint32 entered=0,initialEntered=0;
-    bool capturePending=false,captured=false,mapTransitionStarted=false,initialResumeRequested=false;
+    bool capturePending=false,captured=false,mapTransitionStarted=false,initialResumeRequested=false,finalCaptureInstalled=false;
     bool originalRelative=false,originalGrab=false,lanternActive=false;
     int originalCursor=SDL_DISABLE;
     size_t initialMessages=0;
@@ -26,10 +28,21 @@ class cChatRegression {
     iWidget* nativeAttention=NULL;
     iWidget* nativeFocus=NULL;
     cGuiPopUpMessageBox* nativePopup=NULL;
+    cWidgetImage* nativeHistoryProbe=NULL;
+    cGuiGfxElement* nativeHistoryProbeGfx=NULL;
+    cVector2l nativeHistoryProbePixel=0;
+    tString finalCaptureError;
+    bool savedEffectPause=false,savedPlayerActive=true,savedFadeActive=false;
+    float savedFadeAlpha=0,savedFadeGoal=0,savedFadeSpeed=0;
     const bool focused=std::getenv("CODEX_MP_CHAT")!=NULL;
     Uint32 transitionNotice=0;
     static const cVector2l* sizes() {
         static const cVector2l values[]={cVector2l(640,480),cVector2l(997,613),
+            cVector2l(338,1000),cVector2l(1920,540),cVector2l(3840,2160)};
+        return values;
+    }
+    static const cVector2l* fadeSizes() {
+        static const cVector2l values[]={cVector2l(320,240),cVector2l(640,480),cVector2l(997,613),
             cVector2l(338,1000),cVector2l(1920,540),cVector2l(3840,2160)};
         return values;
     }
@@ -86,6 +99,19 @@ class cChatRegression {
         return NULL;
     }
     void next(unsigned value) {phase=value;entered=SDL_GetTicks();}
+    static void FinalOverlay(void* data) {
+        auto* fixture=static_cast<cChatRegression*>(data);
+        cBitmap* menuBefore=NULL;
+        if(fixture->capturePending && (fixture->phase==10 || fixture->phase==21 || fixture->phase==22)) {
+            menuBefore=gpBase->mpEngine->GetGraphics()->GetLowLevel()->CopyFrameBufferToBitmap();
+            if(!menuBefore) fixture->finalCaptureError="native menu final-overlay baseline readback failed";
+        }
+        // Exercise the actual pre-swap callback exactly once. Read back only
+        // after normal world/postfx/native GUI rendering and the production UI.
+        gpBase->mpMultiplayer->mpUI->Draw();
+        if(fixture->finalCaptureError.empty()) fixture->CaptureFinalFrame(fixture->finalCaptureError,menuBefore);
+        if(menuBefore) hplDelete(menuBefore);
+    }
     int fail(tString& error,const tString& message) const {
         error="chat phase "+cString::ToString(int(phase))+": "+message;return -1;
     }
@@ -179,6 +205,7 @@ public:
         initialPhase=2;return 1;
     }
     int Update(tString& error) {
+        if(!finalCaptureError.empty()) return fail(error,finalCaptureError);
         auto* session=gpBase->mpMultiplayer;auto* ui=session->mpUI;
         auto* updater=gpBase->mpEngine->GetUpdater();
         const Uint32 age=SDL_GetTicks()-entered;
@@ -292,6 +319,8 @@ public:
             nativeAttention=nativeSet->GetAttentionWidget();
             if(!nativePopup || !nativeSet->PopUpIsActive() || !nativeAttention)
                 return fail(error,"native modal fixture did not acquire attention");
+            for(auto& entry:session->mChatMessages) entry.age=0;
+            captured=false;capturePending=false;
             nativeFocus=nativeSet->GetFocusedWidget();open();next(10);return 0;
         }
         if(phase==10) {
@@ -299,6 +328,7 @@ public:
             if(ui->IsChatOpen() || gpBase->mpInputHandler->GetState()!=eLuxInputState_MainMenu ||
                nativeSet->GetAttentionWidget()!=nativeAttention || nativeSet->GetFocusedWidget()!=nativeFocus)
                 return fail(error,"T displaced native pause-menu input or focus");
+            if(!captured) {capturePending=true;return 0;}
             nativeSet->DestroyPopUp(nativePopup);nativePopup=NULL;
             next(101);return 0;
         }
@@ -407,6 +437,28 @@ public:
                 captured=false;SDL_SetWindowSize(SDL_GL_GetCurrentWindow(),sizes()[resizeIndex].x,sizes()[resizeIndex].y);
                 next(18);return 0;
             }
+            auto* fade=gpBase->mpEffectHandler->GetFade();
+            savedEffectPause=gpBase->mpEffectHandler->GetPlayerIsPaused();savedPlayerActive=gpBase->mpPlayer->IsActive();
+            savedFadeActive=fade->IsActive();savedFadeAlpha=fade->mfAlpha;savedFadeGoal=fade->mfGoalAlpha;savedFadeSpeed=fade->mfFadeSpeed;
+            gpBase->mpEffectHandler->SetPlayerIsPaused(true);fade->FadeOut(0);
+            for(auto& entry:session->mChatMessages) entry.age=0;
+            resizeIndex=0;captured=false;SDL_SetWindowSize(SDL_GL_GetCurrentWindow(),fadeSizes()[0].x,fadeSizes()[0].y);
+            next(181);return 0;
+        }
+        if(phase==181) {
+            if(gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeInt()!=fadeSizes()[resizeIndex] || age<150) return 0;
+            if(ui->IsChatOpen() || session->IsChatCapturingInput() || gpBase->mpPlayer->IsActive() ||
+               !gpBase->mpEffectHandler->GetPlayerIsPaused() || gpBase->mpEffectHandler->GetFade()->mfAlpha!=1)
+                return fail(error,"opaque scripted fade fixture did not keep chat passive while player input is paused");
+            if(!captured) {capturePending=true;return 0;}
+            if(++resizeIndex<6) {
+                captured=false;SDL_SetWindowSize(SDL_GL_GetCurrentWindow(),fadeSizes()[resizeIndex].x,fadeSizes()[resizeIndex].y);
+                next(181);return 0;
+            }
+            auto* fade=gpBase->mpEffectHandler->GetFade();
+            fade->mfAlpha=savedFadeAlpha;fade->mfGoalAlpha=savedFadeGoal;fade->mfFadeSpeed=savedFadeSpeed;fade->SetActive(savedFadeActive);
+            gpBase->mpEffectHandler->SetPlayerIsPaused(savedEffectPause);gpBase->mpPlayer->SetActive(savedPlayerActive);
+            mark(role+"-chat-overlay-fade-passed.txt","PASS: final presented pixels keep passive chat text/emoji above a fully opaque native fade at all resized viewports while scripted pause disables player input.");
             SDL_SetWindowSize(SDL_GL_GetCurrentWindow(),800,600);
             // Set only presentation age, preserving the real delivered contents.
             for(auto& entry:session->mChatMessages) entry.age=9;
@@ -430,21 +482,61 @@ public:
             if(!ui->IsChatOpen()) return fail(error,"chat could not open for a native GUI transition");
             static const char* containers[]={"MainMenu","Inventory","Journal"};
             if(menuIndex==2) gpBase->mpJournal->SetOpenedFromInventory(false);
+            for(auto& entry:session->mChatMessages) entry.age=0;
+            captured=false;capturePending=false;
             updater->SetContainer(containers[menuIndex]);next(21);return 0;
         }
         if(phase==21) {
             if(age<250) return 0;
             static const eLuxInputState states[]={eLuxInputState_MainMenu,eLuxInputState_Inventory,eLuxInputState_Journal};
             nativeSet=menuIndex==0?gpBase->mpMainMenu->GetSet():menuIndex==1?gpBase->mpInventory->GetSet():gpBase->mpJournal->GetSet();
-            if(ui->IsChatOpen() || session->IsChatCapturingInput() || gpBase->mpInputHandler->GetState()!=states[menuIndex] || !nativeSet->IsActive())
+            if(ui->IsChatOpen() || ui->mbChatEmojiPickerOpen || ui->mbChatPickerToneOpen || ui->mbChatCompletionOpen ||
+               session->IsChatCapturingInput() || gpBase->mpInputHandler->GetState()!=states[menuIndex] || !nativeSet->IsActive())
                 return fail(error,"native pause/inventory/journal transition retained chat capture");
+            if(!nativeHistoryProbe) {
+                const cVector2l screen=gpBase->mpEngine->GetGraphics()->GetLowLevel()->GetScreenSizeInt();
+                const cVector2f extent=nativeSet->GetVirtualSize(),offset=nativeSet->GetVirtualSizeOffset();
+                const cVector2f pixel(static_cast<float>(static_cast<int>(ui->mvChatHistoryPos.x)+16),
+                    static_cast<float>(static_cast<int>(ui->mvChatHistoryPos.y+ui->mvChatHistorySize.y)-28));
+                const cVector2f position(pixel.x*extent.x/screen.x-offset.x,pixel.y*extent.y/screen.y-offset.y);
+                const cVector2f size(32*extent.x/screen.x,20*extent.y/screen.y);
+                nativeHistoryProbeGfx=gpBase->mpEngine->GetGui()->CreateGfxFilledRect(cColor(0.9f,0.1f,0.6f,1),eGuiMaterial_Diffuse,false);
+                nativeHistoryProbe=nativeSet->CreateWidgetImage("",cVector3f(position.x,position.y,100),size,eGuiMaterial_Diffuse);
+                if(!nativeHistoryProbeGfx || !nativeHistoryProbe) return fail(error,"native GUI occlusion probe creation failed");
+                nativeHistoryProbe->SetImage(nativeHistoryProbeGfx);
+                nativeHistoryProbePixel=cVector2l(static_cast<int>(pixel.x)+16,static_cast<int>(pixel.y)+10);
+                next(21);return 0;
+            }
+            if(!captured) {capturePending=true;return 0;}
             nativeAttention=nativeSet->GetAttentionWidget();nativeFocus=nativeSet->GetFocusedWidget();
+            nativeHistoryProbe->SetImage(NULL);nativeSet->DestroyWidget(nativeHistoryProbe);nativeHistoryProbe=NULL;
+            hplDelete(nativeHistoryProbeGfx);nativeHistoryProbeGfx=NULL;
+            captured=false;capturePending=false;
             open();next(22);return 0;
         }
         if(phase==22) {
             if(age<200) return 0;
-            if(ui->IsChatOpen() || nativeSet->GetAttentionWidget()!=nativeAttention || nativeSet->GetFocusedWidget()!=nativeFocus)
+            if(ui->IsChatOpen() || !ui->mlChatVisibleMessages || ui->mfChatHistoryAlpha!=1 ||
+               nativeSet->GetAttentionWidget()!=nativeAttention || nativeSet->GetFocusedWidget()!=nativeFocus)
                 return fail(error,"T opened over or stole focus from pause/inventory/journal");
+            if(!captured) {capturePending=true;return 0;}
+            for(auto& entry:session->mChatMessages) entry.age=9;
+            next(222);return 0;
+        }
+        if(phase==222) {
+            if(age<100) return 0;
+            if(!ui->IsChatHistoryInMenuBackdrop() || ui->GetChatFinalHistoryCount()!=0 || !ui->mlChatVisibleMessages ||
+               ui->mfChatHistoryAlpha<=0 || ui->mfChatHistoryAlpha>=1)
+                return fail(error,"blurred native-menu history did not continue its own timed fade");
+            for(auto& entry:session->mChatMessages) entry.age=11;
+            next(223);return 0;
+        }
+        if(phase==223) {
+            if(age<100) return 0;
+            if(!ui->IsChatHistoryInMenuBackdrop() || ui->GetChatFinalHistoryCount()!=0 || ui->mlChatVisibleMessages ||
+               ui->mfChatHistoryAlpha!=0 || session->GetChatMessages().size()!=initialMessages+6)
+                return fail(error,"expired blurred-menu history left stale visible messages or erased retained history");
+            for(auto& entry:session->mChatMessages) entry.age=0;
             if(menuIndex==0) gpBase->mpMainMenu->ExitMenu(eLuxMainMenuExit_ReturnToGame);
             else if(menuIndex==1) gpBase->mpInventory->ExitPressed();
             else gpBase->mpJournal->ExitPressed(true);
@@ -452,7 +544,10 @@ public:
         }
         if(phase==221) {
             if(age<150 || !gameplay()) return 0;
+            if(ui->IsChatHistoryInMenuBackdrop() || !ui->GetChatFinalHistoryCount() || ui->IsChatOpen())
+                return fail(error,"leaving a native menu did not restore recent history to the sharp passive gameplay overlay");
             if(++menuIndex<3) {open();next(20);return 0;}
+            mark(role+"-chat-overlay-menus-passed.txt","PASS: native pause, inventory and journal blur passive history with the game backdrop beneath native GUI, with no sharp final-overlay duplicate and unchanged input/focus ownership.");
             open();next(30);return 0;
         }
         if(phase==30) {
@@ -485,7 +580,7 @@ public:
             if(age<200) return 0;
             if(ui->IsChatOpen() || session->IsWindowVisible() || !gameplay()) return fail(error,"closing multiplayer controls disrupted gameplay or reopened chat");
             if(session->GetWorld()->mlSequence<=sequence+20) return fail(error,"chat capture blocked network/world progression");
-            const tString summary="PASS: real SDL T/text/Enter; reciprocal reliable delivery exactly once; trusted labels; Unicode bounds; Discord aliases; active-entry/passive-history resize; fade; Escape; gameplay keys; pause/inventory/journal, focus, literal grave/tilde and explicit multiplayer-control transitions.";
+            const tString summary="PASS: real SDL T/text/Enter; reciprocal reliable delivery exactly once; trusted labels; Unicode bounds; Discord aliases; active-entry/passive-history resize; final-frame opaque native fade while player paused; history in native pause/inventory/journal/modal screens; independent timed fade; Escape; gameplay keys; focus, literal grave/tilde and explicit multiplayer-control transitions.";
             mark(role+"-chat-input-passed.txt",summary);
             if(!focused) mark(role+"-chat-passed.txt",summary);
             next(focused?50:40);return 0;
@@ -496,25 +591,24 @@ public:
         }
         if(phase==51) {
             if(age<200) return 0;
-            if(!ui->IsChatOpen() || ui->mvChatEmojiButtonSize.x<=0) return fail(error,"death fixture could not open the live editor");
-            mouse(true,ui->mvChatEmojiButtonPos,ui->mvChatEmojiButtonSize);next(52);return 0;
+            if(!ui->IsChatOpen()) return fail(error,"death fixture could not open the live editor");
+            text("Death completion :gr");next(52);return 0;
         }
         if(phase==52) {
-            if(age<150) return 0;
-            mouse(false,ui->mvChatEmojiButtonPos,ui->mvChatEmojiButtonSize);next(53);return 0;
-        }
-        if(phase==53) {
             if(age<200) return 0;
-            if(!ui->mbChatEmojiPickerOpen) return fail(error,"death fixture could not open the live emoji picker");
+            if(!ui->mbChatCompletionOpen || ui->mvChatCompletionMatches.empty() ||
+               ui->mbChatEmojiPickerOpen || ui->mbChatPickerToneOpen)
+                return fail(error,"death fixture did not expose real SDL emoji completion choices");
             gpBase->mpPlayer->GetHelperDeath()->SetShowHint(false);gpBase->mpPlayer->SetHealth(0);
             next(54);return 0;
         }
         if(phase==54) {
             if(age<150) return 0;
-            if(ui->IsChatOpen() || ui->mbChatEmojiPickerOpen || !gameplay()) return fail(error,"actual player death left editor/picker capture active");
+            if(ui->IsChatOpen() || ui->mbChatEmojiPickerOpen || ui->mbChatPickerToneOpen || ui->mbChatCompletionOpen || !gameplay())
+                return fail(error,"actual player death left editor or emoji completion capture active");
             gpBase->mpPlayer->GetHelperDeath()->OnPressButton();
             if(age<2000 || gpBase->mpPlayer->IsDead() || gpBase->mpPlayer->GetHelperDeath()->GetFadeAlpha()>0) return 0;
-            mark(role+"-chat-death-passed.txt","PASS: actual native multiplayer death with editor/picker open closes capture and recovers in the same session/map.");
+            mark(role+"-chat-death-passed.txt","PASS: actual native multiplayer death while SDL emoji completion is open closes editor/suggestion capture and recovers in the same session/map.");
             next(55);return 0;
         }
         if(phase==55) {
@@ -524,16 +618,15 @@ public:
         if(phase==56) {
             if(age<200) return 0;
             if(!ui->IsChatOpen()) return fail(error,"map-transition fixture could not reopen chat after native death recovery");
-            mouse(true,ui->mvChatEmojiButtonPos,ui->mvChatEmojiButtonSize);next(57);return 0;
+            if(ui->msChatInput[0] || ui->msChatEmojiSearch[0] || ui->mbChatEmojiPickerOpen || ui->mbChatPickerToneOpen || ui->mbChatCompletionOpen)
+                return fail(error,"reopening chat after death restored a stale draft, emoji query or picker focus");
+            text("Map completion :gr");next(57);return 0;
         }
         if(phase==57) {
-            if(age<150) return 0;
-            mouse(false,ui->mvChatEmojiButtonPos,ui->mvChatEmojiButtonSize);next(58);return 0;
-        }
-        if(phase==58) {
             if(age<200) return 0;
-            if(!ui->mbChatEmojiPickerOpen) return fail(error,"map-transition fixture could not open both peers' picker");
-            mark(role+"-chat-transition-ready.txt","live chat editor and picker active");
+            if(!ui->mbChatCompletionOpen || ui->mvChatCompletionMatches.empty())
+                return fail(error,"map-transition fixture could not open both peers' SDL completion choices");
+            mark(role+"-chat-transition-ready.txt","live chat editor and emoji completion active");
             transitionNotice=0;next(59);return 0;
         }
         if(phase==59) {
@@ -543,7 +636,7 @@ public:
                 mapTransitionStarted=true;
                 if(!session->HostChangeMap("maps/main/ch01/02_entrance_hall.map","PlayerStartArea_1"))
                     return fail(error,"real host map transition was refused");
-                if(ui->IsChatOpen() || ui->mbChatEmojiPickerOpen) {
+                if(ui->IsChatOpen() || ui->mbChatEmojiPickerOpen || ui->mbChatPickerToneOpen || ui->mbChatCompletionOpen) {
                     tracePicker("host retained editor after synchronous map change");
                     return fail(error,"host map-change call returned with its previous editor/picker still open");
                 }
@@ -551,11 +644,11 @@ public:
             if(!session->IsActive()) return fail(error,"real map transition disconnected the chat session");
             if(session->GetLoadPhase()!=eLuxMultiplayerLoadPhase_None || session->GetMapEpoch()>epoch) {
                 if(!transitionNotice) transitionNotice=SDL_GetTicks();
-                if(SDL_GetTicks()-transitionNotice>100 && (ui->IsChatOpen() || ui->mbChatEmojiPickerOpen))
+                if(SDL_GetTicks()-transitionNotice>100 && (ui->IsChatOpen() || ui->mbChatEmojiPickerOpen || ui->mbChatPickerToneOpen || ui->mbChatCompletionOpen))
                     return fail(error,"actual map loading retained editor/picker capture");
             }
             if(!session->IsReady() || session->GetMapEpoch()<=epoch || session->msMapName!="02_entrance_hall.map") return 0;
-            if(ui->IsChatOpen() || ui->mbChatEmojiPickerOpen) {
+            if(ui->IsChatOpen() || ui->mbChatEmojiPickerOpen || ui->mbChatPickerToneOpen || ui->mbChatCompletionOpen) {
                 tracePicker("completed map transition retained editor");
                 return fail(error,"completed real map load retained editor or picker on the new map");
             }
@@ -566,9 +659,9 @@ public:
         if(phase==60) {
             if(age<150 || !session->IsReady() || !gpBase->mpPlayer->IsActive() || gpBase->mpPlayer->IsDead() ||
                gpBase->mpEffectHandler->GetPlayerIsPaused() || gpBase->mpMessageHandler->IsPauseMessageActive()) return 0;
-            if(ui->IsChatOpen() || ui->mbChatEmojiPickerOpen || session->IsChatCapturingInput())
+            if(ui->IsChatOpen() || ui->mbChatEmojiPickerOpen || ui->mbChatPickerToneOpen || ui->mbChatCompletionOpen || session->IsChatCapturingInput())
                 return fail(error,"completed map transition retained editor/picker input capture after normal gameplay updates");
-            mark(role+"-chat-map-transition-passed.txt","PASS: real retail map load with editor/picker active closes capture on both peers, retains reliable session history and resumes gameplay.");
+            mark(role+"-chat-map-transition-passed.txt","PASS: real retail map load with editor/emoji completion active closes capture on both peers, retains reliable session history and resumes gameplay.");
             next(61);return 0;
         }
         if(phase==61) {
@@ -578,19 +671,12 @@ public:
         if(phase==62) {
             if(age<200) return 0;
             if(!ui->IsChatOpen()) return fail(error,"window-close fixture could not open chat on the transitioned map");
-            tracePicker("before mouse down");
-            mouse(true,ui->mvChatEmojiButtonPos,ui->mvChatEmojiButtonSize);next(63);return 0;
+            text("Quit completion :gr");next(63);return 0;
         }
         if(phase==63) {
-            if(age<150) return 0;
-            tracePicker("held mouse down, before release");
-            mouse(false,ui->mvChatEmojiButtonPos,ui->mvChatEmojiButtonSize);next(64);return 0;
-        }
-        if(phase==64) {
             if(age<200) return 0;
-            if(!ui->mbChatEmojiPickerOpen) {
-                tracePicker("failed after release");return fail(error,"window-close fixture could not open the live picker");
-            }
+            if(!ui->mbChatCompletionOpen || ui->mvChatCompletionMatches.empty())
+                return fail(error,"window-close fixture could not open the SDL emoji completion choices");
             SDL_Event close={};close.type=SDL_WINDOWEVENT;close.window.windowID=SDL_GetWindowID(SDL_GL_GetCurrentWindow());
             close.window.event=SDL_WINDOWEVENT_CLOSE;SDL_PushEvent(&close);
             SDL_Event quit={};quit.type=SDL_QUIT;SDL_PushEvent(&quit);next(65);return 0;
@@ -598,7 +684,7 @@ public:
         if(phase==65) {
             auto* gui=gpBase->mpMainMenu->GetSet();
             if(updater->GetCurrentContainerName()!="MainMenu" || !gui->PopUpIsActive()) return 0;
-            if(ui->IsChatOpen() || ui->mbChatEmojiPickerOpen || gpBase->mpEngine->GetGameIsDone())
+            if(ui->IsChatOpen() || ui->mbChatEmojiPickerOpen || ui->mbChatPickerToneOpen || ui->mbChatCompletionOpen || gpBase->mpEngine->GetGameIsDone())
                 return fail(error,"native window close retained chat or bypassed quit confirmation");
             auto* cancel=find(gui->GetAttentionWidget(),eWidgetType_Button,kTranslate("MainMenu","No"));
             if(!cancel || !cancel->ProcessMessage(eGuiMessage_ButtonPressed,cGuiMessageData()))
@@ -613,7 +699,7 @@ public:
         }
         if(phase==67) {
             if(age<150 || !gameplay()) return 0;
-            mark(role+"-chat-window-close-passed.txt","PASS: SDL window-close/quit reaches the production native quit confirmation after closing editor/picker, and No preserves the session.");
+            mark(role+"-chat-window-close-passed.txt","PASS: SDL window-close/quit reaches the production native quit confirmation after closing editor/emoji completion, and No preserves the session.");
             mark(role+"-chat-passed.txt","PASS: chat delivery, Unicode/Discord aliases, resize/fade/native GUI isolation, actual death recovery, real map transition and native window-close confirmation.");
             next(40);return 0;
         }
@@ -624,8 +710,18 @@ public:
         return 0;
     }
     bool OnPostRender(tString& error) {
+        if(!finalCaptureInstalled) {
+            static_cast<cLowLevelGraphicsSDL*>(gpBase->mpEngine->GetGraphics()->GetLowLevel())
+                ->SetOverlayCallback(FinalOverlay,this);
+            finalCaptureInstalled=true;
+        }
+        if(!finalCaptureError.empty()) {error=finalCaptureError;return false;}
+        return true;
+    }
+private:
+    bool CaptureFinalFrame(tString& error,cBitmap* menuBefore=NULL) {
         if(!capturePending) return true;
-        capturePending=false;auto* ui=gpBase->mpMultiplayer->mpUI;ui->Draw();
+        capturePending=false;auto* ui=gpBase->mpMultiplayer->mpUI;
         ImGui::SetCurrentContext(ui->mpContext);
         const ImGuiIO& io=ImGui::GetIO();
         const float requested=luxchat::CalculateLayout(io.DisplaySize.x,io.DisplaySize.y,false).fontSize;
@@ -661,15 +757,75 @@ public:
             ui->mvChatEntrySize.y>ui->mvChatTextInputSize.y+24)) {
             error="chat entry: composed emoji disappeared or a duplicate draft row increased the panel height";return false;
         }
-        if(phase==18 && (!fits(ui->mvChatHistoryPos,ui->mvChatHistorySize) || !ui->mlChatVisibleMessages)) {
+        if((phase==18 || phase==181 || phase==21 || phase==22 || phase==10) &&
+           (!fits(ui->mvChatHistoryPos,ui->mvChatHistorySize) || !ui->mlChatVisibleMessages)) {
             error="chat resize: passive long-message history escaped the viewport or disappeared";return false;
         }
-        if(phase==3 || phase==13 || phase==18) {
+        if((phase==181 || phase==21 || phase==22 || phase==10) && (ui->IsChatOpen() || ui->IsChatCapturingInput() ||
+           ui->mvChatEntrySize!=cVector2f(0) || ui->mfChatHistoryAlpha!=1)) {
+            error="chat overlay: native fade/menu hid recent history or left interactive chat visible";return false;
+        }
+        if((phase==21 || phase==22 || phase==10) && (!ui->IsChatHistoryInMenuBackdrop() || ui->GetChatMenuBlurPasses()==0 ||
+           ui->GetChatFinalHistoryCount()!=0)) {
+            error="native menu chat did not enter the blur backdrop or was also drawn sharply in the final overlay";return false;
+        }
+        if(phase==181 && (ui->IsChatHistoryInMenuBackdrop() || ui->GetChatFinalHistoryCount()==0)) {
+            error="gameplay opaque-fade chat did not return to the sharp final overlay";return false;
+        }
+        if(phase==3 || phase==13 || phase==18 || phase==181 || phase==21 || phase==22 || phase==10) {
             cBitmap* bitmap=gpBase->mpEngine->GetGraphics()->GetLowLevel()->CopyFrameBufferToBitmap();
             if(!bitmap) {error="chat resize screenshot readback failed";return false;}
+            if(phase==21 || phase==22 || phase==10) {
+                const cBitmapData* before=menuBefore?menuBefore->GetData(0,0):NULL;
+                const cBitmapData* after=bitmap->GetData(0,0);
+                if(!before || !after || !before->mpData || !after->mpData || before->mlSize!=after->mlSize ||
+                   menuBefore->GetSize()!=bitmap->GetSize() || menuBefore->GetPixelFormat()!=bitmap->GetPixelFormat() ||
+                   std::memcmp(before->mpData,after->mpData,after->mlSize)!=0) {
+                    hplDelete(bitmap);error="native menu pixels changed during final UI overlay: sharp history was drawn over native blur/GUI";return false;
+                }
+                if(ui->GetChatMenuBackdropSize()!=screen || ui->GetChatMenuBlurSize()!=cVector2l((screen.x+1)/2,(screen.y+1)/2)) {
+                    hplDelete(bitmap);error="native menu backdrop/blur targets did not match the current framebuffer dimensions";return false;
+                }
+                if(phase==21) {
+                    unsigned char pixel[4]={};bitmap->GetPixel(0,0,cVector3l(nativeHistoryProbePixel.x,
+                        bitmap->GetHeight()-1-nativeHistoryProbePixel.y,0),pixel);
+                    if(std::abs(int(pixel[0])-230)>3 || std::abs(int(pixel[1])-26)>3 || std::abs(int(pixel[2])-153)>3) {
+                        hplDelete(bitmap);error="native GUI occlusion probe was blurred or overdrawn by sharp chat";return false;
+                    }
+                }
+            }
+            if(phase==181) {
+                const cBitmapData* data=bitmap->GetData(0,0);
+                const int width=bitmap->GetWidth(),height=bitmap->GetHeight(),bytes=bitmap->GetBytesPerPixel();
+                if(!data || !data->mpData || width!=screen.x || height!=screen.y || bytes<3 || data->mlSize<width*height*bytes) {
+                    hplDelete(bitmap);error="chat opaque-fade pixel readback has invalid dimensions or format";return false;
+                }
+                const auto bright=[&](int x,int y,int threshold) {
+                    // OpenGL frame readbacks store the bottom row first.
+                    const unsigned char* pixel=data->mpData+((height-1-y)*width+x)*bytes;
+                    return pixel[0]>threshold || pixel[1]>threshold || pixel[2]>threshold;
+                };
+                unsigned textPixels=0,backgroundPixels=0;
+                const int left=static_cast<int>(ui->mvChatHistoryPos.x),top=static_cast<int>(ui->mvChatHistoryPos.y);
+                const int right=(std::min)(width,static_cast<int>(std::ceil(ui->mvChatHistoryPos.x+ui->mvChatHistorySize.x)));
+                const int bottom=(std::min)(height,static_cast<int>(std::ceil(ui->mvChatHistoryPos.y+ui->mvChatHistorySize.y)));
+                for(int y=top;y<bottom;++y) for(int x=left;x<right;++x) if(bright(x,y,100)) ++textPixels;
+                for(int y=height/4-5;y<height/4+5;++y) for(int x=width/2-5;x<width/2+5;++x)
+                    if(bright(x,y,4)) ++backgroundPixels;
+                if(textPixels<100 || backgroundPixels) {
+                    hplDelete(bitmap);error="chat final opaque fade pixels: visible text="+cString::ToString(int(textPixels))+
+                        ", uncovered background="+cString::ToString(int(backgroundPixels));return false;
+                }
+            }
+            static const char* menuNames[]={"MainMenu","Inventory","Journal"};
+            const tString filename=phase==3?role+"-chat-entry.png":
+                phase==10?role+"-chat-passive-modal.png":
+                phase==21?role+"-chat-menu-priority-"+menuNames[menuIndex]+".png":
+                phase==22?role+"-chat-passive-"+menuNames[menuIndex]+".png":
+                role+(phase==181?"-chat-opaque-fade-":phase==18?"-chat-history-":"-chat-")+
+                    cString::ToString(screen.x)+"x"+cString::ToString(screen.y)+".png";
             const bool saved=gpBase->mpEngine->GetResources()->GetBitmapLoaderHandler()->SaveBitmap(bitmap,
-                cString::To16Char(phase==3?outputDir+"/"+role+"-chat-entry.png":
-                    outputDir+"/"+role+(phase==18?"-chat-history-":"-chat-")+cString::ToString(screen.x)+"x"+cString::ToString(screen.y)+".png"),0);
+                cString::To16Char(outputDir+"/"+filename),0);
             hplDelete(bitmap);if(!saved) {error="chat resize screenshot save failed";return false;}
         }
         captured=true;return true;

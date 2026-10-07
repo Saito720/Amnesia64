@@ -82,6 +82,11 @@ window dimensions, including portrait windows.
 While typing, scrolling over the history reveals earlier lines and messages.
 Chat retains the last 50 messages for the current session across map
 changes; ending or replacing the session clears them.
+During gameplay, recent history draws above game effects, including full-screen
+fades. The in-session pause menu, inventory, and journal include history in a
+live blurred backdrop beneath their controls. Paused effects and death do not
+suppress gameplay history; messages still follow their own fade timer. Loading
+and map transitions hide history until the session is ready.
 
 Typing captures gameplay input. Chat cannot open over the pause menu, inventory,
 journal, multiplayer controls, scripted pause, or Steam overlay. Menu and map
@@ -102,11 +107,27 @@ artwork license are included in `fonts/twemoji/`; distribute those files with th
 atlas and mapping.
 Discord-style shortcodes such as `:smile:`, `:heart:` and `:thumbsup_tone3:`
 expand to Unicode when sent; unknown or incomplete names remain literal text.
-The emoji button remains grey, including on hover. It opens
-a searchable picker. Selecting an emoji inserts it at
+Typing a colon followed by at least two characters opens matching emoji
+suggestions above the entry. Exact and prefix matches appear before matches
+within an alias. Use **Up/Down** to select, then **Tab** or **Enter** to insert,
+or click a suggestion. Acceptance replaces the shortcode at the caret without
+sending the message or changing surrounding text. Suggestions follow the picker
+skin-tone preference, while explicit tone aliases keep their requested variant.
+**Escape** dismisses suggestions first; another press closes chat. Completed
+shortcodes, selected text, and URL-like tokens do not open suggestions.
+The emoji button remains grey, including on hover. It opens a picker organized
+into People, Nature, Food, Activities, Travel, Objects, Symbols, and Flags.
+Category grids follow a pinned Discord-derived order, with newer Twemoji entries
+supplemented by Unicode category data. A six-choice skin-tone dropdown updates
+supported emoji throughout the picker without changing the draft or selected
+category. Search covers all categories; explicit skin-tone names still find
+their requested variants. Browsing shows one choice per emoji family rather
+than repeating every tone. Selecting an emoji inserts it at
 the current caret or replaces the selection without sending the draft. Escape
 closes the picker first. The packaged alias dictionary includes the DSharpPlus
-MIT license and source attribution. Fonts and emoji assets load locally.
+MIT license and source attribution. Category metadata and its provenance ship
+with the atlas; the atlas itself does not need to be rearranged. Fonts and emoji
+assets load locally.
 
 ## Steamworks build and hosting
 

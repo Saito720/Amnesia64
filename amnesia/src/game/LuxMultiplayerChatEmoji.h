@@ -3,6 +3,7 @@
 #define LUX_MULTIPLAYER_CHAT_EMOJI_H
 
 #include <cstdint>
+#include <array>
 #include <map>
 #include <string>
 #include <vector>
@@ -22,6 +23,29 @@ public:
     const std::string& GetGlyphUnicode(int glyph) const;
     size_t GetShortcodeCount() const {return mShortcodes.size();}
     const std::map<std::string,std::string>& GetShortcodes() const {return mShortcodes;}
+    static const int CategoryCount=8;
+    static const char* GetCategoryKey(int category);
+    static const char* GetCategoryName(int category);
+    struct PickerEntry {
+        int glyph,category;
+        std::string name,unicode;
+        std::string searchKeywords;
+        std::vector<std::string> aliases;
+        bool skinTone=false;
+    };
+    const std::vector<PickerEntry>& GetPickerEntries() const {return mvPickerEntries;}
+    const PickerEntry* GetPickerEntryForGlyph(int glyph) const;
+    static std::string NormalizePickerSearch(const std::string& query);
+    std::vector<size_t> FindPickerEntries(int category,const std::string& query) const;
+    int ResolvePickerTone(int glyph,int tone) const;
+    struct CompletionSuggestion {
+        std::string alias,replacement;
+        int glyph=-1;
+    };
+    // Registered aliases only; exact/prefix matches precede substrings. Each
+    // replacement resolves to its displayed glyph, including the chosen tone.
+    std::vector<CompletionSuggestion> FindCompletionSuggestions(const std::string& query,
+        int preferredTone=0,size_t limit=8) const;
     struct TextSpan {size_t offset,length,displayOffset,displayLength;bool replaced;};
     std::string ExpandShortcodes(const std::string& text,std::vector<TextSpan>* spans=nullptr) const;
     // Unknown tokens own their closing colon, so adjacent literal forms stay
@@ -37,14 +61,30 @@ private:
     struct Node {std::map<uint32_t,size_t> children;int glyph=-1;};
     bool LoadMapping(const std::string& path,int& width,int& height);
     void LoadShortcodes(const std::string& path);
+    void LoadPicker(const std::string& path);
+    void LoadPickerTones(const std::string& path);
     hpl::iTexture* mpTexture=nullptr;
     std::vector<Glyph> mvGlyphs;
     std::vector<Node> mvNodes;
     std::map<std::string,std::string> mShortcodes;
+    std::vector<PickerEntry> mvPickerEntries;
+    std::vector<size_t> mvPickerIndexByGlyph;
+    std::vector<int> mvToneBases;
+    std::vector<std::array<int,6>> mvToneVariants;
     size_t mlLongestShortcode=0;
 };
 
 namespace luxchat {
+struct EmojiCompletionToken {
+    bool active=false;
+    size_t start=0,end=0;
+    std::string query;
+};
+// Offsets are native UTF-8 bytes. The replacement range includes the opening
+// colon, the remaining alias word after the caret, and an optional closing
+// colon. Supplying the catalog excludes already completed registered tokens.
+EmojiCompletionToken FindEmojiCompletionToken(const std::string& text,size_t cursor,
+    size_t selectionStart,size_t selectionEnd,const cLuxMultiplayerChatEmoji* emoji=nullptr);
 struct RichGlyph {
     size_t offset,length;
     float x,y,width;

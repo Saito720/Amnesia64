@@ -22,12 +22,15 @@ directory must already exist, because the production directory constructor check
 it before the test redirects the editor home. The test window is created offscreen
 and hidden immediately.
 
-The test initializes the real ModelEditor and settings popup, checks all 69 grouped
+The test initializes the real ModelEditor and settings popup, checks all 75 grouped
 fields for each of four rigs, exercises dropdown/input/preset callbacks and stale
 input rejection, and verifies exact settings and animation undo/redo through the
 same action used by animation dialog confirmation. It checks horizontal FOV
 defaults, editing and undo/redo, preservation through a rig preset, and entity
-save/load. The actual animation popup also follows global undo/redo of committed
+save/load. It also checks control defaults on every rig, the actual control
+checkbox's undo/redo, and preservation of custom model-control and attack settings
+through rig presets and saved entities. No model inference runs in this editor
+test. The actual animation popup also follows global undo/redo of committed
 clip lists, synchronizes confirmation before the next editor frame, and preserves
 its pending draft across unrelated settings changes. It compares all
 stock clip paths, playback settings and events with the source entities, loads

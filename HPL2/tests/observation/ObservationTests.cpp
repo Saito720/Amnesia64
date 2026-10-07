@@ -108,6 +108,81 @@ static void Capture(cSceneObservation& aImage, cWorld* apWorld, cCamera* apCamer
         "capture does not move camera");
 }
 
+static bool GuiPixelsMatch(const std::vector<unsigned char>& avRGBA,
+    const cSceneObservation& aImage, bool abInverted = false)
+{
+    const cVector2l& size = aImage.GetSize();
+    const std::vector<unsigned char>& rgb = aImage.GetRGBPixels();
+    for(int y = 0; y < size.y; ++y)
+    for(int x = 0; x < size.x; ++x)
+    {
+        // glReadPixels starts at the bottom; the observation RGB starts at the top.
+        size_t source = ((size_t)(abInverted ? y : size.y - 1 - y) * size.x + x) * 4;
+        size_t target = ((size_t)y * size.x + x) * 3;
+        for(int channel = 0; channel < 3; ++channel)
+            if(avRGBA[source + channel] != rgb[target + channel]) return false;
+    }
+    return true;
+}
+
+static void CheckGuiPreview(cEngine* apEngine, const cSceneObservation& aImage)
+{
+    cGraphics* pGraphics = apEngine->GetGraphics();
+    iLowLevelGraphics* pLowLevel = pGraphics->GetLowLevel();
+    cGui* pGui = apEngine->GetGui();
+    const cVector2l& size = aImage.GetSize();
+    iTexture* pColor = pGraphics->CreateTexture("ObservationGuiTest",
+        eTextureType_2D, eTextureUsage_RenderTarget);
+    Require(pColor && pColor->CreateFromRawData(cVector3l(size.x,size.y,1), ePixelFormat_RGBA, NULL),
+        "allocate independent GUI preview target");
+    iFrameBuffer* pTarget = pGraphics->CreateFrameBuffer("ObservationGuiTest");
+    Require(pTarget != NULL, "create GUI preview framebuffer");
+    pTarget->SetTexture2D(0, pColor);
+    Require(pTarget->CompileAndValidate(), "validate GUI preview framebuffer");
+
+    // Match the debug panel's actual borrowed-texture path, including the GUI's
+    // automatic render-target UV flip. The observation source stays unchanged.
+    cGuiGfxElement* pGfx = pGui->CreateGfxTexture(aImage.GetColorTexture(), false, eGuiMaterial_Diffuse);
+    Require(pGfx && pGfx->GetFlipUvYAxis(), "GUI automatically flips render-target texture coordinates");
+    cGuiSet* pSet = pGui->CreateSet("ObservationGuiTest", NULL);
+    pSet->SetVirtualSize(cVector2f((float)size.x,(float)size.y), -1, 1);
+    pSet->SetDrawMouse(false);
+    iFrameBuffer* pPrevious = pLowLevel->GetCurrentFrameBuffer();
+    pLowLevel->PushMatrix(eMatrix_Projection);
+    pLowLevel->PushMatrix(eMatrix_ModelView);
+    pLowLevel->SetCurrentFrameBuffer(pTarget);
+    std::vector<unsigned char> pixels((size_t)size.x * size.y * 4);
+    for(int pass = 0; pass < 2; ++pass)
+    {
+        if(pass == 1) pGfx->SetFlipUvYAxis(true); // Reproduce the former debug-panel bug.
+        pLowLevel->SetColorWriteActive(true,true,true,true);
+        pLowLevel->SetClearColor(cColor(0,1));
+        pLowLevel->ClearFrameBuffer(eClearFrameBufferFlag_Color);
+        pSet->DrawGfx(pGfx, cVector3f(0), cVector2f((float)size.x,(float)size.y));
+        pSet->Render(NULL);
+        glReadPixels(0, 0, size.x, size.y, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+        if(pass == 0)
+            Require(GuiPixelsMatch(pixels, aImage),
+                "actual GUI preview equals top-down RGB, including red top and blue bottom");
+        else
+            Require(!GuiPixelsMatch(pixels, aImage) && GuiPixelsMatch(pixels, aImage, true),
+                "an extra explicit UV flip reproduces the upside-down preview");
+        pSet->ClearRenderObjects();
+    }
+    pLowLevel->SetTexture(0, NULL);
+    pLowLevel->SetBlendActive(false);
+    pLowLevel->SetDepthTestActive(true);
+    pLowLevel->SetDepthWriteActive(true);
+    pLowLevel->PopMatrix(eMatrix_ModelView);
+    pLowLevel->PopMatrix(eMatrix_Projection);
+    pLowLevel->SetCurrentFrameBuffer(pPrevious);
+    pGui->DestroySet(pSet);
+    pGui->DestroyGfx(pGfx);
+    pGui->OnPostBufferSwap(); // Release the deferred borrowed GUI element before its source.
+    pGraphics->DestroyFrameBuffer(pTarget);
+    pGraphics->DestroyTexture(pColor);
+}
+
 int main()
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -162,6 +237,19 @@ int main()
     {
         cSceneObservation image(pGraphics);
         Require(!image.Initialize(cVector2l(0)), "invalid resolution rejected without allocation");
+        Require(!image.Initialize(cVector2l(2049,864)) &&
+            !image.Initialize(cVector2l(1280,2049)), "oversized axes rejected before texture allocation");
+        Require(image.Initialize(cVector2l(2048,32)), "upper supported width initializes its framebuffer");
+        Require(image.Initialize(cVector2l(1280,864)), "full-detail default initializes beyond the former 1024-pixel limit");
+        pCamera->SetAspect(1280.0f/864.0f);
+        Capture(image, pWorld, pCamera, pSelf, pPlayer, doors);
+        Require(image.GetRGBPixels().size() == size_t(1280)*864*3 &&
+            CountColor(image,255,0,255)>50, "full-detail observation preserves packed RGB and visible player mask");
+        float fFullRedY = 0, fFullBlueY = 0;
+        Require(CountColor(image,255,0,0,&fFullRedY)>10 &&
+            CountColor(image,0,0,255,&fFullBlueY)>10 &&
+            fFullRedY<432 && fFullBlueY>432, "full-detail RGB retains upright scene orientation");
+        pCamera->SetAspect(160.0f/96.0f);
         Require(image.Initialize(cVector2l(160,96)), "create private observation framebuffer");
         Capture(image, pWorld, pCamera, pSelf, pPlayer, doors);
         Require(CountColor(image, 255,0,255) > 50, "directly visible player produces opaque magenta mask");
@@ -193,6 +281,7 @@ int main()
         Require(depth[48 * 160 + 80] > 0 && depth[48 * 160 + 80] < 1,
             "retained depth contains visible player geometry");
         glBindTexture(GL_TEXTURE_2D, 0);
+        CheckGuiPreview(pEngine, image);
 
         pDoor->SetVisible(true);
         Capture(image, pWorld, pCamera, pSelf, pPlayer, doors);

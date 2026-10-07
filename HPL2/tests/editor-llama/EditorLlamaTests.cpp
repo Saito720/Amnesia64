@@ -9,6 +9,7 @@
 #include "../../tools/editors/common/EditorAction.h"
 #include "../../tools/editors/common/EditorUserClassDefinitionManager.h"
 #include "impl/LowLevelGraphicsSDL.h"
+#include "gui/WidgetTabFrame.h"
 #include "../../../amnesia/src/game/LuxEnemy_LlamaAnimations.h"
 #include "../../../amnesia/src/game/LuxEnemy_LlamaProfiles.h"
 
@@ -91,7 +92,19 @@ public:
         {
             tWidgetList& children = (*it)->GetHandle()->GetChildren();
             for(tWidgetListIt child = children.begin(); child != children.end(); ++child)
-                if((*child)->GetText() == asName) return *it;
+                if((*child)->GetText() == asName)
+                {
+                    // Production widgets reject events while their tab is
+                    // hidden. Select the input's tab as an editor user would.
+                    for(iWidget* pParent = (*it)->GetHandle()->GetParent(); pParent; pParent = pParent->GetParent())
+                        if(pParent->GetType() == eWidgetType_Tab)
+                        {
+                            cWidgetTab* pTab = static_cast<cWidgetTab*>(pParent);
+                            pTab->GetParentTabFrame()->SetTabOnTop(pTab);
+                            break;
+                        }
+                    return *it;
+                }
         }
         return NULL;
     }
@@ -279,14 +292,22 @@ int main(int argc, char** argv)
         cEditorUserClassSubType* pSubtype = pLlama->GetSubType(rigNames[i]);
         Require(pSubtype != NULL, rigNames[i]);
         cEditorClassInstance* pInstance = pSubtype->CreateInstance(eEditorVarCategory_Type);
-        Require(pInstance->GetVarInstanceNum() == 69, "each grouped rig schema compiles all 69 fields");
+        Require(pInstance->GetVarInstanceNum() == 75, "each grouped rig schema compiles all 75 fields");
         const cLuxLlamaProfile& profile = kLuxLlamaProfiles[i];
         Require(profile.mlVariableCount == 62, "each physical profile has 62 settings");
         for(size_t j = 0; j < profile.mlVariableCount; ++j)
             Require(Value(pInstance, profile.mpVariables[j].msName) == cString::To16Char(profile.mpVariables[j].msValue), "all body movement health attack and animation defaults survive definition compilation");
         Require(Value(pInstance, "Body_Size") == cString::To16Char(bodySizes[i]), "rig physical defaults compile through grouped fields");
-        Require(Value(pInstance, "LlamaObservationWidth") == _W("384") && Value(pInstance, "LlamaObservationHeight") == _W("256"), "observation defaults available on every rig");
+        Require(Value(pInstance, "LlamaObservationWidth") == _W("1280") && Value(pInstance, "LlamaObservationHeight") == _W("864"), "observation defaults available on every rig");
         Require(Value(pInstance, "FOV") == _W("120"), "horizontal FOV defaults to 120 degrees on every rig");
+        Require(Value(pInstance, "LlamaControlEnabled") == _W("true") &&
+            Value(pInstance, "LlamaDecisionInterval") == _W("1.0") &&
+            Value(pInstance, "LlamaActionMaxSeconds") == _W("1.5") &&
+            Value(pInstance, "LlamaAttackCooldown") == _W("1.0"),
+            "model control and bounded action defaults are available on every rig");
+        Require(Value(pInstance, "LlamaAttackAnimation").empty() &&
+            Value(pInstance, "LlamaDoorAttackAnimation").empty(),
+            "attack animation overrides start empty on every rig");
         Require(pInstance->GetVarInstance(_W("SightRange")) == NULL && pInstance->GetVarInstance(_W("DarknessSightRange")) == NULL, "Llama schema omits legacy detection knobs");
         hplDelete(pInstance);
     }
@@ -345,16 +366,33 @@ int main(int argc, char** argv)
     pEditor->GetActionHandler()->Redo();
     RefreshPopup(pPopup);
     Require(Value(pWorld->GetClass(), "FOV") == _W("135"), "FOV redo restores the configured observation angle");
+    iEditorInput* pControlInput = pPopup->FindInput(_W("LlamaControlEnabled"));
+    Require(pControlInput != NULL, "actual popup renders model control checkbox");
+    pControlInput->SetValue(_W("false"), true);
+    Require(Value(pWorld->GetClass(), "LlamaControlEnabled") == _W("false"), "model control checkbox creates an undoable setting edit");
+    pEditor->GetActionHandler()->Undo();
+    RefreshPopup(pPopup);
+    Require(Value(pWorld->GetClass(), "LlamaControlEnabled") == _W("true") &&
+        pPopup->FindInput(_W("LlamaControlEnabled"))->GetValue() == _W("true"),
+        "model control undo restores both value and checkbox");
+    pEditor->GetActionHandler()->Redo();
+    RefreshPopup(pPopup);
+    Require(Value(pWorld->GetClass(), "LlamaControlEnabled") == _W("false"), "model control redo restores configured value");
     iEditorInput* pWidthInput = pPopup->FindInput(_W("LlamaObservationWidth"));
     Require(pWidthInput != NULL, "actual popup renders grouped observation input");
     pWidthInput->SetValue(_W("512"), true);
     Require(Value(pWorld->GetClass(), "LlamaObservationWidth") == _W("512"), "actual input callback creates undoable variable edit");
     pEditor->GetActionHandler()->Undo();
     RefreshPopup(pPopup);
-    Require(Value(pWorld->GetClass(), "LlamaObservationWidth") == _W("384") && cString::ToInt(cString::To8Char(pPopup->FindInput(_W("LlamaObservationWidth"))->GetValue()).c_str(), 0) == 384, "popup undo refresh restores displayed variable value");
+    Require(Value(pWorld->GetClass(), "LlamaObservationWidth") == _W("1280") && cString::ToInt(cString::To8Char(pPopup->FindInput(_W("LlamaObservationWidth"))->GetValue()).c_str(), 0) == 1280, "popup undo refresh restores displayed variable value");
     pEditor->GetActionHandler()->Redo();
     RefreshPopup(pPopup);
     Act(pEditor, pWorld->CreateActionSetVariable(_W("LlamaCameraOffset"), _W("0 -0.25 0")));
+    Act(pEditor, pWorld->CreateActionSetVariable(_W("LlamaDecisionInterval"), _W("0.75")));
+    Act(pEditor, pWorld->CreateActionSetVariable(_W("LlamaActionMaxSeconds"), _W("0.8")));
+    Act(pEditor, pWorld->CreateActionSetVariable(_W("LlamaAttackAnimation"), _W("AttackShort")));
+    Act(pEditor, pWorld->CreateActionSetVariable(_W("LlamaDoorAttackAnimation"), _W("BreakDoor")));
+    Act(pEditor, pWorld->CreateActionSetVariable(_W("LlamaAttackCooldown"), _W("1.25")));
     Act(pEditor, pWorld->CreateActionSetVariable(_W("Health"), _W("137")));
     const tVarValueMap gruntValues = Values(pWorld);
     const tVarValueMap gruntTemp = pWorld->GetTempValues();
@@ -376,6 +414,10 @@ int main(int argc, char** argv)
     Require(Value(pWorld->GetClass(), "Health") == _W("100") && Value(pWorld->GetClass(), "Body_Size") == _W("1.5 1.85 1.5"), "preset replaces mechanical overrides with selected rig defaults");
     Require(Value(pWorld->GetClass(), "LlamaObservationWidth") == _W("512") && Value(pWorld->GetClass(), "LlamaCameraOffset") == _W("0 -0.25 0"), "preset preserves observation overrides");
     Require(Value(pWorld->GetClass(), "FOV") == _W("135"), "rig preset preserves configured observation FOV");
+    const char* controlNames[] = {"LlamaControlEnabled", "LlamaDecisionInterval", "LlamaActionMaxSeconds", "LlamaAttackAnimation", "LlamaDoorAttackAnimation", "LlamaAttackCooldown"};
+    for(size_t i = 0; i < sizeof(controlNames) / sizeof(controlNames[0]); ++i)
+        Require(Value(pWorld->GetClass(), controlNames[i]) == beforePreset.find(cString::To16Char(controlNames[i]))->second,
+            "rig preset preserves customized model control and attack settings");
     Require(SameAnimations(pWorld->GetAnimations(), retailAnimations[1]), "actual preset button replaces custom clips with exact Brute retail animation list");
     const tVarValueMap afterPreset = Values(pWorld);
     pEditor->GetActionHandler()->Undo();
@@ -508,6 +550,9 @@ int main(int argc, char** argv)
     hplDelete(pReloaded);
     Require(pWorld->GetClass()->GetClass() == pLlama->GetSubType("Brute") && Values(pWorld) == afterPreset, "entity roundtrip preserves subtype and all visible settings");
     Require(Value(pWorld->GetClass(), "FOV") == _W("135"), "saved entity roundtrip preserves custom observation FOV");
+    for(size_t i = 0; i < sizeof(controlNames) / sizeof(controlNames[0]); ++i)
+        Require(Value(pWorld->GetClass(), controlNames[i]) == beforePreset.find(cString::To16Char(controlNames[i]))->second,
+            "saved entity roundtrip preserves custom model control and attack settings");
     Require(pWorld->GetMesh() && pWorld->GetMeshFilename() == meshName && SameAnimations(pWorld->GetAnimations(), retailAnimations[1]), "entity roundtrip retains mesh and exact stock clip paths and events");
     Require(!pWorld->IsModified(), "loaded roundtrip starts clean");
     CompileCustomDefinition(pEditor, scratch);

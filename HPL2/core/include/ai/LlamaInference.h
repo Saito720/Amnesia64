@@ -26,7 +26,8 @@ struct cLlamaModelConfig
     int mlBatchSize;
     int mlThreads;
     int mlGpuLayers;            // Zero forces CPU; positive values require an available GPU backend.
-    int mlMaxImageTokens;       // Dynamic-resolution projectors only.
+    int mlMinImageTokens;       // Dynamic-resolution projectors only; zero keeps the projector default.
+    int mlMaxImageTokens;       // Dynamic-resolution projectors only; must be at least the explicit minimum.
     unsigned mlMaxOutstandingRequests;
 };
 
@@ -43,25 +44,43 @@ struct cLlamaRequest
     cLlamaRequest();
     std::string msSystemPrompt;
     std::string msPrompt;
+    std::string msGrammar; // Optional GBNF grammar with entry rule "root"; empty is unconstrained.
     cLlamaImage mImage; // Optional single image; the service inserts its media marker.
     int mlMaxTokens;
     float mfTemperature; // Zero selects greedy sampling.
     uint32_t mlSeed;
+    uint64_t mlSessionId; // Zero preserves independent requests; a nonzero ID retains one conversation.
+    std::string msContextSummary; // Factual engine summary inserted only when rebuilding older history.
+    unsigned mlSessionKeepTurns; // Recent accepted user/assistant pairs retained on refresh.
+    float mfSessionRefreshFraction;
+};
+
+struct cLlamaContextStats
+{
+    cLlamaContextStats();
+    uint64_t mlSessionId;
+    unsigned mlUsedTokens, mlCapacityTokens, mlTextTokens, mlImageTokens, mlOutputTokens;
+    unsigned mlReservedTokens, mlTurns, mlObservations, mlRefreshCount, mlReusedTokens;
+    std::string msRefreshReason;
+    bool mbAwaitingResolution;
 };
 
 struct cLlamaResult
 {
-    cLlamaResult() : mlRequestId(0), mbCancelled(false), mlGeneratedTokens(0) {}
+    cLlamaResult() : mlRequestId(0), mbCancelled(false), mbTruncated(false), mlGeneratedTokens(0) {}
     uint64_t mlRequestId;
     std::string msText; // UTF-8; may be partial on error/cancellation.
     std::string msError;
     bool mbCancelled;
+    bool mbTruncated; // The generation limit was reached before a complete assistant end token.
     int mlGeneratedTokens;
+    cLlamaContextStats mContextStats;
 };
 
 // LoadAsync, Submit and Unload belong to the owning/game thread. State/error
 // queries, Cancel and PollResult are synchronized. No engine callbacks run on
-// the worker. Each request is an independent chat with an empty KV cache.
+// the worker. Session zero is independent; one nonzero session retains history
+// and reuses its KV cache. Switching nonzero IDs discards the previous history.
 class cLlamaInference
 {
 public:
@@ -85,6 +104,12 @@ public:
     uint64_t Submit(const cLlamaRequest& aRequest, std::string& asError);
     bool Cancel(uint64_t alRequestId);
     bool PollResult(cLlamaResult& aResult);
+    // Persistent replies remain provisional until the consumer validates/applies
+    // them. Rejection discards the proposed turn and rebuilds accepted history.
+    // These calls queue work and never wait for native inference.
+    bool ResolveSessionTurn(uint64_t alRequestId, bool abAccepted);
+    void ResetSession(uint64_t alSessionId, const std::string& asReason);
+    cLlamaContextStats GetContextStats(uint64_t alSessionId) const;
 
     // Cancels work, joins the worker, releases models and discards all requests
     // and results. Can block during native loading, image encode or a GPU decode batch;

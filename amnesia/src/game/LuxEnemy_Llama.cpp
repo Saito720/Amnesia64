@@ -8,9 +8,13 @@
 #include "LuxMapHandler.h"
 #include "LuxPlayer.h"
 #include "LuxProp_SwingDoor.h"
+#include "LuxLlamaController.h"
 #include "graphics/SceneObservation.h"
 
 #include <cmath>
+#include <iomanip>
+#include <locale>
+#include <sstream>
 
 iLuxEnemy* cLuxEnemyLoader_Llama::CreateEnemy(const tString& asName, int alID, cLuxMap* apMap)
 {
@@ -48,8 +52,8 @@ void cLuxEnemyLoader_Llama::AfterLoad(cXmlElement* apRootElem, const cMatrixf& a
 void cLuxEnemyLoader_Llama::LoadVariables(iLuxEnemy* apEnemy, cXmlElement*)
 {
 	cLuxEnemy_Llama* pEnemy = static_cast<cLuxEnemy_Llama*>(apEnemy);
-	pEnemy->mvObservationSize.x = cMath::Clamp(GetVarInt("LlamaObservationWidth", 384), 64, 1024);
-	pEnemy->mvObservationSize.y = cMath::Clamp(GetVarInt("LlamaObservationHeight", 256), 64, 1024);
+	pEnemy->mvObservationSize.x = cMath::Clamp(GetVarInt("LlamaObservationWidth", 1280), 64, 2048);
+	pEnemy->mvObservationSize.y = cMath::Clamp(GetVarInt("LlamaObservationHeight", 864), 64, 2048);
 	float fFOV = GetVarFloat("FOV", 120.0f);
 	if(!std::isfinite(fFOV)) fFOV = 120.0f;
 	// Read the authored angle directly, independent of legacy AI FOV multipliers.
@@ -63,6 +67,15 @@ void cLuxEnemyLoader_Llama::LoadVariables(iLuxEnemy* apEnemy, cXmlElement*)
 	pEnemy->msAnimationNames[2] = GetVarString("LlamaRunAnimation", "");
 	pEnemy->msAnimationNames[3] = GetVarString("LlamaBackwardAnimation", "");
 	pEnemy->msDeathAnimation = GetVarString("LlamaDeathAnimation", "");
+	pEnemy->mbModelControlEnabled = GetVarBool("LlamaControlEnabled", true);
+	float fInterval = GetVarFloat("LlamaDecisionInterval", 1.0f);
+	float fDuration = GetVarFloat("LlamaActionMaxSeconds", 1.5f);
+	float fCooldown = GetVarFloat("LlamaAttackCooldown", 1.0f);
+	pEnemy->mfDecisionInterval = std::isfinite(fInterval) ? cMath::Clamp(fInterval,0.1f,10.0f) : 1.0f;
+	pEnemy->mfActionMaxSeconds = std::isfinite(fDuration) ? cMath::Clamp(fDuration,0.1f,2.0f) : 1.5f;
+	pEnemy->mfAttackCooldown = std::isfinite(fCooldown) ? cMath::Clamp(fCooldown,0.2f,10.0f) : 1.0f;
+	pEnemy->msAttackAnimation = GetVarString("LlamaAttackAnimation", "");
+	pEnemy->msDoorAttackAnimation = GetVarString("LlamaDoorAttackAnimation", "");
 	pEnemy->mbCausesSanityDecrease = pEnemy->mbCausesSanityDecreaseAsDefault = false;
 	pEnemy->mbAlignEntityWithGroundRay = true;
 }
@@ -78,17 +91,28 @@ void cLuxEnemyLoader_Llama::LoadInstanceVariables(iLuxEnemy* apEnemy, cResourceV
 
 cLuxEnemy_Llama::cLuxEnemy_Llama(const tString& asName, int alID, cLuxMap* apMap)
 	: iLuxEnemy(asName, alID, apMap, eLuxEnemyType_Llama),
-	mpObservationCamera(NULL), mpObservation(NULL), mvObservationSize(384,256), mfObservationFOV(cMath::ToRad(120.0f)),
+	mpObservationCamera(NULL), mpObservation(NULL), mvObservationSize(1280,864), mfObservationFOV(cMath::ToRad(120.0f)),
 	mvCameraOffset(0,-0.1f,0), mfObservationInterval(0.25f), mfHearingRange(12), mfSoundThreshold(0.2f),
-	mbObservationEnabled(false), mfElapsedTime(0), mfObservationTime(0), mfLastObservationAttempt(-10), mlObservationFrameId(0),
+	mbObservationEnabled(false), mfElapsedTime(0), mfObservationTime(0), mfLastObservationAttempt(-10), mlObservationFrameId(0), mlModelActionEndFrame(0),
 	mvObservationPosition(0), mfObservationYaw(0), mObservationProjection(cMatrixf::Identity), msObservationStatus("Observation disabled; inference disabled"),
-	mfDebugForward(0), mfDebugTurn(0), mfDebugInputTimeout(0)
+	mfDebugForward(0), mfDebugTurn(0), mfDebugInputTimeout(0),
+	mbModelControlEnabled(true), mbDebugOverride(false), mfDecisionInterval(1), mfActionMaxSeconds(1.5f), mfAttackCooldown(1),
+	mModelBehavior(eLuxLlamaBehavior_Patrol), mModelAction(eLuxLlamaAction_Wait), mfModelActionRemaining(0),
+	mfModelForward(0), mfModelTurnGoal(0), mvModelActionStart(0), mbModelActionTracked(false),
+	mfModelActionDuration(0), mfModelActionElapsed(0), mfModelActionStartYaw(0), mfModelActionRequestedTurn(0),
+	mfModelDistanceMoved(0), mfModelActionSpeedLimit(0), mvModelActionLastPosition(0), mTrackedModelAction(eLuxLlamaAction_Wait),
+	msModelContextSummary("No engine action history"), msModelStatus("Waiting for VLM"),
+	msLastActionFeedback("No previous action"), mbModelAttackActive(false), mbModelAttackHit(false),
+	mModelAttackTarget(eLuxLlamaTarget_None), mlModelAttackEntityID(-1), mlModelAttackBodyID(-1), mvModelAttackPoint(0),
+	mfModelAttackElapsed(0), mfModelAttackImpactDelay(0.35f), mfModelAttackDuration(0.8f), mfModelAttackCooldown(0)
 {
 	mCurrentState = mNextState = mPreviousState = eLuxEnemyState_Idle;
 }
 
 cLuxEnemy_Llama::~cLuxEnemy_Llama()
 {
+	if(gpBase->mpMapHandler && gpBase->mpMapHandler->GetLlamaController())
+		gpBase->mpMapHandler->GetLlamaController()->OnOwnerUnavailable(this);
 	if(gpBase->mpDebugHandler) gpBase->mpDebugHandler->OnLlamaEnemyDestroyed(GetID());
 	if(mpCharBody && mpCharBody->GetCamera()==mpObservationCamera) mpCharBody->SetCamera(NULL);
 	if(mpObservationCamera) gpBase->mpEngine->GetScene()->DestroyCamera(mpObservationCamera);
@@ -164,19 +188,20 @@ void cLuxEnemy_Llama::SetObservationEnabled(bool abEnabled)
 	mbObservationEnabled = abEnabled;
 	if(!abEnabled)
 	{
-		SetDebugInput(0,0);
-		msObservationStatus = "Observation disabled; inference disabled";
+		msObservationStatus = "Debug observation disabled";
 	}
 	else
 	{
 		mfLastObservationAttempt = mfElapsedTime-mfObservationInterval;
-		msObservationStatus = "Waiting for observation; inference disabled";
+		msObservationStatus = "Waiting for observation";
 	}
 }
 
 void cLuxEnemy_Llama::CaptureObservation()
 {
-	if(!mbObservationEnabled) return;
+	cLuxLlamaController* pController = gpBase->mpMapHandler->GetLlamaController();
+	if(!mbObservationEnabled && !(pController && (pController->IsPerceptionOnly() ||
+		(mbModelControlEnabled && pController->IsEnabled())))) return;
 	if(!IsControllerOwner())
 	{
 		msObservationStatus = "Idle: only the lowest eligible Enemy_Llama ID owns the controller";
@@ -235,7 +260,7 @@ void cLuxEnemy_Llama::CaptureObservation()
 	mfObservationYaw = mpObservationCamera->GetYaw();
 	mObservationProjection = mpObservationCamera->GetProjectionMatrix();
 	mvObservationSounds = mvSounds;
-	msObservationStatus = "Observation only; inference disabled";
+	msObservationStatus = "Observation captured";
 }
 
 iTexture* cLuxEnemy_Llama::GetObservationTexture() { return mpObservation ? mpObservation->GetColorTexture() : NULL; }
@@ -253,6 +278,7 @@ void cLuxEnemy_Llama::SetDebugInput(float afForward, float afTurn)
 		StopMotion();
 		return;
 	}
+	if(afForward!=0 || afTurn!=0) SetDebugOverride(true);
 	if(mfDebugTurn!=0 && afTurn==0 && mpMover) mpMover->TurnToAngle(mpCharBody->GetYaw());
 	mfDebugForward = cMath::Clamp(afForward,-1.0f,1.0f);
 	mfDebugTurn = cMath::Clamp(afTurn,-1.0f,1.0f);
@@ -260,8 +286,231 @@ void cLuxEnemy_Llama::SetDebugInput(float afForward, float afTurn)
 	mfDebugInputTimeout = 0.2f;
 }
 
+void cLuxEnemy_Llama::SetDebugOverride(bool abOverride)
+{
+	if(mbDebugOverride==abOverride) return;
+	StopModelAction(abOverride ? "manual debug override" : "manual debug override ended");
+	mbDebugOverride = abOverride;
+	cLuxLlamaController* pController = gpBase->mpMapHandler->GetLlamaController();
+	// A perception-only reply describes its frozen frame and cannot move the
+	// enemy. Opening/closing F1 need not discard that diagnostic.
+	if(pController && !pController->IsPerceptionOnly()) pController->OnManualOverride(this);
+	ResetModelAction();
+	msModelStatus = abOverride ? "Manual debug override" : "Waiting for fresh VLM observation";
+}
+
+bool cLuxEnemy_Llama::SnapshotModelObservation()
+{
+	const std::vector<unsigned char>& rgb = GetObservationRGB();
+	if(!GetObservationTexture() || rgb.size()!=(size_t)mvObservationSize.x*mvObservationSize.y*3 ||
+		mfElapsedTime-mfObservationTime>mfObservationInterval+0.1f) return false;
+	mModelObservation.mlFrameId = mlObservationFrameId;
+	mModelObservation.mfTime = mfObservationTime;
+	mModelObservation.mvSize = mvObservationSize;
+	mModelObservation.mvPosition = mvObservationPosition;
+	mModelObservation.mfYaw = mfObservationYaw;
+	mModelObservation.mProjection = mObservationProjection;
+	mModelObservation.mvRGB = rgb;
+	mModelObservation.mvSounds = mvObservationSounds;
+	UpdateModelContextSummary();
+	return true;
+}
+
+void cLuxEnemy_Llama::MeasureModelActionProgress()
+{
+	if(!mbModelActionTracked || !mpCharBody) return;
+	cVector3f moved = mpCharBody->GetPosition()-mvModelActionLastPosition;
+	moved.y = 0;
+	const float distance = moved.Length();
+	if(std::isfinite(distance)) mfModelDistanceMoved += distance;
+	mvModelActionLastPosition = mpCharBody->GetPosition();
+}
+
+tString cLuxEnemy_Llama::DescribeModelActionProgress(const char* asState) const
+{
+	std::ostringstream feedback;
+	feedback.imbue(std::locale::classic());
+	feedback << std::fixed << std::setprecision(2);
+	feedback << GetLuxLlamaActionName(mTrackedModelAction) << " " << asState
+		<< ": elapsed=" << mfModelActionElapsed << "/" << mfModelActionDuration << "s";
+	if(mTrackedModelAction==eLuxLlamaAction_Move || mTrackedModelAction==eLuxLlamaAction_Turn)
+	{
+		cVector3f moved = mpCharBody->GetPosition()-mvModelActionStart;
+		moved.y = 0;
+		const float turned = -cMath::ToDeg(cMath::GetAngleDistanceRad(mfModelActionStartYaw,mpCharBody->GetYaw()));
+		const float remaining = std::fabs(cMath::ToDeg(cMath::GetAngleDistanceRad(mpCharBody->GetYaw(),mfModelTurnGoal)));
+		feedback << ", horizontal_distance=" << mfModelDistanceMoved << ", displacement=" << moved.Length()
+			<< ", forward_input=" << mfModelForward << ", turn_right=" << turned
+			<< "/" << mfModelActionRequestedTurn << "deg, remaining_turn=" << remaining << "deg";
+		if(mTrackedModelAction==eLuxLlamaAction_Move && mfModelForward!=0 && mfModelActionElapsed>=0.1f)
+		{
+			// This budget comes from the authored speed limit, not a promise of
+			// travel: acceleration, turning and collisions can all reduce it.
+			// Character Move scales acceleration input, not that speed limit.
+			const float budget = mfModelActionSpeedLimit*mfModelActionElapsed;
+			feedback << ", nominal_travel_budget=" << budget;
+			if(mfModelDistanceMoved<0.05f) feedback << "; blocked/no movement progress";
+			else if((mpMover && mpMover->GetStuckCounter()>0.1f) ||
+				(mfModelActionElapsed>=0.3f && budget>0.1f && mfModelDistanceMoved<budget*0.5f))
+				feedback << "; limited movement progress (collision, acceleration or turning)";
+		}
+		if(remaining>5.0f) feedback << "; turn incomplete";
+		else feedback << "; turn achieved";
+	}
+	return feedback.str();
+}
+
+void cLuxEnemy_Llama::SnapshotModelActionFeedback()
+{
+	if(!mbModelActionTracked) return;
+	MeasureModelActionProgress();
+	// Attack impact supplies the mechanical hit/miss result. Keep that evidence
+	// intact while the rest of the animation finishes.
+	if(mTrackedModelAction!=eLuxLlamaAction_Attack)
+		msLastActionFeedback = DescribeModelActionProgress("in progress");
+}
+
+void cLuxEnemy_Llama::RecordModelActionOutcome(const tString& asOutcome)
+{
+	std::ostringstream entry;
+	entry.imbue(std::locale::classic());
+	entry << std::fixed << std::setprecision(2) << "t=" << mfElapsedTime << "s: " << asOutcome;
+	const tString outcome = entry.str().substr(0,512);
+	if(mvModelActionHistory.size()>=8) mvModelActionHistory.erase(mvModelActionHistory.begin());
+	mvModelActionHistory.push_back(outcome);
+	UpdateModelContextSummary();
+}
+
+void cLuxEnemy_Llama::UpdateModelContextSummary()
+{
+	std::ostringstream summary;
+	summary.imbue(std::locale::classic());
+	summary << "Engine factual action history (newest last):\n";
+	if(mvModelActionHistory.empty()) summary << "none\n";
+	for(size_t i=0; i<mvModelActionHistory.size(); ++i) summary << mvModelActionHistory[i] << "\n";
+	if(mModelObservation.mlFrameId)
+	{
+		size_t playerPixels=0, doorPixels=0;
+		for(size_t i=0; i+2<mModelObservation.mvRGB.size(); i+=3)
+		{
+			const unsigned char* pixel=&mModelObservation.mvRGB[i];
+			if(pixel[0]==255 && pixel[1]==0 && pixel[2]==255) ++playerPixels;
+			if(pixel[0]==0 && pixel[1]==255 && pixel[2]==255) ++doorPixels;
+		}
+		summary << "Latest submitted observation=" << mModelObservation.mlFrameId
+			<< ": visible player-mask pixels=" << playerPixels << ", breakable-door-mask pixels=" << doorPixels
+			<< ", perceived sound events=" << mModelObservation.mvSounds.size() << ".\n";
+	}
+	summary << "Only measured action outcomes and submitted perception are retained; no hidden target positions.\n";
+	msModelContextSummary = summary.str();
+}
+
+void cLuxEnemy_Llama::StopModelAction(const tString& asReason)
+{
+	EndModelAction("interrupted",asReason);
+	ResetModelAction(false);
+}
+
+void cLuxEnemy_Llama::EndModelAction(const char* asState, const tString& asReason)
+{
+	if(mbModelActionTracked)
+	{
+		MeasureModelActionProgress();
+		if(mTrackedModelAction==eLuxLlamaAction_Attack)
+		{
+			if(!mbModelAttackActive && mfModelAttackElapsed>=mfModelAttackDuration)
+				msLastActionFeedback = "attack completed: " + msLastActionFeedback;
+			else msLastActionFeedback = "attack " + tString(asState) + ": " + asReason + "; " + msLastActionFeedback;
+		}
+		else msLastActionFeedback = DescribeModelActionProgress(asState);
+		if(!asReason.empty() && mTrackedModelAction!=eLuxLlamaAction_Attack)
+			msLastActionFeedback += "; reason=" + asReason;
+		// A frame rendered during this action cannot establish its final heading
+		// or position. Make the next render due and plan only from that newer frame.
+		mlModelActionEndFrame = mlObservationFrameId;
+		mfLastObservationAttempt = cMath::Min(mfLastObservationAttempt,
+			mfElapsedTime-mfObservationInterval-0.001f);
+		RecordModelActionOutcome(msLastActionFeedback);
+		mbModelActionTracked = false;
+	}
+}
+
+void cLuxEnemy_Llama::RecordRejectedModelDecision(const tString& asReason)
+{
+	// Rejection is an unapplied decision, never an executed action. Retain the
+	// latest measured action feedback for the next planning request.
+	RecordModelActionOutcome("Decision not applied: " + asReason);
+}
+
+void cLuxEnemy_Llama::ResetModelAction(bool abClearCooldown)
+{
+	EndModelAction("interrupted","controller reset");
+	mfModelActionRemaining = mfModelForward = 0;
+	mModelAction = eLuxLlamaAction_Wait;
+	const float fCooldown = mfModelAttackCooldown;
+	ResetModelAttack();
+	// An alive save can restore a mover override from an unfinished attack,
+	// even though transient attack bookkeeping was intentionally not saved.
+	if(mpMover && mfHealth>0) mpMover->UseMoveStateAnimations();
+	if(!abClearCooldown) mfModelAttackCooldown = fCooldown;
+	else
+	{
+		mModelBehavior = eLuxLlamaBehavior_Patrol;
+		mlModelActionEndFrame = 0;
+		msModelMemory.clear();
+		mvModelActionHistory.clear();
+		msModelContextSummary = "No engine action history";
+		msLastActionFeedback = "No previous action";
+		mModelObservation = cLuxLlamaObservation();
+	}
+	if(mpCharBody && mpMover && mpPathfinder) StopMotion();
+}
+
+void cLuxEnemy_Llama::ApplyModelDecision(const cLuxLlamaDecision& aDecision)
+{
+	if(!IsControllerOwner() || mbDebugOverride || !mbModelControlEnabled || IsModelAttacking()) return;
+	if(IsModelActionActive()) StopModelAction("superseded by another decision");
+	ResetModelAction(false);
+	mModelBehavior = aDecision.mBehavior;
+	mModelAction = aDecision.mAction;
+	msModelMemory = aDecision.msMemory;
+	mfModelActionRemaining = cMath::Clamp(aDecision.mfDuration,0.1f,mfActionMaxSeconds);
+	mfModelForward = aDecision.mfForward;
+	mfModelTurnGoal = mModelObservation.mfYaw-cMath::ToRad(aDecision.mfTurnDegrees);
+	mvModelActionStart = mpCharBody->GetPosition();
+	mvModelActionLastPosition = mvModelActionStart;
+	mbModelActionTracked = true;
+	mTrackedModelAction = aDecision.mAction;
+	mfModelActionDuration = mfModelActionRemaining;
+	mfModelActionElapsed = mfModelDistanceMoved = 0;
+	mfModelActionStartYaw = mpCharBody->GetYaw();
+	mfModelActionRequestedTurn = aDecision.mfTurnDegrees;
+	SetMoveSpeed(aDecision.mbRun ? eLuxEnemyMoveSpeed_Run : eLuxEnemyMoveSpeed_Walk);
+	mfModelActionSpeedLimit = mfModelForward<0 ? mfBackwardSpeed : mfForwardSpeed;
+	if(!std::isfinite(mfModelActionSpeedLimit) || mfModelActionSpeedLimit<0) mfModelActionSpeedLimit = 0;
+	msLastActionFeedback = "Executing " + tString(GetCurrentActionName());
+	if(aDecision.mAction==eLuxLlamaAction_Attack)
+	{
+		mfModelActionRemaining = 0;
+		tString error;
+		if(!BeginModelAttack(aDecision.mTarget,aDecision.mlTargetX,aDecision.mlTargetY,error))
+		{
+			msLastActionFeedback = "Attack rejected: " + error;
+			RecordModelActionOutcome(msLastActionFeedback);
+			mbModelActionTracked = false;
+			mfModelActionRemaining = 0;
+			mModelAction = eLuxLlamaAction_Wait;
+		}
+		else mfModelActionDuration = mfModelAttackDuration;
+		return;
+	}
+	if(aDecision.mAction==eLuxLlamaAction_Move || aDecision.mAction==eLuxLlamaAction_Turn)
+		mpMover->TurnToAngle(mfModelTurnGoal);
+}
+
 void cLuxEnemy_Llama::UpdateEnemySpecific(float afTimeStep)
 {
+	if(!std::isfinite(afTimeStep) || afTimeStep<=0) return;
 	mfElapsedTime += afTimeStep;
 	for(size_t i=0; i<mvSounds.size();)
 	{
@@ -272,7 +521,37 @@ void cLuxEnemy_Llama::UpdateEnemySpecific(float afTimeStep)
 	if(mfHealth<=0) return;
 	if(!IsControllerOwner())
 	{
-		StopMotion();
+		ResetModelAction();
+		return;
+	}
+	if(mbModelActionTracked)
+	{
+		MeasureModelActionProgress();
+		mfModelActionElapsed = cMath::Min(mfModelActionDuration,mfModelActionElapsed+afTimeStep);
+	}
+	UpdateModelAttack(afTimeStep);
+	if(mbModelAttackActive) return;
+	if(mbModelActionTracked && mTrackedModelAction==eLuxLlamaAction_Attack)
+	{
+		EndModelAction("completed","");
+	}
+	if(!mbDebugOverride)
+	{
+		if(mfModelActionRemaining>0)
+		{
+			mfModelActionRemaining -= afTimeStep;
+			if(mfModelActionRemaining>0)
+			{
+				if(mModelAction==eLuxLlamaAction_Move) mpCharBody->Move(eCharDir_Forward,mfModelForward);
+				if(mModelAction==eLuxLlamaAction_Move || mModelAction==eLuxLlamaAction_Turn)
+					mpMover->TurnToAngle(mfModelTurnGoal);
+			}
+			else
+			{
+				EndModelAction("completed","");
+				ResetModelAction(false);
+			}
+		}
 		return;
 	}
 	mfDebugInputTimeout -= afTimeStep;
@@ -345,7 +624,8 @@ void cLuxEnemy_Llama::ClearLegacyPerception()
 
 void cLuxEnemy_Llama::OnControllerDeath()
 {
-	StopMotion();
+	if(gpBase->mpMapHandler->GetLlamaController()) gpBase->mpMapHandler->GetLlamaController()->OnOwnerUnavailable(this);
+	ResetModelAction();
 	mCurrentState=mNextState=mPreviousState=eLuxEnemyState_Dead;
 	if(!msDeathAnimation.empty())
 	{
@@ -372,7 +652,8 @@ void cLuxEnemy_Llama::OnSetActiveEnemySpecific(bool abActive)
 {
 	if(!abActive || mfHealth<=0)
 	{
-		StopMotion();
+		if(gpBase->mpMapHandler->GetLlamaController()) gpBase->mpMapHandler->GetLlamaController()->OnOwnerUnavailable(this);
+		ResetModelAction();
 		// Inactive enemies stop receiving logic ticks, so retained evidence cannot age.
 		mvSounds.clear();
 	}
@@ -380,7 +661,8 @@ void cLuxEnemy_Llama::OnSetActiveEnemySpecific(bool abActive)
 }
 void cLuxEnemy_Llama::OnControllerDisabled()
 {
-	StopMotion();
+	if(gpBase->mpMapHandler->GetLlamaController()) gpBase->mpMapHandler->GetLlamaController()->OnOwnerUnavailable(this);
+	ResetModelAction();
 	// Disabled enemies also stop receiving the ticks used to expire live evidence.
 	mvSounds.clear();
 }
@@ -388,7 +670,9 @@ void cLuxEnemy_Llama::OnDisableTriggers() { mvSounds.clear(); }
 void cLuxEnemy_Llama::OnResetProperties()
 {
 	ClearLegacyPerception();
-	StopMotion();
+	if(gpBase->mpMapHandler->GetLlamaController()) gpBase->mpMapHandler->GetLlamaController()->OnOwnerUnavailable(this);
+	ResetModelAction();
+	msModelMemory.clear();
 	mCurrentState=mNextState=mPreviousState=mfHealth>0 ? eLuxEnemyState_Idle : eLuxEnemyState_Dead;
 	mvSounds.clear();
 }
@@ -401,7 +685,10 @@ void cLuxEnemy_Llama::LoadFromSaveData(iLuxEntity_SaveData* apSaveData)
 {
 	super_class::LoadFromSaveData(apSaveData);
 	ClearLegacyPerception();
-	StopMotion();
+	if(gpBase->mpMapHandler->GetLlamaController()) gpBase->mpMapHandler->GetLlamaController()->OnOwnerUnavailable(this);
+	ResetModelAction();
+	mbDebugOverride = false;
+	msModelMemory.clear();
 	mCurrentState=mNextState=mPreviousState=mfHealth>0 ? eLuxEnemyState_Idle : eLuxEnemyState_Dead;
 	mvSounds.clear();
 	if(mfHealth<=0) mpCharBody->SetActive(false);
@@ -409,6 +696,6 @@ void cLuxEnemy_Llama::LoadFromSaveData(iLuxEntity_SaveData* apSaveData)
 void cLuxEnemy_Llama::SetupSaveData(iLuxEntity_SaveData* apSaveData)
 {
 	super_class::SetupSaveData(apSaveData);
-	// Base setup resolves saved paths; an observation-only enemy has no autonomous goal.
-	StopMotion();
+	// Saved paths and unfinished actions cannot resume against a new observation.
+	ResetModelAction();
 }

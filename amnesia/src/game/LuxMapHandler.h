@@ -29,6 +29,7 @@
 class cLuxMap;
 class cLuxSavedGameMapCollection;
 class cLuxModelCache;
+class cLuxLlamaController;
 
 typedef std::list<cLuxMap*> tLuxMapList;
 typedef tLuxMapList::iterator tLuxMapListIt;
@@ -86,6 +87,7 @@ public:
 	
 	void OnStart();
 	void Update(float afTimeStep);
+	void OnDraw(float afFrameTime);
 	void Reset();
     void OnQuit();
 
@@ -113,6 +115,7 @@ public:
 
 	void SetCurrentMap(cLuxMap* apMap, bool abRunScript, bool abFirstTime, const tString& asPlayerPos);
 	cLuxMap* GetCurrentMap(){ return mpCurrentMap;}
+	cLuxLlamaController* GetLlamaController() { return mpLlamaController; }
 
 	cViewport* GetViewport(){ return mpViewport;}
 
@@ -155,6 +158,7 @@ private:
 	cLuxModelCache *mpDataCache;
 
 	cLuxMap* mpCurrentMap;
+	cLuxLlamaController* mpLlamaController;
 
 	tLuxMapList mlstMaps;
 

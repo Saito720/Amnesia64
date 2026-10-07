@@ -2,7 +2,7 @@
 
 HPL2 exposes an optional, in-process llama.cpp service through
 `cEngine::GetLlamaInference()`. The service can load local GGUF models, run
-independent text requests, and run image requests with a matching multimodal
+independent or persistent text requests, and run image requests with a matching multimodal
 projector. Model loading and inference run on a worker thread. Game code polls
 results and applies them on the game thread.
 
@@ -84,16 +84,30 @@ context allocation is recoverable and does not end the engine.
 
 The default context is 4096 tokens, batch size 256, two CPU threads, and four
 outstanding requests. Dynamic-resolution projectors are limited to 1024 image
-tokens by default through `mlMaxImageTokens`. Prompt plus image tokens plus
+tokens by default through `mlMaxImageTokens`. `mlMinImageTokens` defaults to zero,
+which preserves the projector's own minimum. Set a positive minimum to request
+more visual detail even for a small source image; it must not exceed the maximum,
+and the maximum must fit within `mlContextSize`. These budgets only apply to
+projectors that support dynamic resolution. Patch-grid rounding is model-specific,
+so inspect actual image token counts rather than assuming a requested budget is
+the number embedded. Upscaling a small image cannot recover missing scene detail.
+For Qwen-VL spatial grounding, the pinned upstream code recommends an explicit
+minimum of 1024 image tokens; the Enemy_Llama setup uses that minimum alongside
+a larger capture. Prompt plus image tokens plus
 reserved output tokens must fit the context; oversized requests produce an
-error result. The service clears the KV cache for every request, so there is no
-implicit conversation history.
+error result. Requests default to session ID zero, which clears the KV cache and
+keeps their original independent behavior. A nonzero `mlSessionId` opts into
+the persistent session described below; increasing context size alone does not
+create history.
 
 The service applies the model's chat template using llama.cpp's built-in
 template formatter. If the embedded template is missing or unsupported, set
 `msChatTemplate` to a supported explicit override such as `"chatml"` for a
-compatible Qwen model. Arbitrary Jinja templates, tools and structured output
-are outside this API.
+compatible Qwen model. A request may supply `msGrammar`, a GBNF grammar with a
+`root` rule, to constrain generation before greedy or probabilistic sampling.
+Invalid grammar produces a recoverable request error. Grammar does not replace
+the consumer's validation of complete output or authorize gameplay commands.
+Arbitrary Jinja templates and tool calling are outside this API.
 
 `mlGpuLayers` defaults to zero, which forces CPU execution even when CUDA is
 compiled in. A positive value selects GPU offloading; values beyond the
@@ -134,6 +148,77 @@ while(inference->PollResult(result))
 }
 ```
 
+## Persistent conversation
+
+Set `request.mlSessionId` to a stable nonzero owner/session ID. Accepted turns
+retain both their images and their user/assistant messages. The worker formats
+the complete conversation but normally tokenizes and evaluates only its new
+suffix, reusing the previous native KV cache. The assistant's end token is
+decoded before a turn can become persistent. Output that reaches `mlMaxTokens`
+without that token sets `result.mbTruncated` and cannot be committed.
+
+Each successful reply is provisional. After polling, validate the output and
+the observation's age/ownership, then explicitly resolve it:
+
+```cpp
+request.mlSessionId = ownerSessionId;
+request.msContextSummary = factualEngineHistory;
+uint64_t requestId = inference->Submit(request, error);
+
+// After PollResult and consumer validation/application:
+inference->ResolveSessionTurn(result.mlRequestId, acceptedAndApplied);
+```
+
+`ResolveSessionTurn` and `ResetSession(id, reason)` enqueue worker operations
+and never wait for native inference. An unresolved persistent reply blocks
+additional submissions until it is resolved or its session is reset. Rejected,
+cancelled, failed, and truncated turns are discarded; the next request rebuilds
+only accepted history. Cancellation therefore cannot leave a partial assistant
+message in the next prompt. A committed reply means the consumer accepted the
+command; the consumer must supply its actual execution outcome in the following
+user message rather than implying that execution succeeded.
+
+Only one persistent conversation is retained. Changing nonzero IDs drops the
+previous history, which suits an enemy owner/map generation. A session-zero
+request remains isolated and invalidates the native persistent cache; the same
+nonzero session can resume by rebuilding its retained history. Call
+`ResetSession` when its owner/map is no longer valid. `Unload` clears all state.
+
+The default refresh threshold is 80% of the actual native context capacity,
+including the incoming observation and reserved reply space. On refresh,
+`mlSessionKeepTurns` (default four, range 1–16) retains recent accepted pairs
+and their images; `msContextSummary` inserts a supplied factual engine summary
+of older events into the system message. That summary is NUL-free and capped
+at 8 KiB. The worker removes additional oldest pairs when needed to reach the
+refresh threshold and leave headroom for subsequent decisions. A fresh request
+that alone exceeds the threshold may still use the physical capacity. Even without
+context pressure, history is bounded to 64 pairs and 256 MiB of retained
+request/image data. The summary is supplied by the caller, not generated by a
+separate model request.
+
+`result.mContextStats` and synchronized `GetContextStats(sessionId)` report
+actual context capacity, used token cells, text/image/output breakdown,
+reserved reply space, retained pairs/images, reused prefix tokens,
+compaction count/reason, and whether a reply is provisional. Total occupancy
+and image token counts are exact. The categories sum to occupied KV token
+cells; after reconstruction, the output category classifies retained assistant
+bodies using their original generated counts, so its split from text can vary
+if canonical retokenization changes their segmentation. Qwen's M-RoPE position
+counter is tracked separately: image
+embedding count, rather than image position extent, determines context usage.
+Statistics are published after prompt evaluation, every eight generated tokens,
+and on completion, so the debug view can follow context growth during a reply.
+The reserved field reports remaining reply space during generation and becomes
+zero when the request ends.
+After discarded native work, usage becomes zero while retained accepted pairs
+remain available for reconstruction. Unloaded/disabled and unknown session IDs
+return zero-capacity statistics.
+
+The Enemy_Llama controller uses a 16K context by default, retains recent
+observations and factual measured action outcomes, and exposes these statistics
+in its debug view. Model capacity and route quality still require authored-map
+evaluation.
+
 For text-only requests, leave the image at its defaults and omit the projector
 when loading a text model. Images must contain exactly `width * height * 3`
 RGB8 bytes, top row first. `Submit` copies the inputs, so the caller may reuse
@@ -144,8 +229,11 @@ The service inserts the media marker automatically; do not insert one yourself.
 HPL2 already has `iLowLevelGraphics::CopyFrameBufferToBitmap()` for a future
 capture adapter. Call it on the render thread after rendering, convert to RGB8,
 and flip OpenGL's bottom-up rows. No graphics calls run on the inference worker.
-Automatic capture, script bindings, enemy decisions and UI are future consumers
-of this service.
+`Enemy_Llama` now consumes this service with a body-camera image, perceived
+sounds, explicit memory and a bounded decision grammar. Its controller submits
+one request at a time and checks ownership, observation age and geometry before
+applying a reply on the game thread. See the
+[enemy setup guide](../../../amnesia/doc/Enemy_Llama.md) for configuration.
 
 `Cancel(id)` marks queued or active work for cancellation; poll its result as
 usual. The CPU decoder uses an abort callback. CUDA cancellation is checked

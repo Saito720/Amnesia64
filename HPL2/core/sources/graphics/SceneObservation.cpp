@@ -193,9 +193,9 @@ bool cSceneObservation::Initialize(const cVector2l& avSize)
     DestroyData();
     msLastError.clear();
     // Limit the allocation/readback cost, including malformed entity settings.
-    if(avSize.x < 32 || avSize.y < 32 || avSize.x > 1024 || avSize.y > 1024)
+    if(avSize.x < 32 || avSize.y < 32 || avSize.x > 2048 || avSize.y > 2048)
     {
-        msLastError = "Observation dimensions must be between 32 and 1024 pixels.";
+        msLastError = "Observation dimensions must be between 32 and 2048 pixels.";
         return false;
     }
     if(!CreateProgram() || !CreatePlayerCylinder())

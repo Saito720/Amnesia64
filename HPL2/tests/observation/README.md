@@ -22,3 +22,10 @@ The tests check visible and occluded player/door masks, view-specific self mesh
 exclusion, camera FOV, top-down packed RGB orientation, exact preview texture/RGB
 agreement, opaque preview alpha, independent retained depth, framebuffer
 restoration, repeated captures, and GPU resource destruction/recreation.
+They also render the 1280×864 Enemy_Llama default, verify its upright player mask
+and packed RGB, allow the 2048-pixel upper boundary, and reject oversized axes
+before allocation.
+The preview regression draws the borrowed render-target texture through the
+actual GUI into a separate framebuffer, verifies its rendered pixels against
+the top-down observation (including red above blue), and confirms that the
+former extra UV-flip call produces the inverted image.

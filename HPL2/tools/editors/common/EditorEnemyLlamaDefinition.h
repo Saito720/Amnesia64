@@ -87,12 +87,21 @@ inline void AddEnemyLlamaEditorDefinition(hpl::cXmlElement* apTypes)
     pObservation->SetAttributeString("Name", "Llama observation");
     using EditorEnemyLlamaDefinition::AddVariable;
     AddVariable(pObservation, "FOV", "Float", "120", "Horizontal observation field of view in degrees. Runtime clamps to 1-179 degrees; non-finite values use 120.");
-    AddVariable(pObservation, "LlamaObservationWidth", "Int", "384", "Observation image width in pixels.");
-    AddVariable(pObservation, "LlamaObservationHeight", "Int", "256", "Observation image height in pixels.");
+    AddVariable(pObservation, "LlamaObservationWidth", "Int", "1280", "Observation image width in pixels. Runtime clamps to 64-2048 pixels.");
+    AddVariable(pObservation, "LlamaObservationHeight", "Int", "864", "Observation image height in pixels. Runtime clamps to 64-2048 pixels.");
     AddVariable(pObservation, "LlamaObservationInterval", "Float", "0.25", "Seconds between observation captures.");
     AddVariable(pObservation, "LlamaCameraOffset", "Vector3", "0 -0.1 0", "Camera offset relative to the top of the character cylinder.");
     AddVariable(pObservation, "LlamaHearingRange", "Float", "12", "Maximum perceived sound distance in game units.");
     AddVariable(pObservation, "LlamaSoundThreshold", "Float", "0.2", "Minimum perceived sound loudness.");
+
+    hpl::cXmlElement* pControl = pTypeVars->CreateChildElement("Group");
+    pControl->SetAttributeString("Name", "Llama control");
+    AddVariable(pControl, "LlamaControlEnabled", "Bool", "true", "Allow the shared local vision model to control this enemy.");
+    AddVariable(pControl, "LlamaDecisionInterval", "Float", "1.0", "Minimum seconds between model decisions. Runtime clamps to 0.1-10 seconds.");
+    AddVariable(pControl, "LlamaActionMaxSeconds", "Float", "1.5", "Maximum duration of a model movement action. Runtime clamps to 0.1-2 seconds.");
+    AddVariable(pControl, "LlamaAttackAnimation", "String", "", "Optional normal attack animation name; empty selects an available conventional name.");
+    AddVariable(pControl, "LlamaDoorAttackAnimation", "String", "", "Optional break-door animation name; empty selects an available conventional name.");
+    AddVariable(pControl, "LlamaAttackCooldown", "Float", "1.0", "Minimum seconds between mechanical attacks. Runtime clamps to 0.2-10 seconds.");
 
     hpl::cXmlElement* pInstanceVars = pType->CreateChildElement("InstanceVars");
     AddVariable(pInstanceVars, "CallbackFunc", "String", "", "Standard enemy callback function.");

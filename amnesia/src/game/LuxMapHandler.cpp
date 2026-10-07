@@ -32,6 +32,7 @@
 #include "LuxMainMenu.h"
 
 #include "LuxEnemy.h"
+#include "LuxLlamaController.h"
 #include "LuxAchievementHandler.h"
 
 //////////////////////////////////////////////////////////////////////////
@@ -154,6 +155,7 @@ void cLuxDebugRenderCallback::OnPostTranslucentDraw(cRendererCallbackFunctions* 
 
 cLuxMapHandler::cLuxMapHandler() : iLuxUpdateable("LuxMapHandler")
 {
+	mpLlamaController = hplNew(cLuxLlamaController, ());
 	//////////////////////////
 	//Create and setup view port
 	mpViewport = gpBase->mpEngine->GetScene()->CreateViewport();
@@ -219,6 +221,8 @@ cLuxMapHandler::cLuxMapHandler() : iLuxUpdateable("LuxMapHandler")
 
 cLuxMapHandler::~cLuxMapHandler()
 {
+	hplDelete(mpLlamaController);
+	mpLlamaController = NULL;
 	hplDelete(mpSavedGame);
 	hplDelete(mpSavedGameMutex);
 	hplDelete(mpSoundCallback);
@@ -266,13 +270,23 @@ void cLuxMapHandler::Update(float afTimeStep)
 	CheckMapChange(afTimeStep);
 
 	if(mpCurrentMap && mMapChangeData.mbActive==false)
+	{
+		if(mbUpdateActive) mpLlamaController->Update(afTimeStep);
 		mpCurrentMap->Update(afTimeStep);
+	}
+}
+
+void cLuxMapHandler::OnDraw(float)
+{
+	if(mpCurrentMap && mbUpdateActive && !mMapChangeData.mbActive && mpViewport->IsActive())
+		mpLlamaController->CaptureObservation();
 }
 
 //-----------------------------------------------------------------------
 
 void cLuxMapHandler::Reset()
 {
+	mpLlamaController->Invalidate();
 	// Stop all sounds (deleting maps will stop world entries, but will let GUI ones live)
 	cSound *pSound = gpBase->mpEngine->GetSound();
 	pSound->GetSoundHandler()->StopAll(eSoundEntryType_All);
@@ -356,6 +370,7 @@ void cLuxMapHandler::DestroyDataCache()
 
 void cLuxMapHandler::SetUpdateActive(bool abX)
 {
+	if(!abX) mpLlamaController->Invalidate();
 	mbUpdateActive = abX;
 	
 	if(mpCurrentMap) mpCurrentMap->GetWorld()->SetActive(mbUpdateActive);
@@ -383,6 +398,7 @@ void cLuxMapHandler::OnEnterContainer(const tString& asOldContainer)
 
 void cLuxMapHandler::OnLeaveContainer(const tString& asNewContainer)
 {
+	mpLlamaController->Invalidate();
 	mpViewport->SetActive(false);
 	mpViewport->SetVisible(false);
 
@@ -394,6 +410,7 @@ void cLuxMapHandler::OnLeaveContainer(const tString& asNewContainer)
 
 void cLuxMapHandler::ChangeMap(const tString& asMapName, const tString& asStartPos, const tString& asStartSound, const tString& asEndSound)
 {
+	mpLlamaController->Invalidate();
 	mMapChangeData.mbActive = true;
 	mMapChangeData.msMapFile = cString::SetFileExt(asMapName, "map");
 	mMapChangeData.msStartPos = asStartPos;
@@ -434,6 +451,7 @@ void cLuxMapHandler::DestroyMap(cLuxMap* apMap, bool abLoadingSaveGame)
 void cLuxMapHandler::SetCurrentMap(cLuxMap* apMap, bool abRunScript, bool abFirstTime, const tString& asPlayerPos)
 {
 	if(mpCurrentMap == apMap) return;
+	mpLlamaController->Invalidate();
 
 	//////////////////////////////////
 	//Unload stuff from previous map

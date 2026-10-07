@@ -23,6 +23,7 @@
 //----------------------------------------------
 
 #include "LuxBase.h"
+#include <cstdint>
 
 //----------------------------------------------
 
@@ -109,6 +110,10 @@ private:
 	// GUI Callbacks
 	bool ChangeDebugText(iWidget* apWidget, const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(ChangeDebugText);
+	bool PressLlamaPerception(iWidget* apWidget, const cGuiMessageData& aData);
+	kGuiCallbackDeclarationEnd(PressLlamaPerception);
+	bool PressLlamaExplanation(iWidget* apWidget, const cGuiMessageData& aData);
+	kGuiCallbackDeclarationEnd(PressLlamaExplanation);
 
 	bool PressPrinfContDebugInfo(iWidget* apWidget,const cGuiMessageData& aData);
 	kGuiCallbackDeclarationEnd(PressPrinfContDebugInfo);
@@ -180,10 +185,16 @@ private:
 	bool mbInspectionMode;
 	bool mbDrawPhysics;
 	bool mbShowLlamaObservation;
+	cWidgetCheckBox *mpCBLlamaObservation;
+	cWidgetCheckBox *mpCBLlamaControl;
+	cWidgetCheckBox *mpCBLlamaPerception;
+	cWidgetCheckBox *mpCBLlamaSteering;
 	int mlLlamaObservationEnemyID;
 	cGuiGfxElement *mpLlamaObservationGfx;
 	cGuiGfxElement *mpLlamaObservationBackground;
 	iTexture *mpLlamaObservationTexture;
+	iTexture *mpLlamaDiagnosticTexture;
+	uint64_t mlLlamaDiagnosticRequest;
 
 	bool mbAllowQuickSave;
     

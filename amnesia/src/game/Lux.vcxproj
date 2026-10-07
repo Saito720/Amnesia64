@@ -187,6 +187,9 @@
     <ClCompile Include="LuxEnemy.cpp" />
     <ClCompile Include="LuxEnemy_Grunt.cpp" />
     <ClCompile Include="LuxEnemy_Llama.cpp" />
+    <ClCompile Include="LuxEnemy_LlamaActions.cpp" />
+    <ClCompile Include="LuxLlamaController.cpp" />
+    <ClCompile Include="LuxLlamaDecision.cpp" />
     <ClCompile Include="LuxEnemy_WaterLurker.cpp" />
     <ClCompile Include="LuxEnemyMover.cpp" />
     <ClCompile Include="LuxEnemyPathfinder.cpp" />
@@ -298,6 +301,8 @@
     <ClInclude Include="LuxEnemy.h" />
     <ClInclude Include="LuxEnemy_Grunt.h" />
     <ClInclude Include="LuxEnemy_Llama.h" />
+    <ClInclude Include="LuxLlamaController.h" />
+    <ClInclude Include="LuxLlamaDecision.h" />
     <ClInclude Include="LuxEnemy_LlamaProfiles.h" />
     <ClInclude Include="LuxEnemy_WaterLurker.h" />
     <ClInclude Include="LuxEnemyMover.h" />

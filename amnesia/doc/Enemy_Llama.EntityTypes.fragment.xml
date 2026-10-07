@@ -2,12 +2,18 @@
 <Type Name="Enemy_Llama" Default="Grunt">
   <TypeVars>
       <Var Name="FOV" Type="Float" DefaultValue="120" Description="Horizontal observation field of view in degrees. Runtime clamps to 1-179 degrees; non-finite values use 120." />
-      <Var Name="LlamaObservationWidth" Type="Int" DefaultValue="384" Description="Observation image width in pixels." />
-      <Var Name="LlamaObservationHeight" Type="Int" DefaultValue="256" Description="Observation image height in pixels." />
+      <Var Name="LlamaObservationWidth" Type="Int" DefaultValue="1280" Description="Observation image width in pixels. Runtime clamps to 64-2048 pixels." />
+      <Var Name="LlamaObservationHeight" Type="Int" DefaultValue="864" Description="Observation image height in pixels. Runtime clamps to 64-2048 pixels." />
       <Var Name="LlamaObservationInterval" Type="Float" DefaultValue="0.25" Description="Seconds between observation captures." />
       <Var Name="LlamaCameraOffset" Type="Vector3" DefaultValue="0 -0.1 0" Description="Camera offset relative to the top of the character cylinder." />
       <Var Name="LlamaHearingRange" Type="Float" DefaultValue="12" Description="Maximum perceived sound distance in game units." />
       <Var Name="LlamaSoundThreshold" Type="Float" DefaultValue="0.2" Description="Minimum perceived sound loudness." />
+      <Var Name="LlamaControlEnabled" Type="Bool" DefaultValue="true" Description="Allow the shared local vision model to control this enemy." />
+      <Var Name="LlamaDecisionInterval" Type="Float" DefaultValue="1.0" Description="Minimum seconds between model decisions. Runtime clamps to 0.1-10 seconds." />
+      <Var Name="LlamaActionMaxSeconds" Type="Float" DefaultValue="1.5" Description="Maximum duration of a model movement action. Runtime clamps to 0.1-2 seconds." />
+      <Var Name="LlamaAttackAnimation" Type="String" DefaultValue="" Description="Optional normal attack animation name; empty selects an available conventional name." />
+      <Var Name="LlamaDoorAttackAnimation" Type="String" DefaultValue="" Description="Optional break-door animation name; empty selects an available conventional name." />
+      <Var Name="LlamaAttackCooldown" Type="Float" DefaultValue="1.0" Description="Minimum seconds between mechanical attacks. Runtime clamps to 0.2-10 seconds." />
       <Var Name="LlamaIdleAnimation" Type="String" DefaultValue="" Description="Optional idle animation name; empty selects an available conventional name." />
       <Var Name="LlamaWalkAnimation" Type="String" DefaultValue="" Description="Optional walking animation name." />
       <Var Name="LlamaRunAnimation" Type="String" DefaultValue="" Description="Optional running animation name." />
